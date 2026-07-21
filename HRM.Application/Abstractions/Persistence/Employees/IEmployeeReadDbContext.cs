@@ -1,5 +1,6 @@
 ﻿using HRM.Domain.Entities.CompanySchema;
 using HRM.Domain.Entities.HrSchema;
+using HRM.Domain.Entities.HrSchema.Hrm_models;
 using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;

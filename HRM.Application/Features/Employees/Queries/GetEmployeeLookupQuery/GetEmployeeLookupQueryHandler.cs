@@ -1,6 +1,7 @@
 ﻿using HRM.Application.Abstractions.Persistence.Employees;
 using HRM.Application.Commons.Pagination;
 using HRM.Application.Features.Employees.Dtos;
+using HRM.Domain.Enums.Employees;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using System;
@@ -26,13 +27,13 @@ namespace HRM.Application.Features.Employees.Queries.GetEmployeeDropdown
             CancellationToken cancellationToken)
         {
             var query = _dbContext.Employees
-                .Where(x => x.IsActive)
+                .Where(x => x.IsActive && x.Status == EmployeeStatus.Active.ToString())
                 .AsQueryable();
 
-            if (!string.IsNullOrWhiteSpace(request.Search))
-            {
-                var keyword = request.Search.Trim();
+            var keyword = request.NormalizedKeyword ?? NormalizeSearch(request.Search);
 
+            if (!string.IsNullOrWhiteSpace(keyword))
+            {
                 query = query.Where(x =>
                     x.ExternalId.StartsWith(keyword) ||
                     x.FullName.Contains(keyword));
@@ -66,5 +67,8 @@ namespace HRM.Application.Features.Employees.Queries.GetEmployeeDropdown
                 request.NormalizedPageSize,
                 cancellationToken);
         }
+
+        private static string? NormalizeSearch(string? search)
+            => string.IsNullOrWhiteSpace(search) ? null : search.Trim();
     }
 }

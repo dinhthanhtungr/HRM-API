@@ -8,6 +8,7 @@ namespace HRM.Domain.Enums.Category
 {
     public enum DocumentPrefix
     {
+        TP,     // Mã misa
         PRQ,    // Phiếu yêu cầu (nhập/xuất kho)
         PXK,    // Phiếu xuất kho
         PNK,    // Phiếu nhập kho
@@ -58,6 +59,8 @@ namespace HRM.Domain.Enums.Category
         PER,        // Period (kỳ kế toán)
         CLP,        // Close Period chứng từ khóa kỳ
         OPN,        // Opening (số dư đầu kỳ)
+        KH,         // Customer
+        BG,         // Báo giá
                     // Chý ý
                     //... Riêng phiếu báo cáo sự cố, đề xuất cải tiến và đề xuất vật tư thì prefix là tên code của phòng ban tạo phiếu + "." + enum + "." + mã số gọi từ API)
                     // VD: phiếu báo cáo sự cố thuộc phòng IMS sẽ là: IMS.IR.251200001)

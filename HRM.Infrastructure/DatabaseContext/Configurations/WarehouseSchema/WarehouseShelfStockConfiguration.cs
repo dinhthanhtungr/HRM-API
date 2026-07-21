@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using System;
 using System.Collections.Generic;
@@ -15,8 +15,7 @@ namespace HRM.Infrastructure.DatabaseContext.Configurations.WarehouseSchema
         {
             entity.ToTable("WarehouseShelfStock", "Warehouse");
 
-            entity.HasKey(e => e.SlotId)
-                  .HasName("PK__WarehouseShelfStock__slotId");
+            entity.HasKey(e => e.ShelfStockId);
 
             entity.Property(e => e.ShelfStockId)
                   .UseIdentityAlwaysColumn()
@@ -50,6 +49,10 @@ namespace HRM.Infrastructure.DatabaseContext.Configurations.WarehouseSchema
 
             entity.Property(e => e.CompanyId).HasColumnName("companyId");
             entity.Property(e => e.UpdatedBy).HasColumnName("updatedBy");
+            entity.Property(e => e.UnitName).HasDefaultValueSql("'Kg'::text");
+            entity.Property(e => e.ExpiryDate).HasColumnName("ExpiryDate");
+
+            entity.HasIndex(e => e.SlotId, "IX_WarehouseShelfStock_SlotId");
 
             entity.HasIndex(x => new { x.CompanyId, x.Code })
                   .HasDatabaseName("IX_WarehouseShelfStock_company_code");

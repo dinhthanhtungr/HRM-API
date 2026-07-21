@@ -9,6 +9,8 @@ namespace HRM.Domain.Enums.Formulas
     public enum ItemType
     {
         Material,
-        Product
+        Product,
+        MaterialFailure,
+        ProductFailure,
     }
 }

@@ -2,6 +2,7 @@ using HRM.Application.Abstractions.Persistence.Employees;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Models;
 using HRM.Domain.Entities.HrSchema;
+using HRM.Domain.Entities.HrSchema.Hrm_models;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -125,7 +126,7 @@ namespace HRM.Application.Features.Employees.Commands.CreateEmployee
                 EffectiveTo = workProfile.EffectiveTo,
                 IsActive = true,
                 CreatedBy = _currentUser.EmployeeId ?? employee.EmployeeId,
-                CreatedDate = DateTime.UtcNow,
+                CreatedDate = DateTime.Now,
                 OnboardingTrainingDate = workProfile.OnboardingTrainingDate
             });
         }

@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using System;
 using System.Collections.Generic;
@@ -45,6 +45,9 @@ namespace HRM.Infrastructure.DatabaseContext.Configurations.WarehouseSchema
 
             entity.Property(e => e.ReserveStatus)
                   .HasColumnName("reserveStatus"); // enum -> int mặc định
+
+            entity.Property(e => e.QtyUsed).HasColumnName("QtyUsed");
+            entity.Property(e => e.UnitName).HasDefaultValueSql("'Kg'::text");
 
             entity.HasIndex(x => new { x.CompanyId, x.VaCode })
                   .HasDatabaseName("IX_WarehouseTempStock_company_va");

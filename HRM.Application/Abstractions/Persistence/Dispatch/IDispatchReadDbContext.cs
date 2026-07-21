@@ -9,6 +9,7 @@ public interface IDispatchReadDbContext
 {
     DbSet<DeliveryOrder> DeliveryOrders { get; }
     DbSet<DeliveryOrderDetail> DeliveryOrderDetails { get; }
+    DbSet<DeliveryOrderDetailLotConsumption> DeliveryOrderDetailLotConsumptions { get; }
     DbSet<DeliveryOrderPO> DeliveryOrderPOs { get; }
     DbSet<Deliverer> Deliverers { get; }
     DbSet<DelivererInfor> DelivererInfors { get; }

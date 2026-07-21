@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -26,6 +26,8 @@ namespace HRM.Domain.Entities.WarehouseSchema
         public Guid CompanyId { get; set; }
         public Guid? UpdatedBy { get; set; }
         public DateTime UpdatedDate { get; set; } = DateTime.Now;
+        public string UnitName { get; set; } = string.Empty;
+        public DateOnly? ExpiryDate { get; set; }
 
         // PostgreSQL xmin (row version) — cấu hình trong Fluent API
         //public uint xmin { get; private set; }

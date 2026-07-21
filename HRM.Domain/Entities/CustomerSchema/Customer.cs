@@ -51,11 +51,21 @@ public partial class Customer
 
     public bool? IsActive { get; set; }
 
+
+    public DateTime? LastContactDate { get; set; } // Ngày liên hệ cuối cùng
+    public DateTime? NextFollowUpDate { get; set; } // Ngày theo dõi tiếp theo
+    public string? CurrentCrmStatus { get; set; } // Trạng thái CRM hiện tại
+    public Guid? CurrentSaleId { get; set; } // Nhân viên kinh doanh hiện tại
+
     public virtual ICollection<Address> Addresses { get; set; } = new List<Address>();
     public virtual ICollection<CustomerNote> CustomerNotes { get; set; } = new List<CustomerNote>();
     public virtual ICollection<CustomerClaim> CustomerClaims { get; set; } = new List<CustomerClaim>();
     public virtual ICollection<Contact> Contacts { get; set; } = new List<Contact>();
     public virtual ICollection<CustomerAssignment> CustomerAssignments { get; set; } = new List<CustomerAssignment>();
+    public virtual ICollection<CustomerInteraction> CustomerInteractions { get; set; } = new List<CustomerInteraction>();
+    public virtual ICollection<CustomerInteractionAiSummary> CustomerInteractionAiSummaries { get; set; } = new List<CustomerInteractionAiSummary>();
+    public virtual ICollection<CustomerFollowUpTask> CustomerFollowUpTasks { get; set; } = new List<CustomerFollowUpTask>();
+    public virtual ICollection<CustomerWorkPlan> CustomerWorkPlans { get; set; } = new List<CustomerWorkPlan>();
     public virtual ICollection<ColorChipRecord> ColorChipRecords { get; set; } = new List<ColorChipRecord>();
     public virtual ICollection<DetailCustomerTransfer> DetailCustomerTransfers { get; set; } = new List<DetailCustomerTransfer>();
     public virtual ICollection<MerchandiseOrder> MerchandiseOrders { get; set; } = new List<MerchandiseOrder>();

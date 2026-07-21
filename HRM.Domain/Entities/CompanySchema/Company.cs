@@ -1,14 +1,16 @@
-using System;
-using System.Collections.Generic;
 using HRM.Domain.Entities.AuditSchema;
 using HRM.Domain.Entities.CustomerSchema;
 using HRM.Domain.Entities.HrSchema;
+using HRM.Domain.Entities.InternalMailSchema;
 using HRM.Domain.Entities.ManufacturingSchema;
 using HRM.Domain.Entities.MaterialSchema;
 using HRM.Domain.Entities.MROSchema;
+using HRM.Domain.Entities.Notifications;
 using HRM.Domain.Entities.OrderSchema;
 using HRM.Domain.Entities.SampleRequestSchema;
 using HRM.Domain.Entities.WarehouseSchema;
+using System;
+using System.Collections.Generic;
 
 namespace HRM.Domain.Entities.CompanySchema;
 
@@ -43,6 +45,7 @@ public partial class Company
     public virtual ICollection<Category> Categories { get; set; } = new List<Category>();
     public virtual ICollection<CustomerNote> CustomerNotes { get; set; } = new List<CustomerNote>();
     public virtual ICollection<CustomerClaim> CustomerClaims { get; set; } = new List<CustomerClaim>();
+    public virtual ICollection<CustomerInteractionAiSummary> CustomerInteractionAiSummaries { get; set; } = new List<CustomerInteractionAiSummary>();
 
     public virtual Employee? CreatedByNavigation { get; set; }
 
@@ -96,6 +99,10 @@ public partial class Company
     public virtual ICollection<WarehouseShelves> WarehouseShelves { get; set; } = new List<WarehouseShelves>();
     public virtual ICollection<WarehouseShelfLedger> WarehouseShelfLedgers { get; set; } = new List<WarehouseShelfLedger>();
     public virtual ICollection<WarehouseVoucher> WarehouseVouchers { get; set; } = new List<WarehouseVoucher>();
+
+
+    public virtual ICollection<InternalConversation> InternalConversations { get; set; } = new List<InternalConversation>();
+    public virtual ICollection<WebPushSubscription> WebPushSubscriptions { get; set; } = new List<WebPushSubscription>();
 
 
 

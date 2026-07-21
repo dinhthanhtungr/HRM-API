@@ -153,7 +153,7 @@ namespace HRM.Application.Features.Dispatch.DeliveryOrders.Commands.UpdateDelive
             deliveryOrder.DeliveryPrice = request.DeliveryPrice;
             deliveryOrder.RequiresUnloading = request.RequiresUnloading;
             deliveryOrder.UpdatedBy = request.UpdatedBy;
-            deliveryOrder.UpdatedDate = DateTime.UtcNow;
+            deliveryOrder.UpdatedDate = DateTime.Now;
 
             foreach (var oldDetail in deliveryOrder.Details.Where(x => x.IsActive))
             {

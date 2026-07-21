@@ -1,6 +1,24 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <Compile Remove="Features\CRM\CustomerInteractions\**" />
+    <Compile Remove="Features\Reports\ExecutivePnL\Commands\**" />
+    <Compile Remove="Features\Reports\ExecutivePnL\Queries\GetDetailExecutivePnLReport\**" />
+    <Compile Remove="Features\Reports\ExecutivePnL\Queries\GetSalesDashboardCharts\**" />
+    <Compile Remove="Features\Reports\ExecutivePnL\Validators\**" />
+    <EmbeddedResource Remove="Features\CRM\CustomerInteractions\**" />
+    <EmbeddedResource Remove="Features\Reports\ExecutivePnL\Commands\**" />
+    <EmbeddedResource Remove="Features\Reports\ExecutivePnL\Queries\GetDetailExecutivePnLReport\**" />
+    <EmbeddedResource Remove="Features\Reports\ExecutivePnL\Queries\GetSalesDashboardCharts\**" />
+    <EmbeddedResource Remove="Features\Reports\ExecutivePnL\Validators\**" />
+    <None Remove="Features\CRM\CustomerInteractions\**" />
+    <None Remove="Features\Reports\ExecutivePnL\Commands\**" />
+    <None Remove="Features\Reports\ExecutivePnL\Queries\GetDetailExecutivePnLReport\**" />
+    <None Remove="Features\Reports\ExecutivePnL\Queries\GetSalesDashboardCharts\**" />
+    <None Remove="Features\Reports\ExecutivePnL\Validators\**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\HRM.Domain\HRM.Domain.csproj" />
   </ItemGroup>
 
@@ -10,7 +28,58 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Folder Include="Abstractions\Commons\Ais\Reports\" />
     <Folder Include="Features\Dispatch\Deliverers\Queries\" />
+    <Folder Include="Features\PLM\Dashboard\Commands\" />
+    <Folder Include="Features\PLM\Dashboard\Queries\GetDashboardSummary\" />
+    <Folder Include="Features\PLM\Dashboard\Queries\GetDashboardMonthlySummary\" />
+    <Folder Include="Features\PLM\Dashboard\Queries\GetDashboardTaskBreakdown\" />
+    <Folder Include="Features\PLM\Dashboard\Validators\" />
+    <Folder Include="Features\PLM\Documents\Commands\" />
+    <Folder Include="Features\PLM\Documents\Dtos\" />
+    <Folder Include="Features\PLM\Documents\Queries\" />
+    <Folder Include="Features\PLM\Documents\Validators\" />
+    <Folder Include="Features\PLM\Formulas\Commands\CreateFormula\" />
+    <Folder Include="Features\PLM\Formulas\Commands\UpsertFormulaMaterials\" />
+    <Folder Include="Features\PLM\Formulas\Dtos\Exports\" />
+    <Folder Include="Features\PLM\Formulas\Queries\ExportFormulaPdf\" />
+    <Folder Include="Features\PLM\Formulas\Queries\ExportFormulaXml\" />
+    <Folder Include="Features\PLM\Formulas\Validators\" />
+    <Folder Include="Features\PLM\Manufacturings\Commands\" />
+    <Folder Include="Features\PLM\Manufacturings\Dtos\" />
+    <Folder Include="Features\PLM\Manufacturings\Queries\" />
+    <Folder Include="Features\PLM\Manufacturings\Validators\" />
+    <Folder Include="Features\PLM\Materials\Commands\" />
+    <Folder Include="Features\PLM\Materials\Validators\" />
+    <Folder Include="Features\PLM\Products\Commands\" />
+    <Folder Include="Features\PLM\Products\Dtos\" />
+    <Folder Include="Features\PLM\Products\Queries\" />
+    <Folder Include="Features\PLM\Products\Validators\" />
+    <Folder Include="Features\Reports\Company\Commands\" />
+    <Folder Include="Features\Reports\Company\Dtos\" />
+    <Folder Include="Features\Reports\Company\Queries\" />
+    <Folder Include="Features\Reports\Company\Validators\" />
+    <Folder Include="Features\Reports\Departments\Commands\" />
+    <Folder Include="Features\Reports\Departments\Dtos\" />
+    <Folder Include="Features\Reports\Departments\Queries\" />
+    <Folder Include="Features\Reports\Departments\Validators\" />
+    <Folder Include="Features\Reports\Lab\Commands\" />
+    <Folder Include="Features\Reports\Lab\Dtos\" />
+    <Folder Include="Features\Reports\Lab\Queries\" />
+    <Folder Include="Features\Reports\Lab\Validators\" />
+    <Folder Include="Features\Reports\Manufacturing\Commands\" />
+    <Folder Include="Features\Reports\Manufacturing\Dtos\" />
+    <Folder Include="Features\Reports\Manufacturing\Queries\" />
+    <Folder Include="Features\Reports\Manufacturing\Validators\" />
+    <Folder Include="Features\Reports\Sales\Commands\" />
+    <Folder Include="Features\Reports\Sales\Dtos\" />
+    <Folder Include="Features\Reports\Sales\Queries\" />
+    <Folder Include="Features\Reports\Sales\Validators\" />
+    <Folder Include="Features\PLM\SampleRequests\Validators\" />
+    <Folder Include="Features\PLM\Standards\Commands\" />
+    <Folder Include="Features\PLM\Standards\Dtos\" />
+    <Folder Include="Features\PLM\Standards\Queries\" />
+    <Folder Include="Features\PLM\Standards\Validators\" />
   </ItemGroup>
 
   <PropertyGroup>

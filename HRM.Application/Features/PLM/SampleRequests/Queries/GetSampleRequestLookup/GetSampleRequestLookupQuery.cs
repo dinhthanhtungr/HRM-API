@@ -1,0 +1,23 @@
+using HRM.Application.Features.PLM.SampleRequests.Dtos.FormOptions;
+using MediatR;
+
+namespace HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestLookup;
+
+public sealed class GetSampleRequestLookupQuery : IRequest<IReadOnlyList<SampleRequestLookupItemDto>>
+{
+    public Guid? CompanyId { get; init; }
+    public string? Keyword { get; init; }
+    public string? Status { get; init; }
+    public bool? IsActive { get; init; } = true;
+    public int Take { get; init; } = 20;
+
+    public string? NormalizedKeyword => string.IsNullOrWhiteSpace(Keyword)
+        ? null
+        : Keyword.Trim();
+
+    public string? NormalizedStatus => string.IsNullOrWhiteSpace(Status)
+        ? null
+        : Status.Trim();
+
+    public int NormalizedTake => Take <= 0 ? 20 : Math.Min(Take, 50);
+}

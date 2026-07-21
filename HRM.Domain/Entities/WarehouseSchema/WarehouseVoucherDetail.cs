@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -23,14 +23,16 @@ namespace HRM.Domain.Entities.WarehouseSchema
         public int? PurposeId { get; set; }         // FK -> UsagePurpose.PurposeId
         public bool IsIncrease { get; set; }        // tăng (true) / giảm (false)
 
-        public DateTime ExpiryDate { get; set; }
+        public DateTime? ExpiryDate { get; set; }
+        public bool IsApplied { get; set; }
+        public string UnitName { get; set; } = string.Empty;
 
         public VoucherDetailType VoucherType { get; set; } 
         public string? Note { get; set; }
 
         // Navigations
         public WarehouseVoucher Voucher { get; set; } = default!;
-        public WarehouseShelfStock? Slot { get; set; }
+        public WarehouseShelves? Slot { get; set; }
         public UsagePurpose? Purpose { get; set; }
 
         public ICollection<QCInputByQC> QCInputByQCs { get; set; } = new List<QCInputByQC>();

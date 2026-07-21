@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using System;
 using System.Collections.Generic;
@@ -67,6 +67,8 @@ namespace HRM.Infrastructure.DatabaseContext.Configurations.WarehouseSchema
             entity.Property(x => x.PurposeId).HasColumnName("purposeId");
             entity.Property(x => x.RequestCode).HasColumnName("requestCode");
             entity.Property(x => x.AppSource).HasColumnName("appSource");
+            entity.Property(x => x.UnitName).HasDefaultValueSql("'Kg'::text");
+            entity.Property(x => x.ExpiryDate).HasColumnName("ExpiryDate");
 
             // Indexes gợi ý cho tra cứu log
             entity.HasIndex(x => new { x.CompanyId, x.SlotId, x.CreatedAt })

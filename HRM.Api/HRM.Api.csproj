@@ -24,4 +24,8 @@
     <ProjectReference Include="..\HRM.Infrastructure\HRM.Infrastructure.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="Docx\" />
+  </ItemGroup>
+
 </Project>

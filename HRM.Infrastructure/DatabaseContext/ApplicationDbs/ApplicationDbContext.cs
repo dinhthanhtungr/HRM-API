@@ -10,7 +10,7 @@ using HRM.Domain.Entities.CompanySchema;
 using HRM.Domain.Entities.CustomerSchema;
 using HRM.Domain.Entities.DeliverySchema;
 using HRM.Domain.Entities.DevandqaSchema;
-using HRM.Domain.Entities.EnergyScheme;
+//using HRM.Domain.Entities.EnergyScheme;
 using HRM.Domain.Entities.HrSchema;
 using HRM.Domain.Entities.ManufacturingSchema;
 using HRM.Domain.Entities.MaterialSchema;
@@ -26,7 +26,6 @@ using HRM.Domain.Entities.WarehouseSchema;
 //using System.Text.RegularExpressions;
 using HRM.Domain.Identity;
 using HRM.Infrastructure.Helpers.IdCounter;
-using Microsoft.Extensions.Logging;
 
 
 namespace HRM.Infrastructure.DatabaseContext.ApplicationDbs
@@ -67,10 +66,7 @@ namespace HRM.Infrastructure.DatabaseContext.ApplicationDbs
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
-            optionsBuilder
-                .EnableSensitiveDataLogging()
-                .LogTo(Console.WriteLine, LogLevel.Information);
-            AppContext.SetSwitch("Npgsql.EnableParameterLogging", true); // log tham số Npgsql
+            AppContext.SetSwitch("Npgsql.EnableParameterLogging", false);
         }
         protected override void ConfigureConventions(ModelConfigurationBuilder builder)
         {

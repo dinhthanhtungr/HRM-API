@@ -1,30 +1,39 @@
+using HRM.Domain.Entities;
+using HRM.Domain.Entities.EnergyScheme;
+using HRM.Domain.Entities.MaterialSchema;
 using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using HRM.Domain.Entities;
-using HRM.Domain.Entities.EnergyScheme;
-using HRM.Domain.Entities.MaterialSchema;
 
 namespace HRM.Infrastructure.DatabaseContext.ApplicationDbs
 {
     public partial class ApplicationDbContext
     {
-        public virtual DbSet<EnergyGroupTariffMap> EnergyGroupTariffMaps { get; set; } = default!;
-        public virtual DbSet<EnergyTouCalendar> EnergyTouCalendars { get; set; } = default!;
-        public virtual DbSet<EnergyTouException> EnergyTouExceptions { get; set; } = default!;
-        public virtual DbSet<EnergyGroup> EnergyGroups { get; set; } = default!;
-        public virtual DbSet<EnergyMeter> EnergyMeters { get; set; } = default!;
-        public virtual DbSet<EnergyTariff> EnergyTariffs { get; set; } = default!;
-        public virtual DbSet<EnergyTariffVersion> EnergyTariffVersions { get; set; } = default!;
-        public virtual DbSet<EnergyTariffBandRate> EnergyTariffBandRates { get; set; } = default!;
-        public virtual DbSet<EnergyRegisterSnapshot> EnergyRegisterSnapshots { get; set; } = default!;
-        public virtual DbSet<EnergyMeterGroupHistory> EnergyMeterGroupHistories { get; set; } = default!;
-        public virtual DbSet<EnergyMeterCommConfig> EnergyMeterCommConfigs { get; set; } = default!;
-        public virtual DbSet<EnergyTouWindow> EnergyTouWindows { get; set; } = default!;
-        public virtual DbSet<EnergyReadingsHourly> EnergyReadingsHourlies { get; set; } = default!;
-        public virtual DbSet<EnergyReadingsHourlyVn> EnergyReadingsHourlyVns { get; set; } = default!;
+        public virtual DbSet<Group> Group { get; set; }
+        public virtual DbSet<GroupTariffMap> GroupTariffMaps { get; set; }
+
+        public virtual DbSet<Meter> Meters { get; set; }
+        public virtual DbSet<MeterGroupHistory> MeterGroupHistories { get; set; }
+
+        public virtual DbSet<ReadingsHourly> ReadingsHourlies { get; set; }
+
+        public virtual DbSet<ReadingsHourlyVn> ReadingsHourlyVns { get; set; }
+
+        public virtual DbSet<RegisterSnapshot> RegisterSnapshots { get; set; }
+
+        public virtual DbSet<Tariff> Tariffs { get; set; }
+
+        public virtual DbSet<TariffBandRate> TariffBandRates { get; set; }
+
+        public virtual DbSet<TariffVersion> TariffVersions { get; set; }
+
+        public virtual DbSet<TouCalendar> TouCalendars { get; set; }
+
+        public virtual DbSet<TouException> TouExceptions { get; set; }
+
+        public virtual DbSet<TouWindow> TouWindows { get; set; }
     }
 }

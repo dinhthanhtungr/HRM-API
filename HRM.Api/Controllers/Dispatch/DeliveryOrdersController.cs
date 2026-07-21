@@ -7,7 +7,7 @@ using HRM.Application.Features.Dispatch.DeliveryOrders.Queries.GetSelectableDeli
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
 
-namespace HRM.Api.Controllers.Dispatch;
+namespace HRM.Domain.Entities.Controllers.Dispatch;
 
 [ApiController]
 [Route("api/v1/dispatch")]

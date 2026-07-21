@@ -8,7 +8,7 @@ using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
-namespace HRM.Api.Controllers;
+namespace HRM.Domain.Entities.Controllers;
 
 [ApiController]
 [Route("api/v1/auth")]
@@ -16,13 +16,18 @@ public sealed class AuthController : ControllerBase
 {
     private readonly ISender _sender;
     private readonly ICurrentUser _currentUser;
+    private readonly ILogger<AuthController> _logger;
 
     private const string AccessTokenCookieName = "hrm_access_token";
 
-    public AuthController(ISender sender, ICurrentUser currentUser)
+    public AuthController(
+        ISender sender,
+        ICurrentUser currentUser,
+        ILogger<AuthController> logger)
     {
         _sender = sender;
         _currentUser = currentUser;
+        _logger = logger;
     }
 
     [HttpPost("login")]
@@ -31,6 +36,11 @@ public sealed class AuthController : ControllerBase
     {
         try
         {
+            _logger.LogInformation(
+                "Login request received. UseCookie = {UseCookie}, Origin = {Origin}",
+                request.UseCookie,
+                Request.Headers.Origin.ToString());
+
             var result = await _sender.Send(
                 new LoginCommand(request.UserNameOrEmail, request.Password),
                 cancellationToken);
@@ -42,16 +52,11 @@ public sealed class AuthController : ControllerBase
 
             if (request.UseCookie)
             {
-                Response.Cookies.Append(
-                    AccessTokenCookieName,
-                    result.AccessToken,
-                    new CookieOptions
-                    {
-                        HttpOnly = true,
-                        Secure = Request.IsHttps,
-                        SameSite = SameSiteMode.Lax,
-                        Expires = result.ExpiresAtUtc
-                    });
+                SetAccessTokenCookie(result.AccessToken, result.ExpiresAtUtc);
+
+                _logger.LogInformation(
+                    "Login access token cookie appended. SetCookieLength = {SetCookieLength}",
+                    Response.Headers.SetCookie.ToString().Length);
             }
 
             return Ok(result);
@@ -66,11 +71,26 @@ public sealed class AuthController : ControllerBase
     [AllowAnonymous]
     public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenRequestDto request, CancellationToken cancellationToken)
     {
+        _logger.LogInformation(
+            "Refresh-token request received. UseCookie = {UseCookie}, HasAccessCookie = {HasAccessCookie}, Origin = {Origin}",
+            request.UseCookie,
+            Request.Cookies.ContainsKey(AccessTokenCookieName),
+            Request.Headers.Origin.ToString());
+
         var result = await _sender.Send(new RefreshTokenCommand { RefreshToken = request.RefreshToken }, cancellationToken);
 
         if (result is null)
         {
             return Unauthorized(new { message = "Invalid refresh token." });
+        }
+
+        if (request.UseCookie || Request.Cookies.ContainsKey(AccessTokenCookieName))
+        {
+            SetAccessTokenCookie(result.AccessToken, result.ExpiresAtUtc);
+
+            _logger.LogInformation(
+                "Refresh access token cookie appended. SetCookieLength = {SetCookieLength}",
+                Response.Headers.SetCookie.ToString().Length);
         }
 
         return Ok(result);
@@ -85,8 +105,9 @@ public sealed class AuthController : ControllerBase
         Response.Cookies.Delete(AccessTokenCookieName, new CookieOptions
         {
             HttpOnly = true,
-            Secure = Request.IsHttps,
-            SameSite = SameSiteMode.Lax
+            Secure = true,
+            SameSite = SameSiteMode.None,
+            Path = "/"
         });
 
         return Ok(new { message = "Logged out successfully." });
@@ -113,6 +134,21 @@ public sealed class AuthController : ControllerBase
 
         public string Password { get; init; } = string.Empty;
 
-        public bool UseCookie { get; init; }
+        public bool UseCookie { get; set; }
+    }
+
+    private void SetAccessTokenCookie(string accessToken, DateTime expiresAtUtc)
+    {
+        Response.Cookies.Append(
+            AccessTokenCookieName,
+            accessToken,
+            new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = true,
+                SameSite = SameSiteMode.None,
+                Path = "/",
+                Expires = expiresAtUtc
+            });
     }
 }

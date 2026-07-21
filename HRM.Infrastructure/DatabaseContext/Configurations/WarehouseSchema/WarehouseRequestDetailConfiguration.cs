@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using System;
 using System.Collections.Generic;
@@ -27,6 +27,17 @@ namespace HRM.Infrastructure.DatabaseContext.Configurations.WarehouseSchema
             entity.Property(e => e.WeightKg)
                   .HasPrecision(18, 3)
                   .HasColumnName("weightKg");
+
+            entity.Property(e => e.ItemStockType)
+                  .HasConversion<int?>()
+                  .HasColumnName("ItemStockType");
+
+            entity.Property(e => e.UnitName)
+                  .HasDefaultValueSql("'Kg'::text");
+
+            entity.Property(e => e.ExpiryDate)
+                  .HasColumnName("ExpiryDate");
+
             entity.Property(x => x.IsActive)
                   .HasDefaultValue(true)
                   .HasColumnName("isActive");

@@ -3,6 +3,7 @@ using HRM.Domain.Entities.AuditSchema;
 using HRM.Domain.Entities.CompanySchema;
 using HRM.Domain.Entities.CustomerSchema;
 using HRM.Domain.Entities.DeliverySchema;
+using HRM.Domain.Entities.HrSchema.Hrm_models;
 using HRM.Domain.Entities.ManufacturingSchema;
 using HRM.Domain.Entities.MaterialSchema;
 using HRM.Domain.Entities.MROSchema;
@@ -49,16 +50,15 @@ public partial class Employee
     public string? Status { get; set; }
 
     public DateOnly? EndDate { get; set; }
-    public Company Company { get; set; } = default!;
+    public bool IsActive { get; set; } = true;
 
-    public DateTime CreatedDate { get; set; } = DateTime.Now;
+    public DateTime? CreatedDate { get; set; } = DateTime.Now;
     public Guid? CreatedBy { get; set; }
 
     public DateTime? UpdatedDate { get; set; }
     public Guid? UpdatedBy { get; set; }
 
-    public bool IsActive { get; set; } = true;
-
+    public Company Company { get; set; } = default!;
 
     public virtual Employee? CreatedByNavigation { get; set; }
     public virtual Employee? UpdatedByNavigation { get; set; }
@@ -68,11 +68,6 @@ public partial class Employee
 
 
     public virtual ICollection<ApplicationUser> ApplicationUsers { get; set; } = new List<ApplicationUser>();
-    public virtual ICollection<AuditLog> AuditLogs { get; set; } = new List<AuditLog>();
-
-    //public virtual ICollection<ApprovalHistory> ApprovalHistories { get; set; } = new List<ApprovalHistory>();
-
-    public virtual ICollection<AttachmentModel> AttachmentCreatedByNavigations { get; set; } = new List<AttachmentModel>(); // Fix for IDE0028
 
     public virtual EmployeeProfile? EmployeeProfile { get; set; }
 
@@ -84,11 +79,30 @@ public partial class Employee
     public virtual ICollection<EmployeeDocument> EmployeeDocuments { get; set; } = new List<EmployeeDocument>();
 
     public virtual ICollection<EmployeeWorkProfile> EmployeeWorkProfileCreatedByNavigations { get; set; } = new List<EmployeeWorkProfile>();
+
+
+
+    public virtual ICollection<PayrollEmployeeRun> PayrollEmployeeRuns { get; set; } = new List<PayrollEmployeeRun>();
+    public virtual ICollection<EmployeeInsuranceContribution> EmployeeInsuranceContributions { get; set; } = new List<EmployeeInsuranceContribution>();
+    public virtual ICollection<EmployeeInsuranceBook> EmployeeInsuranceBooks { get; set; } = new List<EmployeeInsuranceBook>();
+    public virtual ICollection<EmployeeInsuranceClaim> EmployeeInsuranceClaims { get; set; } = new List<EmployeeInsuranceClaim>();
+
+
+    public virtual ICollection<AuditLog> AuditLogs { get; set; } = new List<AuditLog>();
+
+    //public virtual ICollection<ApprovalHistory> ApprovalHistories { get; set; } = new List<ApprovalHistory>();
+
+    public virtual ICollection<AttachmentModel> AttachmentCreatedByNavigations { get; set; } = new List<AttachmentModel>(); // Fix for IDE0028
+
+
     public virtual ICollection<Company> CompanyCreatedByNavigations { get; set; } = new List<Company>();
 
     public virtual ICollection<Company> CompanyUpdatedByNavigations { get; set; } = new List<Company>();
     public virtual ICollection<CustomerClaim> CustomerClaims { get; set; } = new List<CustomerClaim>();
     public virtual ICollection<CustomerNote> CustomerNotesAuthored { get; set; } = new List<CustomerNote>();
+    public virtual ICollection<CustomerInteractionAiSummary> CustomerInteractionAiSummarySaleEmployees { get; set; } = new List<CustomerInteractionAiSummary>();
+    public virtual ICollection<CustomerInteractionAiSummary> CustomerInteractionAiSummaryCreatedByNavigations { get; set; } = new List<CustomerInteractionAiSummary>();
+    public virtual ICollection<CustomerInteractionAiSummary> CustomerInteractionAiSummaryUpdatedByNavigations { get; set; } = new List<CustomerInteractionAiSummary>();
 
     public virtual ICollection<CustomerAssignment> CustomerAssignmentCreatedByNavigations { get; set; } = new List<CustomerAssignment>();
 
@@ -138,6 +152,7 @@ public partial class Employee
     public virtual ICollection<MerchandiseOrder> MerchandiseOrderCreatedByNavigations { get; set; } = new List<MerchandiseOrder>();
 
     public virtual ICollection<MerchandiseOrder> MerchandiseOrderManagerBies { get; set; } = new List<MerchandiseOrder>();
+    public virtual ICollection<MerchandiseOrder> MerchandiseOrderDeliveryPausedBies { get; set; } = new List<MerchandiseOrder>();
 
     public virtual ICollection<MerchandiseOrder> MerchandiseOrderUpdatedByNavigations { get; set; } = new List<MerchandiseOrder>();
     //public virtual ICollection<MerchandiseOrderLog> MerchandiseOrderLogCreatedByNavigations { get; set; } = new List<MerchandiseOrderLog>();
@@ -178,7 +193,7 @@ public partial class Employee
     public virtual ICollection<Unit> Units { get; set; } = new List<Unit>();
 
     public virtual ICollection<WarehouseTempStock> WarehouseTempStockCreatedByNavigations { get; set; } = new List<WarehouseTempStock>();
-    public virtual ICollection<WarehouseShelfStock> WarehouseShelfStockUpdatedByNavigations { get; set; } = new List<WarehouseShelfStock>();  
+    public virtual ICollection<WarehouseShelfStock> WarehouseShelfStockUpdatedByNavigations { get; set; } = new List<WarehouseShelfStock>();
     public virtual ICollection<WarehouseRequest> WarehouseRequestCreatedByNavigations { get; set; } = new List<WarehouseRequest>();
     public virtual ICollection<WarehouseRequest> WarehouseRequestUpdatedByNavigations { get; set; } = new List<WarehouseRequest>();
 
@@ -196,6 +211,7 @@ public partial class Employee
     /// <summary>
     /// ==================================== MRO Module ==================================== 
     /// </summary>
+    public virtual ICollection<MfgProductionOrder> MfgProductionOrderCheckedByNavigations { get; set; } = new List<MfgProductionOrder>();
     public virtual ICollection<MfgProductionOrder> MfgProductionOrderCreatedByNavigations { get; set; } = new List<MfgProductionOrder>();
     public virtual ICollection<MfgProductionOrder> MfgProductionOrderUpdatedByNavigations { get; set; } = new List<MfgProductionOrder>();
     public virtual ICollection<ManufacturingFormula> ManufacturingFormulaCreatedByNavigations { get; set; } = new List<ManufacturingFormula>();

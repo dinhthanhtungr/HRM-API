@@ -1,4 +1,5 @@
 ﻿using HRM.Domain.Entities.HrSchema;
+using HRM.Domain.Entities.HrSchema.Hrm_models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 

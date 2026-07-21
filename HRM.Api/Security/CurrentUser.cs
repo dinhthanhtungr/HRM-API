@@ -1,7 +1,7 @@
 using System.Security.Claims;
 using HRM.Application.Abstractions.Security;
 
-namespace HRM.Api.Security;
+namespace HRM.Domain.Entities.Security;
 
 public sealed class CurrentUser : ICurrentUser
 {
@@ -41,6 +41,7 @@ public sealed class CurrentUser : ICurrentUser
             : Principal.FindAll(ClaimTypes.Role)
                 .Select(x => x.Value)
                 .Concat(Principal.FindAll("role").Select(x => x.Value))
+                .Concat(ReadCsvClaims("roles"))
                 .Where(x => !string.IsNullOrWhiteSpace(x))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToArray();
@@ -65,6 +66,17 @@ public sealed class CurrentUser : ICurrentUser
         return Principal.Claims
             .FirstOrDefault(x => string.Equals(x.Type, claimType, StringComparison.OrdinalIgnoreCase))
             ?.Value;
+    }
+
+    private IEnumerable<string> ReadCsvClaims(string claimType)
+    {
+        if (Principal is null)
+        {
+            return Array.Empty<string>();
+        }
+
+        return Principal.FindAll(claimType)
+            .SelectMany(x => x.Value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
     }
 
     private Guid? TryReadGuid(string claimType)

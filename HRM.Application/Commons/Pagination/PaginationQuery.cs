@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 
 namespace HRM.Application.Commons.Pagination
@@ -20,8 +21,10 @@ namespace HRM.Application.Commons.Pagination
         public string? SortBy { get; init; }
         public string? SortDirection { get; init; }
 
+        [JsonIgnore]
         public int NormalizedPageNumber => PageNumber < 1 ? DefaultPageNumber : PageNumber;
 
+        [JsonIgnore]
         public int NormalizedPageSize
         {
             get
@@ -31,12 +34,15 @@ namespace HRM.Application.Commons.Pagination
             }
         }
 
+        [JsonIgnore]
         public string? NormalizedKeyword =>
             string.IsNullOrWhiteSpace(Keyword) ? null : Keyword.Trim();
 
+        [JsonIgnore]
         public string? NormalizedSortBy =>
             string.IsNullOrWhiteSpace(SortBy) ? null : SortBy.Trim();
 
+        [JsonIgnore]
         public bool SortDescending =>
             string.Equals(SortDirection, "desc", StringComparison.OrdinalIgnoreCase)
             || string.Equals(SortDirection, "descending", StringComparison.OrdinalIgnoreCase);

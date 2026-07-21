@@ -25,6 +25,44 @@ Quản lý hồ sơ nhân viên và các thông tin mở rộng: hồ sơ cá nh
 
 ## Endpoints
 
+GET /api/v1/groups/lookup
+
+GET /api/v1/employees/lookup
+
+Lookup employee dùng cho UI chọn nhân viên active. API hỗ trợ `keyword` hoặc `search` để tìm theo mã nhân viên
+và tên nhân viên, hỗ trợ `partId` để lọc theo bộ phận, `groupId` để chỉ lấy nhân viên là member active của group.
+
+Nếu FE đã có `groupId` và muốn contract rõ là lookup member trong group, gọi route tương đương:
+
+```http
+GET /api/v1/employees/groups/{groupId}/lookup?keyword=...
+```
+
+Route này chỉ trả nhân viên active có dòng `MemberInGroup.IsActive = true` trong group đó, vẫn dùng response
+`PagedResult<EmployeeLookupDto>` giống `/api/v1/employees/lookup`.
+
+Lookup group dùng chung cho UI chọn nhóm/phòng ban. API luôn lọc theo company của current user.
+Admin/President/Developer/CustomerViewAll thấy group trong company; leader thường chỉ thấy group active mà
+mình là leader (`MemberInGroup.IsAdmin = true`).
+
+Với màn CRM chuyển giao khách hàng, không dùng `groupType=Sale`. Dữ liệu group sale dùng mã `CMR`,
+`CMR.G1`, `CMR.G2`, ... nên FE gọi:
+
+```http
+GET /api/v1/groups/lookup?groupTypePrefix=CMR&keyword=...
+```
+
+`groupTypePrefix=CMR` trả group có `GroupType = CMR` hoặc bắt đầu bằng `CMR.`.
+
+Nếu FE đã chọn nhân viên và chỉ muốn lấy group mà nhân viên đó đang thuộc, truyền thêm `employeeId`:
+
+```http
+GET /api/v1/groups/lookup?groupTypePrefix=CMR&employeeId={employeeId}
+```
+
+API vẫn áp quyền người đang gọi: admin/director thấy group của nhân viên trong company; leader chỉ thấy phần
+giao giữa group mình quản lý và group mà nhân viên đó là member active.
+
 GET /api/v1/employees/{id}/detail
 
 

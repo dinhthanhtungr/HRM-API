@@ -4,12 +4,14 @@ using HRM.Domain.Identity;
 using HRM.Infrastructure.DatabaseContext.ApplicationDbs;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace HRM.Infrastructure.Authentication;
 
 public sealed class IdentityAuthenticationService(
     UserManager<ApplicationUser> userManager ,
-    ApplicationDbContext dbContext)
+    ApplicationDbContext dbContext,
+    ILogger<IdentityAuthenticationService> logger)
     : IIdentityAuthenticationService
 {
     public async Task<AuthenticatedUserDto?> ValidateUserAsync(
@@ -41,7 +43,7 @@ public sealed class IdentityAuthenticationService(
 
         await userManager.ResetAccessFailedCountAsync(user);
 
-        var roles = await userManager.GetRolesAsync(user);
+        var roles = await GetActiveRolesAsync(user, cancellationToken);
 
         Guid? companyId = null;
 
@@ -104,7 +106,7 @@ public sealed class IdentityAuthenticationService(
                 return null;
             }
 
-            var roles = await userManager.GetRolesAsync(user);
+            var roles = await GetActiveRolesAsync(user, cancellationToken);
 
             Guid? companyId = null;
 
@@ -123,7 +125,7 @@ public sealed class IdentityAuthenticationService(
                 Email = user.Email,
                 EmployeeId = user.EmployeeId,
                 CompanyId = companyId,
-                Roles = roles.ToArray()
+                Roles = roles
             };
         }
 
@@ -144,4 +146,36 @@ public sealed class IdentityAuthenticationService(
 
         await userManager.UpdateAsync(user);
     }
-}   
+
+    private async Task<string[]> GetActiveRolesAsync(
+        ApplicationUser user,
+        CancellationToken cancellationToken)
+    {
+        var roleAssignments = await (
+                from userRole in dbContext.UserRoles
+                join role in dbContext.Roles on userRole.RoleId equals role.Id
+                where userRole.UserId == user.Id
+                select new
+                {
+                    role.Name,
+                    userRole.IsActive
+                })
+            .ToListAsync(cancellationToken);
+
+        var activeRoles = roleAssignments
+            .Where(x => x.IsActive && !string.IsNullOrWhiteSpace(x.Name))
+            .Select(x => x.Name!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        logger.LogInformation(
+            "Active identity roles for user {UserId}/{UserName}: ActiveCount={ActiveRoleCount}, TotalAssignments={TotalRoleAssignments}, Roles={Roles}",
+            user.Id,
+            user.UserName,
+            activeRoles.Length,
+            roleAssignments.Count,
+            string.Join(", ", activeRoles));
+
+        return activeRoles;
+    }
+}

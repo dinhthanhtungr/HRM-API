@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace HRM.Domain.Enums.Deliveries
 {
-    enum DeliveryOrderStatus
+    public enum DeliveryOrderStatus
     {
         Pending,
         InProgress,

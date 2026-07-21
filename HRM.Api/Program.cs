@@ -1,5 +1,5 @@
 ﻿using HRM.Application;
-using HRM.Api.DependencyInjection;
+using HRM.Domain.Entities.DependencyInjection;
 using HRM.Infrastructure;
 using Microsoft.AspNetCore.HttpOverrides;
 
@@ -43,5 +43,6 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapHub<HRM.Api.Hubs.NotificationHub>("/hubs/notifications");
 
 app.Run();

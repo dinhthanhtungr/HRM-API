@@ -6,7 +6,7 @@ using HRM.Application.Features.Employees.Queries.GetEmployeePageQuery;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
 
-namespace HRM.Api.Controllers.Employees
+namespace HRM.Domain.Entities.Controllers.Employees
 {
     [ApiController]
     [Route("api/v1/employees")]
@@ -51,7 +51,7 @@ namespace HRM.Api.Controllers.Employees
             return Ok(result);
         }
 
-        [HttpGet("/lookup")]
+        [HttpGet("lookup")]
         public async Task<IActionResult> GetEmployeeLookupQuery(
             [FromQuery] GetEmployeeLookupQuery query, 
             CancellationToken cancellationToken)
@@ -61,6 +61,32 @@ namespace HRM.Api.Controllers.Employees
             if (result is null)
             {
                 return NotFound(new { message = "No employees found." });
+            }
+
+            return Ok(result);
+        }
+
+        [HttpGet("groups/{groupId:guid}/lookup")]
+        public async Task<IActionResult> GetEmployeeLookupByGroup(
+            [FromRoute] Guid groupId,
+            [FromQuery] GetEmployeeLookupQuery query,
+            CancellationToken cancellationToken)
+        {
+            var result = await _sender.Send(new GetEmployeeLookupQuery
+            {
+                GroupId = groupId,
+                PartId = query.PartId,
+                Search = query.Search,
+                Keyword = query.Keyword,
+                PageNumber = query.PageNumber,
+                PageSize = query.PageSize,
+                SortBy = query.SortBy,
+                SortDirection = query.SortDirection
+            }, cancellationToken);
+
+            if (result is null)
+            {
+                return NotFound(new { message = "No employees found in group." });
             }
 
             return Ok(result);

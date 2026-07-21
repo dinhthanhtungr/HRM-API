@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
-namespace HRM.Api.Controllers;
+namespace HRM.Domain.Entities.Controllers;
 
 [ApiController]
 [Route("api/v1/health")]

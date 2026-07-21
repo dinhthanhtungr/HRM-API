@@ -1,4 +1,4 @@
-using HRM.Application.Abstractions.Persistence.Hr;
+using HRM.Application.Abstractions.Persistence.HRM;
 
 namespace HRM.Infrastructure.DatabaseContext.ApplicationDbs;
 

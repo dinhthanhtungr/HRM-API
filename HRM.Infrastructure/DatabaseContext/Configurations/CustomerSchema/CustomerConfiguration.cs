@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using System;
 using System.Collections.Generic;
@@ -48,6 +48,19 @@ namespace HRM.Infrastructure.DatabaseContext.Configurations.CustomerSchema
                   .HasDefaultValue(LeadStatus.Open);              // default bằng enum (OK)
 
 
+            entity.Property(e => e.LastContactDate)
+                  .HasColumnName("LastContactDate");
+
+            entity.Property(e => e.NextFollowUpDate)
+                  .HasColumnName("NextFollowUpDate");
+
+            entity.Property(e => e.CurrentCrmStatus)
+                  .HasColumnName("CurrentCrmStatus")
+                  .HasColumnType("citext");
+
+            entity.Property(e => e.CurrentSaleId)
+                  .HasColumnName("CurrentSaleId");
+
             entity.HasIndex(e => e.CompanyId).HasDatabaseName("IX_Customers_CompanyId");
             entity.HasIndex(e => e.CreatedBy).HasDatabaseName("IX_Customers_CreatedBy");
             entity.HasIndex(e => e.UpdatedBy).HasDatabaseName("IX_Customers_UpdatedBy");
@@ -63,6 +76,12 @@ namespace HRM.Infrastructure.DatabaseContext.Configurations.CustomerSchema
             entity.HasIndex(e => new { e.CompanyId, e.IsActive, e.CreatedDate, e.CustomerId })
                   .IsDescending(false, false, true, true)
                   .HasDatabaseName("IX_Customers_Company_IsActive_CreatedDateDesc");
+
+            entity.HasIndex(e => new { e.CompanyId, e.CurrentSaleId, e.NextFollowUpDate })
+                  .HasDatabaseName("IX_Customers_Company_CurrentSale_NextFollowUp");
+
+            entity.HasIndex(e => new { e.CompanyId, e.CurrentCrmStatus, e.NextFollowUpDate })
+                  .HasDatabaseName("IX_Customers_Company_CrmStatus_NextFollowUp");
 
             // KHÔNG cascade với Company/User
             entity.HasOne(d => d.Company).WithMany(p => p.Customers)

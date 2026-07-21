@@ -103,7 +103,13 @@ namespace HRM.Domain.Security.Rules.Attachment
                 [AttachmentSlot.SampleRequest] = new SlotRule
                 {
                     AllowMultiple = true,
-                    AllowedMimePrefixes = new[] { "application/pdf", "image/" },
+                    AllowedMimePrefixes = new[]
+                    {
+                        "application/pdf",
+                        "image/",
+                        "application/msword",
+                        "application/vnd.openxmlformats-officedocument",
+                    },
                     MaxBytes = 20 * MB
                 },
 

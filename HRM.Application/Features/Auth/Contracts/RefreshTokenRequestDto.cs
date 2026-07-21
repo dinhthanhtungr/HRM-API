@@ -9,6 +9,8 @@ namespace HRM.Application.Features.Auth.Contracts
     public sealed class RefreshTokenRequestDto
     {
         public string RefreshToken { get; init; } = string.Empty;
+
+        public bool UseCookie { get; set; }
     }
 
 }

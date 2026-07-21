@@ -50,6 +50,10 @@ namespace HRM.Infrastructure.DatabaseContext.ApplicationDbs.Configurations.Notif
             entity.HasIndex(e => e.ProcessedAt)
                   .HasDatabaseName("ix_outbox_unprocessed")
                   .HasFilter("processed_at IS NULL");
+
+            entity.HasIndex(e => new { e.Type, e.ProcessedAt, e.CreatedAt })
+                  .HasDatabaseName("ix_outbox_type_unprocessed_created")
+                  .HasFilter("processed_at IS NULL");
         }
     }
 }

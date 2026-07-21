@@ -149,7 +149,7 @@ namespace HRM.Application.Features.Dispatch.DeliveryOrders.Commands.CreateDelive
                 RequiresUnloading = request.RequiresUnloading,
                 CompanyId = request.CompanyId,
                 CreatedBy = request.CreatedBy,
-                CreatedDate = DateTime.UtcNow,
+                CreatedDate = DateTime.Now,
                 IsActive = true,
                 HasPrinted = false
             };

@@ -19,21 +19,23 @@ public sealed class JwtTokenService(IConfiguration configuration) : ITokenServic
             && configuredMinutes > 0
             ? configuredMinutes
             : DefaultExpirationMinutes;
-        var expiresAtUtc = DateTime.Now.AddMinutes(expirationMinutes);
+        var expiresAt = DateTime.Now.AddMinutes(expirationMinutes);
+
+        var roles = user.Roles
+            .Where(role => !string.IsNullOrWhiteSpace(role))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
 
         var claims = new List<Claim>
         {
             new(JwtRegisteredClaimNames.Sub, user.UserId.ToString()),
-            new(ClaimTypes.NameIdentifier, user.UserId.ToString()),
-            new(ClaimTypes.Name, user.UserName ?? string.Empty),
             new(JwtRegisteredClaimNames.UniqueName, user.UserName ?? string.Empty),
             new(JwtRegisteredClaimNames.Email, user.Email ?? string.Empty),
-            new(ClaimTypes.Email, user.Email ?? string.Empty),
             new("employeeId", user.EmployeeId?.ToString() ?? string.Empty),
             new("companyId", user.CompanyId?.ToString() ?? string.Empty)
         };
 
-        claims.AddRange(user.Roles.Select(role => new Claim(ClaimTypes.Role, role)));
+        claims.AddRange(roles.Select(role => new Claim("roles", role)));
 
         var signingKey = new SymmetricSecurityKey(
             Encoding.UTF8.GetBytes(configuration["Jwt:Key"] ?? throw new InvalidOperationException("Jwt:Key is missing.")));
@@ -42,13 +44,13 @@ public sealed class JwtTokenService(IConfiguration configuration) : ITokenServic
             issuer: configuration["Jwt:Issuer"],
             audience: configuration["Jwt:Audience"],
             claims: claims,
-            expires: expiresAtUtc,
+            expires: expiresAt,
             signingCredentials: new SigningCredentials(signingKey, SecurityAlgorithms.HmacSha256));
 
         return new AccessTokenDto
         {
             Token = new JwtSecurityTokenHandler().WriteToken(token),
-            ExpiresAtUtc = expiresAtUtc
+            ExpiresAtUtc = expiresAt
         };
     }
     public string CreateRefreshToken()

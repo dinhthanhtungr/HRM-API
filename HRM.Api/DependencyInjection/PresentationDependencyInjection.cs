@@ -1,7 +1,9 @@
 using System.Text;
 using System.Reflection;
-using HRM.Api.Security;
+using HRM.Api.Backgrounds;
+using HRM.Domain.Entities.Security;
 using HRM.Application.Abstractions.Security;
+using HRM.Api.Security.Authorization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
@@ -9,7 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 
-namespace HRM.Api.DependencyInjection;
+namespace HRM.Domain.Entities.DependencyInjection;
 
 internal static class PresentationDependencyInjection
 {
@@ -22,6 +24,10 @@ internal static class PresentationDependencyInjection
         services.AddEndpointsApiExplorer();
         services.AddHttpContextAccessor();
         services.AddScoped<ICurrentUser, CurrentUser>();
+        services.AddSignalR();
+        services.AddHostedService<OutboxProcessor>();
+        services.AddHostedService<WebPushOutboxProcessor>();
+        services.AddHostedService<CustomerFollowUpTaskDueReminderWorker>();
 
         services.AddSwaggerGen(options =>
         {
@@ -70,13 +76,27 @@ internal static class PresentationDependencyInjection
 
                 if (origins is { Length: > 0 })
                 {
-                    policy.WithOrigins(origins).AllowAnyHeader().AllowAnyMethod();
+                    policy
+                        .WithOrigins(origins)
+                        .AllowAnyHeader()
+                        .AllowAnyMethod()
+                        .AllowCredentials();
                     return;
                 }
 
                 if (environment.IsDevelopment())
                 {
-                    policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
+                    policy
+                        .WithOrigins(
+                            "http://localhost:3000",
+                            "http://localhost:3001",
+                            "http://127.0.0.1:3000",
+                            "http://127.0.0.1:3001",
+                            "https://localhost:3000",
+                            "https://localhost:3001")
+                        .AllowAnyHeader()
+                        .AllowAnyMethod()
+                        .AllowCredentials();
                     return;
                 }
 
@@ -89,12 +109,16 @@ internal static class PresentationDependencyInjection
             .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             .AddJwtBearer(options =>
             {
+                options.MapInboundClaims = false;
+
                 options.TokenValidationParameters = new TokenValidationParameters
                 {
                     ValidateIssuer = true,
                     ValidateAudience = true,
                     ValidateLifetime = true,
                     ValidateIssuerSigningKey = true,
+                    NameClaimType = "unique_name",
+                    RoleClaimType = "roles",
                     ValidIssuer = configuration["Jwt:Issuer"],
                     ValidAudience = configuration["Jwt:Audience"],
                     IssuerSigningKey = new SymmetricSecurityKey(
@@ -106,6 +130,16 @@ internal static class PresentationDependencyInjection
                 {
                     OnMessageReceived = context =>
                     {
+                        if (context.HttpContext.Request.Path.StartsWithSegments("/hubs/notifications"))
+                        {
+                            var accessToken = context.Request.Query["access_token"];
+                            if (!string.IsNullOrWhiteSpace(accessToken))
+                            {
+                                context.Token = accessToken;
+                                return Task.CompletedTask;
+                            }
+                        }
+
                         if (string.IsNullOrWhiteSpace(context.Token) &&
                             context.Request.Cookies.TryGetValue("hrm_access_token", out var cookieToken))
                         {
@@ -117,7 +151,7 @@ internal static class PresentationDependencyInjection
                 };
             });
 
-        services.AddAuthorization();
+        services.AddApplicationAuthorizationPolicies();
 
         return services;
     }

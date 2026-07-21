@@ -1,10 +1,9 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using HRM.Domain.Entities.HrSchema;
-using HRM.Domain.Enums;
 
 namespace HRM.Domain.Entities.WarehouseSchema
 {
@@ -31,6 +30,7 @@ namespace HRM.Domain.Entities.WarehouseSchema
         // Audit
         public Guid CreatedBy { get; set; }
         public DateTime CreatedDate { get; set; } = DateTime.Now;
+        public string? UnitName { get; set; }
 
 
         public virtual Employee? CreatedByNavigation { get; set; }

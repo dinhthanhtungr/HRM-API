@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using System;
 using System.Collections.Generic;
@@ -60,8 +60,17 @@ namespace HRM.Infrastructure.DatabaseContext.Configurations.WarehouseSchema
             entity.Property(x => x.Note)
                   .HasColumnName("note");
 
+            entity.Property(x => x.IsApplied)
+                  .HasColumnName("isApplied")
+                  .HasDefaultValue(false);
+
+            entity.Property(x => x.UnitName)
+                  .HasDefaultValueSql("'Kg'::text");
+
             entity.Property(x => x.ExpiryDate)
-                  .HasColumnName("expirydate");
+                  .HasColumnName("expirydate")
+                  .HasDefaultValueSql("'-infinity'::timestamp without time zone")
+                  .IsRequired(false);
 
             entity.Property(x => x.VoucherType)
                   .HasColumnName("voucherType")
@@ -83,7 +92,7 @@ namespace HRM.Infrastructure.DatabaseContext.Configurations.WarehouseSchema
                   .HasConstraintName("FK_WarehouseVoucherDetails_Voucher");
 
             entity.HasOne(x => x.Slot)
-                  .WithMany()
+                  .WithMany(x => x.WarehouseVoucherDetails)
                   .HasForeignKey(x => x.SlotId)
                   .OnDelete(DeleteBehavior.Restrict)
                   .HasConstraintName("FK_WarehouseVoucherDetails_Slot");

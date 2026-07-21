@@ -34,8 +34,6 @@ public partial class Product
 
     public string? LabComment { get; set; }
 
-    //public string? ProductType { get; set; }
-
     public string? Procedure { get; set; }
 
     public double? RecycleRate { get; set; }

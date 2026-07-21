@@ -30,6 +30,6 @@ namespace HRM.Domain.Entities.DeliverySchema
         public DeliveryOrder DeliveryOrder { get; set; } = default!;
         public MerchandiseOrderDetail? MerchandiseOrderDetail { get; set; }
         public Product? Product { get; set; }
+        public ICollection<DeliveryOrderDetailLotConsumption> LotConsumptions { get; set; } = new List<DeliveryOrderDetailLotConsumption>();
     }
 }
-    
