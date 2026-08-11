@@ -1,5 +1,9 @@
 using HRM.Application.Features.CRM.CustomerCare.Commands.TransferCustomers;
 using HRM.Application.Features.CRM.CustomerCare.Dtos;
+using HRM.Application.Features.CRM.CustomerCare.Queries.GetCustomerTransferCustomers;
+using HRM.Application.Features.CRM.CustomerCare.Queries.GetCustomerTransferSourceEmployees;
+using HRM.Application.Features.CRM.CustomerCare.Queries.GetCustomerTransferTargetEmployees;
+using HRM.Application.Features.CRM.CustomerCare.Queries.GetCustomerTransferWorkspace;
 using HRM.Application.Features.CRM.CustomerCare.Queries.GetCustomerTransfers;
 using HRM.Application.Features.CRM.CustomerCare.Queries.ResolveTransferSource;
 using MediatR;
@@ -22,6 +26,66 @@ public sealed class CustomerTransfersController : ControllerBase
     public CustomerTransfersController(ISender sender)
     {
         _sender = sender;
+    }
+
+    /// <summary>
+    /// Tìm sale nguồn đang có khách/lead để chuyển giao.
+    /// </summary>
+    [HttpGet("source-employees")]
+    public async Task<IActionResult> GetTransferSourceEmployees(
+        [FromQuery] GetCustomerTransferSourceEmployeesQuery query,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(query, cancellationToken);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    /// <summary>
+    /// Tìm sale nhận hợp lệ cho chuyển giao.
+    /// </summary>
+    [HttpGet("target-employees")]
+    public async Task<IActionResult> GetTransferTargetEmployees(
+        [FromQuery] GetCustomerTransferTargetEmployeesQuery query,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(query, cancellationToken);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    /// <summary>
+    /// Tìm khách/lead nguồn để chuyển giao theo sale nguồn hoặc khách cụ thể.
+    /// </summary>
+    [HttpGet("customers")]
+    public async Task<IActionResult> GetTransferCustomers(
+        [FromQuery] GetCustomerTransferCustomersQuery query,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(query, cancellationToken);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    /// <summary>
+    /// Lấy dữ liệu cho màn chuyển giao mới: sale nguồn, khách theo nguồn, sale nhận và summary.
+    /// </summary>
+    [HttpGet("workspace")]
+    public async Task<IActionResult> GetTransferWorkspace(
+        [FromQuery] GetCustomerTransferWorkspaceQuery query,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(query, cancellationToken);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    /// <summary>
+    /// Chuyển giao theo flow mới: FE chỉ gửi nguồn/khách/đích, BE tự xử lý lead và khách đã sale.
+    /// </summary>
+    [HttpPost("execute")]
+    public async Task<IActionResult> ExecuteTransfer(
+        [FromBody] ExecuteCustomerTransferRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new ExecuteCustomerTransferCommand(request), cancellationToken);
+        return result.Success ? Ok(result) : BadRequest(result);
     }
 
     /// <summary>

@@ -99,8 +99,113 @@ public static class ApplicationRoleSets
         ];
     }
 
+    public static class Notifications
+    {
+        public static readonly string[] RecipientManagers =
+        [
+            ApplicationRoles.Developer,
+            ApplicationRoles.President
+        ];
+
+        public static readonly string[] ConversationParticipantManagers =
+        [
+            ApplicationRoles.Developer,
+            ApplicationRoles.President
+        ];
+    }
+
+    public static class CRM
+    {
+        public static readonly string[] CustomerEditors =
+        [
+            ApplicationRoles.Sales.SaleUser,
+            ApplicationRoles.Admin,
+            ApplicationRoles.Developer,
+            ApplicationRoles.President
+        ];
+    }
+
+    public static class EmployeeAdministration
+    {
+        public static readonly string[] EmployeeManagers =
+        [
+            ApplicationRoles.Admin,
+            ApplicationRoles.Developer,
+            ApplicationRoles.President
+        ];
+
+        public static readonly string[] GlobalCompanyManagers =
+        [
+            ApplicationRoles.Developer
+        ];
+
+        public static readonly string[] RoleTypeManagers =
+        [
+            ApplicationRoles.Admin,
+            ApplicationRoles.Developer
+        ];
+
+        public static readonly string[] PrivilegedRoles =
+        [
+            ApplicationRoles.Admin,
+            ApplicationRoles.Developer,
+            ApplicationRoles.President
+        ];
+    }
+
     public static class PLM
     {
+        public static readonly string[] ComplaintCreators =
+        [
+            ApplicationRoles.Sales.SaleUser,
+            ApplicationRoles.Admin,
+            ApplicationRoles.Developer,
+            ApplicationRoles.President
+        ];
+
+        public static readonly string[] ComplaintInvestigators =
+        [
+            ApplicationRoles.Quality.QCUser,
+            ApplicationRoles.Admin,
+            ApplicationRoles.Developer,
+            ApplicationRoles.President
+        ];
+
+        public static readonly string[] ComplaintApprovers =
+        [
+            ApplicationRoles.Leader,
+            ApplicationRoles.Admin,
+            ApplicationRoles.Developer,
+            ApplicationRoles.President
+        ];
+
+        public static readonly string[] ComplaintVerifiers =
+        [
+            ApplicationRoles.Quality.QCUser,
+            ApplicationRoles.Leader,
+            ApplicationRoles.Admin,
+            ApplicationRoles.Developer,
+            ApplicationRoles.President
+        ];
+
+        public static readonly string[] ComplaintPdfViewers =
+        [
+            ApplicationRoles.Sales.SaleUser,
+            ApplicationRoles.Quality.QCUser,
+            ApplicationRoles.Leader,
+            ApplicationRoles.Admin,
+            ApplicationRoles.Developer,
+            ApplicationRoles.President
+        ];
+
+        public static readonly string[] SaleOrderApprovers =
+        [
+            ApplicationRoles.Admin,
+            ApplicationRoles.Developer,
+            ApplicationRoles.President,
+            ApplicationRoles.Leader
+        ];
+
         public static readonly string[] FormulaMaterialViewers =
         [
             ApplicationRoles.Admin,
@@ -119,6 +224,30 @@ public static class ApplicationRoleSets
             ApplicationRoles.Sales.PriceView,
             ApplicationRoles.Accounting.ACUser,
             ApplicationRoles.SeePrice.SeePriceUser
+        ];
+
+        public static readonly string[] MaterialSupplierPriceEditors =
+        [
+            ApplicationRoles.Admin,
+            ApplicationRoles.Developer,
+            ApplicationRoles.President,
+            ApplicationRoles.Purchasing.Purchaser
+        ];
+
+        public static readonly string[] FormulaManagers =
+        [
+            ApplicationRoles.Admin,
+            ApplicationRoles.Developer,
+            ApplicationRoles.President,
+            ApplicationRoles.Lab.LabUser,
+            ApplicationRoles.Lab.LabAdmin
+        ];
+
+        public static readonly string[] FormulaPricingEditors =
+        [
+            ApplicationRoles.Admin,
+            ApplicationRoles.Developer,
+            ApplicationRoles.President
         ];
 
         public static readonly string[] ProductTechnicalEditors =

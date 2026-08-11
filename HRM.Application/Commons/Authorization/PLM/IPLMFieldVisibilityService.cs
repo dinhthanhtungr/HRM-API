@@ -19,5 +19,11 @@ namespace HRM.Application.Commons.Authorization.PLM
         /// </summary>
         /// <returns></returns>
         bool CanViewFormulaMaterials();
+
+        /// <summary>
+        /// Kiểm tra có được xem field kỹ thuật nội bộ của product trong PLM hay không.
+        /// </summary>
+        /// <returns></returns>
+        bool CanViewProductTechnicalInfo();
     }
 }

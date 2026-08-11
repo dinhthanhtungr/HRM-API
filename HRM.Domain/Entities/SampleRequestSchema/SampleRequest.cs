@@ -85,6 +85,9 @@ public partial class SampleRequest
 
     public virtual Product Product { get; set; } = null!;
 
+    public virtual ICollection<QuotationLine> QuotationLines { get; set; } = [];
+    public virtual ICollection<SampleRequestSampleTrial> SampleRequestSampleTrials { get; set; } = [];
+
     public virtual Employee? UpdatedByNavigation { get; set; }
     public virtual Employee? SendByNavigation { get; set; }
 }

@@ -2,6 +2,7 @@ using HRM.Application.Abstractions.Persistence.Reports;
 using HRM.Application.Commons.Reporting;
 using HRM.Application.Features.Reports.ExecutivePnL.Queries.GetExecutivePnLReport.Services;
 using HRM.Application.Features.Reports.ExecutivePnL.Shared.Models;
+using HRM.Application.Features.Reports.ExecutivePnL.Shared.Services.Costing;
 using Microsoft.EntityFrameworkCore;
 
 namespace HRM.Application.Features.Reports.ExecutivePnL.Queries.GetExecutivePnLDashboardTrend;
@@ -37,7 +38,10 @@ internal sealed class ExecutivePnLTrendReader
                 Year = g.Key.Year,
                 Month = g.Key.Month,
                 Revenue = g.Sum(x => x.RevenueAmountVnd),
-                CostOfSales = g.Sum(x => x.BaseCostAmount)
+                CostOfSales = g.Sum(x => ExecutivePnLDeliveryCostRules.ResolveAmount(
+                    x.HasNormalizedLots,
+                    x.LotCostSnapshotAmount,
+                    x.BaseCostAmount))
             })
             .OrderBy(x => x.Year)
             .ThenBy(x => x.Month)

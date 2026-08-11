@@ -11,6 +11,7 @@ internal static class SampleRequestSummaryRelatedDataLoader
     public static async Task PopulateAsync(
         IPLMReadDbContext dbContext,
         IReadOnlyList<SampleRequestSummaryProjection> rows,
+        bool canViewFormulaPrices,
         CancellationToken cancellationToken)
     {
         var productIds = GetProductIds(rows);
@@ -23,10 +24,12 @@ internal static class SampleRequestSummaryRelatedDataLoader
         var selectedFormulasByProductId = await GetSelectedFormulasByProductIdAsync(
             dbContext,
             productIds,
+            canViewFormulaPrices,
             cancellationToken);
         var productionOrdersByProductId = await GetProductionOrdersByProductIdAsync(
             dbContext,
             productIds,
+            canViewFormulaPrices,
             cancellationToken);
 
         foreach (var row in rows)
@@ -105,6 +108,7 @@ internal static class SampleRequestSummaryRelatedDataLoader
     private static async Task<Dictionary<Guid, List<SampleRequestProductionOrderDto>>> GetProductionOrdersByProductIdAsync(
         IPLMReadDbContext dbContext,
         IReadOnlyList<Guid> productIds,
+        bool canViewFormulaPrices,
         CancellationToken cancellationToken)
     {
         if (productIds.Count == 0)
@@ -131,10 +135,12 @@ internal static class SampleRequestSummaryRelatedDataLoader
         var selectedFormulasByProductionOrderId = await GetSelectedManufacturingFormulasByProductionOrderIdAsync(
             dbContext,
             productionOrders.Select(x => x.MfgProductionOrderId).ToList(),
+            canViewFormulaPrices,
             cancellationToken);
         var standardFormulasByProductId = await GetStandardManufacturingFormulasByProductIdAsync(
             dbContext,
             productionOrders.Select(x => x.ProductId).Distinct().ToList(),
+            canViewFormulaPrices,
             cancellationToken);
 
         return productionOrders
@@ -178,6 +184,7 @@ internal static class SampleRequestSummaryRelatedDataLoader
         GetSelectedManufacturingFormulasByProductionOrderIdAsync(
             IPLMReadDbContext dbContext,
             IReadOnlyList<Guid> productionOrderIds,
+            bool canViewFormulaPrices,
             CancellationToken cancellationToken)
     {
         if (productionOrderIds.Count == 0)
@@ -205,7 +212,7 @@ internal static class SampleRequestSummaryRelatedDataLoader
                         ? x.ManufacturingFormula.Name
                         : string.Empty,
                     TotalPrice = x.ManufacturingFormula != null
-                        ? x.ManufacturingFormula.TotalPrice
+                        ? canViewFormulaPrices ? x.ManufacturingFormula.TotalPrice : null
                         : null,
                     MaterialCount = x.ManufacturingFormula != null
                         ? x.ManufacturingFormula.ManufacturingFormulaMaterials.Count(m => m.IsActive)
@@ -224,6 +231,7 @@ internal static class SampleRequestSummaryRelatedDataLoader
         GetStandardManufacturingFormulasByProductIdAsync(
             IPLMReadDbContext dbContext,
             IReadOnlyList<Guid> productIds,
+            bool canViewFormulaPrices,
             CancellationToken cancellationToken)
     {
         if (productIds.Count == 0)
@@ -251,7 +259,7 @@ internal static class SampleRequestSummaryRelatedDataLoader
                         ? x.ManufacturingFormula.Name
                         : string.Empty,
                     TotalPrice = x.ManufacturingFormula != null
-                        ? x.ManufacturingFormula.TotalPrice
+                        ? canViewFormulaPrices ? x.ManufacturingFormula.TotalPrice : null
                         : null,
                     MaterialCount = x.ManufacturingFormula != null
                         ? x.ManufacturingFormula.ManufacturingFormulaMaterials.Count(m => m.IsActive)
@@ -285,7 +293,7 @@ internal static class SampleRequestSummaryRelatedDataLoader
                     ? x.ManufacturingFormula.Name
                     : string.Empty,
                 TotalPrice = x.ManufacturingFormula != null
-                    ? x.ManufacturingFormula.TotalPrice
+                    ? canViewFormulaPrices ? x.ManufacturingFormula.TotalPrice : null
                     : null,
                 MaterialCount = x.ManufacturingFormula != null
                     ? x.ManufacturingFormula.ManufacturingFormulaMaterials.Count(m => m.IsActive)
@@ -325,6 +333,7 @@ internal static class SampleRequestSummaryRelatedDataLoader
     private static async Task<Dictionary<Guid, SampleRequestSelectedFormulaDto>> GetSelectedFormulasByProductIdAsync(
         IPLMReadDbContext dbContext,
         IReadOnlyList<Guid> productIds,
+        bool canViewFormulaPrices,
         CancellationToken cancellationToken)
     {
         if (productIds.Count == 0)
@@ -347,7 +356,7 @@ internal static class SampleRequestSummaryRelatedDataLoader
                     ExternalId = x.ExternalId,
                     Name = x.Name,
                     Note = x.Note,
-                    TotalPrice = x.TotalPrice,
+                    TotalPrice = canViewFormulaPrices ? x.TotalPrice : null,
                     MaterialCount = x.FormulaMaterials.Count(m => m.IsActive),
                     MaterialsUrl = $"/api/v1/plm/formulas/{x.FormulaId}/materials",
                     CreatedDate = x.CreatedDate ?? DateTime.MinValue,

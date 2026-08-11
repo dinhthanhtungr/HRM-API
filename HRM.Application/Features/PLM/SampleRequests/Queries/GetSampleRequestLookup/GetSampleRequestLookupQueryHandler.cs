@@ -33,6 +33,16 @@ internal sealed class GetSampleRequestLookupQueryHandler
             query = query.Where(x => x.CompanyId == companyId);
         }
 
+        if (request.CustomerId is { } customerId && customerId != Guid.Empty)
+        {
+            query = query.Where(x => x.CustomerId == customerId);
+        }
+
+        if (request.SampleRequestId is { } sampleRequestId && sampleRequestId != Guid.Empty)
+        {
+            query = query.Where(x => x.SampleRequestId == sampleRequestId);
+        }
+
         if (!string.IsNullOrWhiteSpace(request.NormalizedStatus))
         {
             var status = request.NormalizedStatus;
@@ -65,7 +75,7 @@ internal sealed class GetSampleRequestLookupQueryHandler
                 CustomerExternalId = x.Customer.ExternalId,
                 CustomerName = x.Customer.CustomerName,
                 ProductId = x.ProductId,
-                ProductCode = x.Product.ColourCode ?? x.Product.Code,
+                ProductCode = x.Product.ColourCode,
                 ProductName = x.Product.Name,
                 CreatedDate = x.CreatedDate,
                 Label = x.ExternalId + " - " + x.Customer.CustomerName + " - " + (x.Product.Name ?? x.Product.ColourCode ?? x.Product.Code ?? string.Empty)

@@ -1,5 +1,7 @@
 ﻿using HRM.Application.Abstractions.Persistence.Employees;
+using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Pagination;
+using HRM.Application.Features.Employees.Administration;
 using HRM.Application.Features.Employees.Dtos;
 using HRM.Domain.Enums.Employees;
 using MediatR;
@@ -16,10 +18,14 @@ namespace HRM.Application.Features.Employees.Queries.GetEmployeeDropdown
         : IRequestHandler<GetEmployeeLookupQuery, PagedResult<EmployeeLookupDto>>
     {
         private readonly IEmployeeReadDbContext _dbContext;
+        private readonly ICurrentUser _currentUser;
 
-        public GetEmployeeLookupQueryHandler(IEmployeeReadDbContext dbContext)
+        public GetEmployeeLookupQueryHandler(
+            IEmployeeReadDbContext dbContext,
+            ICurrentUser currentUser)
         {
             _dbContext = dbContext;
+            _currentUser = currentUser;
         }
 
         public async Task<PagedResult<EmployeeLookupDto>> Handle(
@@ -29,6 +35,13 @@ namespace HRM.Application.Features.Employees.Queries.GetEmployeeDropdown
             var query = _dbContext.Employees
                 .Where(x => x.IsActive && x.Status == EmployeeStatus.Active.ToString())
                 .AsQueryable();
+
+            if (!EmployeeAdministrationRules.CanManageAllCompanies(_currentUser))
+            {
+                var companyId = _currentUser.CompanyId
+                    ?? throw new UnauthorizedAccessException("Current user has no CompanyId.");
+                query = query.Where(employee => employee.CompanyId == companyId);
+            }
 
             var keyword = request.NormalizedKeyword ?? NormalizeSearch(request.Search);
 

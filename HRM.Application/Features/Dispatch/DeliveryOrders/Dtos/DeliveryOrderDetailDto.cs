@@ -25,6 +25,12 @@ public sealed class DeliveryOrderDetailDto
     public bool IsActive { get; init; }
     public Guid CreatedBy { get; init; }
     public DateTime? CreatedDate { get; init; }
+    public Guid? UpdatedBy { get; init; }
+    public DateTime? UpdatedDate { get; init; }
+    public bool CanEdit { get; init; }
+    public int LineCount { get; init; }
+    public decimal TotalQuantity { get; init; }
+    public int TotalNumOfBags { get; init; }
 
     public IReadOnlyList<DeliveryOrderLineDto> Lines { get; init; } = Array.Empty<DeliveryOrderLineDto>();
     public IReadOnlyList<DelivererDto> Deliverers { get; init; } = Array.Empty<DelivererDto>();

@@ -33,6 +33,7 @@ internal sealed class GetInternalConversationsQueryHandler
             .AsNoTracking()
             .Where(x =>
                 x.EmployeeId == employeeId &&
+                x.IsActive &&
                 x.IsArchived == request.Archived &&
                 x.Conversation.CompanyId == companyId &&
                 x.Conversation.IsActive);
@@ -50,7 +51,7 @@ internal sealed class GetInternalConversationsQueryHandler
                 message.ReadStates.Any(state => state.EmployeeId == employeeId && !state.IsRead)));
         }
 
-        if (request.NormalizedKeyword is { } keyword)
+        if (request.NormalizedSearchKeyword is { } keyword)
         {
             query = query.Where(x =>
                 x.Conversation.Subject.Contains(keyword) ||
@@ -98,6 +99,14 @@ internal sealed class GetInternalConversationsQueryHandler
                 IsMuted = x.IsMuted
             })
             .ToListAsync(cancellationToken);
+
+        foreach (var item in items)
+        {
+            item.DisplayTitle = InternalConversationPresentation.BuildDisplayTitle(
+                item.RelatedType,
+                item.Subject,
+                item.RelatedExternalId);
+        }
 
         return new PagedResult<InternalConversationListItemDto>(items, totalCount, pageNumber, pageSize);
     }

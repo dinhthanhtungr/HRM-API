@@ -58,8 +58,10 @@ public partial class Formula
     public virtual Product Product { get; set; } = null!;
 
     public virtual ICollection<SampleRequest> SampleRequests { get; set; } = new List<SampleRequest>();
+    public virtual ICollection<SampleRequestSampleTrial> SampleRequestSampleTrials { get; set; } = new List<SampleRequestSampleTrial>();
     //public virtual ICollection<FormulaStatusLog> StatusLogs { get; set; } = new List<FormulaStatusLog>();
     public virtual ICollection<MerchandiseOrderDetail> MerchandiseOrderDetails { get; set; } = new List<MerchandiseOrderDetail>();
+    public virtual ICollection<ComplaintReportLine> ComplaintReportLines { get; set; } = new List<ComplaintReportLine>();
     public virtual ICollection<ManufacturingVUFormula> ManufacturingVUFormulas { get; set; } = new List<ManufacturingVUFormula>();
     public virtual Employee? UpdatedByNavigation { get; set; }
     public virtual Employee? CheckByNavigation { get; set; }

@@ -1,14 +1,18 @@
 using System.Text.Json.Serialization;
 using HRM.Application.Commons.Models;
 using HRM.Application.Features.InternalMail.Dtos;
+using HRM.Application.Features.PLM.SampleRequests.DataChangeRequests;
+using HRM.Application.Features.PLM.SampleRequests.DirectPatchNotifications;
+using HRM.Application.Features.PLM.SampleRequests.FormulaChangeRequests;
+using HRM.Domain.Enums.Notifications;
 using HRM.Domain.Enums.SampleRequests;
 using MediatR;
 
 namespace HRM.Application.Features.PLM.SampleRequests.Commands.SendSampleRequestMessage;
 
 /// <summary>
-/// Yeu cau gui mot loi nhan/thong bao nghiep vu trong ngu canh SampleRequest.
-/// FE chi gui loai yeu cau, noi dung va nguoi nhan them; BE tu quyet dinh nguoi nhan mac dinh.
+/// Gửi một message nghiệp vụ trong thread InternalMail gắn với SampleRequest.
+/// FE chỉ gửi loại message, nội dung và người nhận thêm; BE tự resolve required recipients trước khi gửi thật.
 /// </summary>
 public sealed class SendSampleRequestMessageCommand : IRequest<OperationResult<SendInternalMessageResultDto>>
 {
@@ -26,4 +30,22 @@ public sealed class SendSampleRequestMessageCommand : IRequest<OperationResult<S
     public bool IsUrgent { get; set; }
 
     public DateTime? ReminderAt { get; set; }
+
+    [JsonIgnore]
+    internal SampleRequestDataChangePayload? DataChangeRequest { get; set; }
+
+    [JsonIgnore]
+    internal SampleRequestFormulaChangePayload? FormulaChangeRequest { get; set; }
+
+    [JsonIgnore]
+    internal SampleRequestDirectPatchNotificationPayload? DirectPatchNotification { get; set; }
+
+    [JsonIgnore]
+    internal TopicNotifications? TopicOverride { get; set; }
+
+    [JsonIgnore]
+    internal string? TitleOverride { get; set; }
+
+    [JsonIgnore]
+    internal IReadOnlyCollection<Guid>? NotificationRecipientEmployeeIdsOverride { get; set; }
 }

@@ -1,4 +1,5 @@
 using HRM.Domain.Entities.DeliverySchema;
+using HRM.Domain.Entities.ManufacturingSchema;
 using HRM.Domain.Entities.OrderSchema;
 using HRM.Domain.Entities.WarehouseSchema;
 using Microsoft.EntityFrameworkCore;
@@ -16,4 +17,6 @@ public interface IDispatchReadDbContext
     DbSet<MerchandiseOrder> MerchandiseOrders { get; }
     DbSet<MerchandiseOrderDetail> MerchandiseOrderDetails { get; }
     DbSet<WarehouseShelfStock> WarehouseShelfStocks { get; }
+    DbSet<WarehouseTempStock> WarehouseTempStocks { get; }
+    DbSet<ManufacturingFormula> ManufacturingFormulas { get; }
 }

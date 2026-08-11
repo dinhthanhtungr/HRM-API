@@ -34,6 +34,7 @@ internal sealed class GetInternalConversationDetailQueryHandler
             .Where(x =>
                 x.InternalConversationId == request.ConversationId &&
                 x.EmployeeId == employeeId.Value &&
+                x.IsActive &&
                 x.Conversation.CompanyId == companyId.Value &&
                 x.Conversation.IsActive)
             .Select(x => new InternalConversationDetailDto
@@ -52,6 +53,7 @@ internal sealed class GetInternalConversationDetailQueryHandler
                 IsMuted = x.IsMuted,
                 LastReadAt = x.LastReadAt,
                 Participants = x.Conversation.Participants
+                    .Where(participant => participant.IsActive)
                     .OrderBy(participant => participant.JoinedAt)
                     .Select(participant => new InternalConversationParticipantDto
                     {

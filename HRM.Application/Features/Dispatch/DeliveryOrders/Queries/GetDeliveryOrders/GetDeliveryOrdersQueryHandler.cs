@@ -1,4 +1,5 @@
 using HRM.Application.Abstractions.Persistence.Dispatch;
+using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Pagination;
 using HRM.Application.Features.Dispatch.DeliveryOrders.Dtos;
 using HRM.Domain.Entities.DeliverySchema;
@@ -11,24 +12,37 @@ internal sealed class GetDeliveryOrdersQueryHandler
     : IRequestHandler<GetDeliveryOrdersQuery, PagedResult<DeliveryOrderListItemDto>>
 {
     private readonly IDispatchReadDbContext _dbContext;
+    private readonly ICurrentUser _currentUser;
 
-    public GetDeliveryOrdersQueryHandler(IDispatchReadDbContext dbContext)
+    public GetDeliveryOrdersQueryHandler(
+        IDispatchReadDbContext dbContext,
+        ICurrentUser currentUser)
     {
         _dbContext = dbContext;
+        _currentUser = currentUser;
     }
 
     public async Task<PagedResult<DeliveryOrderListItemDto>> Handle(
         GetDeliveryOrdersQuery request,
         CancellationToken cancellationToken)
     {
+        if (!DeliveryOrderAccessRules.CanRead(_currentUser) ||
+            _currentUser.CompanyId is not { } currentCompanyId ||
+            currentCompanyId == Guid.Empty)
+        {
+            return new PagedResult<DeliveryOrderListItemDto>(
+                [],
+                0,
+                request.NormalizedPageNumber,
+                request.NormalizedPageSize);
+        }
+
+        var canViewCost = DeliveryOrderCostVisibilityRules.CanViewCost(_currentUser);
+        var canManage = DeliveryOrderAccessRules.CanManage(_currentUser);
+
         var query = _dbContext.DeliveryOrders
             .AsNoTracking()
-            .AsQueryable();
-
-        if (request.CompanyId is { } companyId && companyId != Guid.Empty)
-        {
-            query = query.Where(x => x.CompanyId == companyId);
-        }
+            .Where(x => x.CompanyId == currentCompanyId);
 
         if (request.CustomerId is { } customerId && customerId != Guid.Empty)
         {
@@ -47,8 +61,43 @@ internal sealed class GetDeliveryOrdersQueryHandler
 
         if (!string.IsNullOrWhiteSpace(request.Status))
         {
-            var status = request.Status.Trim();
-            query = query.Where(x => x.Status == status);
+            if (!DeliveryOrderLifecycleRules.TryNormalizeStatus(request.Status, out var status))
+            {
+                return EmptyResult(request);
+            }
+
+            var normalizedStatus = status.ToString();
+            query = status == HRM.Domain.Enums.Deliveries.DeliveryOrderStatus.Canceled
+                ? query.Where(x => x.Status == normalizedStatus || x.Status == "Cancelled")
+                : query.Where(x => x.Status == normalizedStatus);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.PONo))
+        {
+            var poNo = request.PONo.Trim();
+            query = query.Where(x =>
+                x.DeliveryOrderPOs.Any(po =>
+                    po.IsActive &&
+                    (po.MerchandiseOrder.PONo ?? string.Empty).Contains(poNo)) ||
+                x.Details.Any(detail =>
+                    detail.IsActive &&
+                    (detail.PONo ?? string.Empty).Contains(poNo)));
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.LotNo))
+        {
+            var lotNo = request.LotNo.Trim();
+            query = query.Where(x => x.Details.Any(detail =>
+                detail.IsActive &&
+                (detail.LotConsumptions.Any(lot =>
+                     lot.IsActive && lot.LotNo.Contains(lotNo)) ||
+                 (!detail.LotConsumptions.Any(lot => lot.IsActive) &&
+                  (detail.LotNoList ?? string.Empty).Contains(lotNo)))));
+        }
+
+        if (request.From.HasValue && request.To.HasValue && request.From > request.To)
+        {
+            return EmptyResult(request);
         }
 
         if (request.From.HasValue)
@@ -77,7 +126,10 @@ internal sealed class GetDeliveryOrdersQueryHandler
                     (d.ProductExternalIdSnapShot ?? string.Empty).Contains(keyword) ||
                     (d.ProductNameSnapShot ?? string.Empty).Contains(keyword) ||
                     (d.PONo ?? string.Empty).Contains(keyword) ||
-                    (d.LotNoList ?? string.Empty).Contains(keyword)));
+                    d.LotConsumptions.Any(lot =>
+                        lot.IsActive && lot.LotNo.Contains(keyword)) ||
+                    (!d.LotConsumptions.Any(lot => lot.IsActive) &&
+                     (d.LotNoList ?? string.Empty).Contains(keyword))));
         }
 
         query = ApplySorting(query, request);
@@ -87,7 +139,7 @@ internal sealed class GetDeliveryOrdersQueryHandler
             {
                 Id = x.Id,
                 ExternalId = x.ExternalId,
-                Status = x.Status,
+                Status = x.Status == "Cancelled" ? "Canceled" : x.Status,
                 CustomerId = x.CustomerId,
                 CustomerExternalIdSnapshot = x.Customer.ExternalId,
                 CustomerName = x.Customer.CustomerName,
@@ -104,8 +156,17 @@ internal sealed class GetDeliveryOrdersQueryHandler
                         .Distinct()),
                 PaymentDeadline = x.PaymentDeadline,
                 CreatedDate = x.CreatedDate,
+                UpdatedDate = x.UpdatedDate,
                 Note = x.Note,
                 IsActive = x.IsActive,
+                CanEdit = canManage && x.IsActive && x.Status == "Pending",
+                LineCount = x.Details.Count(d => d.IsActive && !d.IsAttach),
+                TotalQuantity = x.Details
+                    .Where(d => d.IsActive && !d.IsAttach)
+                    .Sum(d => d.Quantity),
+                TotalNumOfBags = x.Details
+                    .Where(d => d.IsActive && !d.IsAttach)
+                    .Sum(d => d.NumOfBags),
                 Lines = x.Details
                     .Where(d => d.IsActive)
                     .OrderBy(d => d.PONo)
@@ -117,7 +178,23 @@ internal sealed class GetDeliveryOrdersQueryHandler
                         ProductId = d.ProductId,
                         ProductExternalId = d.ProductExternalIdSnapShot,
                         ProductName = d.ProductNameSnapShot,
-                        LotNoList = d.LotNoList,
+                        LotNoList = d.LotConsumptions.Any(lot => lot.IsActive)
+                            ? string.Join(", ", d.LotConsumptions
+                                .Where(lot => lot.IsActive)
+                                .OrderBy(lot => lot.LotNo)
+                                .Select(lot => lot.LotNo))
+                            : d.LotNoList,
+                        Lots = d.LotConsumptions
+                            .Where(lot => lot.IsActive)
+                            .OrderBy(lot => lot.LotNo)
+                            .Select(lot => new DeliveryOrderLotDto
+                            {
+                                LotNo = lot.LotNo,
+                                Quantity = lot.Quantity,
+                                UnitCostSnapshot = canViewCost ? lot.UnitCostSnapshot : null,
+                                TotalCostSnapshot = canViewCost ? lot.TotalCostSnapshot : null
+                            })
+                            .ToList(),
                         PONo = d.PONo,
                         Quantity = d.Quantity,
                         NumOfBags = d.NumOfBags,
@@ -131,6 +208,14 @@ internal sealed class GetDeliveryOrdersQueryHandler
             request.NormalizedPageSize,
             cancellationToken);
     }
+
+    private static PagedResult<DeliveryOrderListItemDto> EmptyResult(
+        GetDeliveryOrdersQuery request)
+        => new(
+            [],
+            0,
+            request.NormalizedPageNumber,
+            request.NormalizedPageSize);
 
     // ======================================== Helper Methods ========================================
     private static IQueryable<DeliveryOrder> ApplySorting(

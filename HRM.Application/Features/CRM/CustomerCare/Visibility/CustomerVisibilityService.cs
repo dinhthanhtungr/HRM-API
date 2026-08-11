@@ -51,6 +51,9 @@ namespace HRM.Application.Features.CRM.CustomerCare.Visibility
                 _currentUser.IsInRole(ApplicationRoles.Sales.CustomerViewAll) ||
                 _currentUser.IsInRole(ApplicationRoles.Lab.LabUser);
 
+            var canViewInternalCustomer =
+                _currentUser.IsInRole(ApplicationRoles.Lab.LabUser);
+
             var leaderGroupIds = await _dbContext.MemberInGroups
                 .AsNoTracking()
                 .Where(x =>
@@ -85,18 +88,36 @@ namespace HRM.Application.Features.CRM.CustomerCare.Visibility
                 CompanyId: companyId,
                 EmployeeId: employeeId,
                 HasFullCustomerView: hasFullView,
+                CanViewInternalCustomer: canViewInternalCustomer,
                 LeaderGroupIds: leaderGroupIds.ToHashSet(),
                 EmployeeIdsInScope: employeeIdsInScope,
                 Now: _dateTimeProvider.Now);
         }
 
+        /// <summary>
+        /// Phân quyền khách hàng.
+        /// </summary>
+        /// <param name="query"></param>
+        /// <param name="scope"></param>
+        /// <returns></returns>
         public IQueryable<Customer> ApplyCustomerVisibility(
             IQueryable<Customer> query,
             ViewerScope scope)
+            => ApplyCustomerVisibilityCore(query, scope, includeInactive: false);
+
+        public IQueryable<Customer> ApplyCustomerVisibilityIncludingInactive(
+            IQueryable<Customer> query,
+            ViewerScope scope)
+            => ApplyCustomerVisibilityCore(query, scope, includeInactive: true);
+
+        private IQueryable<Customer> ApplyCustomerVisibilityCore(
+            IQueryable<Customer> query,
+            ViewerScope scope,
+            bool includeInactive)
         {
             query = query.Where(x =>
                 x.CompanyId == scope.CompanyId &&
-                x.IsActive == true);
+                (includeInactive || x.IsActive == true));
 
             if (scope.HasFullCustomerView)
             {
@@ -176,7 +197,10 @@ namespace HRM.Application.Features.CRM.CustomerCare.Visibility
             var visibleCustomerIds = ApplyCustomerVisibility(customerQuery, scope)
                 .Select(x => x.CustomerId);
 
-            return query.Where(x => visibleCustomerIds.Contains(x.CustomerId));
+            return query.Where(x =>
+                visibleCustomerIds.Contains(x.CustomerId) ||
+                (scope.CanViewInternalCustomer &&
+                    x.CustomerId == CustomerVisibilityConstants.RestrictedCustomerId));
         }
 
         public IQueryable<MerchandiseOrder> ApplyMerchandiseOrderVisibility(

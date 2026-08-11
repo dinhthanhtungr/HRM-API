@@ -1,5 +1,7 @@
 ﻿using HRM.Application.Abstractions.Persistence.Employees;
+using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Pagination;
+using HRM.Application.Features.Employees.Administration;
 using HRM.Application.Features.Employees.Dtos;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -15,10 +17,14 @@ namespace HRM.Application.Features.Employees.Queries.GetEmployeePageQuery
         : IRequestHandler<GetEmployeePageQuery, PagedResult<EmployeePageDto>>
     {
         private readonly IEmployeeReadDbContext _dbContext;
+        private readonly ICurrentUser _currentUser;
 
-        public GetEmployeePageQueryHandler(IEmployeeReadDbContext dbContext)
+        public GetEmployeePageQueryHandler(
+            IEmployeeReadDbContext dbContext,
+            ICurrentUser currentUser)
         {
             _dbContext = dbContext;
+            _currentUser = currentUser;
         }
 
         public async Task<PagedResult<EmployeePageDto>> Handle(
@@ -28,6 +34,13 @@ namespace HRM.Application.Features.Employees.Queries.GetEmployeePageQuery
             var query = _dbContext.Employees
                 .AsNoTracking()
                 .AsQueryable();
+
+            if (!EmployeeAdministrationRules.CanManageAllCompanies(_currentUser))
+            {
+                var companyId = _currentUser.CompanyId
+                    ?? throw new UnauthorizedAccessException("Current user has no CompanyId.");
+                query = query.Where(employee => employee.CompanyId == companyId);
+            }
 
             if (!string.IsNullOrWhiteSpace(request.Keyword))
             {

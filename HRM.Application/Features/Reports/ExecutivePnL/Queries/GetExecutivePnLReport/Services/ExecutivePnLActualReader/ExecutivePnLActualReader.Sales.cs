@@ -74,11 +74,21 @@ internal sealed partial class ExecutivePnLActualReader
             {
                 g.DeliveryOrder.CreatedDate,
                 g.Quantity,
-                g.LotNoList
+                LotNoList = g.LotConsumptions.Any(lot => lot.IsActive)
+                    ? string.Join(", ", g.LotConsumptions
+                        .Where(lot => lot.IsActive)
+                        .OrderBy(lot => lot.LotNo)
+                        .Select(lot => lot.LotNo))
+                    : g.LotNoList,
+                HasNormalizedLots = g.LotConsumptions.Any(lot => lot.IsActive),
+                LotCostSnapshotAmount = g.LotConsumptions
+                    .Where(lot => lot.IsActive)
+                    .Sum(lot => (decimal?)lot.TotalCostSnapshot) ?? 0m
             })
             .ToListAsync(cancellationToken);
 
         var lotCodes = deliveryRows
+            .Where(x => !x.HasNormalizedLots)
             .SelectMany(x => ExecutivePnLFormulaCostResolver.SplitLotCodes(x.LotNoList))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
@@ -111,11 +121,12 @@ internal sealed partial class ExecutivePnLActualReader
                 continue;
             }
 
-            // Formula cost = Sum(ManufacturingFormulaMaterials.TotalPrice).
-            // Cost of sales = delivery quantity * formula unit cost.
-            var formulaUnitCost = ExecutivePnLFormulaCostResolver.ResolveUnitCost(row.LotNoList, formulaCostMap);
-            actual.CostOfSales += row.Quantity *
-                ExecutivePnLAmountResolvers.ResolveManufacturingUnitCost(formulaUnitCost);
+            // Chỉ dữ liệu lịch sử chưa backfill mới fallback về cost công thức theo LotNoList.
+            var legacyUnitCost = ExecutivePnLFormulaCostResolver.ResolveUnitCost(row.LotNoList, formulaCostMap);
+            actual.CostOfSales += ExecutivePnLDeliveryCostRules.ResolveAmount(
+                row.HasNormalizedLots,
+                row.LotCostSnapshotAmount,
+                row.Quantity * ExecutivePnLAmountResolvers.ResolveManufacturingUnitCost(legacyUnitCost));
         }
     }
 }

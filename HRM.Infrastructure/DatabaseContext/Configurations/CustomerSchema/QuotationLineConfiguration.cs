@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using HRM.Domain.Entities.CustomerSchema;
+using HRM.Domain.Enums.CustomerEnum;
 
 namespace HRM.Infrastructure.DatabaseContext.Configurations.CustomerSchema
 {
@@ -35,13 +36,23 @@ namespace HRM.Infrastructure.DatabaseContext.Configurations.CustomerSchema
             entity.Property(x => x.Quantity).HasPrecision(22, 6);
             entity.Property(x => x.UnitPrice).HasPrecision(22, 6);
             entity.Property(x => x.DiscountPercent).HasPrecision(8, 4);
-            entity.Property(x => x.TaxPercent).HasPrecision(8, 4);
             entity.Property(x => x.LineTotal).HasPrecision(22, 6);
+
+            entity.Property(x => x.SampleRequestId)
+                .HasColumnName("SampleRequestId");
+
+            entity.Property(x => x.PriceMode)
+                .HasColumnName("PriceMode")
+                .HasConversion<int>()
+                .HasDefaultValue(QuotationLinePriceMode.Fixed);
 
             entity.Property(x => x.Note).HasColumnType("text");
 
             entity.HasIndex(x => new { x.QuotationId, x.SortOrder })
                 .HasDatabaseName("IX_QuotationLines_Quotation_SortOrder");
+
+            entity.HasIndex(x => x.SampleRequestId)
+                .HasDatabaseName("IX_QuotationLines_SampleRequestId");
 
             entity.HasOne(x => x.Quotation)
                 .WithMany(x => x.Lines)
@@ -52,6 +63,18 @@ namespace HRM.Infrastructure.DatabaseContext.Configurations.CustomerSchema
                 .WithMany(x => x.QuotationLines)
                 .HasForeignKey(x => x.ProductId)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(x => x.SampleRequest)
+                .WithMany(x => x.QuotationLines)
+                .HasForeignKey(x => x.SampleRequestId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("FK_QuotationLines_SampleRequest");
+
+            entity.HasMany(x => x.PriceTiers)
+                .WithOne(x => x.QuotationLine)
+                .HasForeignKey(x => x.QuotationLineId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_QuotationLinePriceTiers_QuotationLine");
         }
     }
 }

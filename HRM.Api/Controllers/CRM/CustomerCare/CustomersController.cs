@@ -1,4 +1,6 @@
 using HRM.Application.Features.CRM.CustomerCare.Commands.CreateCustomer;
+using HRM.Application.Features.CRM.CustomerCare.Commands.DeactivateCustomer;
+using HRM.Application.Features.CRM.CustomerCare.Commands.ReactivateCustomer;
 using HRM.Application.Features.CRM.CustomerCare.Commands.UpdateCustomer;
 using HRM.Application.Features.CRM.CustomerCare.Dtos;
 using HRM.Application.Features.CRM.CustomerCare.Queries.GetCustomers;
@@ -69,6 +71,30 @@ public sealed class CustomersController : ControllerBase
     {
         var result = await _sender.Send(new UpdateCustomerCommand(customerId, request), cancellationToken);
         return result.Success ? NoContent() : BadRequest(result);
+    }
+
+    /// <summary>
+    /// Ngừng hoạt động khách hàng trong visibility scope hiện tại.
+    /// </summary>
+    [HttpPost("{customerId:guid}/deactivate")]
+    public async Task<IActionResult> DeactivateCustomer(
+        Guid customerId,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new DeactivateCustomerCommand(customerId), cancellationToken);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    /// <summary>
+    /// Khôi phục khách hàng đã ngừng hoạt động trong visibility scope hiện tại.
+    /// </summary>
+    [HttpPost("{customerId:guid}/reactivate")]
+    public async Task<IActionResult> ReactivateCustomer(
+        Guid customerId,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new ReactivateCustomerCommand(customerId), cancellationToken);
+        return result.Success ? Ok(result) : BadRequest(result);
     }
 
     [HttpGet("lookup")]

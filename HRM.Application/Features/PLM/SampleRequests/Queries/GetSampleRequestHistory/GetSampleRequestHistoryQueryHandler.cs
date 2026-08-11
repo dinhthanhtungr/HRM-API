@@ -1,6 +1,7 @@
 using System.Text.Json;
 using HRM.Application.Abstractions.Persistence.PLM;
-using HRM.Application.Abstractions.Security;
+using HRM.Application.Commons.Authorization.PLM;
+using HRM.Application.Features.CRM.CustomerCare.Visibility;
 using HRM.Application.Features.PLM.SampleRequests.Dtos.History;
 using HRM.Domain.Entities.AuditSchema;
 using MediatR;
@@ -15,15 +16,47 @@ internal sealed class GetSampleRequestHistoryQueryHandler
     private const string SampleRequestsTable = "SampleRequests";
     private const string ProductsTable = "Products";
 
+    private static readonly IReadOnlySet<string> RestrictedProductTechnicalFields = new HashSet<string>(
+        StringComparer.OrdinalIgnoreCase)
+    {
+        "Requirement",
+        "Additive",
+        "UsageRate",
+        "DeltaE",
+        "ExpiryType",
+        "StorageCondition",
+        "LabComment",
+        "Procedure",
+        "RecycleRate",
+        "TaicalRate",
+        "Application",
+        "ProductUsage",
+        "PolymerMatchedIn",
+        "EndUser",
+        "FoodSafety",
+        "RohsStandard",
+        "ReachStandard",
+        "MaxTemp",
+        "WeatherResistance",
+        "LightCondition",
+        "VisualTest",
+        "ReturnSample",
+        "IsRecycle",
+        "OtherComment"
+    };
+
     private readonly IPLMReadDbContext _dbContext;
-    private readonly ICurrentUser _currentUser;
+    private readonly IPLMFieldVisibilityService _fieldVisibility;
+    private readonly ICustomerVisibilityService _visibilityService;
 
     public GetSampleRequestHistoryQueryHandler(
         IPLMReadDbContext dbContext,
-        ICurrentUser currentUser)
+        IPLMFieldVisibilityService fieldVisibility,
+        ICustomerVisibilityService visibilityService)
     {
         _dbContext = dbContext;
-        _currentUser = currentUser;
+        _fieldVisibility = fieldVisibility;
+        _visibilityService = visibilityService;
     }
 
     public async Task<IReadOnlyList<SampleRequestHistoryDto>?> Handle(
@@ -35,17 +68,15 @@ internal sealed class GetSampleRequestHistoryQueryHandler
             return null;
         }
 
-        if (_currentUser.CompanyId is not Guid companyId || companyId == Guid.Empty)
-        {
-            return null;
-        }
+        var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+        var sampleRequestQuery = _visibilityService.ApplySampleRequestVisibility(
+            _dbContext.SampleRequests
+                .Where(x => x.SampleRequestId == request.SampleRequestId)
+                .AsNoTracking(),
+            _dbContext.Customers.AsNoTracking(),
+            scope);
 
-        var sampleRequest = await _dbContext.SampleRequests
-            .AsNoTracking()
-            .Where(x =>
-                x.SampleRequestId == request.SampleRequestId &&
-                x.CompanyId == companyId &&
-                x.IsActive)
+        var sampleRequest = await sampleRequestQuery
             .Select(x => new
             {
                 x.SampleRequestId,
@@ -88,9 +119,15 @@ internal sealed class GetSampleRequestHistoryQueryHandler
                 })
                 .ToDictionaryAsync(x => x.EmployeeId, x => x.FullName, cancellationToken);
 
+        var canViewProductTechnicalInfo = _fieldVisibility.CanViewProductTechnicalInfo();
+
         return auditLogs
             .GroupBy(x => x.CorrelationId ?? x.AuditLogId)
-            .Select(x => ToDto(request.SampleRequestId, x, employeeNamesById))
+            .Select(x => ToDto(
+                request.SampleRequestId,
+                x,
+                employeeNamesById,
+                canViewProductTechnicalInfo))
             .Where(x => x.Details.Count > 0)
             .OrderByDescending(x => x.ChangedAt)
             .ThenByDescending(x => x.AuditLogId)
@@ -100,7 +137,8 @@ internal sealed class GetSampleRequestHistoryQueryHandler
     private static SampleRequestHistoryDto ToDto(
         Guid sampleRequestId,
         IGrouping<Guid, AuditLog> auditLogGroup,
-        IReadOnlyDictionary<Guid, string> employeeNamesById)
+        IReadOnlyDictionary<Guid, string> employeeNamesById,
+        bool canViewProductTechnicalInfo)
     {
         var auditLogs = auditLogGroup
             .OrderByDescending(x => x.TableName == SampleRequestsTable)
@@ -108,18 +146,19 @@ internal sealed class GetSampleRequestHistoryQueryHandler
             .ThenByDescending(x => x.AuditLogId)
             .ToList();
         var firstLog = auditLogs[0];
-        var sources = auditLogs
-            .Select(x => x.TableName)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderByDescending(x => string.Equals(x, SampleRequestsTable, StringComparison.OrdinalIgnoreCase))
-            .ThenBy(x => x, StringComparer.OrdinalIgnoreCase)
-            .ToList();
         var actionTypes = auditLogs
             .Select(x => x.ActionType.ToString())
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
         var details = auditLogs
             .SelectMany(BuildDetails)
+            .Where(detail => CanViewDetail(detail, canViewProductTechnicalInfo))
+            .ToList();
+        var sources = details
+            .Select(x => x.Source)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderByDescending(x => string.Equals(x, SampleRequestsTable, StringComparison.OrdinalIgnoreCase))
+            .ThenBy(x => x, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
         return new SampleRequestHistoryDto
@@ -141,6 +180,19 @@ internal sealed class GetSampleRequestHistoryQueryHandler
             CorrelationId = firstLog.CorrelationId,
             Details = details
         };
+    }
+
+    private static bool CanViewDetail(
+        SampleRequestHistoryDetailDto detail,
+        bool canViewProductTechnicalInfo)
+    {
+        if (canViewProductTechnicalInfo)
+        {
+            return true;
+        }
+
+        return !string.Equals(detail.Source, ProductsTable, StringComparison.OrdinalIgnoreCase) ||
+            !RestrictedProductTechnicalFields.Contains(detail.FieldName);
     }
 
     private static IReadOnlyList<SampleRequestHistoryDetailDto> BuildDetails(AuditLog auditLog)

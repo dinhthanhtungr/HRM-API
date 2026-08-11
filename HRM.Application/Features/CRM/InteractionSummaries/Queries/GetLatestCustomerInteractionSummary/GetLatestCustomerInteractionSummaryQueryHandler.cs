@@ -29,12 +29,29 @@ internal sealed class GetLatestCustomerInteractionSummaryQueryHandler
         GetLatestCustomerInteractionSummaryQuery request,
         CancellationToken cancellationToken)
     {
+        if (request.SummaryScope.HasValue && !Enum.IsDefined(request.SummaryScope.Value))
+            return OperationResult<CustomerInteractionAiSummaryDto>.Fail("Summary scope is invalid.");
+        if (request.Year is < 2000 or > 2100)
+            return OperationResult<CustomerInteractionAiSummaryDto>.Fail("Summary year is invalid.");
+        if (request.Month is < 1 or > 12)
+            return OperationResult<CustomerInteractionAiSummaryDto>.Fail("Summary month is invalid.");
+
         var scope = await _accessService.BuildScopeAsync(cancellationToken);
         if (!await _accessService.VisibleCustomers(scope).AnyAsync(x => x.CustomerId == request.CustomerId, cancellationToken))
             return OperationResult<CustomerInteractionAiSummaryDto>.Fail("Customer was not found.");
-        var dto = await _dbContext.CustomerInteractionAiSummaries.AsNoTracking()
-            .Where(x => x.CustomerId == request.CustomerId && x.CompanyId == scope.CompanyId && x.IsActive)
-            .OrderByDescending(x => x.PeriodTo).ThenByDescending(x => x.CreatedDate)
+
+        var summaries = _dbContext.CustomerInteractionAiSummaries.AsNoTracking()
+            .Where(x => x.CustomerId == request.CustomerId && x.CompanyId == scope.CompanyId && x.IsActive);
+        if (request.SummaryScope.HasValue)
+            summaries = summaries.Where(x => x.SummaryScope == request.SummaryScope.Value);
+        if (request.Year.HasValue)
+            summaries = summaries.Where(x => x.Year == request.Year.Value);
+        if (request.Month.HasValue)
+            summaries = summaries.Where(x => x.Month == request.Month.Value);
+
+        var dto = await summaries
+            .OrderByDescending(x => x.AiGeneratedDate ?? x.UpdatedDate ?? x.CreatedDate)
+            .ThenByDescending(x => x.CreatedDate)
             .Select(x => new CustomerInteractionAiSummaryDto
             {
                 Id = x.Id, CustomerId = x.CustomerId, CustomerCode = x.Customer.ExternalId,

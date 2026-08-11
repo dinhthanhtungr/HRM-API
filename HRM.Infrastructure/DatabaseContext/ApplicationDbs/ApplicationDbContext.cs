@@ -30,11 +30,6 @@ using HRM.Infrastructure.Helpers.IdCounter;
 
 namespace HRM.Infrastructure.DatabaseContext.ApplicationDbs
 {
-    // Scaffold-DbContext "Server=DESKTOP-BL5L5IM;Database=VietausDb;Trusted_Connection=True;TrustServerCertificate=True;" Microsoft.EntityFrameworkCore.SqlServer -OutputDir Models -context ApplicationDbContext
-
-
-    //Scaffold-DbContext "Host=Localhost;Port=5432;Database=VietausDb;Username=postgres;Password=qazwsxedc123@" 
-
     public partial class ApplicationDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, Guid,
         IdentityUserClaim<Guid>, ApplicationUserRole, IdentityUserLogin<Guid>,
         IdentityRoleClaim<Guid>, IdentityUserToken<Guid>>
@@ -54,6 +49,8 @@ namespace HRM.Infrastructure.DatabaseContext.ApplicationDbs
         public virtual DbSet<Formula> Formulas { get; set; }
 
         public virtual DbSet<FormulaMaterial> FormulaMaterials { get; set; }
+        public virtual DbSet<ManufacturingVUFormula> ManufacturingVUFormulas { get; set; }
+        public virtual DbSet<FormulaMaterialSnapshot> FormulaMaterialSnapshots { get; set; }
 
         public virtual DbSet<ColorChipRecord> ColorChipRecords { get; set; }
         public virtual DbSet<ColorChipRecordDevelopmentFormula> ColorChipRecordDevelopmentFormulas { get; set; }
@@ -61,6 +58,7 @@ namespace HRM.Infrastructure.DatabaseContext.ApplicationDbs
 
         public virtual DbSet<Product> Products { get; set; }
         public virtual DbSet<SampleRequest> SampleRequests { get; set; }
+        public virtual DbSet<SampleRequestSampleTrial> SampleRequestSampleTrials { get; set; }
 
 
 

@@ -46,6 +46,18 @@ Response:
 - `Product`: map tên thành phẩm khi `StockType` là `FinishedGood` hoặc `DefectiveFinishedGood`.
 - `WarehouseTempStock`: tính lượng đang giữ chỗ/reserved.
 
+## Truy vết tồn thành phẩm theo khách hàng
+
+SaleOrder cung cấp endpoint đọc `GET /api/v1/plm/sale-orders/customer-product-stock`. Endpoint này vẫn dùng nguồn tồn kho chuẩn của Warehouse nhưng bổ sung phép quy thuộc lịch sử:
+
+1. `WarehouseShelfStock.Code` phải khớp `Product.ColourCode` và `StockType=FinishedGood`.
+2. Mã lot ưu tiên `WarehouseShelfStock.LotNo`, fallback sang `LotKey` khi `LotNo` trống.
+3. Mã lot khớp `ManufacturingFormula.ExternalId`.
+4. `ProductionSelectVersion` nối công thức sản xuất thực tế với `MfgProductionOrder`.
+5. MFG cung cấp `CustomerId` và `ProductId` để xác định tồn có thể quy thuộc cho khách hàng đang chọn.
+
+Nếu cùng một Manufacturing Formula từng được dùng cho MFG của nhiều khách hàng, tồn của lot đó được đánh dấu mơ hồ và không được cộng vào tổng tồn của riêng khách nào. Rule này tránh tính trùng tồn kho; không có thao tác ghi dữ liệu và không cần migration.
+
 ## Phân quyền và bảo mật
 
 Controller có `[Authorize]`. Handler bắt buộc lọc dữ liệu theo `CurrentUser.CompanyId` cho tồn kho, reserved, material, product và sample request để tránh lộ tồn kho giữa các công ty. Stock nằm trên kệ inactive bị loại trước bước group, nên không thể xuất hiện trong tổng tồn, detail hoặc available.

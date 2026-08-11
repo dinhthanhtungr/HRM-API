@@ -2,6 +2,7 @@ using System.Text.Json;
 using HRM.Application.Abstractions.Persistence.Notifications;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Abstractions.Notifications;
+using HRM.Application.Commons.Authorization;
 using HRM.Application.Features.Notifications.Dtos;
 using HRM.Domain.Entities.Notifications;
 using HRM.Domain.Enums.Notifications;
@@ -33,6 +34,12 @@ internal sealed class NotificationService : INotificationService
         PublishNotificationRequest request,
         CancellationToken cancellationToken = default)
     {
+        if (!NotificationTopicCatalog.IsConfigured(request.Topic))
+        {
+            throw new InvalidOperationException(
+                $"Notification topic {(int)request.Topic} is not configured in NotificationTopicCatalog.");
+        }
+
         var companyId = request.CompanyId
             ?? _currentUser.CompanyId
             ?? throw new InvalidOperationException("CompanyId is required to publish notification.");
@@ -55,7 +62,7 @@ internal sealed class NotificationService : INotificationService
             Title = request.Title,
             Message = request.Message,
             Link = request.Link,
-            PayloadJson = request.PayloadJson,
+            PayloadJson = NotificationPayloadComposer.Compose(request),
             CompanyId = companyId,
             CreatedBy = createdBy,
             CreatedByNameSnapshot = request.CreatedByNameSnapshot ?? _currentUser.UserName,
@@ -157,7 +164,8 @@ internal sealed class NotificationService : INotificationService
         int take = 20,
         Guid? afterId = null,
         DateTime? afterCreated = null,
-        NotificationCategory category = NotificationCategory.All,
+        string? categoryCode = null,
+        string? eventGroupCode = null,
         CancellationToken cancellationToken = default)
     {
         var companyId = GetCurrentCompanyId();
@@ -192,14 +200,17 @@ internal sealed class NotificationService : INotificationService
                 CreatedByNameSnapshot = x.CreatedByNameSnapshot
             });
 
-        if (category == NotificationCategory.LegacyData)
+        var normalizedCategory = NotificationTopicCatalog.NormalizeCode(categoryCode);
+        var normalizedEventGroup = NotificationTopicCatalog.NormalizeCode(eventGroupCode);
+
+        if (normalizedCategory == NotificationCategoryCodes.LegacyData)
         {
             query = query.Where(x =>
                 x.CreatedDate < NotificationTopicCategoryRules.CurrentDataStartDate);
         }
-        else if (category != NotificationCategory.All)
+        else if (normalizedCategory is not null || normalizedEventGroup is not null)
         {
-            var topics = NotificationTopicCategoryRules.GetTopics(category);
+            var topics = NotificationTopicCatalog.GetTopics(normalizedCategory, normalizedEventGroup);
             query = query.Where(x =>
                 x.CreatedDate >= NotificationTopicCategoryRules.CurrentDataStartDate &&
                 topics.Contains(x.Topic));
@@ -221,7 +232,7 @@ internal sealed class NotificationService : INotificationService
 
         foreach (var item in items)
         {
-            item.Category = NotificationTopicCategoryRules.GetCategory(item.Topic, item.CreatedDate);
+            NotificationPayloadPresentation.Apply(item);
         }
 
         return items;
@@ -268,27 +279,41 @@ internal sealed class NotificationService : INotificationService
             })
             .ToListAsync(cancellationToken);
 
-        var categoryCounts = Enum.GetValues<NotificationCategory>()
-            .Where(category => category != NotificationCategory.All)
-            .ToDictionary(category => category, _ => 0);
+        var categoryCounts = NotificationTopicCatalog.GetCategoryCodes()
+            .ToDictionary(categoryCode => categoryCode, _ => 0, StringComparer.Ordinal);
+        var eventGroupCounts = new Dictionary<(string CategoryCode, string EventGroupCode), int>();
 
         foreach (var topicCount in topicCounts)
         {
-            var category = topicCount.IsLegacyData
-                ? NotificationCategory.LegacyData
-                : NotificationTopicCategoryRules.GetCategory(topicCount.Topic);
-            categoryCounts[category] += topicCount.UnreadCount;
+            var definition = NotificationTopicCatalog.GetDefinition(topicCount.Topic);
+            var categoryCode = topicCount.IsLegacyData
+                ? NotificationCategoryCodes.LegacyData
+                : definition.CategoryCode;
+
+            categoryCounts[categoryCode] += topicCount.UnreadCount;
+
+            if (!topicCount.IsLegacyData)
+            {
+                var key = (categoryCode, definition.EventGroupCode);
+                eventGroupCounts[key] = eventGroupCounts.GetValueOrDefault(key) + topicCount.UnreadCount;
+            }
         }
 
         return new NotificationUnreadSummaryDto
         {
             TotalUnread = topicCounts.Sum(x => x.UnreadCount),
-            Categories = categoryCounts
-                .OrderBy(x => x.Key)
-                .Select(x => new NotificationCategoryUnreadCountDto
+            Categories = NotificationTopicCatalog.GetCategoryCodes()
+                .Select(categoryCode => new NotificationCategoryUnreadCountDto
                 {
-                    Category = x.Key,
-                    UnreadCount = x.Value
+                    CategoryCode = categoryCode,
+                    UnreadCount = categoryCounts[categoryCode],
+                    EventGroups = NotificationTopicCatalog.GetEventGroupCodes(categoryCode)
+                        .Select(eventGroupCode => new NotificationEventGroupUnreadCountDto
+                        {
+                            EventGroupCode = eventGroupCode,
+                            UnreadCount = eventGroupCounts.GetValueOrDefault((categoryCode, eventGroupCode))
+                        })
+                        .ToArray()
                 })
                 .ToList()
         };
@@ -331,7 +356,7 @@ internal sealed class NotificationService : INotificationService
 
         if (result is not null)
         {
-            result.Category = NotificationTopicCategoryRules.GetCategory(result.Topic, result.CreatedDate);
+            NotificationPayloadPresentation.Apply(result);
         }
 
         return result;
@@ -409,7 +434,9 @@ internal sealed class NotificationService : INotificationService
             return false;
         }
 
-        // V1 chi cho nguoi tao notification thu hoi khoi inbox nguoi nhan nham.
+        var canManageRecipients = _currentUser.IsInAnyRole(ApplicationRoleSets.Notifications.RecipientManagers);
+
+        // Người tạo hoặc nhóm quản lý recipient notification được thu hồi khỏi inbox người nhận nhầm.
         // IsArchived giu lai audit thay vi xoa cung NotificationUserState.
         var updated = await _dbContext.NotificationUserStates
             .Where(x =>
@@ -417,7 +444,7 @@ internal sealed class NotificationService : INotificationService
                 x.UserId == employeeId &&
                 !x.IsArchived &&
                 x.Notification.CompanyId == companyId &&
-                x.Notification.CreatedBy == actorId)
+                (x.Notification.CreatedBy == actorId || canManageRecipients))
             .ExecuteUpdateAsync(setters => setters
                 .SetProperty(x => x.IsArchived, true),
                 cancellationToken);

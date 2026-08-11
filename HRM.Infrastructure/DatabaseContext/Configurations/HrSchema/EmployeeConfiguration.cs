@@ -19,6 +19,9 @@ namespace HRM.Infrastructure.DatabaseContext.Configurations.HrSchema
             entity.HasIndex(e => e.PartId).HasDatabaseName("IX_Employees_PartID");
             entity.HasIndex(e => e.CompanyId).HasDatabaseName("IX_Employees_CompanyId");
 
+            // MfgProductionOrder has no CheckedBy FK. Without this, EF creates a shadow EmployeeId column.
+            entity.Ignore(e => e.MfgProductionOrderCheckedByNavigations);
+
             entity.Property(e => e.EmployeeId)
                   .HasColumnName("EmployeeID")
                   .ValueGeneratedOnAdd()

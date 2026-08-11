@@ -38,6 +38,7 @@ namespace HRM.Infrastructure.DatabaseContext.Configurations.CustomerSchema
             entity.Property(x => x.ExchangeRate).HasPrecision(22, 6);
             entity.Property(x => x.SubTotal).HasPrecision(22, 6);
             entity.Property(x => x.DiscountAmount).HasPrecision(22, 6);
+            entity.Property(x => x.TaxPercent).HasPrecision(8, 4);
             entity.Property(x => x.TaxAmount).HasPrecision(22, 6);
             entity.Property(x => x.TotalAmount).HasPrecision(22, 6);
 

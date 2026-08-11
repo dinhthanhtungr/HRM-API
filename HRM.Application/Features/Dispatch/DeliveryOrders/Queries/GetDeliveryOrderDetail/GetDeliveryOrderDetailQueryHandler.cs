@@ -1,4 +1,5 @@
 using HRM.Application.Abstractions.Persistence.Dispatch;
+using HRM.Application.Abstractions.Security;
 using HRM.Application.Features.Dispatch.Deliverers.Dtos;
 using HRM.Application.Features.Dispatch.DeliveryOrders.Dtos;
 using MediatR;
@@ -10,29 +11,39 @@ internal sealed class GetDeliveryOrderDetailQueryHandler
     : IRequestHandler<GetDeliveryOrderDetailQuery, DeliveryOrderDetailDto?>
 {
     private readonly IDispatchReadDbContext _dbContext;
+    private readonly ICurrentUser _currentUser;
 
-    public GetDeliveryOrderDetailQueryHandler(IDispatchReadDbContext dbContext)
+    public GetDeliveryOrderDetailQueryHandler(
+        IDispatchReadDbContext dbContext,
+        ICurrentUser currentUser)
     {
         _dbContext = dbContext;
+        _currentUser = currentUser;
     }
 
     public async Task<DeliveryOrderDetailDto?> Handle(
         GetDeliveryOrderDetailQuery request,
         CancellationToken cancellationToken)
     {
-        if (request.Id == Guid.Empty)
+        if (request.Id == Guid.Empty ||
+            !DeliveryOrderAccessRules.CanRead(_currentUser) ||
+            _currentUser.CompanyId is not { } companyId ||
+            companyId == Guid.Empty)
         {
             return null;
         }
 
+        var canViewCost = DeliveryOrderCostVisibilityRules.CanViewCost(_currentUser);
+        var canManage = DeliveryOrderAccessRules.CanManage(_currentUser);
+
         return await _dbContext.DeliveryOrders
             .AsNoTracking()
-            .Where(x => x.Id == request.Id)
+            .Where(x => x.Id == request.Id && x.CompanyId == companyId)
             .Select(x => new DeliveryOrderDetailDto
             {
                 Id = x.Id,
                 ExternalId = x.ExternalId,
-                Status = x.Status,
+                Status = x.Status == "Cancelled" ? "Canceled" : x.Status,
                 CompanyId = x.CompanyId,
                 CustomerId = x.CustomerId,
                 CustomerExternalIdSnapshot = x.CustomerExternalIdSnapShot,
@@ -55,6 +66,16 @@ internal sealed class GetDeliveryOrderDetailQueryHandler
                 IsActive = x.IsActive,
                 CreatedBy = x.CreatedBy,
                 CreatedDate = x.CreatedDate,
+                UpdatedBy = x.UpdatedBy,
+                UpdatedDate = x.UpdatedDate,
+                CanEdit = canManage && x.IsActive && x.Status == "Pending",
+                LineCount = x.Details.Count(d => d.IsActive && !d.IsAttach),
+                TotalQuantity = x.Details
+                    .Where(d => d.IsActive && !d.IsAttach)
+                    .Sum(d => d.Quantity),
+                TotalNumOfBags = x.Details
+                    .Where(d => d.IsActive && !d.IsAttach)
+                    .Sum(d => d.NumOfBags),
                 Lines = x.Details
                     .Where(d => d.IsActive)
                     .OrderBy(d => d.PONo)
@@ -66,7 +87,23 @@ internal sealed class GetDeliveryOrderDetailQueryHandler
                         ProductId = d.ProductId,
                         ProductExternalId = d.ProductExternalIdSnapShot,
                         ProductName = d.ProductNameSnapShot,
-                        LotNoList = d.LotNoList,
+                        LotNoList = d.LotConsumptions.Any(lot => lot.IsActive)
+                            ? string.Join(", ", d.LotConsumptions
+                                .Where(lot => lot.IsActive)
+                                .OrderBy(lot => lot.LotNo)
+                                .Select(lot => lot.LotNo))
+                            : d.LotNoList,
+                        Lots = d.LotConsumptions
+                            .Where(lot => lot.IsActive)
+                            .OrderBy(lot => lot.LotNo)
+                            .Select(lot => new DeliveryOrderLotDto
+                            {
+                                LotNo = lot.LotNo,
+                                Quantity = lot.Quantity,
+                                UnitCostSnapshot = canViewCost ? lot.UnitCostSnapshot : null,
+                                TotalCostSnapshot = canViewCost ? lot.TotalCostSnapshot : null
+                            })
+                            .ToList(),
                         PONo = d.PONo,
                         Quantity = d.Quantity,
                         NumOfBags = d.NumOfBags,

@@ -4,6 +4,10 @@ using MediatR;
 
 namespace HRM.Application.Features.PLM.SampleRequests.Commands.CreateSampleRequest;
 
+/// <summary>
+/// Tạo yêu cầu phối mẫu mới từ dữ liệu Sale nhập, đồng thời tạo message đầu tiên gửi đến người nhận bắt buộc của SampleRequest.
+/// FE có thể gửi `InitialLabMessage` và `InitialLabRecipientEmployeeIds`; BE vẫn tự thêm required recipients theo rule SampleRequest.
+/// </summary>
 public sealed class CreateSampleRequestCommand : IRequest<OperationResult<Guid>>
 {
     public Guid CustomerId { get; set; }
@@ -31,6 +35,8 @@ public sealed class CreateSampleRequestCommand : IRequest<OperationResult<Guid>>
     public string? OtherComment { get; set; }
     public string? SaleComment { get; set; }
     public string? AdditionalComment { get; set; }
+    public string? InitialLabMessage { get; set; }
+    public IReadOnlyList<Guid> InitialLabRecipientEmployeeIds { get; set; } = Array.Empty<Guid>();
 
     public string? ColourCode { get; set; }
     public string? ProductName { get; set; }

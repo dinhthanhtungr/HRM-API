@@ -26,14 +26,32 @@ public sealed class NotificationsController : ControllerBase
         [FromQuery] int take = 20,
         [FromQuery] Guid? afterId = null,
         [FromQuery] DateTime? afterCreated = null,
-        [FromQuery] NotificationCategory category = NotificationCategory.All,
+        [FromQuery] string? categoryCode = null,
+        [FromQuery] string? eventGroupCode = null,
         CancellationToken cancellationToken = default)
     {
+        if (categoryCode is not null && !NotificationTopicCatalog.IsKnownCategory(categoryCode))
+        {
+            return BadRequest($"Unknown notification categoryCode '{categoryCode}'.");
+        }
+
+        if (eventGroupCode is not null && !NotificationTopicCatalog.IsKnownEventGroup(eventGroupCode))
+        {
+            return BadRequest($"Unknown notification eventGroupCode '{eventGroupCode}'.");
+        }
+
+        if (NotificationTopicCatalog.NormalizeCode(categoryCode) == NotificationCategoryCodes.LegacyData &&
+            eventGroupCode is not null)
+        {
+            return BadRequest("legacy_data does not support eventGroupCode filtering.");
+        }
+
         var result = await _notificationService.GetFeedAsync(
             take,
             afterId,
             afterCreated,
-            category,
+            categoryCode,
+            eventGroupCode,
             cancellationToken);
 
         return Ok(result);

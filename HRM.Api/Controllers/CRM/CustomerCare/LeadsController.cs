@@ -80,9 +80,9 @@ public sealed class LeadsController : ControllerBase
     }
 
     /// <summary>
-    /// Chuyển lead thành khách đã sale bằng CustomerAssignment.
+    /// Giữ adapter nội bộ cho command chuyển lead; không đăng ký thành API action cho FE.
     /// </summary>
-    [HttpPost("{customerId:guid}/convert")]
+    [NonAction]
     public async Task<IActionResult> ConvertLead(
         Guid customerId,
         [FromBody] ConvertLeadRequest request,

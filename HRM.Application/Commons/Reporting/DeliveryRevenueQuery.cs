@@ -1,3 +1,4 @@
+using HRM.Application.Commons.Rules;
 using HRM.Domain.Entities.DeliverySchema;
 using HRM.Domain.Enums.Deliveries;
 
@@ -16,6 +17,8 @@ internal sealed class DeliveryRevenueLine
     public string? ProductTypeKey { get; init; }
     public string? ProductTypeName { get; init; }
     public string? LotNoList { get; init; }
+    public bool HasNormalizedLots { get; init; }
+    public decimal LotCostSnapshotAmount { get; init; }
     public decimal Quantity { get; init; }
     public decimal RevenueAmountVnd { get; init; }
     public decimal BaseCostAmount { get; init; }
@@ -26,7 +29,7 @@ internal sealed class DeliveryRevenueLine
 /// </summary>
 internal static class DeliveryRevenueQuery
 {
-    public const string InternalCustomerExternalId = "KH_VIETAUS";
+    public const string InternalCustomerExternalId = InternalCustomerRules.InternalCustomerExternalId;
 
     public static IQueryable<DeliveryRevenueLine> Create(
         IQueryable<DeliveryOrderDetail> source,
@@ -66,7 +69,16 @@ internal static class DeliveryRevenueQuery
             ProductTypeName = x.Product != null && x.Product.Category != null
                 ? x.Product.Category.Name
                 : null,
-            LotNoList = x.LotNoList,
+            LotNoList = x.LotConsumptions.Any(lot => lot.IsActive)
+                ? string.Join(", ", x.LotConsumptions
+                    .Where(lot => lot.IsActive)
+                    .OrderBy(lot => lot.LotNo)
+                    .Select(lot => lot.LotNo))
+                : x.LotNoList,
+            HasNormalizedLots = x.LotConsumptions.Any(lot => lot.IsActive),
+            LotCostSnapshotAmount = x.LotConsumptions
+                .Where(lot => lot.IsActive)
+                .Sum(lot => (decimal?)lot.TotalCostSnapshot) ?? 0m,
             Quantity = x.Quantity,
             RevenueAmountVnd = x.MerchandiseOrderDetail.MerchandiseOrder.Currency == null
                 || x.MerchandiseOrderDetail.MerchandiseOrder.Currency.Trim() == string.Empty

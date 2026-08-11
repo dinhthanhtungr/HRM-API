@@ -1,13 +1,16 @@
 using System.Text.Json;
-using HRM.Application.Abstractions.Persistence.InternalMail;
 using HRM.Application.Abstractions.Persistence.PLM;
 using HRM.Application.Abstractions.Security;
-using HRM.Application.Commons.Authorization;
 using HRM.Application.Commons.Models;
 using HRM.Application.Features.Notifications.Dtos;
 using HRM.Application.Features.Notifications.Services;
 using HRM.Application.Features.InternalMail.Dtos;
 using HRM.Application.Features.PLM.SampleRequests.Dtos.InternalMail;
+using HRM.Application.Features.PLM.SampleRequests.DataChangeRequests;
+using HRM.Application.Features.PLM.SampleRequests.DirectPatchNotifications;
+using HRM.Application.Features.PLM.SampleRequests.FormulaChangeRequests;
+using HRM.Application.Features.PLM.SampleRequests.Rules;
+using HRM.Application.Features.PLM.SampleRequests.Services;
 using HRM.Domain.Entities.InternalMailSchema;
 using HRM.Domain.Enums.InternalMailEnums;
 using HRM.Domain.Enums.Notifications;
@@ -26,21 +29,23 @@ internal sealed class SendSampleRequestMessageCommandHandler
 {
     private const int MaxMessageLength = 2000;
 
+    private static readonly JsonSerializerOptions PayloadJsonOptions = new(JsonSerializerDefaults.Web);
+
     private readonly IPLMWriteDbContext _dbContext;
-    private readonly IInternalMailDbContext _internalMailDbContext;
     private readonly ICurrentUser _currentUser;
     private readonly INotificationService _notificationService;
+    private readonly SampleRequestRecipientResolver _sampleRequestRecipientResolver;
 
     public SendSampleRequestMessageCommandHandler(
         IPLMWriteDbContext dbContext,
-        IInternalMailDbContext internalMailDbContext,
         ICurrentUser currentUser,
-        INotificationService notificationService)
+        INotificationService notificationService,
+        SampleRequestRecipientResolver sampleRequestRecipientResolver)
     {
         _dbContext = dbContext;
-        _internalMailDbContext = internalMailDbContext;
         _currentUser = currentUser;
         _notificationService = notificationService;
+        _sampleRequestRecipientResolver = sampleRequestRecipientResolver;
     }
 
     public async Task<OperationResult<SendInternalMessageResultDto>> Handle(
@@ -91,13 +96,27 @@ internal sealed class SendSampleRequestMessageCommandHandler
                 x.SampleRequestId,
                 x.ExternalId,
                 x.CompanyId,
-                x.ManagerBy
+                x.ManagerBy,
+                x.RequestType,
+                CustomerExternalId = x.Customer.ExternalId,
+                ColourCode = x.Product.ColourCode,
+                CategoryExternalId = x.Product.Category != null ? x.Product.Category.ExternalId : null
             })
             .FirstOrDefaultAsync(cancellationToken);
 
         if (sampleRequest is null)
         {
             return OperationResult<SendInternalMessageResultDto>.Fail("Sample request was not found.");
+        }
+
+        if (SampleRequestMessageRules.ShouldSuppressMessages(sampleRequest.RequestType, sampleRequest.CustomerExternalId))
+        {
+            return OperationResult<SendInternalMessageResultDto>.Ok(new SendInternalMessageResultDto
+            {
+                ConversationId = Guid.Empty,
+                MessageId = Guid.Empty,
+                NotificationId = Guid.Empty
+            }, "Sample request does not require an internal message or notification.");
         }
 
         var extraRecipientEmployeeIds = await ResolveExtraRecipientsAsync(
@@ -115,23 +134,24 @@ internal sealed class SendSampleRequestMessageCommandHandler
             sampleRequest.CompanyId,
             currentEmployeeId.Value,
             sampleRequest.ExternalId,
+            sampleRequest.ColourCode,
             cancellationToken);
 
         var targetUserIds = new HashSet<Guid>(extraRecipientEmployeeIds.Data ?? Array.Empty<Guid>());
 
-        var roleRecipients = await ResolveRoleRecipientsAsync(
-            ResolveDefaultRoles(request.Type),
+        var defaultRecipients = await _sampleRequestRecipientResolver.ResolveDefaultMessageRecipientsAsync(
             sampleRequest.CompanyId,
+            sampleRequest.CategoryExternalId,
             cancellationToken);
 
-        foreach (var employeeId in roleRecipients)
+        foreach (var recipient in defaultRecipients.Where(x => x.Locked))
         {
-            targetUserIds.Add(employeeId);
+            targetUserIds.Add(recipient.EmployeeId);
         }
 
         var existingParticipantIds = await _dbContext.InternalConversationParticipants
             .AsNoTracking()
-            .Where(x => x.InternalConversationId == conversation.InternalConversationId)
+            .Where(x => x.InternalConversationId == conversation.InternalConversationId && x.IsActive)
             .Select(x => x.EmployeeId)
             .ToListAsync(cancellationToken);
         foreach (var employeeId in existingParticipantIds)
@@ -191,6 +211,7 @@ internal sealed class SendSampleRequestMessageCommandHandler
 
         internalMessage.PayloadJson = JsonSerializer.Serialize(new SampleRequestThreadMessagePayload
         {
+            ContentType = ResolveContentType(request),
             ConversationId = conversation.InternalConversationId,
             MessageId = internalMessage.InternalMessageId,
             SampleRequestId = sampleRequest.SampleRequestId,
@@ -198,8 +219,11 @@ internal sealed class SendSampleRequestMessageCommandHandler
             Type = request.Type.ToString(),
             SaleMessage = message,
             IsUrgent = request.IsUrgent,
-            ReplyToMessageId = internalMessage.ReplyToMessageId
-        });
+            ReplyToMessageId = internalMessage.ReplyToMessageId,
+            DataChangeRequest = request.DataChangeRequest,
+            FormulaChangeRequest = request.FormulaChangeRequest,
+            DirectPatchNotification = request.DirectPatchNotification
+        }, PayloadJsonOptions);
 
         await _dbContext.InternalMessages.AddAsync(internalMessage, cancellationToken);
 
@@ -221,11 +245,12 @@ internal sealed class SendSampleRequestMessageCommandHandler
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        var title = BuildTitle(request.Type);
+        var title = request.TitleOverride ?? BuildTitle(request.Type);
         var sampleRequestLink = $"/plm/sample-requests/{sampleRequest.SampleRequestId}";
 
         var notificationPayload = JsonSerializer.Serialize(new SampleRequestThreadMessagePayload
         {
+            ContentType = ResolveContentType(request),
             ConversationId = conversation.InternalConversationId,
             MessageId = internalMessage.InternalMessageId,
             SampleRequestId = sampleRequest.SampleRequestId,
@@ -233,8 +258,11 @@ internal sealed class SendSampleRequestMessageCommandHandler
             Type = request.Type.ToString(),
             SaleMessage = message,
             IsUrgent = request.IsUrgent,
-            ReplyToMessageId = internalMessage.ReplyToMessageId
-        });
+            ReplyToMessageId = internalMessage.ReplyToMessageId,
+            DataChangeRequest = request.DataChangeRequest,
+            FormulaChangeRequest = request.FormulaChangeRequest,
+            DirectPatchNotification = request.DirectPatchNotification
+        }, PayloadJsonOptions);
 
         var createdByName = await _dbContext.Employees
             .AsNoTracking()
@@ -247,16 +275,25 @@ internal sealed class SendSampleRequestMessageCommandHandler
             CompanyId = sampleRequest.CompanyId,
             CreatedBy = currentEmployeeId.Value,
             CreatedByNameSnapshot = createdByName ?? _currentUser.UserName,
-            Topic = ResolveTopic(request.Type),
+            Topic = request.TopicOverride ?? ResolveTopic(request.Type),
             Severity = request.IsUrgent ? NotificationSeverity.Warning : NotificationSeverity.Info,
             Title = title,
             Message = $"{sampleRequest.ExternalId}: {message}",
             Link = sampleRequestLink,
+            AggregateId = sampleRequest.SampleRequestId,
+            AggregateCode = sampleRequest.ExternalId,
+            ConversationId = conversation.InternalConversationId,
+            MessageId = internalMessage.InternalMessageId,
             PayloadJson = notificationPayload,
-            TargetUserIds = await ResolveNotifiableParticipantsAsync(
-                conversation.InternalConversationId,
-                currentEmployeeId.Value,
-                cancellationToken)
+            TargetUserIds = request.NotificationRecipientEmployeeIdsOverride is null
+                ? await ResolveNotifiableParticipantsAsync(
+                    conversation.InternalConversationId,
+                    currentEmployeeId.Value,
+                    cancellationToken)
+                : request.NotificationRecipientEmployeeIdsOverride
+                    .Where(x => x != Guid.Empty && x != currentEmployeeId.Value)
+                    .Distinct()
+                    .ToArray()
         }, cancellationToken);
 
         return OperationResult<SendInternalMessageResultDto>.Ok(new SendInternalMessageResultDto
@@ -304,6 +341,7 @@ internal sealed class SendSampleRequestMessageCommandHandler
         Guid companyId,
         Guid currentEmployeeId,
         string sampleRequestExternalId,
+        string? colourCode,
         CancellationToken cancellationToken)
     {
         var conversation = await _dbContext.InternalConversations
@@ -323,7 +361,7 @@ internal sealed class SendSampleRequestMessageCommandHandler
         {
             InternalConversationId = Guid.CreateVersion7(),
             CompanyId = companyId,
-            Subject = BuildConversationSubject(sampleRequestExternalId),
+            Subject = SampleRequestConversationSubjectService.BuildSubject(sampleRequestExternalId, colourCode),
             RelatedType = InternalMailRelatedType.SampleRequest,
             RelatedId = sampleRequestId,
             RelatedExternalId = sampleRequestExternalId,
@@ -347,14 +385,23 @@ internal sealed class SendSampleRequestMessageCommandHandler
         IReadOnlyCollection<Guid> participantIds,
         CancellationToken cancellationToken)
     {
-        var existingParticipantIds = await _dbContext.InternalConversationParticipants
-            .AsNoTracking()
+        var existingParticipants = await _dbContext.InternalConversationParticipants
             .Where(x => x.InternalConversationId == conversationId)
-            .Select(x => x.EmployeeId)
             .ToListAsync(cancellationToken);
 
+        foreach (var participant in existingParticipants.Where(x =>
+                     !x.IsActive && participantIds.Contains(x.EmployeeId)))
+        {
+            participant.IsActive = true;
+            participant.DeletedAt = null;
+            participant.DeletedByEmployeeId = null;
+            participant.IsArchived = false;
+            participant.ArchivedAt = null;
+            participant.IsMuted = false;
+        }
+
         var missingParticipantIds = participantIds
-            .Where(x => x != Guid.Empty && !existingParticipantIds.Contains(x))
+            .Where(x => x != Guid.Empty && !existingParticipants.Any(participant => participant.EmployeeId == x))
             .Distinct()
             .ToList();
 
@@ -402,7 +449,8 @@ internal sealed class SendSampleRequestMessageCommandHandler
         await _dbContext.InternalConversationParticipants
             .Where(x =>
                 x.InternalConversationId == conversationId &&
-                x.EmployeeId == senderEmployeeId)
+                x.EmployeeId == senderEmployeeId &&
+                x.IsActive)
             .ExecuteUpdateAsync(setters => setters
                 .SetProperty(x => x.LastReadAt, sentAt)
                 .SetProperty(x => x.IsArchived, false)
@@ -413,6 +461,7 @@ internal sealed class SendSampleRequestMessageCommandHandler
             .Where(x =>
                 x.InternalConversationId == conversationId &&
                 x.EmployeeId != senderEmployeeId &&
+                x.IsActive &&
                 x.IsArchived)
             .ExecuteUpdateAsync(setters => setters
                 .SetProperty(x => x.IsArchived, false)
@@ -420,50 +469,36 @@ internal sealed class SendSampleRequestMessageCommandHandler
                 cancellationToken);
     }
 
-    private async Task<IReadOnlyCollection<Guid>> ResolveRoleRecipientsAsync(
-        IReadOnlyList<string> roles,
-        Guid companyId,
-        CancellationToken cancellationToken)
-    {
-        if (roles.Count == 0)
-        {
-            return Array.Empty<Guid>();
-        }
-
-        return await (
-                from role in _internalMailDbContext.Roles.AsNoTracking()
-                join userRole in _internalMailDbContext.UserRoles.AsNoTracking()
-                    on role.Id equals userRole.RoleId
-                join user in _internalMailDbContext.Users.AsNoTracking()
-                    on userRole.UserId equals user.Id
-                join employee in _internalMailDbContext.Employees.AsNoTracking()
-                    on user.EmployeeId equals employee.EmployeeId
-                where role.NormalizedName != null &&
-                      roles.Contains(role.NormalizedName) &&
-                      userRole.IsActive &&
-                      user.EmployeeId.HasValue &&
-                      employee.CompanyId == companyId &&
-                      employee.IsActive
-                select employee.EmployeeId)
-            .Distinct()
-            .ToListAsync(cancellationToken);
-    }
-
-    private static string BuildConversationSubject(string sampleRequestExternalId)
-    {
-        return $"Trao doi yeu cau phoi mau {sampleRequestExternalId}";
-    }
-
     private static string BuildTitle(SampleRequestNotificationType type)
     {
         return type switch
         {
-            SampleRequestNotificationType.PriceQuoteRequest => "Yeu cau bao gia mau",
-            SampleRequestNotificationType.ChangeRequest => "Yeu cau thay doi mau",
+            SampleRequestNotificationType.PriceQuoteRequest => "Yêu cầu báo giá",
+            SampleRequestNotificationType.ChangeRequest => "Yêu cầu thay đổi",
             SampleRequestNotificationType.UpdateRequest => "Yeu cau cap nhat mau",
             SampleRequestNotificationType.GeneralMessage => "Tin nhan ve yeu cau phoi mau",
             _ => "Tin nhan ve yeu cau phoi mau"
         };
+    }
+
+    private static string ResolveContentType(SendSampleRequestMessageCommand request)
+    {
+        if (request.DataChangeRequest is not null)
+        {
+            return SampleRequestDataChangePayloadTypes.Request;
+        }
+
+        if (request.FormulaChangeRequest is not null)
+        {
+            return SampleRequestFormulaChangePayloadTypes.Request;
+        }
+
+        if (request.DirectPatchNotification is not null)
+        {
+            return SampleRequestDirectPatchNotificationPayloadTypes.Notification;
+        }
+
+        return "InternalMailMessage";
     }
 
     private async Task<IReadOnlyCollection<Guid>> ResolveNotifiableParticipantsAsync(
@@ -476,6 +511,7 @@ internal sealed class SendSampleRequestMessageCommandHandler
             .Where(x =>
                 x.InternalConversationId == conversationId &&
                 x.EmployeeId != senderEmployeeId &&
+                x.IsActive &&
                 !x.IsMuted)
             .Select(x => x.EmployeeId)
             .ToListAsync(cancellationToken);
@@ -489,18 +525,6 @@ internal sealed class SendSampleRequestMessageCommandHandler
             SampleRequestNotificationType.ChangeRequest => TopicNotifications.SampleRequestChangeRequested,
             SampleRequestNotificationType.UpdateRequest => TopicNotifications.SampleRequestUpdateRequested,
             _ => TopicNotifications.SampleRequestMessageCreated
-        };
-    }
-
-    private static IReadOnlyList<string> ResolveDefaultRoles(SampleRequestNotificationType type)
-    {
-        return type switch
-        {
-            SampleRequestNotificationType.PriceQuoteRequest => new[] { ApplicationRoles.Lab.LabUser },
-            SampleRequestNotificationType.ChangeRequest => new[] { ApplicationRoles.Lab.LabUser },
-            SampleRequestNotificationType.UpdateRequest => new[] { ApplicationRoles.Lab.LabUser },
-            SampleRequestNotificationType.GeneralMessage => new[] { ApplicationRoles.Lab.LabUser },
-            _ => new[] { ApplicationRoles.Lab.LabUser }
         };
     }
 }

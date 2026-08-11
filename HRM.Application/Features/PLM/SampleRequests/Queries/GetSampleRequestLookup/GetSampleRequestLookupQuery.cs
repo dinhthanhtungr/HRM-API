@@ -6,6 +6,8 @@ namespace HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestLo
 public sealed class GetSampleRequestLookupQuery : IRequest<IReadOnlyList<SampleRequestLookupItemDto>>
 {
     public Guid? CompanyId { get; init; }
+    public Guid? CustomerId { get; init; }
+    public Guid? SampleRequestId { get; init; }
     public string? Keyword { get; init; }
     public string? Status { get; init; }
     public bool? IsActive { get; init; } = true;

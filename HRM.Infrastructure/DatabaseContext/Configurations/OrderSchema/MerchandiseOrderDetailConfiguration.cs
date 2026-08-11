@@ -26,6 +26,7 @@ namespace HRM.Infrastructure.DatabaseContext.ApplicationDbs.Configurations.Order
                   .HasDefaultValueSql("gen_random_uuid()");
 
             entity.Property(e => e.MerchandiseOrderId).HasColumnName("MerchandiseOrderId");
+            entity.Property(e => e.ComplaintReportLineId).HasColumnName("ComplaintReportLineId");
             entity.Property(e => e.ProductId).HasColumnName("ProductId");
             entity.Property(e => e.FormulaId).HasColumnName("FormulaId");
 
@@ -100,6 +101,11 @@ namespace HRM.Infrastructure.DatabaseContext.ApplicationDbs.Configurations.Order
             entity.HasIndex(e => new { e.MerchandiseOrderId, e.FormulaId })
                   .HasDatabaseName("IX_MO_Details_Order_Formula");
 
+            entity.HasIndex(e => e.ComplaintReportLineId)
+                  .IsUnique()
+                  .HasFilter("\"ComplaintReportLineId\" IS NOT NULL AND \"IsActive\" = TRUE")
+                  .HasDatabaseName("UX_MO_Details_Active_ComplaintReportLine");
+
             // (EF Core 8) sort index: ExpectedDeliveryDate DESC, MerchandiseOrderDetailId DESC
             entity.HasIndex(e => new { e.MerchandiseOrderId, e.IsActive, e.Status, e.ExpectedDeliveryDate, e.MerchandiseOrderDetailId })
                   .IsDescending(false, false, false, true, true)
@@ -123,6 +129,12 @@ namespace HRM.Infrastructure.DatabaseContext.ApplicationDbs.Configurations.Order
                   .HasForeignKey(d => d.FormulaId)
                   .OnDelete(DeleteBehavior.Restrict)
                   .HasConstraintName("FK_MerchandiseOrderDetails_FormulaId");
+
+            entity.HasOne(d => d.ComplaintReportLine)
+                  .WithMany(p => p.ProcessingMerchandiseOrderDetails)
+                  .HasForeignKey(d => d.ComplaintReportLineId)
+                  .OnDelete(DeleteBehavior.Restrict)
+                  .HasConstraintName("FK_MerchandiseOrderDetails_ComplaintReportLine");
 
             // // Optional unique active-line rule:
             // entity.HasIndex(e => new { e.MerchandiseOrderId, e.ProductId, e.FormulaId })

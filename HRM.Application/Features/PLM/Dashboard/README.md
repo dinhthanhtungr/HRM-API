@@ -64,13 +64,31 @@ Hien tai:
 - Sample request excluded: `Cancelled`
 - Production order finished: `Finished`, `Stocked`
 - Production order excluded: `Canceled`, `Cancelled`
-- Internal customer excluded: `KH_VIETAUS`
+- Internal customer `KH_VIETAUS` is excluded by default. For Sample Request dashboard sources, `LabUser` can see `KH_VIETAUS`; production order and sale order dashboard sources still exclude it.
 
 Ly do tach rule:
 
 - `summary`, `monthly-summary`, va `drilldown` phai dem cung mot cach.
 - Khi click vao so lieu tren dashboard, danh sach drilldown phai khop voi con so da hien thi.
 - Khi doi status nghiep vu, chi can sua mot noi.
+
+## Phân quyền dữ liệu
+
+Các API dashboard phải dùng cùng phạm vi khách hàng với trang danh sách yêu cầu mẫu.
+
+- Yêu cầu mẫu: dùng `ICustomerVisibilityService.ApplySampleRequestVisibility`.
+- Đơn hàng: dùng `ICustomerVisibilityService.ApplyMerchandiseOrderVisibility`.
+- Lệnh sản xuất: lọc theo `CompanyId` hiện tại và tập `CustomerId` lấy từ `ApplyCustomerVisibility`.
+
+Áp dụng cho:
+
+- `summary`
+- `monthly-summary`
+- `pivot-hub`
+- `drilldown`
+- `task-breakdown`
+
+Mục tiêu là số tổng quan, số theo tháng và danh sách drilldown không được rộng hơn danh sách khách hàng mà người dùng được phép xem. Nếu thêm source dashboard mới có liên quan khách hàng, phải scope bằng `ViewerScope` trước khi group/count/page.
 
 ## Luu y
 

@@ -3,6 +3,7 @@ using HRM.Application.Abstractions.Persistence.Commons.Pricing;
 using HRM.Application.Commons.Pricing.Dtos;
 using HRM.Application.Commons.Pricing.Helpers;
 using HRM.Application.Commons.Pricing.Models;
+using HRM.Application.Commons.Pricing.Rules;
 using HRM.Domain.Enums.Formulas;
 using Microsoft.EntityFrameworkCore;
 
@@ -10,8 +11,6 @@ namespace HRM.Infrastructure.Services.Pricing
 {
     public class MaterialPriceQueryService : IMaterialPriceQueryService
     {
-        private static readonly string[] CanceledPurchaseOrderStatuses = ["Canceled", "Cancelled"];
-
         private readonly IPriceReadDbContext _dbContext;
 
         public MaterialPriceQueryService(IPriceReadDbContext dbContext)
@@ -38,7 +37,7 @@ namespace HRM.Infrastructure.Services.Pricing
                     x.PurchaseOrder != null &&
                     (x.PurchaseOrder.IsActive ?? true) &&
                     (x.PurchaseOrder.Status == null ||
-                     !CanceledPurchaseOrderStatuses.Contains(x.PurchaseOrder.Status)))
+                     !PurchaseOrderPriceRules.CanceledStatuses.Contains(x.PurchaseOrder.Status)))
                 .GroupBy(x => x.MaterialId)
                 .Select(g => g
                     .OrderByDescending(x => x.PurchaseOrder!.CreateDate)
@@ -114,7 +113,7 @@ namespace HRM.Infrastructure.Services.Pricing
                     x.PurchaseOrder.SupplierId == supplierId &&
                     (x.PurchaseOrder.IsActive ?? true) &&
                     (x.PurchaseOrder.Status == null ||
-                     !CanceledPurchaseOrderStatuses.Contains(x.PurchaseOrder.Status)))
+                     !PurchaseOrderPriceRules.CanceledStatuses.Contains(x.PurchaseOrder.Status)))
                 .GroupBy(x => x.MaterialId)
                 .Select(g => g
                     .OrderByDescending(x => x.PurchaseOrder!.CreateDate)

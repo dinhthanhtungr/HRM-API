@@ -1,5 +1,7 @@
 using HRM.Application.Abstractions.Commons.Time;
 using HRM.Application.Abstractions.Persistence.CRM.CustomerCare;
+using HRM.Application.Abstractions.Security;
+using HRM.Application.Commons.Authorization;
 using HRM.Application.Commons.Models;
 using HRM.Application.Commons.Patching;
 using HRM.Application.Features.CRM.CustomerCare.Dtos;
@@ -24,19 +26,22 @@ internal sealed class UpdateLeadCommandHandler : IRequestHandler<UpdateLeadComma
     private readonly ICustomerVisibilityService _visibilityService;
     private readonly IDateTimeProvider _dateTimeProvider;
     private readonly CustomerTaxCodeConflictService _taxCodeConflictService;
+    private readonly ICurrentUser _currentUser;
 
     public UpdateLeadCommandHandler(
         ICRMReadDbContext readDbContext,
         ICRMWriteDbContext writeDbContext,
         ICustomerVisibilityService visibilityService,
         IDateTimeProvider dateTimeProvider,
-        CustomerTaxCodeConflictService taxCodeConflictService)
+        CustomerTaxCodeConflictService taxCodeConflictService,
+        ICurrentUser currentUser)
     {
         _readDbContext = readDbContext;
         _writeDbContext = writeDbContext;
         _visibilityService = visibilityService;
         _dateTimeProvider = dateTimeProvider;
         _taxCodeConflictService = taxCodeConflictService;
+        _currentUser = currentUser;
     }
 
     public async Task<OperationResult> Handle(UpdateLeadCommand command, CancellationToken cancellationToken)
@@ -46,15 +51,16 @@ internal sealed class UpdateLeadCommandHandler : IRequestHandler<UpdateLeadComma
             return OperationResult.Fail("CustomerId is invalid.");
         }
 
-        var request = command.Request;
-        if (request.CustomerName is not null && string.IsNullOrWhiteSpace(request.CustomerName))
+        if (!_currentUser.IsInAnyRole(ApplicationRoleSets.CRM.CustomerEditors))
         {
-            return OperationResult.Fail("CustomerName cannot be empty.");
+            return OperationResult.Fail("You are not allowed to update leads.");
         }
 
-        if (request.LeadStatus is LeadStatus.Converted)
+        var request = command.Request;
+        var patchValidationError = CustomerProfilePatchRules.Validate(request);
+        if (patchValidationError is not null)
         {
-            return OperationResult.Fail("LeadStatus cannot be Converted from the lead update endpoint.");
+            return OperationResult.Fail(patchValidationError);
         }
 
         var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
@@ -102,7 +108,7 @@ internal sealed class UpdateLeadCommandHandler : IRequestHandler<UpdateLeadComma
         var now = _dateTimeProvider.Now;
         customer.UpdatedBy = scope.EmployeeId;
         customer.UpdatedDate = now;
-        ApplyLeadFields(customer, request);
+        CustomerProfilePatchRules.ApplyCustomerPatch(customer, request);
         await SyncAddressesAsync(customer, request.Addresses, cancellationToken);
         await SyncContactsAsync(customer, request.Contacts, cancellationToken);
 
@@ -122,31 +128,6 @@ internal sealed class UpdateLeadCommandHandler : IRequestHandler<UpdateLeadComma
         }
 
         return OperationResult.Ok("Lead updated successfully.");
-    }
-
-    private static void ApplyLeadFields(Customer customer, UpdateLeadRequest request)
-    {
-        PatchHelper.SetTrimmed(request.CustomerName, () => customer.CustomerName, value => customer.CustomerName = value ?? string.Empty);
-        PatchHelper.SetTrimmed(request.CustomerGroup, () => customer.CustomerGroup, value => customer.CustomerGroup = value);
-        PatchHelper.SetTrimmed(request.ApplicationName, () => customer.ApplicationName, value => customer.ApplicationName = value);
-        PatchHelper.SetTrimmed(request.RegistrationNumber, () => customer.RegistrationNumber, value => customer.RegistrationNumber = value);
-        PatchHelper.SetTrimmed(request.RegistrationAddress, () => customer.RegistrationAddress, value => customer.RegistrationAddress = value);
-        PatchHelper.SetTrimmed(request.TaxNumber, () => customer.TaxNumber, value => customer.TaxNumber = value);
-        PatchHelper.SetTrimmed(request.Phone, () => customer.Phone, value => customer.Phone = value);
-        PatchHelper.SetTrimmed(request.Website, () => customer.Website, value => customer.Website = value);
-        if (request.IssueDate.HasValue)
-        {
-            PatchHelper.SetNullable(request.IssueDate, () => customer.IssueDate, value => customer.IssueDate = value);
-        }
-
-        PatchHelper.SetTrimmed(request.IssuedPlace, () => customer.IssuedPlace, value => customer.IssuedPlace = value);
-        PatchHelper.SetTrimmed(request.FaxNumber, () => customer.FaxNumber, value => customer.FaxNumber = value);
-        if (request.IsActive.HasValue)
-        {
-            PatchHelper.SetNullable(request.IsActive, () => customer.IsActive, value => customer.IsActive = value);
-        }
-
-        PatchHelper.SetIfHasValue(request.LeadStatus, () => customer.LeadStatus, value => customer.LeadStatus = value);
     }
 
     private static string BuildConcurrencyMessage(string featureName, DbUpdateConcurrencyException exception)
@@ -209,12 +190,7 @@ internal sealed class UpdateLeadCommandHandler : IRequestHandler<UpdateLeadComma
                 await _writeDbContext.Addresses.AddAsync(address, cancellationToken);
             }
 
-            PatchHelper.SetTrimmed(request.AddressLine, () => address.AddressLine, value => address.AddressLine = value);
-            PatchHelper.SetTrimmed(request.City, () => address.City, value => address.City = value);
-            PatchHelper.SetTrimmed(request.District, () => address.District, value => address.District = value);
-            PatchHelper.SetTrimmed(request.Province, () => address.Province, value => address.Province = value);
-            PatchHelper.SetTrimmed(request.Country, () => address.Country, value => address.Country = value);
-            PatchHelper.SetTrimmed(request.PostalCode, () => address.PostalCode, value => address.PostalCode = value);
+            CustomerProfilePatchRules.ApplyAddressPatch(address, request);
             PatchHelper.SetIfHasValue(request.IsActive, () => address.IsActive, value => address.IsActive = value);
             if (request.IsPrimary.HasValue)
             {
@@ -253,11 +229,7 @@ internal sealed class UpdateLeadCommandHandler : IRequestHandler<UpdateLeadComma
                 await _writeDbContext.Contacts.AddAsync(contact, cancellationToken);
             }
 
-            PatchHelper.SetTrimmed(request.FirstName, () => contact.FirstName, value => contact.FirstName = value);
-            PatchHelper.SetTrimmed(request.LastName, () => contact.LastName, value => contact.LastName = value);
-            PatchHelper.SetTrimmed(request.Gender, () => contact.Gender, value => contact.Gender = value);
-            PatchHelper.SetTrimmed(request.Phone, () => contact.Phone, value => contact.Phone = value);
-            PatchHelper.SetTrimmed(request.Email, () => contact.Email, value => contact.Email = value);
+            CustomerProfilePatchRules.ApplyContactPatch(contact, request);
             PatchHelper.SetIfHasValue(request.IsActive, () => contact.IsActive, value => contact.IsActive = value);
             if (request.IsPrimary.HasValue)
             {

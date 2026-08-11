@@ -11,6 +11,11 @@ public sealed class InternalConversationListItemDto
     public Guid ConversationId { get; set; }
     public string Subject { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Tiêu đề ngắn dành cho danh sách inbox; Subject đầy đủ vẫn dùng ở màn hình chi tiết.
+    /// </summary>
+    public string DisplayTitle { get; set; } = string.Empty;
+
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public InternalMailRelatedType? RelatedType { get; set; }
 

@@ -1,7 +1,6 @@
 ﻿using HRM.Application.Commons.Models;
 using HRM.Application.Features.Dispatch.DeliveryOrders.Dtos;
 using MediatR;
-using Shared.Enums;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -14,10 +13,6 @@ namespace HRM.Application.Features.Dispatch.DeliveryOrders.Commands.CreateDelive
     {
         public string? ExternalId { get; init; }
         public Guid CustomerId { get; init; }
-        public Guid CompanyId { get; init; }
-        public Guid CreatedBy { get; init; }
-
-        public string? Status { get; init; } = DeliveryOrderStatus.Pending.ToString();
         public string? CustomerExternalIdSnapShot { get; init; }
         public string? Receiver { get; init; }
         public string? DeliveryAddress { get; init; }

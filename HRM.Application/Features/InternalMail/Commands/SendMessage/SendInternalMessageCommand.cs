@@ -1,4 +1,6 @@
+using System.Text.Json.Serialization;
 using HRM.Application.Commons.Models;
+using HRM.Application.Features.Attachments.Dtos;
 using HRM.Application.Features.InternalMail.Dtos;
 using MediatR;
 
@@ -13,4 +15,7 @@ public sealed class SendInternalMessageCommand : IRequest<OperationResult<SendIn
     public string Body { get; set; } = string.Empty;
     public Guid? ReplyToMessageId { get; set; }
     public bool IsUrgent { get; set; }
+
+    [JsonIgnore]
+    public IReadOnlyList<AttachmentUploadFile> Attachments { get; set; } = Array.Empty<AttachmentUploadFile>();
 }

@@ -1,10 +1,11 @@
 using HRM.Application.Abstractions.Persistence.CRM.CustomerCare;
+using HRM.Application.Commons.Rules;
 using Microsoft.EntityFrameworkCore;
 
 namespace HRM.Application.Features.CRM.CustomerCare.Services;
 
 /// <summary>
-/// Resolves blocking tax-code conflicts inside the current company using the legacy sales rule.
+/// Resolves blocking tax-code conflicts against active, officially converted customers in the current company.
 /// </summary>
 internal sealed class CustomerTaxCodeConflictService
 {
@@ -27,8 +28,8 @@ internal sealed class CustomerTaxCodeConflictService
             return null;
         }
 
-        // TaxNumber has no normalized database column yet, so only IDs and tax codes are read
-        // before applying the exact legacy normalization in memory.
+        // TaxNumber has no normalized database column yet, so the minimal customer fields are read
+        // before applying the business normalization in memory.
         var taxRows = await _dbContext.Customers
             .AsNoTracking()
             .Where(customer =>
@@ -36,11 +37,20 @@ internal sealed class CustomerTaxCodeConflictService
                 customer.IsActive == true &&
                 customer.TaxNumber != null &&
                 (!excludedCustomerId.HasValue || customer.CustomerId != excludedCustomerId.Value))
-            .Select(customer => new { customer.CustomerId, customer.TaxNumber })
+            .Select(customer => new
+            {
+                customer.CustomerId,
+                customer.ExternalId,
+                customer.TaxNumber,
+                customer.IsLead
+            })
             .ToListAsync(cancellationToken);
 
         var duplicateCustomerIds = taxRows
-            .Where(row => NormalizeTaxCode(row.TaxNumber) == normalizedTaxCode)
+            .Where(row =>
+                row.IsLead == false &&
+                !InternalCustomerRules.IsInternalCustomerExternalId(row.ExternalId) &&
+                NormalizeTaxCode(row.TaxNumber) == normalizedTaxCode)
             .Select(row => row.CustomerId)
             .ToArray();
 
@@ -51,12 +61,7 @@ internal sealed class CustomerTaxCodeConflictService
 
         var conflict = await _dbContext.Customers
             .AsNoTracking()
-            .Where(customer =>
-                duplicateCustomerIds.Contains(customer.CustomerId) &&
-                _dbContext.MerchandiseOrders.Any(order =>
-                    order.CustomerId == customer.CustomerId &&
-                    order.CompanyId == companyId &&
-                    order.IsActive))
+            .Where(customer => duplicateCustomerIds.Contains(customer.CustomerId))
             .Select(customer => new
             {
                 customer.CustomerId,
@@ -73,18 +78,6 @@ internal sealed class CustomerTaxCodeConflictService
                         GroupId = (Guid?)assignment.GroupId,
                         GroupName = assignment.Group.Name
                     })
-                    .FirstOrDefault(),
-                LastOrderManager = _dbContext.MerchandiseOrders
-                    .Where(order =>
-                        order.CustomerId == customer.CustomerId &&
-                        order.CompanyId == companyId &&
-                        order.IsActive)
-                    .OrderByDescending(order => order.CreateDate)
-                    .Select(order => new
-                    {
-                        EmployeeId = (Guid?)order.ManagerById,
-                        EmployeeName = order.ManagerByNameSnapshot
-                    })
                     .FirstOrDefault()
             })
             .FirstOrDefaultAsync(cancellationToken);
@@ -99,12 +92,8 @@ internal sealed class CustomerTaxCodeConflictService
             conflict.ExternalId,
             conflict.CustomerName,
             conflict.TaxNumber,
-            conflict.Assignment != null
-                ? conflict.Assignment.EmployeeId
-                : conflict.LastOrderManager != null ? conflict.LastOrderManager.EmployeeId : null,
-            conflict.Assignment != null
-                ? conflict.Assignment.EmployeeName
-                : conflict.LastOrderManager != null ? conflict.LastOrderManager.EmployeeName : null,
+            conflict.Assignment?.EmployeeId,
+            conflict.Assignment?.EmployeeName,
             conflict.Assignment != null ? conflict.Assignment.GroupId : null,
             conflict.Assignment != null ? conflict.Assignment.GroupName : null);
     }
@@ -119,7 +108,7 @@ internal sealed class CustomerTaxCodeConflictService
             : $" ({conflict.GroupName})";
 
         return $"Ma so thue {requestedTaxNumber?.Trim()} da thuoc khach hang {conflict.ExternalId} - " +
-               $"\"{conflict.CustomerName}\" va khach hang nay da tung co don hang. " +
+               $"\"{conflict.CustomerName}\" va khach hang nay da la khach hang chinh thuc. " +
                $"Sale dang quan ly: {employeeName}{groupName}.";
     }
 

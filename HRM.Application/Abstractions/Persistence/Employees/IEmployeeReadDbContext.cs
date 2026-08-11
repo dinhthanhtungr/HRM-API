@@ -20,6 +20,7 @@ namespace HRM.Application.Abstractions.Persistence.Employees
         DbSet<EmployeeInsuranceProfile> EmployeeInsuranceProfiles { get; }
         DbSet<EmployeeRelative> EmployeeRelatives { get; }
         DbSet<EmployeeDocument> EmployeeDocuments { get; }
+        DbSet<Company> Companies { get; }
         DbSet<Part> Parts { get; }
         DbSet<Group> Groups { get; }
         DbSet<MemberInGroup> MemberInGroups { get; }

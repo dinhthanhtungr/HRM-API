@@ -13,6 +13,10 @@ namespace HRM.Application.Features.PLM.SampleRequests.Dtos.Summary
         public string? ExternalId { get; set; }
         public Guid? ProductId { get; set; }
         public string? ProductName { get; set; }
+        public Guid? CategoryId { get; set; }
+        public string? CategoryExternalId { get; set; }
+        public string? CategoryType { get; set; }
+        public string? CategoryName { get; set; }
         public string? ColorValue { get; set; }
         public string? ColorDisplayName { get; set; }
         public string? AdditiveCode { get; set; }

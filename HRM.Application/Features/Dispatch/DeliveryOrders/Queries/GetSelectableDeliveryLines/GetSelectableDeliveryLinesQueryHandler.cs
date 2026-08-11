@@ -1,4 +1,5 @@
 using HRM.Application.Abstractions.Persistence.Dispatch;
+using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Pagination;
 using HRM.Application.Features.Dispatch.DeliveryOrders.Dtos;
 using MediatR;
@@ -10,19 +11,42 @@ internal sealed class GetSelectableDeliveryLinesQueryHandler
     : IRequestHandler<GetSelectableDeliveryLinesQuery, PagedResult<SelectableDeliveryOrderDto>>
 {
     private readonly IDispatchReadDbContext _dbContext;
+    private readonly ICurrentUser _currentUser;
+    private readonly DeliveryOrderLotInventoryService _inventoryService;
 
-    public GetSelectableDeliveryLinesQueryHandler(IDispatchReadDbContext dbContext)
+    public GetSelectableDeliveryLinesQueryHandler(
+        IDispatchReadDbContext dbContext,
+        ICurrentUser currentUser,
+        DeliveryOrderLotInventoryService inventoryService)
     {
         _dbContext = dbContext;
+        _currentUser = currentUser;
+        _inventoryService = inventoryService;
     }
 
     public async Task<PagedResult<SelectableDeliveryOrderDto>> Handle(
         GetSelectableDeliveryLinesQuery request,
         CancellationToken cancellationToken)
     {
+        if (!DeliveryOrderAccessRules.CanRead(_currentUser) ||
+            _currentUser.CompanyId is not { } companyId ||
+            companyId == Guid.Empty)
+        {
+            return new PagedResult<SelectableDeliveryOrderDto>(
+                [],
+                0,
+                request.NormalizedPageNumber,
+                request.NormalizedPageSize);
+        }
+
         var deliveredQuantityQuery = _dbContext.DeliveryOrderDetails
             .AsNoTracking()
-            .Where(d => d.IsActive && !d.IsAttach && d.MerchandiseOrderDetailId.HasValue)
+            .Where(d =>
+                d.IsActive &&
+                !d.IsAttach &&
+                d.DeliveryOrder.IsActive &&
+                d.DeliveryOrder.CompanyId == companyId &&
+                d.MerchandiseOrderDetailId.HasValue)
             .GroupBy(d => d.MerchandiseOrderDetailId!.Value)
             .Select(g => new
             {
@@ -52,12 +76,10 @@ internal sealed class GetSelectableDeliveryLinesQueryHandler
                     x.DeliveredQuantity,
                     RemainingQuantity = x.Detail.ExpectedQuantity - x.DeliveredQuantity
                 })
-                .Where(x => x.Detail.IsActive && x.RemainingQuantity > 0m);
-
-        if (request.CompanyId is { } companyId && companyId != Guid.Empty)
-        {
-            lineBaseQuery = lineBaseQuery.Where(x => x.Order.CompanyId == companyId);
-        }
+                .Where(x =>
+                    x.Detail.IsActive &&
+                    x.Order.CompanyId == companyId &&
+                    x.RemainingQuantity > 0m);
 
         if (request.CustomerId is { } customerId && customerId != Guid.Empty)
         {
@@ -134,44 +156,23 @@ internal sealed class GetSelectableDeliveryLinesQueryHandler
             })
             .ToListAsync(cancellationToken);
 
-        var productCodes = pageLines
-            .Select(x => x.ProductExternalId)
-            .Where(x => !string.IsNullOrWhiteSpace(x))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-
-        var stockRows = await _dbContext.WarehouseShelfStocks
-            .AsNoTracking()
-            .Where(x => productCodes.Contains(x.Code) && x.QtyKg > 0m)
-            .GroupBy(x => new
-            {
-                x.Code,
-                x.LotNo,
-                x.LotKey,
-                x.StockType
-            })
-            .Select(g => new
-            {
-                g.Key.Code,
-                g.Key.LotNo,
-                g.Key.LotKey,
-                StockType = g.Key.StockType.ToString(),
-                Quantity = g.Sum(x => x.QtyKg),
-                Bags = g.Sum(x => x.Bags ?? 0)
-            })
-            .ToListAsync(cancellationToken);
-
-        var stockLookup = stockRows
-            .GroupBy(x => x.Code, StringComparer.OrdinalIgnoreCase)
+        var inventory = await _inventoryService.LoadAsync(
+            companyId,
+            pageLines.Select(x => (x.ProductId, x.ProductExternalId)).ToArray(),
+            includeCost: false,
+            cancellationToken: cancellationToken);
+        var stockLookup = inventory.Values
+            .Where(x => x.AvailableQuantity > 0m && x.ProductAvailableQuantity > 0m)
+            .GroupBy(x => x.ProductCode, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(
                 g => g.Key,
                 g => g.Select(x => new DeliveryLotOptionDto
                     {
                         LotNo = x.LotNo,
-                        LotKey = x.LotKey,
-                        StockType = x.StockType,
-                        Quantity = x.Quantity,
-                        Bags = x.Bags
+                        LotKey = x.LotNo,
+                        StockType = "FinishedGood",
+                        Quantity = Math.Min(x.AvailableQuantity, x.ProductAvailableQuantity),
+                        Bags = null
                     })
                     .OrderBy(x => x.LotNo)
                     .ThenBy(x => x.LotKey)

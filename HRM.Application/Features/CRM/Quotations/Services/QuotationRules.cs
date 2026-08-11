@@ -7,6 +7,8 @@ internal static class QuotationRules
     public const int MaximumCurrencyLength = 10;
     public const int MaximumUnitLength = 30;
     public const int MaximumLineCount = 500;
+    public const int MaximumPriceTierCountPerLine = 100;
+    public const int MaximumQuantityRangeLabelLength = 50;
     private const int MoneyScale = 6;
 
     public static string? TrimToNull(string? value)
@@ -15,14 +17,11 @@ internal static class QuotationRules
     public static decimal CalculateLineTotal(
         decimal quantity,
         decimal unitPrice,
-        decimal discountPercent,
-        decimal taxPercent)
+        decimal discountPercent)
     {
         var grossAmount = quantity * unitPrice;
         var discountAmount = grossAmount * discountPercent / 100m;
-        var taxableAmount = grossAmount - discountAmount;
-        var taxAmount = taxableAmount * taxPercent / 100m;
-        return Round(taxableAmount + taxAmount);
+        return Round(grossAmount - discountAmount);
     }
 
     public static void RecalculateTotals(Quotation quotation)
@@ -30,17 +29,27 @@ internal static class QuotationRules
         var subTotal = quotation.Lines.Sum(line => line.Quantity * line.UnitPrice);
         var discountAmount = quotation.Lines.Sum(line =>
             line.Quantity * line.UnitPrice * line.DiscountPercent / 100m);
-        var taxAmount = quotation.Lines.Sum(line =>
-        {
-            var grossAmount = line.Quantity * line.UnitPrice;
-            var lineDiscount = grossAmount * line.DiscountPercent / 100m;
-            return (grossAmount - lineDiscount) * line.TaxPercent / 100m;
-        });
 
         quotation.SubTotal = Round(subTotal);
         quotation.DiscountAmount = Round(discountAmount);
+        RecalculateHeaderTax(quotation, subTotal, discountAmount);
+    }
+
+    public static void RecalculateHeaderTax(Quotation quotation)
+        => RecalculateHeaderTax(quotation, quotation.SubTotal, quotation.DiscountAmount);
+
+    private static void RecalculateHeaderTax(
+        Quotation quotation,
+        decimal subTotal,
+        decimal discountAmount)
+    {
+        var taxableAmount = Math.Max(0m, subTotal - discountAmount);
+        var taxPercent = Math.Clamp(quotation.TaxPercent, 0m, 100m);
+        var taxAmount = taxableAmount * taxPercent / 100m;
+
+        quotation.TaxPercent = taxPercent;
         quotation.TaxAmount = Round(taxAmount);
-        quotation.TotalAmount = Round(subTotal - discountAmount + taxAmount);
+        quotation.TotalAmount = Round(taxableAmount + taxAmount);
     }
 
     public static bool IsValidPercent(decimal value) => value is >= 0m and <= 100m;

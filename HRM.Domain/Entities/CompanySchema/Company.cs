@@ -54,6 +54,7 @@ public partial class Company
     public virtual ICollection<CustomerTransferLog> CustomerTransferLogs { get; set; } = new List<CustomerTransferLog>();
 
     public virtual ICollection<Customer> Customers { get; set; } = new List<Customer>();
+    public virtual ICollection<ComplaintReport> ComplaintReports { get; set; } = new List<ComplaintReport>();
 
     public virtual ICollection<Formula> Formulas { get; set; } = new List<Formula>();
     public virtual ICollection<EventLog> EventLogs { get; set; } = new List<EventLog>();

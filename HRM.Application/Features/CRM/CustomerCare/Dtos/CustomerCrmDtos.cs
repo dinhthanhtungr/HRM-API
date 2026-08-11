@@ -26,6 +26,17 @@ public sealed class CustomerInteractionDto
     public Guid? AssignedSaleEmployeeId { get; set; }
     public string? AssignedSaleEmployeeName { get; set; }
     public bool IsActive { get; set; }
+    public IReadOnlyList<CustomerInteractionReferenceDto> References { get; set; } = Array.Empty<CustomerInteractionReferenceDto>();
+}
+
+public sealed class CustomerInteractionReferenceDto
+{
+    public Guid ReferenceId { get; set; }
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public CustomerInteractionReferenceType ReferenceType { get; set; }
+    public string? ReferenceCodeSnapshot { get; set; }
+    public string? ReferenceNameSnapshot { get; set; }
+    public bool IsPrimary { get; set; }
 }
 
 /// <summary>
@@ -102,7 +113,7 @@ public sealed class CustomerCrmCalendarEventDto
     public Guid SourceId { get; set; }
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public CustomerCrmCalendarSourceType SourceType { get; set; }
-    public Guid CustomerId { get; set; }
+    public Guid? CustomerId { get; set; }
     public string CustomerExternalId { get; set; } = string.Empty;
     public string CustomerName { get; set; } = string.Empty;
     public Guid? AssignedSaleEmployeeId { get; set; }
@@ -181,6 +192,10 @@ public sealed class CustomerActivityReportHeaderDto
     public decimal TotalRevenueAmount { get; set; }
     public int TotalMeetingVisitCount { get; set; }
     public int TotalOtherInteractionCount { get; set; }
+    public int PositiveHealthCount { get; set; }
+    public int NeutralHealthCount { get; set; }
+    public int NegativeHealthCount { get; set; }
+    public int UnknownHealthCount { get; set; }
 }
 
 /// <summary>
@@ -199,6 +214,14 @@ public sealed class CustomerActivityReportRowDto
     public int ContactCount { get; set; }
     public int CompletedTaskCount { get; set; }
     public int OpenTaskCount { get; set; }
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public CustomerHealthCode HealthCode { get; set; } = CustomerHealthCode.Unknown;
+    public string? HealthSummary { get; set; }
+    public string? CustomerNeed { get; set; }
+    public string? CurrentStage { get; set; }
+    public string? Risk { get; set; }
+    public string? SuggestedNextAction { get; set; }
+    public DateTime? HealthGeneratedDate { get; set; }
     public IReadOnlyList<CustomerActivityReportDailyContactDto> DailyContacts { get; set; } = Array.Empty<CustomerActivityReportDailyContactDto>();
 }
 

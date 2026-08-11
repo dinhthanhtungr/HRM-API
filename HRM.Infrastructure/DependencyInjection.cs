@@ -32,6 +32,7 @@ public static class DependencyInjection
             options.PublicBaseUrl = section["PublicBaseUrl"];
         });
         services.AddScoped<IFileStorage, FileShareStorage>();
+        services.AddSingleton<IImageThumbnailGenerator, ImageSharpThumbnailGenerator>();
         services.AddSingleton<IDateTimeProvider, SystemDateTimeProvider>();
 
         var webPushSection = configuration.GetSection("WebPush");

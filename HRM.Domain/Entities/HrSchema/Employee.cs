@@ -98,6 +98,9 @@ public partial class Employee
     public virtual ICollection<Company> CompanyCreatedByNavigations { get; set; } = new List<Company>();
 
     public virtual ICollection<Company> CompanyUpdatedByNavigations { get; set; } = new List<Company>();
+    public virtual ICollection<ComplaintReport> ComplaintReportCreatedByNavigations { get; set; } = new List<ComplaintReport>();
+    public virtual ICollection<ComplaintReport> ComplaintReportUpdatedByNavigations { get; set; } = new List<ComplaintReport>();
+    public virtual ICollection<ComplaintReport> ComplaintReportCompletedByNavigations { get; set; } = new List<ComplaintReport>();
     public virtual ICollection<CustomerClaim> CustomerClaims { get; set; } = new List<CustomerClaim>();
     public virtual ICollection<CustomerNote> CustomerNotesAuthored { get; set; } = new List<CustomerNote>();
     public virtual ICollection<CustomerInteractionAiSummary> CustomerInteractionAiSummarySaleEmployees { get; set; } = new List<CustomerInteractionAiSummary>();

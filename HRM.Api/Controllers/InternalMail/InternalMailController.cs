@@ -1,3 +1,4 @@
+using System.Text.Json;
 using HRM.Application.Features.InternalMail.Commands.AddParticipants;
 using HRM.Application.Features.InternalMail.Commands.CreateConversation;
 using HRM.Application.Features.InternalMail.Commands.DeleteMessage;
@@ -7,8 +8,12 @@ using HRM.Application.Features.InternalMail.Commands.SendMessage;
 using HRM.Application.Features.InternalMail.Commands.UpdateConversationPreference;
 using HRM.Application.Features.InternalMail.Commands.UpdateMessage;
 using HRM.Application.Features.InternalMail.Queries.GetConversationDetail;
+using HRM.Application.Features.InternalMail.Queries.GetConversationAttachments;
+using HRM.Application.Features.InternalMail.Queries.GetAttachmentContent;
 using HRM.Application.Features.InternalMail.Queries.GetConversations;
+using HRM.Application.Features.InternalMail.Queries.GetMessageContext;
 using HRM.Application.Features.InternalMail.Queries.GetMessages;
+using HRM.Application.Features.InternalMail.Queries.SearchMessages;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -86,15 +91,186 @@ public sealed class InternalMailController : ControllerBase
         return result is null ? NotFound() : Ok(result);
     }
 
-    [HttpPost("conversations/{conversationId:guid}/messages")]
-    public async Task<IActionResult> SendMessage(
+    [HttpGet("conversations/{conversationId:guid}/attachments")]
+    public async Task<IActionResult> GetConversationAttachments(
         Guid conversationId,
-        [FromBody] SendInternalMessageCommand command,
+        [FromQuery] GetInternalConversationAttachmentsQuery query,
         CancellationToken cancellationToken)
     {
-        command.ConversationId = conversationId;
-        var result = await _sender.Send(command, cancellationToken);
-        return result.Success ? Ok(result) : BadRequest(result);
+        var result = await _sender.Send(new GetInternalConversationAttachmentsQuery
+        {
+            ConversationId = conversationId,
+            Kind = query.Kind,
+            PageNumber = query.PageNumber,
+            PageSize = query.PageSize
+        }, cancellationToken);
+
+        return result is null ? NotFound() : Ok(result);
+    }
+
+    [HttpGet("conversations/{conversationId:guid}/messages/search")]
+    public async Task<IActionResult> SearchMessages(
+        Guid conversationId,
+        [FromQuery] SearchInternalMessagesQuery query,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new SearchInternalMessagesQuery
+        {
+            ConversationId = conversationId,
+            Q = query.Q,
+            Search = query.Search,
+            Keyword = query.Keyword,
+            PageNumber = query.PageNumber,
+            PageSize = query.PageSize
+        }, cancellationToken);
+
+        return result is null ? NotFound() : Ok(result);
+    }
+
+    [HttpGet("conversations/{conversationId:guid}/messages/{messageId:guid}/context")]
+    public async Task<IActionResult> GetMessageContext(
+        Guid conversationId,
+        Guid messageId,
+        [FromQuery] int before = 10,
+        [FromQuery] int after = 10,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _sender.Send(new GetInternalMessageContextQuery
+        {
+            ConversationId = conversationId,
+            MessageId = messageId,
+            Before = before,
+            After = after
+        }, cancellationToken);
+
+        return result is null ? NotFound() : Ok(result);
+    }
+
+    [HttpPost("conversations/{conversationId:guid}/messages")]
+    [Consumes("application/json", "multipart/form-data")]
+    [RequestSizeLimit(50_000_000)]
+    [RequestFormLimits(MultipartBodyLengthLimit = 50_000_000)]
+    public async Task<IActionResult> SendMessage(
+        Guid conversationId,
+        CancellationToken cancellationToken)
+    {
+        if (!Request.HasFormContentType)
+        {
+            if (!Request.HasJsonContentType())
+            {
+                return StatusCode(StatusCodes.Status415UnsupportedMediaType);
+            }
+
+            var command = await JsonSerializer.DeserializeAsync<SendInternalMessageCommand>(
+                Request.Body,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web),
+                cancellationToken);
+            if (command is null)
+            {
+                return BadRequest("A message payload is required.");
+            }
+
+            command.ConversationId = conversationId;
+            var result = await _sender.Send(command, cancellationToken);
+            return result.Success ? Ok(result) : BadRequest(result);
+        }
+
+        var form = await Request.ReadFormAsync(cancellationToken);
+        var replyToMessageIdText = form["replyToMessageId"].FirstOrDefault();
+        if (!Guid.TryParse(replyToMessageIdText, out var replyToMessageId) &&
+            !string.IsNullOrWhiteSpace(replyToMessageIdText))
+        {
+            return BadRequest("ReplyToMessageId is invalid.");
+        }
+
+        var isUrgent = bool.TryParse(form["isUrgent"].FirstOrDefault(), out var parsedIsUrgent) && parsedIsUrgent;
+        var uploadFiles = form.Files
+            .Select(file => new HRM.Application.Features.Attachments.Dtos.AttachmentUploadFile(
+                file.OpenReadStream(),
+                file.FileName,
+                file.ContentType,
+                file.Length))
+            .ToList();
+
+        try
+        {
+            var result = await _sender.Send(new SendInternalMessageCommand
+            {
+                ConversationId = conversationId,
+                Body = form["body"].FirstOrDefault() ?? string.Empty,
+                ReplyToMessageId = replyToMessageId == Guid.Empty ? null : replyToMessageId,
+                IsUrgent = isUrgent,
+                Attachments = uploadFiles
+            }, cancellationToken);
+
+            return result.Success ? Ok(result) : BadRequest(result);
+        }
+        finally
+        {
+            foreach (var uploadFile in uploadFiles)
+            {
+                await uploadFile.Stream.DisposeAsync();
+            }
+        }
+    }
+
+    [HttpGet("attachments/{attachmentId:guid}")]
+    public async Task<IActionResult> GetAttachmentContent(
+        Guid attachmentId,
+        [FromQuery] string mode = "inline",
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var content = await _sender.Send(new GetInternalMailAttachmentContentQuery
+            {
+                AttachmentId = attachmentId
+            }, cancellationToken);
+            if (content is null)
+            {
+                return NotFound();
+            }
+
+            if (string.Equals(mode, "download", StringComparison.OrdinalIgnoreCase))
+            {
+                return File(content.Stream, content.ContentType, fileDownloadName: content.FileName);
+            }
+
+            Response.Headers.ContentDisposition =
+                $"inline; filename*=UTF-8''{Uri.EscapeDataString(content.FileName)}";
+            return File(content.Stream, content.ContentType, enableRangeProcessing: true);
+        }
+        catch (FileNotFoundException)
+        {
+            return NotFound();
+        }
+    }
+
+    [HttpGet("attachments/{attachmentId:guid}/thumbnail")]
+    public async Task<IActionResult> GetAttachmentThumbnail(
+        Guid attachmentId,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var content = await _sender.Send(new GetInternalMailAttachmentContentQuery
+            {
+                AttachmentId = attachmentId,
+                Thumbnail = true
+            }, cancellationToken);
+
+            if (content is null)
+            {
+                return NotFound();
+            }
+
+            Response.Headers.CacheControl = "private, max-age=86400";
+            return File(content.Stream, content.ContentType, enableRangeProcessing: true);
+        }
+        catch (FileNotFoundException)
+        {
+            return NotFound();
+        }
     }
 
     [HttpPatch("messages/{messageId:guid}")]

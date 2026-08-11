@@ -20,6 +20,38 @@ public sealed class CreateCustomerInteractionRequest
     public DateTime InteractionAt { get; set; }
     public DateTime? NextFollowUpDate { get; set; }
     public Guid? AssignedSaleEmployeeId { get; set; }
+    public IReadOnlyList<CustomerInteractionReferenceRequest> References { get; set; } = Array.Empty<CustomerInteractionReferenceRequest>();
+}
+
+public sealed class CustomerInteractionReferenceRequest
+{
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public CustomerInteractionReferenceType ReferenceType { get; set; }
+    public Guid ReferenceId { get; set; }
+    public bool IsPrimary { get; set; }
+    public string? ReferenceCodeSnapshot { get; set; }
+    public string? ReferenceNameSnapshot { get; set; }
+}
+
+/// <summary>
+/// Ghi nhận tình hình mẫu từ lịch chăm sóc và đồng bộ phản hồi khách trên SampleRequestSampleTrial.
+/// </summary>
+public sealed class CreateSampleTrialInteractionRequest
+{
+    public Guid CustomerId { get; set; }
+    public Guid SampleRequestSampleTrialId { get; set; }
+    public Guid? ContactId { get; set; }
+    public string? Subject { get; set; }
+    public string Content { get; set; } = string.Empty;
+    public string? Outcome { get; set; }
+    public string? NextAction { get; set; }
+    public DateTime InteractionAt { get; set; }
+    public DateTime? NextFollowUpDate { get; set; }
+    public Guid? AssignedSaleEmployeeId { get; set; }
+    public string? CustomerReplyStatus { get; set; }
+    public DateTime? CustomerReplyDate { get; set; }
+    public string? CustomerReplyNote { get; set; }
+    public DateTime? OrderDate { get; set; }
 }
 
 /// <summary>

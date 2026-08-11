@@ -21,7 +21,8 @@ namespace HRM.Application.Features.CRM.CustomerCare.Queries.GetCustomers
         public LeadStatus? LeadStatus { get; init; }
 
         public string? CurrentCrmStatus { get; init; }
-        public bool? IsActive { get; init; } = true;
+        public bool? IsActive { get; init; }
+        public bool IncludeInactive { get; init; }
 
         public DateTime? NextFollowUpFrom { get; init; }
         public DateTime? NextFollowUpTo { get; init; }

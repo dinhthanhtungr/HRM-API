@@ -58,9 +58,9 @@ internal sealed class GeminiCustomerSummaryClient : ICustomerInteractionAiSummar
             ? "https://generativelanguage.googleapis.com"
             : _options.BaseUrl.TrimEnd('/');
         var requestUrl =
-            $"{baseUrl}/v1beta/models/{Uri.EscapeDataString(_options.Model)}:generateContent?key={Uri.EscapeDataString(_options.ApiKey)}";
+            $"{baseUrl}/v1beta/models/{Uri.EscapeDataString(_options.Model)}:generateContent";
 
-        var request = new
+        var requestPayload = new
         {
             contents = new[]
             {
@@ -76,11 +76,18 @@ internal sealed class GeminiCustomerSummaryClient : ICustomerInteractionAiSummar
             generationConfig = new
             {
                 temperature = 0.2,
-                responseMimeType = "application/json"
+                responseMimeType = "application/json",
+                maxOutputTokens = 2048
             }
         };
 
-        using var response = await _httpClient.PostAsJsonAsync(requestUrl, request, JsonOptions, cancellationToken);
+        using var request = new HttpRequestMessage(HttpMethod.Post, requestUrl)
+        {
+            Content = JsonContent.Create(requestPayload, options: JsonOptions)
+        };
+        request.Headers.TryAddWithoutValidation("x-goog-api-key", _options.ApiKey);
+
+        using var response = await _httpClient.SendAsync(request, cancellationToken);
         var responseText = await response.Content.ReadAsStringAsync(cancellationToken);
 
         if (response.StatusCode == HttpStatusCode.TooManyRequests)

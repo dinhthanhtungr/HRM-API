@@ -30,6 +30,7 @@ namespace HRM.Application.Commons.Authorization
         public static class Lab
         {
             public const string LabUser = "LabUser";
+            public const string LabAdmin = "LabAdmin";
         }
 
         public static class Quality

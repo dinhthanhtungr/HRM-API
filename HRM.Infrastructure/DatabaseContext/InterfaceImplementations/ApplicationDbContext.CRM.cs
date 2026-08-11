@@ -1,9 +1,4 @@
 ﻿using HRM.Application.Abstractions.Persistence.CRM.CustomerCare;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace HRM.Infrastructure.DatabaseContext.ApplicationDbs
 {
@@ -11,5 +6,9 @@ namespace HRM.Infrastructure.DatabaseContext.ApplicationDbs
         ICRMReadDbContext,
         ICRMWriteDbContext
     {
+        public void ClearTrackedChanges()
+        {
+            ChangeTracker.Clear();
+        }
     }
 }

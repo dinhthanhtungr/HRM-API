@@ -3,6 +3,7 @@ using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Models;
 using HRM.Application.Commons.Pagination;
 using HRM.Application.Features.Warehouse.Dtos;
+using HRM.Application.Features.Warehouse.Helpers.Publics;
 using HRM.Domain.Entities.WarehouseSchema;
 using HRM.Domain.Enums.WareHouses;
 using MediatR;
@@ -13,9 +14,6 @@ namespace HRM.Application.Features.Warehouse.Queries.GetStockAvailable;
 public sealed class GetStockAvailableQueryHandler
     : IRequestHandler<GetStockAvailableQuery, OperationResult<PagedResult<StockAvailableDto>>>
 {
-    private const string MixingShelfCode = "CT.0.1";
-    private const string MixingShelfDisplayName = "CT.0.1 - KHO CÂN TRỘN";
-
     private readonly IWarehouseReadDbContext _dbContext;
     private readonly ICurrentUser _currentUser;
 
@@ -50,14 +48,9 @@ public sealed class GetStockAvailableQueryHandler
 
     private IQueryable<WarehouseShelfStock> BuildShelfStockQuery(GetStockAvailableQuery request, Guid companyId)
     {
-        var shelfQuery = _dbContext.WarehouseShelfStocks
-            .AsNoTracking()
-            .Where(stock =>
-                stock.CompanyId == companyId &&
-                stock.Code != null &&
-                stock.Code != string.Empty &&
-                stock.WarehouseShelves != null &&
-                stock.WarehouseShelves.IsActive);
+        var shelfQuery = WarehouseStockQueryHelper.ActiveShelfStocks(
+            _dbContext.WarehouseShelfStocks.AsNoTracking(),
+            companyId);
 
         var keyword = request.NormalizedKeyword;
         if (!string.IsNullOrWhiteSpace(keyword))
@@ -253,9 +246,7 @@ public sealed class GetStockAvailableQueryHandler
             header.StockDetailAvailables.Add(new StockAvailableDetailDto
             {
                 LotNo = detail.LotNo,
-                ShelfStockCode = detail.ShelfStockCode == MixingShelfCode
-                    ? MixingShelfDisplayName
-                    : detail.ShelfStockCode,
+                ShelfStockCode = WarehouseStockQueryHelper.GetShelfDisplayName(detail.ShelfStockCode),
                 CompanyName = detail.CompanyName,
                 OnHandKg = detail.OnHandKg
             });

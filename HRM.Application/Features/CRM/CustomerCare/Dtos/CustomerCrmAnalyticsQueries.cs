@@ -47,6 +47,8 @@ public sealed class CustomerActivityCalendarReportQuery : PaginationQuery
     public Guid? AssignedSaleEmployeeId { get; init; }
     public Guid? GroupId { get; init; }
     public bool OnlyMine { get; init; }
+    public IReadOnlyCollection<CustomerHealthCode>? HealthCodes { get; init; }
+    public IReadOnlyCollection<CustomerHealthCode>? ReportHealthCodes { get; init; }
 
     /// <summary>
     /// Bổ sung khách không có interaction trong kỳ nhưng có doanh số giao hàng trong kỳ.

@@ -1,4 +1,5 @@
 using HRM.Application.Abstractions.Persistence.PLM;
+using HRM.Application.Features.CRM.CustomerCare.Visibility;
 using HRM.Application.Features.PLM.Dashboard.Dtos;
 using HRM.Application.Features.PLM.Dashboard.Shared.Services.Rules;
 using MediatR;
@@ -10,28 +11,40 @@ namespace HRM.Application.Features.PLM.Dashboard.Queries.GetDashboardTaskBreakdo
         : IRequestHandler<GetDashboardTaskBreakdownQuery, IReadOnlyList<PlmTaskBreakdownDto>>
     {
         private readonly IPLMReadDbContext _dbContext;
+        private readonly ICustomerVisibilityService _visibilityService;
 
-        public GetDashboardTaskBreakdownQueryHandler(IPLMReadDbContext dbContext)
+        public GetDashboardTaskBreakdownQueryHandler(
+            IPLMReadDbContext dbContext,
+            ICustomerVisibilityService visibilityService)
         {
             _dbContext = dbContext;
+            _visibilityService = visibilityService;
         }
 
         public async Task<IReadOnlyList<PlmTaskBreakdownDto>> Handle(
             GetDashboardTaskBreakdownQuery request,
             CancellationToken cancellationToken)
         {
-            var sampleRequests = _dbContext.SampleRequests
+            var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+            var includeInternalCustomer = PLMRules.ShouldIncludeInternalCustomer(scope);
+            var customerQuery = _dbContext.Customers.AsNoTracking();
+
+            var sampleRequests = _visibilityService.ApplySampleRequestVisibility(
+                    _dbContext.SampleRequests.AsNoTracking(),
+                    customerQuery,
+                    scope)
                 .AsNoTracking()
                 .Where(x =>
-                    x.IsActive &&
-                    x.Customer.ExternalId != PLMRules.InternalCustomerExternalId &&
+                    (includeInternalCustomer || x.Customer.ExternalId != PLMRules.InternalCustomerExternalId) &&
                     !PLMRules.SampleRequestExcludedStatuses.Contains(x.Status))
                 .AsQueryable();
 
-            var orders = _dbContext.MerchandiseOrders
+            var orders = _visibilityService.ApplyMerchandiseOrderVisibility(
+                    _dbContext.MerchandiseOrders.AsNoTracking(),
+                    customerQuery,
+                    scope)
                 .AsNoTracking()
                 .Where(x =>
-                    x.IsActive &&
                     x.Customer != null &&
                     x.Customer.ExternalId != PLMRules.InternalCustomerExternalId &&
                     !PLMRules.OrderExcludedStatuses.Contains(x.Status))

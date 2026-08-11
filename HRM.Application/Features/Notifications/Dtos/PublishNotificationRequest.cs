@@ -26,6 +26,18 @@ public sealed class PublishNotificationRequest
 
     public string? PayloadJson { get; set; }
 
+    /// <summary>
+    /// Stable business-object metadata merged into PayloadJson by NotificationService.
+    /// AggregateType is derived from NotificationTopicCatalog.
+    /// </summary>
+    public Guid? AggregateId { get; set; }
+
+    public string? AggregateCode { get; set; }
+
+    public Guid? ConversationId { get; set; }
+
+    public Guid? MessageId { get; set; }
+
     public IReadOnlyCollection<Guid>? TargetUserIds { get; set; }
 
     public IReadOnlyCollection<string>? TargetRoles { get; set; }

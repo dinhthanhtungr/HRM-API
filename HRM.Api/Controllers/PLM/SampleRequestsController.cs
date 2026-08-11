@@ -1,13 +1,18 @@
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Features.PLM.SampleRequests.Commands.CreateSampleRequest;
+using HRM.Application.Features.PLM.SampleRequests.Commands.CreateSampleRequestDataChangeRequest;
+using HRM.Application.Features.PLM.SampleRequests.Commands.CreateSampleRequestDirectPatchNotification;
+using HRM.Application.Features.PLM.SampleRequests.Commands.CreateSampleRequestFormulaChangeRequest;
+using HRM.Application.Features.PLM.SampleRequests.Commands.DecideSampleRequestDataChange;
+using HRM.Application.Features.PLM.SampleRequests.Commands.DecideSampleRequestFormulaChange;
 using HRM.Application.Features.PLM.SampleRequests.Commands.SendSampleRequestMessage;
 using HRM.Application.Features.PLM.SampleRequests.Commands.PatchSampleRequest;
-using HRM.Application.Features.PLM.SampleRequests.Commands.UpdateSampleRequestColourCode;
 using HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestDetail;
 using HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestFormOptions;
 using HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestHistory;
 using HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestLookup;
 using HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestMessages;
+using HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestSampleTrials;
 using HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestSummary;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -32,6 +37,19 @@ public sealed class SampleRequestsController : ControllerBase
     [HttpGet("summary")]
     public async Task<IActionResult> GetSummary(
         [FromQuery] GetSampleRequestSummaryQuery query,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(query, cancellationToken);
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Lấy báo cáo theo từng lần gửi/thử mẫu để FE trình bày dạng bảng như file theo dõi Lab.
+    /// </summary>
+    [HttpGet("sample-trials")]
+    public async Task<IActionResult> GetSampleTrials(
+        [FromQuery] GetSampleRequestSampleTrialsQuery query,
         CancellationToken cancellationToken)
     {
         var result = await _sender.Send(query, cancellationToken);
@@ -120,21 +138,6 @@ public sealed class SampleRequestsController : ControllerBase
             : BadRequest(result);
     }
 
-    [HttpPatch("{sampleRequestId:guid}/colour-code")]
-    public async Task<IActionResult> UpdateColourCode(
-        Guid sampleRequestId,
-        [FromBody] UpdateSampleRequestColourCodeCommand command,
-        CancellationToken cancellationToken)
-    {
-        command.SampleRequestId = sampleRequestId;
-
-        var result = await _sender.Send(command, cancellationToken);
-
-        return result.Success
-            ? Ok(result)
-            : BadRequest(result);
-    }
-
     [HttpPost("{sampleRequestId:guid}/messages")]
     public async Task<IActionResult> SendMessage(
         Guid sampleRequestId,
@@ -163,6 +166,85 @@ public sealed class SampleRequestsController : ControllerBase
         return result is null
             ? NotFound(new { message = "Sample request not found." })
             : Ok(result);
+    }
+
+    [HttpPost("{sampleRequestId:guid}/data-change-requests")]
+    public async Task<IActionResult> CreateDataChangeRequest(
+        Guid sampleRequestId,
+        [FromBody] CreateSampleRequestDataChangeRequestCommand command,
+        CancellationToken cancellationToken)
+    {
+        command.SampleRequestId = sampleRequestId;
+
+        var result = await _sender.Send(command, cancellationToken);
+
+        return result.Success
+            ? Ok(result)
+            : BadRequest(result);
+    }
+
+    [HttpPost("{sampleRequestId:guid}/data-change-requests/{messageId:guid}/decision")]
+    public async Task<IActionResult> DecideDataChangeRequest(
+        Guid sampleRequestId,
+        Guid messageId,
+        [FromBody] DecideSampleRequestDataChangeCommand command,
+        CancellationToken cancellationToken)
+    {
+        command.SampleRequestId = sampleRequestId;
+        command.RequestMessageId = messageId;
+
+        var result = await _sender.Send(command, cancellationToken);
+
+        return result.Success
+            ? Ok(result)
+            : BadRequest(result);
+    }
+
+    [HttpPost("{sampleRequestId:guid}/direct-patch-notifications")]
+    public async Task<IActionResult> CreateDirectPatchNotification(
+        Guid sampleRequestId,
+        [FromBody] CreateSampleRequestDirectPatchNotificationCommand command,
+        CancellationToken cancellationToken)
+    {
+        command.SampleRequestId = sampleRequestId;
+
+        var result = await _sender.Send(command, cancellationToken);
+
+        return result.Success
+            ? Ok(result)
+            : BadRequest(result);
+    }
+
+    [HttpPost("{sampleRequestId:guid}/formula-change-requests")]
+    public async Task<IActionResult> CreateFormulaChangeRequest(
+        Guid sampleRequestId,
+        [FromBody] CreateSampleRequestFormulaChangeRequestCommand command,
+        CancellationToken cancellationToken)
+    {
+        command.SampleRequestId = sampleRequestId;
+
+        var result = await _sender.Send(command, cancellationToken);
+
+        return result.Success
+            ? Ok(result)
+            : BadRequest(result);
+    }
+
+    [HttpPost("{sampleRequestId:guid}/formula-change-requests/{messageId:guid}/decision")]
+    public async Task<IActionResult> DecideFormulaChangeRequest(
+        Guid sampleRequestId,
+        Guid messageId,
+        [FromBody] DecideSampleRequestFormulaChangeCommand command,
+        CancellationToken cancellationToken)
+    {
+        command.SampleRequestId = sampleRequestId;
+        command.RequestMessageId = messageId;
+
+        var result = await _sender.Send(command, cancellationToken);
+
+        return result.Success
+            ? Ok(result)
+            : BadRequest(result);
     }
 
     private Guid ResolveCurrentUserId()

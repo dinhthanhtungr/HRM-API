@@ -1,4 +1,6 @@
 ﻿using HRM.Application.Abstractions.Persistence.Employees;
+using HRM.Application.Abstractions.Security;
+using HRM.Application.Features.Employees.Administration;
 using HRM.Application.Features.Employees.Dtos;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -14,17 +16,36 @@ namespace HRM.Application.Features.Employees.Queries.GetEmployeeById
         : IRequestHandler<GetEmployeeByIdQuery, EmployeeDetailDto?>
     {
         private readonly IEmployeeReadDbContext _dbContext;
+        private readonly ICurrentUser _currentUser;
 
-        public GetEmployeeByIdQueryHandler(IEmployeeReadDbContext dbContext)
+        public GetEmployeeByIdQueryHandler(
+            IEmployeeReadDbContext dbContext,
+            ICurrentUser currentUser)
         {
             _dbContext = dbContext;
+            _currentUser = currentUser;
         }
 
         public async Task<EmployeeDetailDto?> Handle(
             GetEmployeeByIdQuery request,
             CancellationToken cancellationToken)
         {
-            return await _dbContext.Employees
+            var query = _dbContext.Employees.AsNoTracking();
+            if (!EmployeeAdministrationRules.CanManageAllCompanies(_currentUser))
+            {
+                var companyId = _currentUser.CompanyId
+                    ?? throw new UnauthorizedAccessException("Current user has no CompanyId.");
+                query = query.Where(employee => employee.CompanyId == companyId);
+            }
+
+            if (!EmployeeAdministrationRules.CanManageEmployees(_currentUser))
+            {
+                var employeeId = _currentUser.EmployeeId
+                    ?? throw new UnauthorizedAccessException("Current user has no EmployeeId.");
+                query = query.Where(employee => employee.EmployeeId == employeeId);
+            }
+
+            return await query
                 .Where(x => x.EmployeeId == request.EmployeeId)
                 .Select(x => new EmployeeDetailDto
                 {

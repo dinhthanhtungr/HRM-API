@@ -41,6 +41,7 @@ internal sealed class DeleteInternalMessageCommandHandler
                 x.Conversation.IsActive &&
                 x.Conversation.Participants.Any(participant =>
                     participant.EmployeeId == employeeId.Value &&
+                    participant.IsActive &&
                     (participant.Role == HRM.Domain.Enums.InternalMailEnums.InternalConversationParticipantRole.Owner ||
                      x.SenderEmployeeId == employeeId.Value)),
                 cancellationToken);

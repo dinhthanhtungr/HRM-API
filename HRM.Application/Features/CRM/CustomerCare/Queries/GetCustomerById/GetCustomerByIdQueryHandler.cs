@@ -1,4 +1,6 @@
 using HRM.Application.Abstractions.Persistence.CRM.CustomerCare;
+using HRM.Application.Abstractions.Security;
+using HRM.Application.Commons.Authorization;
 using HRM.Application.Commons.Models;
 using HRM.Application.Features.CRM.CustomerCare.Dtos;
 using HRM.Application.Features.CRM.CustomerCare.Visibility;
@@ -13,13 +15,16 @@ internal sealed class GetCustomerByIdQueryHandler
 {
     private readonly ICRMReadDbContext _dbContext;
     private readonly ICustomerVisibilityService _visibilityService;
+    private readonly ICurrentUser _currentUser;
 
     public GetCustomerByIdQueryHandler(
         ICRMReadDbContext dbContext,
-        ICustomerVisibilityService visibilityService)
+        ICustomerVisibilityService visibilityService,
+        ICurrentUser currentUser)
     {
         _dbContext = dbContext;
         _visibilityService = visibilityService;
+        _currentUser = currentUser;
     }
 
     public async Task<OperationResult<CustomerDetailDto>> Handle(
@@ -45,8 +50,11 @@ internal sealed class GetCustomerByIdQueryHandler
             .Distinct()
             .ToArrayAsync(cancellationToken);
 
-        var detail = await _visibilityService
-            .ApplyCustomerVisibility(_dbContext.Customers.AsNoTracking(), scope)
+        var customerQuery = _currentUser.IsInAnyRole(ApplicationRoleSets.CRM.CustomerEditors)
+            ? _visibilityService.ApplyCustomerVisibilityIncludingInactive(_dbContext.Customers.AsNoTracking(), scope)
+            : _visibilityService.ApplyCustomerVisibility(_dbContext.Customers.AsNoTracking(), scope);
+
+        var detail = await customerQuery
             .Where(customer => customer.CustomerId == request.CustomerId)
             .Select(customer => new
             {

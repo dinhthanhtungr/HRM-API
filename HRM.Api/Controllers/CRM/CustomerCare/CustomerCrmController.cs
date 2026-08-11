@@ -4,6 +4,7 @@ using HRM.Application.Features.CRM.CustomerCare.Commands.CustomerFollowUpTasks.A
 using HRM.Application.Features.CRM.CustomerCare.Commands.CustomerFollowUpTasks.AddCustomerFollowUpTaskGroupAssignees;
 using HRM.Application.Features.CRM.CustomerCare.Commands.CustomerFollowUpTasks.ArchiveCustomerFollowUpTask;
 using HRM.Application.Features.CRM.CustomerCare.Commands.CreateCustomerInteraction;
+using HRM.Application.Features.CRM.CustomerCare.Commands.CreateSampleTrialInteraction;
 using HRM.Application.Features.CRM.CustomerCare.Commands.ArchiveCustomerWorkPlan;
 using HRM.Application.Features.CRM.CustomerCare.Commands.CustomerFollowUpTasks.CompleteCustomerFollowUpTask;
 using HRM.Application.Features.CRM.CustomerCare.Commands.CustomerFollowUpTasks.CreateCustomerFollowUpTask;
@@ -17,10 +18,12 @@ using HRM.Application.Features.CRM.CustomerCare.Queries.CustomerFollowUpTasks;
 using HRM.Application.Features.CRM.CustomerCare.Queries.CustomerWorkPlans;
 using HRM.Application.Features.CRM.CustomerCare.Queries.GetCustomerInteractionById;
 using HRM.Application.Features.CRM.CustomerCare.Queries.GetCustomerInteractionsByCustomer;
+using HRM.Application.Features.CRM.CustomerCare.Queries.GetCustomerPurchaseHealth;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using HRM.Domain.Security.Rules.Roles;
+using HRM.Domain.Enums.CustomerEnum;
 using HRM.Application.Features.CRM.InteractionSummaries.Dtos;
 using HRM.Application.Features.CRM.InteractionSummaries.Commands.GenerateCustomerInteractionSummaryBatch;
 using HRM.Application.Features.CRM.InteractionSummaries.Commands.GenerateCustomerInteractionSummary;
@@ -52,6 +55,18 @@ public sealed class CustomerCrmController : ControllerBase
     public async Task<IActionResult> CreateInteraction([FromBody] CreateCustomerInteractionRequest request, CancellationToken cancellationToken)
     {
         var result = await _sender.Send(new CreateCustomerInteractionCommand { Request = request }, cancellationToken);
+        return result.Success ? CreatedAtAction(nameof(GetInteraction), new { interactionId = result.Data }, result) : BadRequest(result);
+    }
+
+    /// <summary>
+    /// Ghi nhận tình hình mẫu trong lịch chăm sóc và đồng bộ phản hồi khách về SampleRequestSampleTrial.
+    /// </summary>
+    [HttpPost("interactions/sample-trial")]
+    public async Task<IActionResult> CreateSampleTrialInteraction(
+        [FromBody] CreateSampleTrialInteractionRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new CreateSampleTrialInteractionCommand { Request = request }, cancellationToken);
         return result.Success ? CreatedAtAction(nameof(GetInteraction), new { interactionId = result.Data }, result) : BadRequest(result);
     }
 
@@ -127,9 +142,16 @@ public sealed class CustomerCrmController : ControllerBase
     /// Lấy bản AI summary mới nhất mà người dùng có quyền xem của khách hàng.
     /// </summary>
     [HttpGet("customers/{customerId:guid}/ai-summary/latest")]
-    public async Task<IActionResult> GetLatestAiSummary(Guid customerId, CancellationToken cancellationToken)
+    public async Task<IActionResult> GetLatestAiSummary(
+        Guid customerId,
+        [FromQuery] CustomerInteractionSummaryScope? summaryScope,
+        [FromQuery] int? year,
+        [FromQuery] int? month,
+        CancellationToken cancellationToken)
     {
-        var result = await _sender.Send(new GetLatestCustomerInteractionSummaryQuery(customerId), cancellationToken);
+        var result = await _sender.Send(
+            new GetLatestCustomerInteractionSummaryQuery(customerId, summaryScope, year, month),
+            cancellationToken);
         return result.Success ? Ok(result.Data) : NotFound(result);
     }
 
@@ -378,6 +400,18 @@ public sealed class CustomerCrmController : ControllerBase
     public async Task<IActionResult> GetActivityReport([FromQuery] CustomerActivityCalendarReportQuery query, CancellationToken cancellationToken)
     {
         var result = await _sender.Send(new GetCustomerActivityCalendarReportQuery { Query = query }, cancellationToken);
+        return result.Success ? Ok(result.Data) : BadRequest(result);
+    }
+
+    /// <summary>
+    /// Lấy khách theo lịch sử mua hàng để ưu tiên chăm lại khách đã lâu không phát sinh giao hàng.
+    /// </summary>
+    [HttpGet("customer-purchase-health")]
+    public async Task<IActionResult> GetCustomerPurchaseHealth(
+        [FromQuery] CustomerPurchaseHealthQuery query,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new GetCustomerPurchaseHealthQuery { Query = query }, cancellationToken);
         return result.Success ? Ok(result.Data) : BadRequest(result);
     }
 }

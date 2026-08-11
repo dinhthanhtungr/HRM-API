@@ -1,6 +1,8 @@
 using System.Globalization;
 using HRM.Application.Abstractions.Persistence.PLM;
 using HRM.Application.Commons.Pagination;
+using HRM.Application.Commons.Authorization;
+using HRM.Application.Features.CRM.CustomerCare.Visibility;
 using HRM.Application.Features.PLM.Dashboard.Dtos;
 using HRM.Application.Features.PLM.Dashboard.Shared.Services.Rules;
 using HRM.Domain.Entities.ManufacturingSchema;
@@ -15,10 +17,14 @@ internal sealed class GetDashboardDrilldownQueryHandler
     : IRequestHandler<GetDashboardDrilldownQuery, PagedResult<PlmDashboardDrilldownItemDto>>
 {
     private readonly IPLMReadDbContext _dbContext;
+    private readonly ICustomerVisibilityService _visibilityService;
 
-    public GetDashboardDrilldownQueryHandler(IPLMReadDbContext dbContext)
+    public GetDashboardDrilldownQueryHandler(
+        IPLMReadDbContext dbContext,
+        ICustomerVisibilityService visibilityService)
     {
         _dbContext = dbContext;
+        _visibilityService = visibilityService;
     }
 
     public async Task<PagedResult<PlmDashboardDrilldownItemDto>> Handle(
@@ -26,30 +32,36 @@ internal sealed class GetDashboardDrilldownQueryHandler
         CancellationToken cancellationToken)
     {
         var dateRange = ResolveDateRange(request);
+        var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
 
         if (PLMRules.IsProductionOrderSource(request.NormalizedSource))
         {
-            return await GetProductionOrdersAsync(request, dateRange, cancellationToken);
+            return await GetProductionOrdersAsync(request, dateRange, scope, cancellationToken);
         }
 
         if (PLMRules.IsOrderSource(request.NormalizedSource))
         {
-            return await GetOrdersAsync(request, dateRange, cancellationToken);
+            return await GetOrdersAsync(request, dateRange, scope, cancellationToken);
         }
 
-        return await GetSampleRequestsAsync(request, dateRange, cancellationToken);
+        return await GetSampleRequestsAsync(request, dateRange, scope, cancellationToken);
     }
 
     private async Task<PagedResult<PlmDashboardDrilldownItemDto>> GetSampleRequestsAsync(
         GetDashboardDrilldownQuery request,
         DateRange dateRange,
+        ViewerScope scope,
         CancellationToken cancellationToken)
     {
-        var query = _dbContext.SampleRequests
+        var includeInternalCustomer = PLMRules.ShouldIncludeInternalCustomer(scope);
+        var customerQuery = _dbContext.Customers.AsNoTracking();
+        var query = _visibilityService.ApplySampleRequestVisibility(
+                _dbContext.SampleRequests.AsNoTracking(),
+                customerQuery,
+                scope)
             .AsNoTracking()
             .Where(x =>
-                x.IsActive &&
-                x.Customer.ExternalId != PLMRules.InternalCustomerExternalId &&
+                (includeInternalCustomer || x.Customer.ExternalId != PLMRules.InternalCustomerExternalId) &&
                 !PLMRules.SampleRequestExcludedStatuses.Contains(x.Status))
             .AsQueryable();
 
@@ -143,12 +155,19 @@ internal sealed class GetDashboardDrilldownQueryHandler
     private async Task<PagedResult<PlmDashboardDrilldownItemDto>> GetProductionOrdersAsync(
         GetDashboardDrilldownQuery request,
         DateRange dateRange,
+        ViewerScope scope,
         CancellationToken cancellationToken)
     {
+        var customerQuery = _dbContext.Customers.AsNoTracking();
+        var visibleCustomerIds = _visibilityService.ApplyCustomerVisibility(customerQuery, scope)
+            .Select(x => x.CustomerId);
         var query = _dbContext.MfgProductionOrders
             .AsNoTracking()
             .Where(x =>
                 x.IsActive &&
+                x.CompanyId == scope.CompanyId &&
+                x.CustomerId.HasValue &&
+                visibleCustomerIds.Contains(x.CustomerId.Value) &&
                 x.Customer != null && x.Customer.ExternalId != PLMRules.InternalCustomerExternalId &&
                 !PLMRules.ProductionOrderExcludedStatuses.Contains(x.Status))
             .AsQueryable();
@@ -243,12 +262,16 @@ internal sealed class GetDashboardDrilldownQueryHandler
     private async Task<PagedResult<PlmDashboardDrilldownItemDto>> GetOrdersAsync(
         GetDashboardDrilldownQuery request,
         DateRange dateRange,
+        ViewerScope scope,
         CancellationToken cancellationToken)
     {
-        var query = _dbContext.MerchandiseOrders
+        var customerQuery = _dbContext.Customers.AsNoTracking();
+        var query = _visibilityService.ApplyMerchandiseOrderVisibility(
+                _dbContext.MerchandiseOrders.AsNoTracking(),
+                customerQuery,
+                scope)
             .AsNoTracking()
             .Where(x =>
-                x.IsActive &&
                 x.Customer != null &&
                 x.Customer.ExternalId != PLMRules.InternalCustomerExternalId &&
                 !PLMRules.OrderExcludedStatuses.Contains(x.Status))

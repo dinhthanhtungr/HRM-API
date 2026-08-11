@@ -65,6 +65,11 @@ project.lock.json
 project.fragment.lock.json
 artifacts/
 
+# Local Codex inspection and generated output
+/.codex/tmp/
+/output/
+/tmp/
+
 # Tye
 .tye/
 

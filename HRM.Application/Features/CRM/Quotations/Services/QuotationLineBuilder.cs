@@ -21,6 +21,7 @@ internal sealed class QuotationLineBuilder
     public async Task<OperationResult<IReadOnlyList<QuotationLine>>> BuildAsync(
         Guid quotationId,
         Guid companyId,
+        Guid customerId,
         IReadOnlyList<QuotationLineRequest> requests,
         CancellationToken cancellationToken)
     {
@@ -33,17 +34,17 @@ internal sealed class QuotationLineBuilder
         for (var index = 0; index < requests.Count; index++)
         {
             var request = requests[index];
-            if (request.ProductId == Guid.Empty || request.Quantity <= 0m || request.UnitPrice < 0m)
+            if (request.ProductId == Guid.Empty || request.Quantity <= 0m ||
+                request.SampleRequestId == Guid.Empty)
             {
                 return OperationResult<IReadOnlyList<QuotationLine>>.Fail(
                     $"Quotation line at index {index} is invalid.");
             }
 
-            if (!QuotationRules.IsValidPercent(request.DiscountPercent) ||
-                !QuotationRules.IsValidPercent(request.TaxPercent))
+            if (!QuotationRules.IsValidPercent(request.DiscountPercent))
             {
                 return OperationResult<IReadOnlyList<QuotationLine>>.Fail(
-                    $"DiscountPercent and TaxPercent at index {index} must be between 0 and 100.");
+                    $"DiscountPercent at index {index} must be between 0 and 100.");
             }
 
             if (request.SortOrder is < 0)
@@ -63,7 +64,7 @@ internal sealed class QuotationLineBuilder
             .Select(x => new
             {
                 x.ProductId,
-                x.Code,
+                x.ColourCode,
                 x.Name,
                 x.Unit
             })
@@ -75,14 +76,54 @@ internal sealed class QuotationLineBuilder
                 "One or more products were not found, inactive, or outside the current company.");
         }
 
+        var sampleRequestIds = requests
+            .Where(x => x.SampleRequestId.HasValue)
+            .Select(x => x.SampleRequestId!.Value)
+            .Distinct()
+            .ToArray();
+        var sampleRequests = await _dbContext.SampleRequests
+            .AsNoTracking()
+            .Where(x =>
+                sampleRequestIds.Contains(x.SampleRequestId) &&
+                x.CompanyId == companyId &&
+                x.CustomerId == customerId &&
+                x.IsActive)
+            .Select(x => new
+            {
+                x.SampleRequestId,
+                x.ProductId
+            })
+            .ToDictionaryAsync(x => x.SampleRequestId, cancellationToken);
+
+        if (sampleRequests.Count != sampleRequestIds.Length || requests.Any(request =>
+                request.SampleRequestId.HasValue &&
+                (!sampleRequests.TryGetValue(request.SampleRequestId.Value, out var sampleRequest) ||
+                 sampleRequest.ProductId != request.ProductId)))
+        {
+            return OperationResult<IReadOnlyList<QuotationLine>>.Fail(
+                "One or more sample requests were not found, inactive, outside the current company/customer, or belong to another product.");
+        }
+
         var lines = new List<QuotationLine>(requests.Count);
         for (var index = 0; index < requests.Count; index++)
         {
             var request = requests[index];
             var product = products[request.ProductId];
-            var productCode = QuotationRules.TrimToNull(product.Code);
+            var productCode = QuotationRules.TrimToNull(product.ColourCode);
             var productName = QuotationRules.TrimToNull(product.Name);
             var unit = QuotationRules.TrimToNull(request.Unit) ?? QuotationRules.TrimToNull(product.Unit);
+            var quotationLineId = Guid.CreateVersion7();
+            var pricingResult = QuotationPriceTierBuilder.Build(
+                quotationLineId,
+                request.PriceMode,
+                request.Quantity,
+                request.UnitPrice,
+                request.PriceTiers,
+                $"lines[{index}]");
+            if (!pricingResult.Success || pricingResult.Data is null)
+            {
+                return OperationResult<IReadOnlyList<QuotationLine>>.Fail(pricingResult.Message!);
+            }
 
             if (productCode is null || productName is null || unit is null)
             {
@@ -98,21 +139,22 @@ internal sealed class QuotationLineBuilder
 
             lines.Add(new QuotationLine
             {
-                QuotationLineId = Guid.CreateVersion7(),
+                QuotationLineId = quotationLineId,
                 QuotationId = quotationId,
                 ProductId = request.ProductId,
+                SampleRequestId = request.SampleRequestId,
                 ProductExternalIdSnapshot = productCode,
                 ProductNameSnapshot = productName,
                 Quantity = request.Quantity,
                 Unit = unit,
-                UnitPrice = request.UnitPrice,
+                PriceMode = request.PriceMode,
+                UnitPrice = pricingResult.Data.EffectiveUnitPrice,
                 DiscountPercent = request.DiscountPercent,
-                TaxPercent = request.TaxPercent,
                 LineTotal = QuotationRules.CalculateLineTotal(
                     request.Quantity,
-                    request.UnitPrice,
-                    request.DiscountPercent,
-                    request.TaxPercent),
+                    pricingResult.Data.EffectiveUnitPrice,
+                    request.DiscountPercent),
+                PriceTiers = pricingResult.Data.PriceTiers.ToList(),
                 Note = QuotationRules.TrimToNull(request.Note),
                 SortOrder = request.SortOrder ?? index
             });

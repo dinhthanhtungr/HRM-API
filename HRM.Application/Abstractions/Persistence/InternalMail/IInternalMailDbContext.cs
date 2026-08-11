@@ -1,3 +1,5 @@
+using HRM.Domain.Entities.AttachmentSchema;
+using HRM.Domain.Entities.CompanySchema;
 using HRM.Domain.Entities.HrSchema;
 using HRM.Domain.Entities.InternalMailSchema;
 using HRM.Domain.Identity;
@@ -16,7 +18,11 @@ public interface IInternalMailDbContext
     DbSet<InternalMessageAttachment> InternalMessageAttachments { get; }
     DbSet<InternalMessageReference> InternalMessageReferences { get; }
     DbSet<InternalMessageReadState> InternalMessageReadStates { get; }
+    DbSet<AttachmentCollection> AttachmentCollections { get; }
+    DbSet<AttachmentModel> AttachmentModels { get; }
     DbSet<Employee> Employees { get; }
+    DbSet<Group> Groups { get; }
+    DbSet<MemberInGroup> MemberInGroups { get; }
     DbSet<ApplicationUser> Users { get; }
     DbSet<ApplicationRole> Roles { get; }
     DbSet<ApplicationUserRole> UserRoles { get; }

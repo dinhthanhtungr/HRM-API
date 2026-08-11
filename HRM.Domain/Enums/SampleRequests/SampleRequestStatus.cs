@@ -14,6 +14,7 @@ namespace HRM.Domain.Enums.SampleRequests
         InProgress,
         Completed,
         Cancelled,
-        New
+        New,
+        FormulaUpdateRequested
     }
 }

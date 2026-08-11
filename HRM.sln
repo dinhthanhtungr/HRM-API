@@ -11,6 +11,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HRM.Infrastructure", "HRM.I
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HRM.Api", "HRM.Api\HRM.Api.csproj", "{872CA71D-DFB8-4FE5-900E-C4BC155124C1}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HRM.Application.Tests", "HRM.Application.Tests\HRM.Application.Tests.csproj", "{27046D02-71A1-418E-B781-79A2E5E1D583}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -69,6 +71,18 @@ Global
 		{872CA71D-DFB8-4FE5-900E-C4BC155124C1}.Release|x64.Build.0 = Release|Any CPU
 		{872CA71D-DFB8-4FE5-900E-C4BC155124C1}.Release|x86.ActiveCfg = Release|Any CPU
 		{872CA71D-DFB8-4FE5-900E-C4BC155124C1}.Release|x86.Build.0 = Release|Any CPU
+		{27046D02-71A1-418E-B781-79A2E5E1D583}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{27046D02-71A1-418E-B781-79A2E5E1D583}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{27046D02-71A1-418E-B781-79A2E5E1D583}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{27046D02-71A1-418E-B781-79A2E5E1D583}.Debug|x64.Build.0 = Debug|Any CPU
+		{27046D02-71A1-418E-B781-79A2E5E1D583}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{27046D02-71A1-418E-B781-79A2E5E1D583}.Debug|x86.Build.0 = Debug|Any CPU
+		{27046D02-71A1-418E-B781-79A2E5E1D583}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{27046D02-71A1-418E-B781-79A2E5E1D583}.Release|Any CPU.Build.0 = Release|Any CPU
+		{27046D02-71A1-418E-B781-79A2E5E1D583}.Release|x64.ActiveCfg = Release|Any CPU
+		{27046D02-71A1-418E-B781-79A2E5E1D583}.Release|x64.Build.0 = Release|Any CPU
+		{27046D02-71A1-418E-B781-79A2E5E1D583}.Release|x86.ActiveCfg = Release|Any CPU
+		{27046D02-71A1-418E-B781-79A2E5E1D583}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

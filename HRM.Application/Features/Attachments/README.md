@@ -144,5 +144,6 @@ Use `isImage` before rendering an image preview. Non-image files should be rende
 - Keep controllers thin. Do not put storage, validation, or EF logic in controllers.
 - Keep physical path resolution in `FileShareStorage`.
 - Keep slot validation in `AttachmentService` through `AttachmentRules`.
+- Use `AttachmentSlot.InternalMail` for files attached to an Internal Mail message; use business slots such as `SampleRequest` only for files attached directly to that business record.
 - Add thumbnails as a separate use case or endpoint if large images become slow.
 - Do not expose `StoragePath` to clients.

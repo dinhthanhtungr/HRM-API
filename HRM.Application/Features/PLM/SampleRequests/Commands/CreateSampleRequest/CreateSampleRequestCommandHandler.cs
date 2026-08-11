@@ -2,30 +2,37 @@
 using HRM.Application.Abstractions.Persistence.PLM;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Models;
+using HRM.Application.Features.PLM.SampleRequests.Commands.SendSampleRequestMessage;
 using HRM.Domain.Entities.AttachmentSchema;
 using HRM.Domain.Entities.SampleRequestSchema;
 using HRM.Domain.Enums.Category;
 using HRM.Domain.Enums.SampleRequests;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using System.Text;
 
 namespace HRM.Application.Features.PLM.SampleRequests.Commands.CreateSampleRequest;
 
 internal sealed class CreateSampleRequestCommandHandler
     : IRequestHandler<CreateSampleRequestCommand, OperationResult<Guid>>
 {
+    private const int MaxInitialLabMessageLength = 2000;
+
     private readonly IPLMWriteDbContext _dbContext;
     private readonly IExternalIdService _externalIdService;
     private readonly ICurrentUser _currentUser;
+    private readonly ISender _sender;
 
     public CreateSampleRequestCommandHandler(
         IPLMWriteDbContext dbContext,
         IExternalIdService externalIdService,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        ISender sender)
     {
         _dbContext = dbContext;
         _externalIdService = externalIdService;
         _currentUser = currentUser;
+        _sender = sender;
     }
 
     public async Task<OperationResult<Guid>> Handle(
@@ -46,6 +53,12 @@ internal sealed class CreateSampleRequestCommandHandler
         if (currentUserId == Guid.Empty)
         {
             return OperationResult<Guid>.Fail("Current employee is invalid.");
+        }
+
+        var initialLabMessage = TrimToNull(request.InitialLabMessage);
+        if (initialLabMessage is { Length: > MaxInitialLabMessageLength })
+        {
+            return OperationResult<Guid>.Fail($"InitialLabMessage cannot exceed {MaxInitialLabMessageLength} characters.");
         }
 
         var customerExists = await _dbContext.Customers
@@ -162,6 +175,22 @@ internal sealed class CreateSampleRequestCommandHandler
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
+        var messageResult = await _sender.Send(new SendSampleRequestMessageCommand
+        {
+            SampleRequestId = sampleRequestId,
+            Type = SampleRequestNotificationType.GeneralMessage,
+            Message = initialLabMessage ?? BuildLabSummaryMessage(externalId, request),
+            TitleOverride = "Yêu cầu phối mẫu mới",
+            ExtraRecipientEmployeeIds = request.InitialLabRecipientEmployeeIds
+        }, cancellationToken);
+
+        if (!messageResult.Success)
+        {
+            return OperationResult<Guid>.Ok(
+                sampleRequestId,
+                $"Created sample request successfully, but could not send Lab summary message: {messageResult.Message}");
+        }
+
         return OperationResult<Guid>.Ok(sampleRequestId, "Created sample request successfully.");
     }
 
@@ -172,6 +201,64 @@ internal sealed class CreateSampleRequestCommandHandler
     private static string? TrimToNull(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private static string BuildLabSummaryMessage(
+        string externalId,
+        CreateSampleRequestCommand request)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine($"Yêu cầu phối mẫu mới {externalId}");
+        Append(builder, "Loại yêu cầu", request.RequestType);
+        Append(builder, "Số lượng dự kiến", request.ExpectedQuantity);
+        Append(builder, "Giá dự kiến", request.ExpectedPrice);
+        Append(builder, "Số lượng mẫu", request.SampleQuantity);
+        Append(builder, "Số ngày giao mẫu", request.NumberDeliverySampleDate);
+        Append(builder, "Quy cách đóng gói", request.Package);
+        Append(builder, "Trọng lượng bao", request.BagWeight);
+        Append(builder, "Mã sản phẩm KH", request.CustomerProductCode);
+        Append(builder, "Ngày yêu cầu giao", request.RequestDeliveryDate);
+        Append(builder, "Ngày giao dự kiến", request.ExpectedDeliveryDate);
+        Append(builder, "Ngày yêu cầu test mẫu", request.RequestTestSampleDate);
+        Append(builder, "Ngày dự kiến báo giá", request.ExpectedPriceQuoteDate);
+        Append(builder, "Loại thông tin", request.InfoType);
+        Append(builder, "Ghi chú Sale", request.SaleComment);
+        Append(builder, "Ghi chú khác", request.OtherComment);
+        Append(builder, "Ghi chú bổ sung", request.AdditionalComment);
+
+        Append(builder, "Tên sản phẩm", request.ProductName);
+        Append(builder, "Mã màu", request.ColourCode);
+        Append(builder, "Tên màu", request.ColourName);
+        Append(builder, "Phụ gia", request.Additive);
+        Append(builder, "Tỷ lệ sử dụng", request.UsageRate);
+        Append(builder, "Yêu cầu sản phẩm", request.ProductRequirement);
+        Append(builder, "Ghi chú Lab", request.LabComment);
+
+        var message = builder.ToString().Trim();
+        return message.Length <= 2000
+            ? message
+            : string.Concat(message.AsSpan(0, 1997), "...");
+    }
+
+    private static void Append(StringBuilder builder, string label, object? value)
+    {
+        var text = FormatValue(value);
+        if (!string.IsNullOrWhiteSpace(text))
+        {
+            builder.AppendLine($"{label}: {text}");
+        }
+    }
+
+    private static string? FormatValue(object? value)
+    {
+        return value switch
+        {
+            null => null,
+            string text => string.IsNullOrWhiteSpace(text) ? null : text.Trim(),
+            DateTime date => date.ToString("yyyy-MM-dd"),
+            bool flag => flag ? "Có" : "Không",
+            _ => value.ToString()
+        };
     }
 
     private async Task<OperationResult<Guid>> ResolveManagerByAsync(

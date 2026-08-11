@@ -4,5 +4,6 @@ public enum CustomerCrmCalendarSourceType
 {
     FollowUpTask = 0,
     Interaction = 1,
-    WorkPlan = 2
+    WorkPlan = 2,
+    PersonalTask = 3
 }

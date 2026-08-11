@@ -8,6 +8,7 @@ public sealed class DeliveryOrderLineDto
     public string? ProductExternalId { get; init; }
     public string? ProductName { get; init; }
     public string? LotNoList { get; init; }
+    public IReadOnlyList<DeliveryOrderLotDto> Lots { get; init; } = Array.Empty<DeliveryOrderLotDto>();
     public string? PONo { get; init; }
     public decimal Quantity { get; init; }
     public int NumOfBags { get; init; }

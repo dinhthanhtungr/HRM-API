@@ -1,4 +1,5 @@
 using HRM.Application.Abstractions.Persistence.PLM;
+using HRM.Application.Features.CRM.CustomerCare.Visibility;
 using HRM.Application.Features.PLM.Dashboard.Dtos;
 using HRM.Application.Features.PLM.Dashboard.Shared.Services.Rules;
 using HRM.Domain.Enums.Merchadises;
@@ -17,10 +18,14 @@ internal sealed class GetDashboardPivotHubQueryHandler
     private static readonly string CancelledOrderStatus = MerchadiseStatus.Cancelled.ToString();
 
     private readonly IPLMReadDbContext _dbContext;
+    private readonly ICustomerVisibilityService _visibilityService;
 
-    public GetDashboardPivotHubQueryHandler(IPLMReadDbContext dbContext)
+    public GetDashboardPivotHubQueryHandler(
+        IPLMReadDbContext dbContext,
+        ICustomerVisibilityService visibilityService)
     {
         _dbContext = dbContext;
+        _visibilityService = visibilityService;
     }
 
     public async Task<PlmDashboardPivotHubDto> Handle(
@@ -38,14 +43,21 @@ internal sealed class GetDashboardPivotHubQueryHandler
 
         var queryToDateExclusive = effectiveToDate.AddDays(1);
 
+        var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+        var includeInternalCustomer = PLMRules.ShouldIncludeInternalCustomer(scope);
+        var customerQuery = _dbContext.Customers.AsNoTracking();
+        var visibleCustomerIds = _visibilityService.ApplyCustomerVisibility(customerQuery, scope)
+            .Select(x => x.CustomerId);
 
-        var sampleRequests = _dbContext.SampleRequests
+        var sampleRequests = _visibilityService.ApplySampleRequestVisibility(
+                _dbContext.SampleRequests.AsNoTracking(),
+                customerQuery,
+                scope)
             .AsNoTracking()
             .Where(x =>
-                x.IsActive &&
                 x.CreatedDate >= effectiveFromDate &&
                 x.CreatedDate < queryToDateExclusive &&
-                x.Customer.ExternalId != PLMRules.InternalCustomerExternalId &&
+                (includeInternalCustomer || x.Customer.ExternalId != PLMRules.InternalCustomerExternalId) &&
                 !PLMRules.SampleRequestExcludedStatuses.Contains(x.Status));
 
 
@@ -53,16 +65,21 @@ internal sealed class GetDashboardPivotHubQueryHandler
             .AsNoTracking()
             .Where(x =>
                 x.IsActive &&
+                x.CompanyId == scope.CompanyId &&
                 x.CreatedDate >= effectiveFromDate &&
                 x.CreatedDate < queryToDateExclusive &&
                 x.Customer != null &&
+                x.CustomerId.HasValue &&
+                visibleCustomerIds.Contains(x.CustomerId.Value) &&
                 x.Customer.ExternalId != PLMRules.InternalCustomerExternalId &&
                 !PLMRules.ProductionOrderExcludedStatuses.Contains(x.Status));
 
-        var merchadiseOrders = _dbContext.MerchandiseOrders
+        var merchadiseOrders = _visibilityService.ApplyMerchandiseOrderVisibility(
+                _dbContext.MerchandiseOrders.AsNoTracking(),
+                customerQuery,
+                scope)
             .AsNoTracking()
             .Where(x =>
-                x.IsActive &&
                 x.CreateDate >= effectiveFromDate &&
                 x.CreateDate < queryToDateExclusive &&
                 x.Customer != null &&

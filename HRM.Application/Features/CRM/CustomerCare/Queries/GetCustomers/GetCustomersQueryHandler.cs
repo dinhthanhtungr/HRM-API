@@ -1,4 +1,6 @@
 ﻿using HRM.Application.Abstractions.Persistence.CRM.CustomerCare;
+using HRM.Application.Abstractions.Security;
+using HRM.Application.Commons.Authorization;
 using HRM.Application.Commons.Pagination;
 using HRM.Application.Features.CRM.CustomerCare.Visibility;
 using HRM.Application.Features.CRM.CustomerCare.Dtos;
@@ -15,13 +17,16 @@ internal sealed class GetCustomersQueryHandler
 {
     private readonly ICustomerVisibilityReadDbContext _dbContext;
     private readonly ICustomerVisibilityService _visibilityService;
+    private readonly ICurrentUser _currentUser;
 
     public GetCustomersQueryHandler(
         ICustomerVisibilityReadDbContext dbContext,
-        ICustomerVisibilityService visibilityService)
+        ICustomerVisibilityService visibilityService,
+        ICurrentUser currentUser)
     {
         _dbContext = dbContext;
         _visibilityService = visibilityService;
+        _currentUser = currentUser;
     }
 
     public async Task<PagedResult<CustomerListItemDto>> Handle(
@@ -37,7 +42,11 @@ internal sealed class GetCustomersQueryHandler
             .AsNoTracking()
             .AsQueryable();
 
-        query = _visibilityService.ApplyCustomerVisibility(query, scope);
+        var canReadInactive = _currentUser.IsInAnyRole(ApplicationRoleSets.CRM.CustomerEditors);
+        var includeInactive = request.IncludeInactive && canReadInactive;
+        query = includeInactive
+            ? _visibilityService.ApplyCustomerVisibilityIncludingInactive(query, scope)
+            : _visibilityService.ApplyCustomerVisibility(query, scope);
 
         if (request.CompanyId is { } companyId && companyId != Guid.Empty)
         {
@@ -83,7 +92,11 @@ internal sealed class GetCustomersQueryHandler
             query = query.Where(x => x.CurrentCrmStatus == crmStatus);
         }
 
-        if (request.IsActive.HasValue)
+        if (request.IsActive == false && !includeInactive)
+        {
+            query = query.Where(_ => false);
+        }
+        else if (request.IsActive.HasValue)
         {
             query = query.Where(x => x.IsActive == request.IsActive.Value);
         }

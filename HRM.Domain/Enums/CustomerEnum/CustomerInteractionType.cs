@@ -13,6 +13,9 @@ namespace HRM.Domain.Enums.CustomerEnum
         Email = 2,
         Zalo = 3,
         Visit = 4,
+        Quotation = 5,
+        SampleTrial = 6,
+        Complaint = 7,
         Other = 99
     }
 }

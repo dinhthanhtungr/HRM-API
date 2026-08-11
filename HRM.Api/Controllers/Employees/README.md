@@ -1,86 +1,182 @@
-﻿# Employees API
+# Employees API
 
-## Purpose
-Quản lý hồ sơ nhân viên và các thông tin mở rộng: hồ sơ cá nhân, công việc, hợp đồng, ngân hàng, bảo hiểm, người thân, tài liệu.
+## Phạm vi
 
-## Controllers
-- `EmployeeController.cs`: API chính cho Employee.
-- `Document.cs`: API hoặc endpoint liên quan hồ sơ/tài liệu nhân viên.
+API quản lý nhân viên, lookup công ty/bộ phận, tài khoản đăng nhập và role. Toàn bộ controller yêu cầu đăng nhập.
 
-## Related Domain Entities
-- `Employee`
-- `EmployeeProfile`
-- `EmployeeWorkProfile`
-- `EmployeeContract`
-- `EmployeeBankAccount`
-- `EmployeeInsuranceProfile`
-- `EmployeeRelative`
-- `EmployeeDocument`
+- User thông thường chỉ đọc Employee trong company hiện tại.
+- `Admin`, `President` quản lý Employee và account trong company hiện tại.
+- `Developer` có global company scope.
+- Chỉ `Admin`, `Developer` được tạo loại role và cấp/thu hồi role đặc quyền.
+- `President` không nhìn thấy và không được cấp/thu hồi `Admin`, `Developer`, `President`.
+- Chỉ `Developer` nhận số assignment toàn hệ thống trong `activeAssignmentCount`; role khác nhận `0` để không
+  lộ thống kê chéo company.
 
-## Notes
-- `EmployeeWorkProfile` lưu lịch sử phân công công việc theo `EffectiveFrom` / `EffectiveTo`.
-- `AuditLog` dùng để truy vết thay đổi dữ liệu.
-- Không cộng/trừ dữ liệu lịch sử bằng cách sửa trực tiếp nếu nghiệp vụ cần lưu timeline.
+## Lookup
 
-
-## Endpoints
-
-GET /api/v1/groups/lookup
-
-GET /api/v1/employees/lookup
-
-Lookup employee dùng cho UI chọn nhân viên active. API hỗ trợ `keyword` hoặc `search` để tìm theo mã nhân viên
-và tên nhân viên, hỗ trợ `partId` để lọc theo bộ phận, `groupId` để chỉ lấy nhân viên là member active của group.
-
-Nếu FE đã có `groupId` và muốn contract rõ là lookup member trong group, gọi route tương đương:
+### Company
 
 ```http
-GET /api/v1/employees/groups/{groupId}/lookup?keyword=...
+GET /api/v1/employees/companies/lookup?keyword=...
 ```
 
-Route này chỉ trả nhân viên active có dòng `MemberInGroup.IsActive = true` trong group đó, vẫn dùng response
-`PagedResult<EmployeeLookupDto>` giống `/api/v1/employees/lookup`.
+Response:
 
-Lookup group dùng chung cho UI chọn nhóm/phòng ban. API luôn lọc theo company của current user.
-Admin/President/Developer/CustomerViewAll thấy group trong company; leader thường chỉ thấy group active mà
-mình là leader (`MemberInGroup.IsAdmin = true`).
+```json
+[
+  {
+    "companyId": "00000000-0000-0000-0000-000000000000",
+    "code": "VTA",
+    "name": "VietAUS"
+  }
+]
+```
 
-Với màn CRM chuyển giao khách hàng, không dùng `groupType=Sale`. Dữ liệu group sale dùng mã `CMR`,
-`CMR.G1`, `CMR.G2`, ... nên FE gọi:
+`Developer` thấy tất cả company active. Các role khác chỉ thấy company hiện tại.
+
+### Part
 
 ```http
-GET /api/v1/groups/lookup?groupTypePrefix=CMR&keyword=...
+GET /api/v1/employees/parts/lookup?companyId={companyId}&keyword=...
 ```
 
-`groupTypePrefix=CMR` trả group có `GroupType = CMR` hoặc bắt đầu bằng `CMR.`.
+Response:
 
-Nếu FE đã chọn nhân viên và chỉ muốn lấy group mà nhân viên đó đang thuộc, truyền thêm `employeeId`:
+```json
+[
+  {
+    "partId": "00000000-0000-0000-0000-000000000000",
+    "externalId": "SALE",
+    "partName": "Kinh doanh"
+  }
+]
+```
+
+Bảng `hr.Parts` chưa có `CompanyId`, vì vậy company scope được xác định qua Employee hoặc Group đã liên kết.
+
+## Tạo nhân viên
 
 ```http
-GET /api/v1/groups/lookup?groupTypePrefix=CMR&employeeId={employeeId}
+POST /api/v1/employees
 ```
 
-API vẫn áp quyền người đang gọi: admin/director thấy group của nhân viên trong company; leader chỉ thấy phần
-giao giữa group mình quản lý và group mà nhân viên đó là member active.
+`companyId` và `partId` là bắt buộc. `Admin`, `President` chỉ tạo trong company hiện tại; `Developer` được chọn
+company active khác. Nếu request có `workProfile.groupId`, group phải cùng company và part. Nếu
+`workProfile.partId` được gửi thì phải trùng `partId` cấp Employee.
 
-GET /api/v1/employees/{id}/detail
+Response giữ contract `OperationResult<Guid>`:
 
+```json
+{
+  "success": true,
+  "message": null,
+  "data": "00000000-0000-0000-0000-000000000000"
+}
+```
 
-GET /api/v1/employees/{id}/personal
-GET /api/v1/employees/{id}/work-profile
-GET /api/v1/employees/{id}/organization
-GET /api/v1/employees/{id}/contracts
-GET /api/v1/employees/{id}/account
-GET /api/v1/employees/{id}/payroll-compliance
-GET /api/v1/employees/{id}/documents
-GET /api/v1/employees/{id}/audit-logs
+Tạo Employee không tự tạo ApplicationUser để tránh trạng thái nửa chừng giữa dữ liệu HR và Identity.
 
+## Account và role
 
-1. /detail-summary        gọi ngay khi vào trang
-2. /personal              gọi khi mở tab Cá nhân
-3. /work-profile          gọi khi mở tab Công việc
-4. /contracts             gọi khi mở tab Hợp đồng
-5. /account-permissions   gọi khi mở tab Tài khoản
-6. /payroll-compliance    gọi khi mở tab Lương & BH
-7. /documents             gọi khi mở tab Tài liệu
-8. /audit-logs            gọi khi mở tab Lịch sử
+### Xem account/role active
+
+```http
+GET /api/v1/employees/{employeeId}/account-permissions
+```
+
+Response:
+
+```json
+{
+  "employeeId": "00000000-0000-0000-0000-000000000000",
+  "hasAccount": true,
+  "userId": "00000000-0000-0000-0000-000000000000",
+  "userName": "nv001",
+  "email": "nv001@example.com",
+  "roles": ["SaleUser"]
+}
+```
+
+### Tạo account
+
+```http
+POST /api/v1/employees/{employeeId}/account
+```
+
+```json
+{
+  "userName": "nv001",
+  "email": "nv001@example.com",
+  "password": "Password@123"
+}
+```
+
+Password đi qua ASP.NET Core Identity policy và không được ghi log hoặc trả lại response.
+
+### Lookup role
+
+```http
+GET /api/v1/employees/roles/lookup
+```
+
+```json
+[
+  {
+    "roleId": "00000000-0000-0000-0000-000000000000",
+    "name": "SaleUser",
+    "isPrivileged": false,
+    "activeAssignmentCount": 10
+  }
+]
+```
+
+### Tạo loại role
+
+```http
+POST /api/v1/employees/roles
+```
+
+```json
+{
+  "name": "CRMEditor"
+}
+```
+
+Tên role tối đa 64 ký tự, chỉ gồm chữ, số, `.`, `_`, `-`. Chỉ `Admin`, `Developer` được tạo.
+
+### Cấp role
+
+```http
+POST /api/v1/employees/{employeeId}/roles
+```
+
+```json
+{
+  "roleName": "SaleUser"
+}
+```
+
+### Thu hồi role
+
+```http
+DELETE /api/v1/employees/{employeeId}/roles/{roleName}
+```
+
+Thu hồi đặt `ApplicationUserRole.IsActive = false`, không xóa loại role. Không cho current user tự thu hồi role
+quản trị cuối cùng của chính mình. Role claim thay đổi có hiệu lực sau khi user đăng nhập hoặc refresh token lại.
+
+Không có API xóa loại role. Điều này tránh xóa role đang được sử dụng hoặc phá các policy/role constant trong code.
+
+## Employee query
+
+Các endpoint list/detail/lookup Employee đều lọc company hiện tại; `Developer` có global scope:
+
+- `GET /api/v1/employees`
+- `GET /api/v1/employees/lookup`
+- `GET /api/v1/employees/groups/{groupId}/lookup`
+- `GET /api/v1/employees/{employeeId}`
+- `GET /api/v1/employees/{employeeId}/basic-info`
+
+Detail đầy đủ chứa dữ liệu nhạy cảm chỉ cho nhóm quản trị Employee; user thường chỉ xem detail của chính mình.
+Loại role tạo động chỉ trở thành JWT role claim; muốn role đó mở một backend endpoint cụ thể vẫn phải bổ sung
+constant/policy tương ứng trong code.

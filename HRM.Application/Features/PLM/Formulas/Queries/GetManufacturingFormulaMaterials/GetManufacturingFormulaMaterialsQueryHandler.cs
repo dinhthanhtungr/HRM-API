@@ -52,9 +52,11 @@ internal sealed class GetManufacturingFormulaMaterialsQueryHandler
                 ItemType = x.itemType,
                 CategoryId = x.CategoryId,
                 Quantity = x.Quantity,
+
                 MaterialNameSnapshot = (x.itemType == ItemType.Material || x.itemType == ItemType.MaterialFailure)
                     ? (x.Material != null ? x.Material.Name : x.MaterialNameSnapshot)
                     : (x.Product != null ? x.Product.Name : x.MaterialNameSnapshot),
+                
                 MaterialExternalIdSnapshot = (x.itemType == ItemType.Material || x.itemType == ItemType.MaterialFailure)
                     ? (x.Material != null ? x.Material.ExternalId : x.MaterialExternalIdSnapshot)
                     : (x.Product != null

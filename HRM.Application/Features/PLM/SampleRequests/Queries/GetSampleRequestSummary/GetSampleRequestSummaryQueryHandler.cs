@@ -1,5 +1,7 @@
 using HRM.Application.Abstractions.Persistence.PLM;
+using HRM.Application.Commons.Authorization.PLM;
 using HRM.Application.Commons.Pagination;
+using HRM.Application.Features.CRM.CustomerCare.Visibility;
 using HRM.Application.Features.PLM.SampleRequests;
 using HRM.Application.Features.PLM.SampleRequests.Dtos.Summary;
 using HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestSummary.Models;
@@ -14,20 +16,32 @@ internal sealed class GetSampleRequestSummaryQueryHandler
     : IRequestHandler<GetSampleRequestSummaryQuery, PagedResult<SampleRequestSummaryDto>>
 {
     private readonly IPLMReadDbContext _dbContext;
+    private readonly ICustomerVisibilityService _visibilityService;
+    private readonly IPLMFieldVisibilityService _fieldVisibility;
 
-    public GetSampleRequestSummaryQueryHandler(IPLMReadDbContext dbContext)
+    public GetSampleRequestSummaryQueryHandler(
+        IPLMReadDbContext dbContext,
+        ICustomerVisibilityService visibilityService,
+        IPLMFieldVisibilityService fieldVisibility)
     {
         _dbContext = dbContext;
+        _visibilityService = visibilityService;
+        _fieldVisibility = fieldVisibility;
     }
 
     public async Task<PagedResult<SampleRequestSummaryDto>> Handle(
         GetSampleRequestSummaryQuery request,
         CancellationToken cancellationToken)
     {
-        var sampleRequestQuery = _dbContext.SampleRequests
+        var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+
+        var sampleRequestQuery = _visibilityService.ApplySampleRequestVisibility(
+            _dbContext.SampleRequests
             .Where(x => x.IsActive)
             .AsNoTracking()
-            .AsQueryable();
+            .AsQueryable(),
+            _dbContext.Customers.AsNoTracking(),
+            scope);
 
         if (request.CompanyId.HasValue)
         {
@@ -96,6 +110,16 @@ internal sealed class GetSampleRequestSummaryQueryHandler
                 ProductId = sampleRequest.ProductId,
 
                 ProductName = sampleRequest.Product.Name,
+                CategoryId = sampleRequest.Product.CategoryId,
+                CategoryExternalId = sampleRequest.Product.Category != null
+                    ? sampleRequest.Product.Category.ExternalId
+                    : null,
+                CategoryType = sampleRequest.Product.Category != null
+                    ? sampleRequest.Product.Category.Types
+                    : null,
+                CategoryName = sampleRequest.Product.Category != null
+                    ? sampleRequest.Product.Category.Name
+                    : null,
                 ColorValue = sampleRequest.Product.ColourName,
                 ColorDisplayName = sampleRequest.Product.ColourName,
                 AdditiveCode = sampleRequest.Product.Additive,
@@ -139,9 +163,12 @@ internal sealed class GetSampleRequestSummaryQueryHandler
             .Take(request.NormalizedPageSize)
             .ToListAsync(cancellationToken);
 
+        var canViewFormulaPrices = _fieldVisibility.CanViewFormulaPrices();
+
         await SampleRequestSummaryRelatedDataLoader.PopulateAsync(
             _dbContext,
             pagedRows,
+            canViewFormulaPrices,
             cancellationToken);
 
         return new PagedResult<SampleRequestSummaryDto>(

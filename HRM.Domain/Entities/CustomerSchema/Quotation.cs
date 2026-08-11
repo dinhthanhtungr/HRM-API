@@ -26,6 +26,7 @@ namespace HRM.Domain.Entities.CustomerSchema
 
         public decimal SubTotal { get; set; }
         public decimal DiscountAmount { get; set; }
+        public decimal TaxPercent { get; set; }
         public decimal TaxAmount { get; set; }
         public decimal TotalAmount { get; set; }
 

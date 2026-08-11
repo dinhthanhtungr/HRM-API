@@ -1,5 +1,6 @@
 using HRM.Application.Abstractions.Persistence.PLM;
 using HRM.Application.Commons.Pagination;
+using HRM.Application.Features.CRM.CustomerCare.Visibility;
 using HRM.Application.Features.PLM.Dashboard.Dtos;
 using HRM.Application.Features.PLM.Dashboard.Shared.Services;
 using HRM.Application.Features.PLM.Dashboard.Shared.Services.Rules;
@@ -13,10 +14,14 @@ internal sealed class GetDashboardMonthlySummaryQueryHandler
     : IRequestHandler<GetDashboardMonthlySummaryQuery, PagedResult<PlmMonthlySummaryDto>>
 {
     private readonly IPLMReadDbContext _dbContext;
+    private readonly ICustomerVisibilityService _visibilityService;
 
-    public GetDashboardMonthlySummaryQueryHandler(IPLMReadDbContext dbContext)
+    public GetDashboardMonthlySummaryQueryHandler(
+        IPLMReadDbContext dbContext,
+        ICustomerVisibilityService visibilityService)
     {
         _dbContext = dbContext;
+        _visibilityService = visibilityService;
     }
 
     public async Task<PagedResult<PlmMonthlySummaryDto>> Handle(
@@ -54,13 +59,21 @@ internal sealed class GetDashboardMonthlySummaryQueryHandler
         var queryFromDate = PlmDashboardMath.Max(effectiveFromDate, visibleFromMonth);
         var queryToDateExclusive = PlmDashboardMath.Min(effectiveToDate.AddDays(1), visibleToExclusive);
 
-        var sampleRequests = _dbContext.SampleRequests
+        var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+        var includeInternalCustomer = PLMRules.ShouldIncludeInternalCustomer(scope);
+        var customerQuery = _dbContext.Customers.AsNoTracking();
+        var visibleCustomerIds = _visibilityService.ApplyCustomerVisibility(customerQuery, scope)
+            .Select(x => x.CustomerId);
+
+        var sampleRequests = _visibilityService.ApplySampleRequestVisibility(
+                _dbContext.SampleRequests.AsNoTracking(),
+                customerQuery,
+                scope)
             .AsNoTracking()
             .Where(x =>
-                x.IsActive &&
                 x.CreatedDate >= queryFromDate &&
                 x.CreatedDate < queryToDateExclusive &&
-                x.Customer.ExternalId != PLMRules.InternalCustomerExternalId &&
+                (includeInternalCustomer || x.Customer.ExternalId != PLMRules.InternalCustomerExternalId) &&
                 !PLMRules.SampleRequestExcludedStatuses.Contains(x.Status));
 
 
@@ -68,16 +81,21 @@ internal sealed class GetDashboardMonthlySummaryQueryHandler
             .AsNoTracking()
             .Where(x =>
                 x.IsActive &&
+                x.CompanyId == scope.CompanyId &&
                 x.CreatedDate >= queryFromDate &&
                 x.CreatedDate < queryToDateExclusive &&
                 x.Customer != null &&
+                x.CustomerId.HasValue &&
+                visibleCustomerIds.Contains(x.CustomerId.Value) &&
                 x.Customer.ExternalId != PLMRules.InternalCustomerExternalId &&
                 !PLMRules.ProductionOrderExcludedStatuses.Contains(x.Status));
 
-        var merchadiseOrders = _dbContext.MerchandiseOrders
-            .AsNoTracking ()
+        var merchadiseOrders = _visibilityService.ApplyMerchandiseOrderVisibility(
+                _dbContext.MerchandiseOrders.AsNoTracking(),
+                customerQuery,
+                scope)
+            .AsNoTracking()
             .Where(x =>
-                x.IsActive &&
                 x.CreateDate >= queryFromDate &&
                 x.CreateDate < queryToDateExclusive &&
                 x.Customer != null &&

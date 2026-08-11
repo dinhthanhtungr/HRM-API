@@ -1,3 +1,7 @@
+using HRM.Application.Features.PLM.SampleRequests.DataChangeRequests;
+using HRM.Application.Features.PLM.SampleRequests.DirectPatchNotifications;
+using HRM.Application.Features.PLM.SampleRequests.FormulaChangeRequests;
+
 namespace HRM.Application.Features.PLM.SampleRequests.Dtos.InternalMail;
 
 /// <summary>
@@ -6,21 +10,27 @@ namespace HRM.Application.Features.PLM.SampleRequests.Dtos.InternalMail;
 /// </summary>
 internal sealed class SampleRequestThreadMessagePayload
 {
-    public string ContentType { get; init; } = "InternalMailMessage";
+    public string ContentType { get; set; } = "InternalMailMessage";
 
-    public Guid? ConversationId { get; init; }
+    public Guid? ConversationId { get; set; }
 
-    public Guid? MessageId { get; init; }
+    public Guid? MessageId { get; set; }
 
-    public Guid? SampleRequestId { get; init; }
+    public Guid? SampleRequestId { get; set; }
 
-    public string? ExternalId { get; init; }
+    public string? ExternalId { get; set; }
 
-    public string? Type { get; init; }
+    public string? Type { get; set; }
 
-    public string? SaleMessage { get; init; }
+    public string? SaleMessage { get; set; }
 
-    public bool IsUrgent { get; init; }
+    public bool IsUrgent { get; set; }
 
-    public Guid? ReplyToMessageId { get; init; }
+    public Guid? ReplyToMessageId { get; set; }
+
+    public SampleRequestDataChangePayload? DataChangeRequest { get; set; }
+
+    public SampleRequestFormulaChangePayload? FormulaChangeRequest { get; set; }
+
+    public SampleRequestDirectPatchNotificationPayload? DirectPatchNotification { get; set; }
 }

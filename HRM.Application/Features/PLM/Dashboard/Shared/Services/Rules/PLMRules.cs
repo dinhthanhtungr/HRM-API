@@ -1,6 +1,9 @@
 using HRM.Domain.Enums.Manufacturings;
 using HRM.Domain.Enums.Merchadises;
 using HRM.Domain.Enums.Products;
+using HRM.Application.Commons.Authorization;
+using HRM.Application.Features.PLM.Shared.Rules;
+using HRM.Domain.Enums.SampleRequests;
 
 namespace HRM.Application.Features.PLM.Dashboard.Shared.Services.Rules
 {
@@ -12,7 +15,7 @@ namespace HRM.Application.Features.PLM.Dashboard.Shared.Services.Rules
         /// <summary>
         /// Internal customer code excluded from revenue and analysis reports.
         /// </summary>
-        public const string InternalCustomerExternalId = "KH_VIETAUS";
+        public const string InternalCustomerExternalId = PLMCustomerRules.InternalCustomerExternalId;
 
         public const string SampleRequestsSource = "sampleRequests";
         public const string ProductionOrdersSource = "productionOrders";
@@ -75,6 +78,11 @@ namespace HRM.Application.Features.PLM.Dashboard.Shared.Services.Rules
                 || source.Equals("saleOrders", StringComparison.OrdinalIgnoreCase)
                 || source.Equals("merchandiseOrders", StringComparison.OrdinalIgnoreCase)
                 || source.Equals("merchadiseOrders", StringComparison.OrdinalIgnoreCase);
+        }
+
+        public static bool ShouldIncludeInternalCustomer(ViewerScope scope)
+        {
+            return scope.CanViewInternalCustomer;
         }
     }
 }

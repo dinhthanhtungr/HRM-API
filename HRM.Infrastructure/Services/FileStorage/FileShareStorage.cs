@@ -67,6 +67,27 @@ internal sealed class FileShareStorage : IFileStorage
         return Task.FromResult(new StoredFile(stream, contentType, fileName, stream.Length));
     }
 
+    public async Task SaveAtPathAsync(
+        Stream stream,
+        string relativePath,
+        CancellationToken cancellationToken = default)
+    {
+        var fullPath = ResolvePath(relativePath);
+        var folder = Path.GetDirectoryName(fullPath)
+            ?? throw new InvalidOperationException("Storage path does not contain a directory.");
+        Directory.CreateDirectory(folder);
+
+        await using var fileStream = new FileStream(
+            fullPath,
+            FileMode.Create,
+            FileAccess.Write,
+            FileShare.Read,
+            81920,
+            useAsync: true);
+
+        await stream.CopyToAsync(fileStream, cancellationToken);
+    }
+
     public Task DeleteAsync(string relativePath, CancellationToken cancellationToken = default)
     {
         var fullPath = ResolvePath(relativePath);

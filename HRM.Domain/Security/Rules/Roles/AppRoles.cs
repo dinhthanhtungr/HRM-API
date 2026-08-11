@@ -24,6 +24,7 @@ namespace HRM.Domain.Security.Rules.Roles
         public const string LGUser = "LGUser";
         public const string HNUser = "HNUser";
         public const string ACUser = "ACUser";
+        public const string DispatchUser = "DispatchUser";
 
         //role nhận thông báo
         public const string LabNotify = "LabNotify";
@@ -34,7 +35,7 @@ namespace HRM.Domain.Security.Rules.Roles
         {
             Admin, Developer, SaleUser, MaintenanceUser, ManufactureUser, LabUser, Leader, President,
             Purchaser, User, IMSUser, DIANUser, KHOUser, HCHRUser, PLPUUser, PriceView, CustomerViewAll,
-            Delete, Edit,
+            Delete, Edit, DispatchUser,
 
             LabNotify, SaleNotify, PLPUNotify
         };

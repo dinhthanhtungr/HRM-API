@@ -1,5 +1,7 @@
+using HRM.Application.Abstractions.Commons.Time;
 using HRM.Application.Abstractions.Persistence.InternalMail;
 using HRM.Application.Abstractions.Security;
+using HRM.Application.Commons.Authorization;
 using HRM.Application.Commons.Models;
 using HRM.Domain.Enums.InternalMailEnums;
 using MediatR;
@@ -12,13 +14,16 @@ internal sealed class RemoveInternalConversationParticipantCommandHandler
 {
     private readonly IInternalMailDbContext _dbContext;
     private readonly ICurrentUser _currentUser;
+    private readonly IDateTimeProvider _dateTimeProvider;
 
     public RemoveInternalConversationParticipantCommandHandler(
         IInternalMailDbContext dbContext,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        IDateTimeProvider dateTimeProvider)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
+        _dateTimeProvider = dateTimeProvider;
     }
 
     public async Task<OperationResult> Handle(
@@ -38,27 +43,36 @@ internal sealed class RemoveInternalConversationParticipantCommandHandler
             .AnyAsync(x =>
                 x.InternalConversationId == request.ConversationId &&
                 x.EmployeeId == actorId.Value &&
+                x.IsActive &&
                 x.Role == InternalConversationParticipantRole.Owner &&
                 x.Conversation.CompanyId == companyId.Value &&
                 x.Conversation.IsActive,
                 cancellationToken);
-        if (!actorIsOwner)
+        var canManageParticipants = _currentUser.IsInAnyRole(
+            ApplicationRoleSets.Notifications.ConversationParticipantManagers);
+        if (!actorIsOwner && !canManageParticipants)
         {
-            return OperationResult.Fail("Only the conversation owner can remove participants.");
+            return OperationResult.Fail(
+                "Only the conversation owner, President, or Developer can remove participants.");
         }
 
         var target = await _dbContext.InternalConversationParticipants
             .FirstOrDefaultAsync(x =>
                 x.InternalConversationId == request.ConversationId &&
-                x.EmployeeId == request.EmployeeId,
+                x.EmployeeId == request.EmployeeId &&
+                x.IsActive &&
+                x.Conversation.CompanyId == companyId.Value &&
+                x.Conversation.IsActive,
                 cancellationToken);
         if (target is null || target.Role == InternalConversationParticipantRole.Owner)
         {
             return OperationResult.Fail("Participant was not found or cannot be removed.");
         }
 
-        // ReadState va message cua nguoi bi go van duoc giu lai de bao toan audit.
-        _dbContext.InternalConversationParticipants.Remove(target);
+        // Keep the participant and their read history for audit, but revoke thread access.
+        target.IsActive = false;
+        target.DeletedAt = _dateTimeProvider.Now;
+        target.DeletedByEmployeeId = actorId.Value;
         await _dbContext.SaveChangesAsync(cancellationToken);
         return OperationResult.Ok();
     }

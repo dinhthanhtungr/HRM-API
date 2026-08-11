@@ -55,9 +55,11 @@ internal sealed class ExecutivePnLSalesReader
             {
                 salesScope.TryGetAttribution(x.CustomerId, out var attribution);
 
-                var formulaUnitCost = ExecutivePnLFormulaCostResolver.ResolveUnitCost(
-                    x.LotNoList,
-                    formulaCostMap);
+                var costOfSales = ExecutivePnLDeliveryCostRules.ResolveAmount(
+                    x.HasNormalizedLots,
+                    x.LotCostSnapshotAmount,
+                    x.Quantity * ExecutivePnLAmountResolvers.ResolveManufacturingUnitCost(
+                        ExecutivePnLFormulaCostResolver.ResolveUnitCost(x.LotNoList, formulaCostMap)));
 
                 return new ExecutivePnLSalesMonthlyMetricRow
                 {
@@ -68,8 +70,7 @@ internal sealed class ExecutivePnLSalesReader
                     Year = x.RevenueDate.Year,
                     Month = x.RevenueDate.Month,
                     Revenue = x.RevenueAmountVnd,
-                    CostOfSales = x.Quantity
-                        * ExecutivePnLAmountResolvers.ResolveManufacturingUnitCost(formulaUnitCost)
+                    CostOfSales = costOfSales
                 };
             });
 
@@ -102,6 +103,7 @@ internal sealed class ExecutivePnLSalesReader
         CancellationToken cancellationToken)
     {
         var lotCodes = revenueLines
+            .Where(x => !x.HasNormalizedLots)
             .SelectMany(x => ExecutivePnLFormulaCostResolver.SplitLotCodes(x.LotNoList))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();

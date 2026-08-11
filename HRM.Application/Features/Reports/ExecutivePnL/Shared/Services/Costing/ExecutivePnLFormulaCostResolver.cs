@@ -1,7 +1,9 @@
 namespace HRM.Application.Features.Reports.ExecutivePnL.Shared.Services.Costing
 {
+    using HRM.Application.Commons.Deliveries;
+
     /// <summary>
-    /// Hỗ trợ đọc danh sách lot và lấy đơn giá vốn công thức sản xuất dùng cho Executive PnL.
+    /// Fallback cho dữ liệu Delivery Order lịch sử chưa có lot consumption/cost snapshot.
     /// </summary>
     internal static class ExecutivePnLFormulaCostResolver
     {
@@ -24,20 +26,11 @@ namespace HRM.Application.Features.Reports.ExecutivePnL.Shared.Services.Costing
         }
 
         /// <summary>
-        /// Tách chuỗi LotNoList thành danh sách mã lot riêng biệt, bỏ khoảng trắng và loại trùng không phân biệt hoa thường.
+        /// Tách LotNoList legacy thành danh sách mã lot, bỏ khoảng trắng và loại trùng không phân biệt hoa thường.
         /// </summary>
         public static IEnumerable<string> SplitLotCodes(string? lotNoList)
         {
-            if (string.IsNullOrWhiteSpace(lotNoList))
-            {
-                return Array.Empty<string>();
-            }
-
-            return lotNoList
-                .Split(new[] { ',', ';', '|', '\n', '\r', '\t', ' ' }, StringSplitOptions.RemoveEmptyEntries)
-                .Select(x => x.Trim())
-                .Where(x => !string.IsNullOrWhiteSpace(x))
-                .Distinct(StringComparer.OrdinalIgnoreCase);
+            return DeliveryOrderLotReadRules.SplitLegacy(lotNoList);
         }
     }
 }

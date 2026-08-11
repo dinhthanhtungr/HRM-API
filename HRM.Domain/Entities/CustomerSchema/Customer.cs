@@ -68,6 +68,7 @@ public partial class Customer
     public virtual ICollection<CustomerWorkPlan> CustomerWorkPlans { get; set; } = new List<CustomerWorkPlan>();
     public virtual ICollection<ColorChipRecord> ColorChipRecords { get; set; } = new List<ColorChipRecord>();
     public virtual ICollection<DetailCustomerTransfer> DetailCustomerTransfers { get; set; } = new List<DetailCustomerTransfer>();
+    public virtual ICollection<ComplaintReport> ComplaintReports { get; set; } = new List<ComplaintReport>();
     public virtual ICollection<MerchandiseOrder> MerchandiseOrders { get; set; } = new List<MerchandiseOrder>();
     public virtual ICollection<MfgProductionOrder> MfgProductionOrders { get; set; } = new List<MfgProductionOrder>();
     public virtual ICollection<SampleRequest> SampleRequests { get; set; } = new List<SampleRequest>();

@@ -22,7 +22,10 @@ public class InternalMessageConfiguration : IEntityTypeConfiguration<InternalMes
         entity.Property(x => x.SenderEmployeeId).HasColumnName("SenderEmployeeId").IsRequired();
         entity.Property(x => x.MessageType).HasColumnName("MessageType").HasConversion<int>().HasDefaultValue(InternalMessageType.Text);
         entity.Property(x => x.Body).HasColumnName("Body").HasColumnType("text").IsRequired();
-        entity.Property(x => x.PayloadJson).HasColumnName("PayloadJson").HasColumnType("jsonb");
+        entity.Property(x => x.PayloadJson)
+            .HasColumnName("PayloadJson")
+            .HasColumnType("jsonb")
+            .IsConcurrencyToken();
         entity.Property(x => x.ReplyToMessageId).HasColumnName("ReplyToMessageId");
         entity.Property(x => x.IsUrgent).HasColumnName("IsUrgent").HasDefaultValue(false);
         entity.Property(x => x.SentAt).HasColumnName("SentAt");

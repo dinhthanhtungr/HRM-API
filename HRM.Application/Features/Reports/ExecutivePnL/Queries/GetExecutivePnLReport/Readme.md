@@ -9,6 +9,7 @@ Report hiện tại gom dữ liệu từ nhiều nguồn:
 * `MerchandiseOrderDetails`: đơn giá bán, currency/tỷ giá và thông tin customer liên kết.
 * `MerchandiseOrders`: số lượng đơn hàng.
 * `DeliveryOrderDetails`: doanh thu, giá vốn, số lượng đã giao và số dòng ghi nhận doanh số.
+* `DeliveryOrderDetailLotConsumptions`: nguồn lot/cost chuẩn; P&L cộng `TotalCostSnapshot` của lot active và chỉ fallback cost legacy khi detail chưa có consumption.
 * `DeliveryOrders`: phí vận chuyển.
 * `MfgProductionOrders`: sản lượng sản xuất và số lượng lệnh sản xuất.
 

@@ -156,6 +156,9 @@ internal sealed class CreateInternalConversationCommandHandler
             Title = subject,
             Message = body,
             Link = $"/internal-mail/conversations/{conversationId}",
+            AggregateId = conversationId,
+            ConversationId = conversationId,
+            MessageId = messageId,
             PayloadJson = JsonSerializer.Serialize(payload),
             TargetUserIds = recipients
         }, cancellationToken);

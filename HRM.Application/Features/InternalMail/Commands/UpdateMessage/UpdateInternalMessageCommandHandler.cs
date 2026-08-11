@@ -54,7 +54,8 @@ internal sealed class UpdateInternalMessageCommandHandler
                 x.MessageType != InternalMessageType.System &&
                 x.Conversation.CompanyId == companyId.Value &&
                 x.Conversation.IsActive &&
-                x.Conversation.Participants.Any(participant => participant.EmployeeId == employeeId.Value),
+                x.Conversation.Participants.Any(participant =>
+                    participant.EmployeeId == employeeId.Value && participant.IsActive),
                 cancellationToken);
 
         if (message is null)

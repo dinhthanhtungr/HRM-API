@@ -14,8 +14,8 @@ namespace HRM.Application.Features.Employees.Commands.CreateEmployee
         public string? PhoneNumber { get; init; }
         public string? Email { get; init; }
         public string? Address { get; init; }
-        public Guid? PartId { get; init; }
-        public Guid? CompanyId { get; init; }
+        public Guid PartId { get; init; }
+        public Guid CompanyId { get; init; }
         public DateTime? DateHired { get; init; }
         public string? Status { get; init; }
         public DateOnly? EndDate { get; init; }

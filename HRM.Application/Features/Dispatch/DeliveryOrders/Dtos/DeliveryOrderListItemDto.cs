@@ -12,7 +12,12 @@ public sealed class DeliveryOrderListItemDto
     public string? DelivererNames { get; init; }
     public string? PaymentDeadline { get; init; }
     public DateTime? CreatedDate { get; init; }
+    public DateTime? UpdatedDate { get; init; }
     public string? Note { get; init; }
     public bool IsActive { get; init; }
+    public bool CanEdit { get; init; }
+    public int LineCount { get; init; }
+    public decimal TotalQuantity { get; init; }
+    public int TotalNumOfBags { get; init; }
     public IReadOnlyList<DeliveryOrderLineDto> Lines { get; init; } = Array.Empty<DeliveryOrderLineDto>();
 }

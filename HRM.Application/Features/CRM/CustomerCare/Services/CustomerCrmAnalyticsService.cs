@@ -296,6 +296,64 @@ internal sealed class CustomerCrmAnalyticsService : ICustomerCrmAnalyticsService
             }));
         }
 
+        if (types.Contains(CustomerCrmCalendarSourceType.PersonalTask) &&
+            !selectedCustomerId.HasValue &&
+            (!employee.EmployeeId.HasValue || employee.EmployeeId.Value == scope.EmployeeId) &&
+            (group.EmployeeIds is null || group.EmployeeIds.Contains(scope.EmployeeId)))
+        {
+            var personalTasks = _dbContext.WorkTasks.AsNoTracking().Where(x =>
+                x.CompanyId == scope.CompanyId &&
+                x.IsActive &&
+                x.AssignedToEmployeeId == scope.EmployeeId &&
+                x.DueDate.HasValue &&
+                x.DueDate >= range.From &&
+                x.DueDate < range.ToExclusive &&
+                !x.References.Any());
+
+            if (!query.ShowCompletedTasks)
+            {
+                personalTasks = personalTasks.Where(x =>
+                    x.Status != WorkTaskStatus.Done &&
+                    x.Status != WorkTaskStatus.Canceled);
+            }
+
+            var rows = await personalTasks.Select(x => new
+            {
+                x.Id,
+                x.Title,
+                x.Description,
+                x.DueDate,
+                x.Status,
+                x.Priority,
+                x.AssignedToEmployeeId,
+                EmployeeName = x.AssignedToEmployee != null ? x.AssignedToEmployee.FullName : null
+            }).ToListAsync(cancellationToken);
+
+            events.AddRange(rows.Select(x =>
+            {
+                var overdue = x.DueDate!.Value.Date < today && !CustomerCrmTaskRules.IsTerminal(x.Status);
+                return new CustomerCrmCalendarEventDto
+                {
+                    Id = BuildCalendarEventId(CustomerCrmCalendarSourceType.PersonalTask, x.Id),
+                    SourceId = x.Id,
+                    SourceType = CustomerCrmCalendarSourceType.PersonalTask,
+                    CustomerId = null,
+                    CustomerExternalId = string.Empty,
+                    CustomerName = string.Empty,
+                    AssignedSaleEmployeeId = x.AssignedToEmployeeId,
+                    AssignedSaleEmployeeName = x.EmployeeName,
+                    Title = x.Title,
+                    Description = x.Description,
+                    Start = x.DueDate.Value,
+                    End = x.DueDate.Value.AddMinutes(30),
+                    StatusCode = x.Status.ToString(),
+                    PriorityCode = x.Priority.ToString(),
+                    IsOverdue = overdue,
+                    ColorKey = CustomerCrmTaskRules.ResolveTaskColor(x.Status, x.Priority, overdue)
+                };
+            }));
+        }
+
         if (!query.ShowWeekends)
             events = events.Where(x => x.Start.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday)).ToList();
 
@@ -630,6 +688,13 @@ internal sealed class CustomerCrmAnalyticsService : ICustomerCrmAnalyticsService
             })
             .ToListAsync(cancellationToken);
 
+        var healthSummaries = await BuildCustomerHealthSummariesAsync(
+            ids,
+            scope.CompanyId,
+            query,
+            range,
+            cancellationToken);
+
         var reportDates = Enumerable.Range(0, (range.ToExclusive - range.From).Days)
             .Select(offset => range.From.AddDays(offset))
             .ToArray();
@@ -639,6 +704,7 @@ internal sealed class CustomerCrmAnalyticsService : ICustomerCrmAnalyticsService
             var customerInteractions = interactions.Where(i => i.CustomerId == x.CustomerId).ToArray();
             var customerTasks = tasks.Where(t => t.CustomerId == x.CustomerId).ToArray();
             var revenue = revenues.GetValueOrDefault(x.CustomerId);
+            healthSummaries.TryGetValue(x.CustomerId, out var health);
             return new CustomerActivityReportRowDto
             {
                 CustomerId = x.CustomerId, RevenueGroupCode = ResolveRevenueGroup(revenue),
@@ -648,12 +714,25 @@ internal sealed class CustomerCrmAnalyticsService : ICustomerCrmAnalyticsService
                 ContactCount = customerInteractions.Count(i => i.InteractionType is not (CustomerInteractionType.Meeting or CustomerInteractionType.Visit)),
                 CompletedTaskCount = customerTasks.Count(t => t.Status == WorkTaskStatus.Done),
                 OpenTaskCount = customerTasks.Count(t => CustomerCrmTaskRules.IsOpen(t.Status)),
+                HealthCode = health?.HealthCode ?? CustomerHealthCode.Unknown,
+                HealthSummary = health?.HealthSummary,
+                CustomerNeed = health?.CustomerNeed,
+                CurrentStage = health?.CurrentStage,
+                Risk = health?.Risk,
+                SuggestedNextAction = health?.SuggestedNextAction,
+                HealthGeneratedDate = health?.HealthGeneratedDate,
                 DailyContacts = BuildDailyContacts(customerInteractions, reportDates)
             };
         }).Where(x =>
             x.ActivityCount + x.ContactCount > 0 ||
             query.IncludeCustomersWithoutActivity && x.RevenueAmount > 0)
             .ToList();
+
+        var requestedHealthCodes = ResolveRequestedHealthCodes(query);
+        if (requestedHealthCodes.Count > 0)
+        {
+            rows = rows.Where(x => requestedHealthCodes.Contains(x.HealthCode)).ToList();
+        }
 
         var pageNumber = query.NormalizedPageNumber;
         var pageSize = query.NormalizedPageSize;
@@ -674,7 +753,11 @@ internal sealed class CustomerCrmAnalyticsService : ICustomerCrmAnalyticsService
                 To = range.ToExclusive.AddTicks(-1),
                 TotalRevenueAmount = rows.Sum(x => x.RevenueAmount),
                 TotalMeetingVisitCount = rows.Sum(x => x.ActivityCount),
-                TotalOtherInteractionCount = rows.Sum(x => x.ContactCount)
+                TotalOtherInteractionCount = rows.Sum(x => x.ContactCount),
+                PositiveHealthCount = rows.Count(x => x.HealthCode == CustomerHealthCode.Positive),
+                NeutralHealthCount = rows.Count(x => x.HealthCode == CustomerHealthCode.Neutral),
+                NegativeHealthCount = rows.Count(x => x.HealthCode == CustomerHealthCode.Negative),
+                UnknownHealthCount = rows.Count(x => x.HealthCode == CustomerHealthCode.Unknown)
             },
             Customers = new PagedResult<CustomerActivityReportRowDto>(pageRows, rows.Count, pageNumber, pageSize)
         });
@@ -684,6 +767,128 @@ internal sealed class CustomerCrmAnalyticsService : ICustomerCrmAnalyticsService
     /// Giới hạn WorkTask theo company và Customer reference nằm trong visibility scope.
     /// Điều kiện này bắt buộc để tránh người dùng đoán task id hoặc xem task của khách hàng ngoài quyền.
     /// </summary>
+    /// <summary>
+    /// Lấy health khách hàng từ AI summary đã có, không gọi AI mới trong lúc dựng report.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<Guid, ActivityReportCustomerHealth>> BuildCustomerHealthSummariesAsync(
+        IReadOnlyCollection<Guid> customerIds,
+        Guid companyId,
+        CustomerActivityCalendarReportQuery query,
+        DateRange range,
+        CancellationToken cancellationToken)
+    {
+        if (customerIds.Count == 0)
+        {
+            return new Dictionary<Guid, ActivityReportCustomerHealth>();
+        }
+
+        var candidates = await _dbContext.CustomerInteractionAiSummaries
+            .AsNoTracking()
+            .Where(x =>
+                x.CompanyId == companyId &&
+                x.IsActive &&
+                customerIds.Contains(x.CustomerId) &&
+                (x.IsAiSuccess ||
+                 x.Sentiment != string.Empty ||
+                 x.Summary != string.Empty ||
+                 x.CustomerNeed != string.Empty ||
+                 x.CurrentStage != string.Empty ||
+                 x.Risk != string.Empty ||
+                 x.NextAction != string.Empty))
+            .Select(x => new ActivityReportCustomerHealthCandidate
+            {
+                CustomerId = x.CustomerId,
+                SummaryScope = x.SummaryScope,
+                Year = x.Year,
+                Month = x.Month,
+                PeriodFrom = x.PeriodFrom,
+                PeriodTo = x.PeriodTo,
+                Summary = x.Summary,
+                CustomerNeed = x.CustomerNeed,
+                CurrentStage = x.CurrentStage,
+                Risk = x.Risk,
+                NextAction = x.NextAction,
+                Sentiment = x.Sentiment,
+                AiGeneratedDate = x.AiGeneratedDate,
+                UpdatedDate = x.UpdatedDate,
+                CreatedDate = x.CreatedDate
+            })
+            .ToListAsync(cancellationToken);
+
+        return candidates
+            .GroupBy(x => x.CustomerId)
+            .Select(group => group
+                .OrderBy(x => ResolveHealthSummaryRank(x, query, range))
+                .ThenByDescending(x => x.AiGeneratedDate ?? x.UpdatedDate ?? x.CreatedDate)
+                .First())
+            .ToDictionary(
+                x => x.CustomerId,
+                x => new ActivityReportCustomerHealth(
+                    NormalizeHealthCode(x.Sentiment),
+                    NormalizeOptionalText(x.Summary),
+                    NormalizeOptionalText(x.CustomerNeed),
+                    NormalizeOptionalText(x.CurrentStage),
+                    NormalizeOptionalText(x.Risk),
+                    NormalizeOptionalText(x.NextAction),
+                    x.AiGeneratedDate));
+    }
+
+    private static int ResolveHealthSummaryRank(
+        ActivityReportCustomerHealthCandidate candidate,
+        CustomerActivityCalendarReportQuery query,
+        DateRange range)
+    {
+        var hasCustomRange = query.From.HasValue || query.To.HasValue;
+        var reportYear = query.Year ?? range.From.Year;
+
+        if (!hasCustomRange &&
+            query.Month.HasValue &&
+            candidate.SummaryScope == CustomerInteractionSummaryScope.Monthly &&
+            candidate.Year == reportYear &&
+            candidate.Month == query.Month.Value)
+        {
+            return 0;
+        }
+
+        if (!hasCustomRange &&
+            !query.Month.HasValue &&
+            candidate.SummaryScope == CustomerInteractionSummaryScope.Yearly &&
+            candidate.Year == reportYear)
+        {
+            return 0;
+        }
+
+        if (PeriodsOverlap(candidate.PeriodFrom, candidate.PeriodTo, range.From, range.ToExclusive))
+        {
+            return 1;
+        }
+
+        return 10;
+    }
+
+    private static bool PeriodsOverlap(
+        DateTime candidateFrom,
+        DateTime candidateTo,
+        DateTime reportFrom,
+        DateTime reportToExclusive)
+        => candidateFrom < reportToExclusive && candidateTo > reportFrom;
+
+    private static CustomerHealthCode NormalizeHealthCode(string? sentiment)
+        => sentiment?.Trim().ToLowerInvariant() switch
+        {
+            "positive" or "tốt" or "tot" or "tích cực" or "tich cuc" => CustomerHealthCode.Positive,
+            "neutral" or "trung lập" or "trung lap" => CustomerHealthCode.Neutral,
+            "negative" or "tiêu cực" or "tieu cuc" or "rủi ro" or "rui ro" => CustomerHealthCode.Negative,
+            _ => CustomerHealthCode.Unknown
+        };
+
+    private static string? NormalizeOptionalText(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static IReadOnlySet<CustomerHealthCode> ResolveRequestedHealthCodes(CustomerActivityCalendarReportQuery query)
+        => (query.HealthCodes?.Count > 0 ? query.HealthCodes : query.ReportHealthCodes)?.ToHashSet()
+            ?? new HashSet<CustomerHealthCode>();
+
     private IQueryable<WorkTask> VisibleTasks(Guid companyId, IQueryable<Guid> visibleCustomerIds)
         => _dbContext.WorkTasks.AsNoTracking().Where(x => x.CompanyId == companyId && x.IsActive &&
             x.References.Any(r => r.ReferenceType == WorkReferenceType.Customer && visibleCustomerIds.Contains(r.ReferenceId)));
@@ -879,6 +1084,34 @@ internal sealed class CustomerCrmAnalyticsService : ICustomerCrmAnalyticsService
     {
         public static GroupResolution Allowed(Guid[]? employeeIds) => new(true, employeeIds);
         public static GroupResolution Denied() => new(false, null);
+    }
+
+    private sealed record ActivityReportCustomerHealth(
+        CustomerHealthCode HealthCode,
+        string? HealthSummary,
+        string? CustomerNeed,
+        string? CurrentStage,
+        string? Risk,
+        string? SuggestedNextAction,
+        DateTime? HealthGeneratedDate);
+
+    private sealed class ActivityReportCustomerHealthCandidate
+    {
+        public Guid CustomerId { get; init; }
+        public CustomerInteractionSummaryScope SummaryScope { get; init; }
+        public int? Year { get; init; }
+        public int? Month { get; init; }
+        public DateTime PeriodFrom { get; init; }
+        public DateTime PeriodTo { get; init; }
+        public string Summary { get; init; } = string.Empty;
+        public string CustomerNeed { get; init; } = string.Empty;
+        public string CurrentStage { get; init; } = string.Empty;
+        public string Risk { get; init; } = string.Empty;
+        public string NextAction { get; init; } = string.Empty;
+        public string Sentiment { get; init; } = string.Empty;
+        public DateTime? AiGeneratedDate { get; init; }
+        public DateTime? UpdatedDate { get; init; }
+        public DateTime CreatedDate { get; init; }
     }
 
     private sealed class ActivityReportInteraction

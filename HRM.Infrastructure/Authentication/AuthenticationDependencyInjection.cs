@@ -1,4 +1,5 @@
 using HRM.Application.Abstractions.Authentication;
+using HRM.Application.Abstractions.Identity;
 using HRM.Domain.Identity;
 using HRM.Infrastructure.Authentication;
 using HRM.Infrastructure.DatabaseContext.ApplicationDbs;
@@ -12,6 +13,7 @@ internal static class AuthenticationDependencyInjection
     internal static IServiceCollection AddAuthenticationServices(this IServiceCollection services)
     {
         services.AddScoped<IIdentityAuthenticationService, IdentityAuthenticationService>();
+        services.AddScoped<IEmployeeIdentityAdministrationService, EmployeeIdentityAdministrationService>();
         services.AddSingleton<ITokenService, JwtTokenService>();
 
         services.AddIdentityCore<ApplicationUser>(options =>

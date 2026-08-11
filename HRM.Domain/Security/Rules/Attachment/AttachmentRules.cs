@@ -32,9 +32,20 @@ namespace HRM.Domain.Security.Rules.Attachment
                 // Cho phép "image/" nếu thực tế hay dùng ảnh scan.
                 [AttachmentSlot.PurchaseOrder] = new SlotRule
                 {
-                    AllowMultiple = false,
-                    AllowedMimePrefixes = new[] { "application/pdf", "image/" },
-                    MaxBytes = 20 * MB
+                    AllowMultiple = true,
+                    AllowedMimePrefixes = new[]
+                    {
+                        "application/pdf",
+                        "image/",
+                        "text/",
+                        "application/zip",
+                        "application/x-7z-compressed",
+                        "application/x-rar-compressed",
+                        "application/msword",
+                        "application/vnd.ms-excel",
+                        "application/vnd.openxmlformats-officedocument"
+                    },
+                    MaxBytes = 50 * MB
                 },
 
 
@@ -135,6 +146,48 @@ namespace HRM.Domain.Security.Rules.Attachment
                     },
                     MaxBytes = 10 * MB,      // mỗi file tối đa 10MB (tuỳ bạn)
                     GenerateThumbnail = true // có ảnh thì tạo thumbnail
+                },
+
+                [AttachmentSlot.Complaint] = new SlotRule
+                {
+                    AllowMultiple = true,
+                    AllowedMimePrefixes = new[]
+                    {
+                        "image/",
+                        "video/",
+                        "application/pdf",
+                        "application/msword",
+                        "application/vnd.openxmlformats-officedocument"
+                    },
+                    MaxBytes = 50 * MB,
+                    GenerateThumbnail = true
+                },
+
+                // Trao đổi nội bộ: nhận hầu hết loại file văn phòng và media phổ biến.
+                // Không cho executable/script để tránh dùng chat như kênh phát tán file nguy hiểm.
+                [AttachmentSlot.InternalMail] = new SlotRule
+                {
+                    AllowMultiple = true,
+                    AllowedMimePrefixes = new[]
+                    {
+                        "image/",
+                        "audio/",
+                        "video/",
+                        "text/",
+                        "application/pdf",
+                        "application/json",
+                        "application/xml",
+                        "application/msword",
+                        "application/vnd.ms-excel",
+                        "application/vnd.ms-powerpoint",
+                        "application/vnd.ms-outlook",
+                        "application/vnd.openxmlformats-officedocument",
+                        "application/vnd.oasis.opendocument",
+                        "application/zip",
+                        "application/x-7z-compressed",
+                        "application/x-rar-compressed"
+                    },
+                    MaxBytes = 50 * MB
                 },
             };
     }

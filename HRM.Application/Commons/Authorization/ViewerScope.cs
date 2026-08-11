@@ -10,6 +10,7 @@ namespace HRM.Application.Commons.Authorization
         Guid CompanyId,
         Guid EmployeeId,
         bool HasFullCustomerView,
+        bool CanViewInternalCustomer,
         IReadOnlySet<Guid> LeaderGroupIds,
         IReadOnlySet<Guid> EmployeeIdsInScope,
         DateTime Now);

@@ -28,9 +28,14 @@ internal static class PresentationDependencyInjection
         services.AddHostedService<OutboxProcessor>();
         services.AddHostedService<WebPushOutboxProcessor>();
         services.AddHostedService<CustomerFollowUpTaskDueReminderWorker>();
+        services.Configure<CustomerInteractionAiSummaryAutomationOptions>(
+            configuration.GetSection("Gemini:Automation"));
+        services.AddHostedService<CustomerInteractionAiSummaryAutomationWorker>();
 
         services.AddSwaggerGen(options =>
         {
+            options.CustomSchemaIds(CreateSwaggerSchemaId);
+
             options.SwaggerDoc("v1", new OpenApiInfo
             {
                 Title = "HRM API",
@@ -154,5 +159,10 @@ internal static class PresentationDependencyInjection
         services.AddApplicationAuthorizationPolicies();
 
         return services;
+    }
+
+    private static string CreateSwaggerSchemaId(Type type)
+    {
+        return type.FullName?.Replace('+', '.') ?? type.Name;
     }
 }

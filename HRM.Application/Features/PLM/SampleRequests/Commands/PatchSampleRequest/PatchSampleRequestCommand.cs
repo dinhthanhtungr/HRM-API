@@ -1,5 +1,6 @@
 using HRM.Application.Commons.Models;
 using MediatR;
+using System.Text.Json.Serialization;
 
 namespace HRM.Application.Features.PLM.SampleRequests.Commands.PatchSampleRequest;
 
@@ -62,4 +63,11 @@ public sealed class PatchSampleRequestCommand : IRequest<OperationResult<Guid>>
     public double? Weight { get; set; }
     public string? Unit { get; set; }
     public string? ProductOtherComment { get; set; }
+    public IReadOnlyList<string>? ClearFields { get; set; }
+
+    [JsonIgnore]
+    internal bool DeferSaveChanges { get; set; }
+
+    [JsonIgnore]
+    internal bool IsDataChangeApproval { get; set; }
 }

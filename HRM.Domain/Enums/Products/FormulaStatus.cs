@@ -12,6 +12,9 @@ namespace HRM.Domain.Enums.Products
         Draft = 1,
         Approved = 2,
         SampleSent = 3,
-        Cancelled = 4
+        Cancelled = 4,
+        Completed = 5,
+        PendingSaleConfirmation = 6,
+        Rejected = 7
     }
 }

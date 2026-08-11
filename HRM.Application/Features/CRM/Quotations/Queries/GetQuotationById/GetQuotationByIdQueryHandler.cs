@@ -58,6 +58,7 @@ namespace HRM.Application.Features.CRM.Quotations.Queries.GetQuotationById
                     ExchangeRate = x.ExchangeRate,
                     SubTotal = x.SubTotal,
                     DiscountAmount = x.DiscountAmount,
+                    TaxPercent = x.TaxPercent,
                     TaxAmount = x.TaxAmount,
                     TotalAmount = x.TotalAmount,
                     QuotationDate = x.QuotationDate,
@@ -76,14 +77,30 @@ namespace HRM.Application.Features.CRM.Quotations.Queries.GetQuotationById
                         {
                             QuotationLineId = line.QuotationLineId,
                             ProductId = line.ProductId,
+                            SampleRequestId = line.SampleRequestId,
                             ProductExternalId = line.ProductExternalIdSnapshot,
                             ProductName = line.ProductNameSnapshot,
                             Quantity = line.Quantity,
                             Unit = line.Unit,
+                            PriceMode = line.PriceMode,
                             UnitPrice = line.UnitPrice,
                             DiscountPercent = line.DiscountPercent,
-                            TaxPercent = line.TaxPercent,
                             LineTotal = line.LineTotal,
+                            PriceTiers = line.PriceTiers
+                                .OrderBy(tier => tier.SortOrder)
+                                .ThenBy(tier => tier.QuotationLinePriceTierId)
+                                .Select(tier => new QuotationLinePriceTierDto
+                                {
+                                    QuotationLinePriceTierId = tier.QuotationLinePriceTierId,
+                                    QuantityRangeLabel = tier.QuantityRangeLabel,
+                                    MinQuantity = tier.MinQuantity,
+                                    MaxQuantity = tier.MaxQuantity,
+                                    MinInclusive = tier.MinInclusive,
+                                    MaxInclusive = tier.MaxInclusive,
+                                    UnitPrice = tier.UnitPrice,
+                                    SortOrder = tier.SortOrder
+                                })
+                                .ToList(),
                             Note = line.Note,
                             SortOrder = line.SortOrder
                         })

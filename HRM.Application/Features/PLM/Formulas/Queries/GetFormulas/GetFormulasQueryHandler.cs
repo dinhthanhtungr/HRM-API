@@ -1,4 +1,5 @@
 using HRM.Application.Abstractions.Persistence.PLM;
+using HRM.Application.Commons.Authorization.PLM;
 using HRM.Application.Features.PLM.Formulas.Dtos.GetFormulas;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -9,10 +10,14 @@ namespace HRM.Application.Features.PLM.Formulas.Queries.GetFormulas
         : IRequestHandler<GetFormulasQuery, FormulaList>
     {
         private readonly IPLMReadDbContext _dbContext;
+        private readonly IPLMFieldVisibilityService _fieldVisibility;
 
-        public GetFormulasQueryHandler(IPLMReadDbContext dbContext)
+        public GetFormulasQueryHandler(
+            IPLMReadDbContext dbContext,
+            IPLMFieldVisibilityService fieldVisibility)
         {
             _dbContext = dbContext;
+            _fieldVisibility = fieldVisibility;
         }
 
         public async Task<FormulaList> Handle(
@@ -25,11 +30,13 @@ namespace HRM.Application.Features.PLM.Formulas.Queries.GetFormulas
                 return new FormulaList();
             }
 
+            var canViewFormulaPrices = _fieldVisibility.CanViewFormulaPrices();
+
             var result = new FormulaList
             {
-                FormulaSelects = await GetFormulaSelectsAsync(request, productId, cancellationToken),
-                FormulaDevs = await GetFormulaDevsAsync(request, productId, cancellationToken),
-                FormulaStandard = await GetFormulaStandardAsync(request, productId, cancellationToken)
+                FormulaSelects = await GetFormulaSelectsAsync(request, productId, canViewFormulaPrices, cancellationToken),
+                FormulaDevs = await GetFormulaDevsAsync(request, productId, canViewFormulaPrices, cancellationToken),
+                FormulaStandard = await GetFormulaStandardAsync(request, productId, canViewFormulaPrices, cancellationToken)
             };
 
             if (!string.IsNullOrWhiteSpace(request.NormalizedKeyword))
@@ -66,6 +73,7 @@ namespace HRM.Application.Features.PLM.Formulas.Queries.GetFormulas
         private async Task<IReadOnlyList<FormulaId>> GetFormulaSelectsAsync(
             GetFormulasQuery request,
             Guid productId,
+            bool canViewFormulaPrices,
             CancellationToken cancellationToken)
         {
             var query = _dbContext.ProductionSelectVersions
@@ -97,8 +105,9 @@ namespace HRM.Application.Features.PLM.Formulas.Queries.GetFormulas
                 {
                     Id = x.ManufacturingFormulaId!.Value,
                     ExternalId = x.ManufacturingFormula!.ExternalId,
+                    
                     Note = x.ManufacturingFormula.Note,
-                    Price = x.ManufacturingFormula.TotalPrice ?? 0m,
+                    Price = canViewFormulaPrices ? x.ManufacturingFormula.TotalPrice : null,
                     ItemCount = x.ManufacturingFormula.ManufacturingFormulaMaterials.Count(m => m.IsActive),
                     LastDateUse = x.MfgProductionOrder.ManufacturingDate
                         ?? x.MfgProductionOrder.UpdatedDate
@@ -126,6 +135,7 @@ namespace HRM.Application.Features.PLM.Formulas.Queries.GetFormulas
         private async Task<IReadOnlyList<FormulaId>> GetFormulaDevsAsync(
             GetFormulasQuery request,
             Guid productId,
+            bool canViewFormulaPrices,
             CancellationToken cancellationToken)
         {
             var query = _dbContext.Formulas
@@ -153,8 +163,10 @@ namespace HRM.Application.Features.PLM.Formulas.Queries.GetFormulas
                 {
                     Id = x.FormulaId,
                     ExternalId = x.ExternalId,
+                    Name = x.Name,  
                     Note = x.Note ?? string.Empty,
-                    Price = x.TotalPrice,
+                    Status = x.Status,
+                    Price = canViewFormulaPrices ? x.TotalPrice : null,
                     ItemCount = x.FormulaMaterials.Count(m => m.IsActive),
                     LastDateUse = x.UpdatedDate ?? x.CreatedDate
                 })
@@ -164,6 +176,7 @@ namespace HRM.Application.Features.PLM.Formulas.Queries.GetFormulas
         private async Task<IReadOnlyList<FormulaId>> GetFormulaStandardAsync(
             GetFormulasQuery request,
             Guid productId,
+            bool canViewFormulaPrices,
             CancellationToken cancellationToken)
         {
             var query = _dbContext.ProductStandardFormulas
@@ -195,7 +208,7 @@ namespace HRM.Application.Features.PLM.Formulas.Queries.GetFormulas
                     Id = x.ManufacturingFormulaId!.Value,
                     ExternalId = x.ManufacturingFormula!.ExternalId,
                     Note = x.ManufacturingFormula.Note,
-                    Price = x.ManufacturingFormula.TotalPrice ?? 0m,
+                    Price = canViewFormulaPrices ? x.ManufacturingFormula.TotalPrice : null,
                     ItemCount = x.ManufacturingFormula.ManufacturingFormulaMaterials.Count(m => m.IsActive),
                     LastDateUse = (DateTime?)x.ValidFrom,
                     IsCurrent = x.ValidTo == null

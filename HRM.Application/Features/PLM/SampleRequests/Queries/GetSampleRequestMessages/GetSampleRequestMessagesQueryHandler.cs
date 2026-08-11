@@ -1,7 +1,10 @@
 using System.Text.Json;
 using HRM.Application.Abstractions.Persistence.PLM;
 using HRM.Application.Abstractions.Security;
+using HRM.Application.Features.CRM.CustomerCare.Visibility;
 using HRM.Application.Features.PLM.SampleRequests.Dtos.InternalMail;
+using HRM.Application.Features.PLM.SampleRequests.DataChangeRequests;
+using HRM.Application.Features.PLM.SampleRequests.FormulaChangeRequests;
 using HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestMessages.Models;
 using HRM.Domain.Enums.InternalMailEnums;
 using HRM.Domain.Enums.Notifications;
@@ -20,13 +23,16 @@ internal sealed class GetSampleRequestMessagesQueryHandler
 {
     private readonly IPLMReadDbContext _plmDbContext;
     private readonly ICurrentUser _currentUser;
+    private readonly ICustomerVisibilityService _visibilityService;
 
     public GetSampleRequestMessagesQueryHandler(
         IPLMReadDbContext plmDbContext,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        ICustomerVisibilityService visibilityService)
     {
         _plmDbContext = plmDbContext;
         _currentUser = currentUser;
+        _visibilityService = visibilityService;
     }
 
     public async Task<IReadOnlyList<SampleRequestMessageDto>?> Handle(
@@ -38,22 +44,18 @@ internal sealed class GetSampleRequestMessagesQueryHandler
             return null;
         }
 
-        var companyId = _currentUser.CompanyId;
-        var currentEmployeeId = _currentUser.EmployeeId;
+        var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+        var companyId = scope.CompanyId;
+        var currentEmployeeId = scope.EmployeeId;
 
-        if (!companyId.HasValue || companyId.Value == Guid.Empty ||
-            !currentEmployeeId.HasValue || currentEmployeeId.Value == Guid.Empty)
-        {
-            return null;
-        }
+        var sampleRequestQuery = _visibilityService.ApplySampleRequestVisibility(
+            _plmDbContext.SampleRequests
+                .Where(x => x.SampleRequestId == request.SampleRequestId)
+                .AsNoTracking(),
+            _plmDbContext.Customers.AsNoTracking(),
+            scope);
 
-        var sampleRequestExists = await _plmDbContext.SampleRequests
-            .AsNoTracking()
-            .AnyAsync(x =>
-                x.SampleRequestId == request.SampleRequestId &&
-                x.CompanyId == companyId.Value &&
-                x.IsActive,
-                cancellationToken);
+        var sampleRequestExists = await sampleRequestQuery.AnyAsync(cancellationToken);
 
         if (!sampleRequestExists)
         {
@@ -63,11 +65,12 @@ internal sealed class GetSampleRequestMessagesQueryHandler
         var conversation = await _plmDbContext.InternalConversations
             .AsNoTracking()
             .Where(x =>
-                x.CompanyId == companyId.Value &&
+                x.CompanyId == companyId &&
                 x.IsActive &&
                 x.RelatedType == InternalMailRelatedType.SampleRequest &&
                 x.RelatedId == request.SampleRequestId &&
-                x.Participants.Any(participant => participant.EmployeeId == currentEmployeeId.Value))
+                x.Participants.Any(participant =>
+                    participant.EmployeeId == currentEmployeeId && participant.IsActive))
             .Select(x => new
             {
                 x.InternalConversationId
@@ -98,11 +101,11 @@ internal sealed class GetSampleRequestMessagesQueryHandler
                 CreatedByName = x.SenderEmployee.FullName,
                 CreatedAt = x.SentAt,
                 IsRead = x.ReadStates
-                    .Where(state => state.EmployeeId == currentEmployeeId.Value)
+                    .Where(state => state.EmployeeId == currentEmployeeId)
                     .Select(state => state.IsRead)
                     .FirstOrDefault(),
                 ReadDate = x.ReadStates
-                    .Where(state => state.EmployeeId == currentEmployeeId.Value)
+                    .Where(state => state.EmployeeId == currentEmployeeId)
                     .Select(state => state.ReadAt)
                     .FirstOrDefault(),
                 MessageType = x.MessageType.ToString(),
@@ -110,12 +113,18 @@ internal sealed class GetSampleRequestMessagesQueryHandler
             })
             .ToListAsync(cancellationToken);
 
+        var canDecideDataChange = SampleRequestDataChangeAuthorization.CanApprove(_currentUser);
+        var canDecideFormulaChange = SampleRequestFormulaChangeAuthorization.CanApproveOrReject(_currentUser);
+
         return rows
-            .Select(ToDto)
+            .Select(row => ToDto(row, canDecideDataChange, canDecideFormulaChange))
             .ToList();
     }
 
-    private static SampleRequestMessageDto ToDto(SampleRequestMessageProjection row)
+    private static SampleRequestMessageDto ToDto(
+        SampleRequestMessageProjection row,
+        bool canDecideDataChange,
+        bool canDecideFormulaChange)
     {
         var payload = ParsePayload(row.PayloadJson);
 
@@ -134,35 +143,93 @@ internal sealed class GetSampleRequestMessagesQueryHandler
             CreatedByName = row.CreatedByName,
             CreatedAt = row.CreatedAt,
             IsRead = row.IsRead,
-            ReadDate = row.ReadDate
+            ReadDate = row.ReadDate,
+            Action = ToActionDto(payload, canDecideDataChange),
+            FormulaChangeAction = ToFormulaChangeActionDto(payload, canDecideFormulaChange),
+            DirectPatchNotification = payload.DirectPatchNotification
         };
     }
 
-    private static SampleRequestMessagePayload ParsePayload(string? payloadJson)
+    private static SampleRequestThreadMessagePayload ParsePayload(string? payloadJson)
     {
         if (string.IsNullOrWhiteSpace(payloadJson))
         {
-            return new SampleRequestMessagePayload();
+            return new SampleRequestThreadMessagePayload();
         }
 
         try
         {
-            using var document = JsonDocument.Parse(payloadJson);
-            var root = document.RootElement;
-
-            return new SampleRequestMessagePayload
+            return JsonSerializer.Deserialize<SampleRequestThreadMessagePayload>(payloadJson, new JsonSerializerOptions
             {
-                ConversationId = TryGetGuid(root, "conversationId"),
-                MessageId = TryGetGuid(root, "messageId"),
-                Type = TryGetString(root, "type"),
-                SaleMessage = TryGetString(root, "saleMessage"),
-                IsUrgent = TryGetBoolean(root, "isUrgent")
-            };
+                PropertyNameCaseInsensitive = true
+            }) ?? new SampleRequestThreadMessagePayload();
         }
         catch (JsonException)
         {
-            return new SampleRequestMessagePayload();
+            return new SampleRequestThreadMessagePayload();
         }
+    }
+
+    private static SampleRequestDataChangeActionDto? ToActionDto(
+        SampleRequestThreadMessagePayload payload,
+        bool canDecide)
+    {
+        var dataChange = payload.DataChangeRequest;
+        if (dataChange is null)
+        {
+            return null;
+        }
+
+        return new SampleRequestDataChangeActionDto
+        {
+            Status = SampleRequestDataChangeStatusRules.GetOverallStatus(dataChange.Changes),
+            SampleRequestId = dataChange.SampleRequestId,
+            ExternalId = dataChange.ExternalId,
+            CanDecide = canDecide && dataChange.Changes.Any(SampleRequestDataChangeStatusRules.IsPending),
+            Changes = dataChange.Changes.Select(change => new SampleRequestDataChangeFieldDto
+            {
+                FieldCode = change.FieldCode,
+                Label = change.Label,
+                OldValue = change.OldValue,
+                NewValue = change.NewValue,
+                Status = change.Status,
+                DecidedByEmployeeId = change.DecidedByEmployeeId,
+                DecidedAt = change.DecidedAt,
+                DecisionReason = change.DecisionReason
+            }).ToArray()
+        };
+    }
+
+    private static SampleRequestFormulaChangeActionDto? ToFormulaChangeActionDto(
+        SampleRequestThreadMessagePayload payload,
+        bool canDecide)
+    {
+        var formulaChange = payload.FormulaChangeRequest;
+        if (formulaChange is null)
+        {
+            return null;
+        }
+
+        return new SampleRequestFormulaChangeActionDto
+        {
+            Status = formulaChange.Status,
+            SampleRequestId = formulaChange.SampleRequestId,
+            ExternalId = formulaChange.ExternalId,
+            CurrentFormulaId = formulaChange.CurrentFormulaId,
+            CurrentFormulaExternalId = formulaChange.CurrentFormulaExternalId,
+            RequestedFormulaId = formulaChange.RequestedFormulaId,
+            RequestedFormulaExternalId = formulaChange.RequestedFormulaExternalId,
+            RequestedByEmployeeId = formulaChange.RequestedByEmployeeId,
+            RequestedAt = formulaChange.RequestedAt,
+            DecidedByEmployeeId = formulaChange.DecidedByEmployeeId,
+            DecidedAt = formulaChange.DecidedAt,
+            DecisionReason = formulaChange.DecisionReason,
+            CanDecide = canDecide &&
+                string.Equals(
+                    formulaChange.Status,
+                    SampleRequestFormulaChangeStatuses.Pending,
+                    StringComparison.OrdinalIgnoreCase)
+        };
     }
 
     private static string BuildTitle(string? type)

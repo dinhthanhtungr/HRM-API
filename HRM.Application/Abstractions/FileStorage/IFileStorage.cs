@@ -9,6 +9,11 @@ public interface IFileStorage
         string relativeFolder,
         CancellationToken cancellationToken = default);
 
+    Task SaveAtPathAsync(
+        Stream stream,
+        string relativePath,
+        CancellationToken cancellationToken = default);
+
     Task<StoredFile> OpenReadAsync(string relativePath, CancellationToken cancellationToken = default);
 
     Task DeleteAsync(string relativePath, CancellationToken cancellationToken = default);

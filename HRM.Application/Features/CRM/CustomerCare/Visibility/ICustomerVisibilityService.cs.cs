@@ -34,6 +34,14 @@ namespace HRM.Application.Features.CRM.CustomerCare.Visibility
             ViewerScope scope);
 
         /// <summary>
+        /// Áp dụng cùng ownership/company scope nhưng không loại khách hàng đã ngừng hoạt động.
+        /// Caller phải kiểm tra quyền CustomerEditors trước khi sử dụng.
+        /// </summary>
+        IQueryable<Customer> ApplyCustomerVisibilityIncludingInactive(
+            IQueryable<Customer> query,
+            ViewerScope scope);
+
+        /// <summary>
         /// Áp dụng các bộ lọc dựa trên ViewerScope để giới hạn truy cập vào dữ liệu yêu cầu mẫu.
         /// </summary>
         /// <param name="query"></param>

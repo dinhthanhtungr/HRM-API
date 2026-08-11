@@ -41,5 +41,6 @@ namespace HRM.Domain.Entities.CustomerSchema
         public virtual Employee? AssignedSaleEmployee { get; set; }
         public virtual Employee CreatedByNavigation { get; set; } = null!;
         public virtual Employee? UpdatedByNavigation { get; set; }
+        public ICollection<CustomerInteractionReference> References { get; set; } = new List<CustomerInteractionReference>();
     }
 }

@@ -1,5 +1,7 @@
 using HRM.Application.Abstractions.Commons.Time;
 using HRM.Application.Abstractions.Persistence.CRM.CustomerCare;
+using HRM.Application.Abstractions.Security;
+using HRM.Application.Commons.Authorization;
 using HRM.Application.Commons.Models;
 using HRM.Application.Commons.Patching;
 using HRM.Application.Features.CRM.CustomerCare.Dtos;
@@ -13,11 +15,9 @@ using Microsoft.EntityFrameworkCore;
 namespace HRM.Application.Features.CRM.CustomerCare.Commands.UpdateCustomer;
 
 /// <summary>
-/// Feature CRM CustomerCare - xử lý cập nhật hồ sơ khách hàng cho sale/leader/director.
-/// Handler validate input, kiểm tra visibility theo company/current employee, chặn sửa
-/// address/contact/note không thuộc customer hiện tại, rồi patch profile và child records.
-/// Side effect chính là ghi DB: cập nhật customer, chuẩn hóa primary address/contact,
-/// chuyển lead thành customer có assignment khi hợp lệ và tạo/cập nhật note group.
+/// Cập nhật hồ sơ khách hàng cho CustomerEditors trong đúng company/visibility scope.
+/// Handler chỉ patch profile, address, contact và note; không cho FE đổi lifecycle IsLead/LeadStatus/IsActive.
+/// Field null là không đổi, còn xóa field nullable phải dùng clearFields được whitelist.
 /// </summary>
 internal sealed class UpdateCustomerCommandHandler
     : IRequestHandler<UpdateCustomerCommand, OperationResult>
@@ -27,19 +27,22 @@ internal sealed class UpdateCustomerCommandHandler
     private readonly ICustomerVisibilityService _visibilityService;
     private readonly IDateTimeProvider _dateTimeProvider;
     private readonly CustomerTaxCodeConflictService _taxCodeConflictService;
+    private readonly ICurrentUser _currentUser;
 
     public UpdateCustomerCommandHandler(
         ICRMReadDbContext readDbContext,
         ICRMWriteDbContext writeDbContext,
         ICustomerVisibilityService visibilityService,
         IDateTimeProvider dateTimeProvider,
-        CustomerTaxCodeConflictService taxCodeConflictService)
+        CustomerTaxCodeConflictService taxCodeConflictService,
+        ICurrentUser currentUser)
     {
         _readDbContext = readDbContext;
         _writeDbContext = writeDbContext;
         _visibilityService = visibilityService;
         _dateTimeProvider = dateTimeProvider;
         _taxCodeConflictService = taxCodeConflictService;
+        _currentUser = currentUser;
     }
 
     public async Task<OperationResult> Handle(
@@ -51,15 +54,16 @@ internal sealed class UpdateCustomerCommandHandler
             return OperationResult.Fail("CustomerId is invalid.");
         }
 
-        var request = command.Request;
-        if (request.CustomerName is not null && string.IsNullOrWhiteSpace(request.CustomerName))
+        if (!_currentUser.IsInAnyRole(ApplicationRoleSets.CRM.CustomerEditors))
         {
-            return OperationResult.Fail("CustomerName cannot be empty.");
+            return OperationResult.Fail("You are not allowed to update customers.");
         }
 
-        if (request.LeadStatus.HasValue && !Enum.IsDefined(request.LeadStatus.Value))
+        var request = command.Request;
+        var patchValidationError = CustomerProfilePatchRules.Validate(request);
+        if (patchValidationError is not null)
         {
-            return OperationResult.Fail("LeadStatus is invalid.");
+            return OperationResult.Fail(patchValidationError);
         }
 
         var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
@@ -74,8 +78,6 @@ internal sealed class UpdateCustomerCommandHandler
         var customer = await _writeDbContext.Customers
             .Include(item => item.Addresses)
             .Include(item => item.Contacts)
-            .Include(item => item.CustomerAssignments)
-            .Include(item => item.CustomerClaims)
             .FirstOrDefaultAsync(item =>
                 item.CustomerId == command.CustomerId &&
                 item.CompanyId == scope.CompanyId,
@@ -99,11 +101,6 @@ internal sealed class UpdateCustomerCommandHandler
             }
         }
 
-        if (request.IsLead == true && customer.CustomerAssignments.Any(assignment => assignment.IsActive))
-        {
-            return OperationResult.Fail("Customer cannot be changed back to lead while an active assignment exists.");
-        }
-
         var childValidationError = ValidateChildIds(customer, request);
         if (childValidationError is not null)
         {
@@ -113,61 +110,7 @@ internal sealed class UpdateCustomerCommandHandler
         var now = _dateTimeProvider.Now;
         customer.UpdatedBy = scope.EmployeeId;
         customer.UpdatedDate = now;
-        ApplyBasicFields(customer, request);
-
-        PatchHelper.SetIfHasValue(request.IsLead, () => customer.IsLead, value => customer.IsLead = value);
-        PatchHelper.SetIfHasValue(request.LeadStatus, () => customer.LeadStatus, value => customer.LeadStatus = value);
-
-        if (!customer.IsLead && !customer.CustomerAssignments.Any(assignment => assignment.IsActive))
-        {
-            var groupId = await ResolveCurrentGroupIdAsync(scope.CompanyId, scope.EmployeeId, cancellationToken);
-            if (!groupId.HasValue)
-            {
-                return OperationResult.Fail("Current sale employee does not belong to an active group in this company.");
-            }
-
-            await _writeDbContext.CustomerAssignments.AddAsync(new CustomerAssignment
-            {
-                Id = Guid.CreateVersion7(),
-                CustomerId = customer.CustomerId,
-                EmployeeId = scope.EmployeeId,
-                GroupId = groupId.Value,
-                CompanyId = scope.CompanyId,
-                CreatedBy = scope.EmployeeId,
-                CreatedDate = now,
-                UpdatedBy = scope.EmployeeId,
-                UpdatedDate = now,
-                IsActive = true
-            }, cancellationToken);
-
-            foreach (var claim in customer.CustomerClaims.Where(claim => claim.IsActive && claim.Type == ClaimType.Work))
-            {
-                claim.IsActive = false;
-            }
-
-            customer.CurrentSaleId = scope.EmployeeId;
-            if (!request.LeadStatus.HasValue)
-            {
-                customer.LeadStatus = LeadStatus.Converted;
-            }
-        }
-
-        if (!customer.IsLead)
-        {
-            var latestAssignment = customer.CustomerAssignments
-                .Where(assignment => assignment.IsActive)
-                .OrderByDescending(assignment => assignment.CreatedDate)
-                .FirstOrDefault();
-            if (latestAssignment is not null)
-            {
-                customer.CurrentSaleId = latestAssignment.EmployeeId;
-            }
-
-            if (request.IsLead == false && !request.LeadStatus.HasValue)
-            {
-                customer.LeadStatus = LeadStatus.Converted;
-            }
-        }
+        CustomerProfilePatchRules.ApplyCustomerPatch(customer, request);
 
         await SyncAddressesAsync(customer, request.Addresses, cancellationToken);
         await SyncContactsAsync(customer, request.Contacts, cancellationToken);
@@ -188,29 +131,6 @@ internal sealed class UpdateCustomerCommandHandler
         }
 
         return OperationResult.Ok("Customer updated successfully.");
-    }
-
-    private static void ApplyBasicFields(Customer customer, UpdateCustomerRequest request)
-    {
-        PatchHelper.SetTrimmed(request.CustomerName, () => customer.CustomerName, value => customer.CustomerName = value ?? string.Empty);
-        PatchHelper.SetTrimmed(request.CustomerGroup, () => customer.CustomerGroup, value => customer.CustomerGroup = value);
-        PatchHelper.SetTrimmed(request.ApplicationName, () => customer.ApplicationName, value => customer.ApplicationName = value);
-        PatchHelper.SetTrimmed(request.RegistrationNumber, () => customer.RegistrationNumber, value => customer.RegistrationNumber = value);
-        PatchHelper.SetTrimmed(request.RegistrationAddress, () => customer.RegistrationAddress, value => customer.RegistrationAddress = value);
-        PatchHelper.SetTrimmed(request.TaxNumber, () => customer.TaxNumber, value => customer.TaxNumber = value);
-        PatchHelper.SetTrimmed(request.Phone, () => customer.Phone, value => customer.Phone = value);
-        PatchHelper.SetTrimmed(request.Website, () => customer.Website, value => customer.Website = value);
-        if (request.IssueDate.HasValue)
-        {
-            PatchHelper.SetNullable(request.IssueDate, () => customer.IssueDate, value => customer.IssueDate = value);
-        }
-
-        PatchHelper.SetTrimmed(request.IssuedPlace, () => customer.IssuedPlace, value => customer.IssuedPlace = value);
-        PatchHelper.SetTrimmed(request.FaxNumber, () => customer.FaxNumber, value => customer.FaxNumber = value);
-        if (request.IsActive.HasValue)
-        {
-            PatchHelper.SetNullable(request.IsActive, () => customer.IsActive, value => customer.IsActive = value);
-        }
     }
 
     private static string BuildConcurrencyMessage(string featureName, DbUpdateConcurrencyException exception)
@@ -278,12 +198,7 @@ internal sealed class UpdateCustomerCommandHandler
                 address = customer.Addresses.First(item => item.AddressId == request.AddressId);
             }
 
-            PatchHelper.SetTrimmed(request.AddressLine, () => address.AddressLine, value => address.AddressLine = value);
-            PatchHelper.SetTrimmed(request.City, () => address.City, value => address.City = value);
-            PatchHelper.SetTrimmed(request.District, () => address.District, value => address.District = value);
-            PatchHelper.SetTrimmed(request.Province, () => address.Province, value => address.Province = value);
-            PatchHelper.SetTrimmed(request.Country, () => address.Country, value => address.Country = value);
-            PatchHelper.SetTrimmed(request.PostalCode, () => address.PostalCode, value => address.PostalCode = value);
+            CustomerProfilePatchRules.ApplyAddressPatch(address, request);
             PatchHelper.SetIfHasValue(request.IsActive, () => address.IsActive, value => address.IsActive = value);
             if (request.IsPrimary.HasValue)
             {
@@ -327,11 +242,7 @@ internal sealed class UpdateCustomerCommandHandler
                 contact = customer.Contacts.First(item => item.ContactId == request.ContactId);
             }
 
-            PatchHelper.SetTrimmed(request.FirstName, () => contact.FirstName, value => contact.FirstName = value);
-            PatchHelper.SetTrimmed(request.LastName, () => contact.LastName, value => contact.LastName = value);
-            PatchHelper.SetTrimmed(request.Gender, () => contact.Gender, value => contact.Gender = value);
-            PatchHelper.SetTrimmed(request.Phone, () => contact.Phone, value => contact.Phone = value);
-            PatchHelper.SetTrimmed(request.Email, () => contact.Email, value => contact.Email = value);
+            CustomerProfilePatchRules.ApplyContactPatch(contact, request);
             PatchHelper.SetIfHasValue(request.IsActive, () => contact.IsActive, value => contact.IsActive = value);
             if (request.IsPrimary.HasValue)
             {

@@ -54,7 +54,7 @@ namespace HRM.Application.Features.PLM.Materials.Queries.GetLastPrices
         {
             var items = request.Items
                 .Where(x =>
-                    (x.ItemType == ItemType.Material &&
+                    (x.ItemType == ItemType.Material && 
                      x.MaterialId.HasValue &&
                      x.MaterialId.Value != Guid.Empty) ||
                     (x.ItemType == ItemType.Product &&

@@ -51,10 +51,13 @@ namespace HRM.Application.Abstractions.Persistence.PLM
         // ==================== SampleRequest ====================
         DbSet<Formula> Formulas { get; }
         DbSet<FormulaMaterial> FormulaMaterials { get; }
+        DbSet<ManufacturingVUFormula> ManufacturingVUFormulas { get; }
+        DbSet<FormulaMaterialSnapshot> FormulaMaterialSnapshots { get; }
         DbSet<ColorChipRecord> ColorChipRecords { get; }
         DbSet<ColorChipRecordDevelopmentFormula> ColorChipRecordDevelopmentFormulas { get; }
         DbSet<Product> Products { get; }
         DbSet<SampleRequest> SampleRequests { get; }
+        DbSet<SampleRequestSampleTrial> SampleRequestSampleTrials { get; }
         DbSet<InternalConversation> InternalConversations { get; }
         DbSet<InternalConversationParticipant> InternalConversationParticipants { get; }
         DbSet<InternalMessage> InternalMessages { get; }
@@ -81,5 +84,6 @@ namespace HRM.Application.Abstractions.Persistence.PLM
         DbSet<Customer> Customers { get; }
         DbSet<CustomerAssignment> CustomerAssignments { get; }
         DbSet<CustomerClaim> CustomerClaims { get; }
+        DbSet<QuotationLine> QuotationLines { get; }
     }
 }

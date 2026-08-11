@@ -4,7 +4,6 @@ namespace HRM.Application.Features.CRM.CustomerCare.Dtos;
 
 public sealed class CreateCustomerRequest
 {
-    public string? ExternalId { get; init; }
     public string CustomerName { get; init; } = string.Empty;
     public string? CustomerGroup { get; init; }
     public string? ApplicationName { get; init; }
@@ -17,12 +16,12 @@ public sealed class CreateCustomerRequest
     public string? IssuedPlace { get; init; }
     public string? FaxNumber { get; init; }
     public string? Notes { get; init; }
-    public int ClaimTtlHours { get; init; } = 48;
+    public int ClaimTtlHours { get; init; } = 8760;
     public IReadOnlyList<CreateCustomerAddressRequest> Addresses { get; init; } = [];
     public IReadOnlyList<CreateCustomerContactRequest> Contacts { get; init; } = [];
 }
 
-public sealed class UpdateCustomerRequest
+public abstract class CustomerProfilePatchRequest
 {
     public string? CustomerName { get; init; }
     public string? CustomerGroup { get; init; }
@@ -35,12 +34,14 @@ public sealed class UpdateCustomerRequest
     public DateTime? IssueDate { get; init; }
     public string? IssuedPlace { get; init; }
     public string? FaxNumber { get; init; }
-    public bool? IsActive { get; init; }
-    public bool? IsLead { get; init; }
-    public LeadStatus? LeadStatus { get; init; }
+    public IReadOnlyList<string>? ClearFields { get; init; }
     public UpdateCustomerNoteRequest? Note { get; init; }
     public IReadOnlyList<UpdateCustomerAddressRequest>? Addresses { get; init; }
     public IReadOnlyList<UpdateCustomerContactRequest>? Contacts { get; init; }
+}
+
+public sealed class UpdateCustomerRequest : CustomerProfilePatchRequest
+{
 }
 
 public sealed class CreateCustomerAddressRequest
@@ -65,6 +66,7 @@ public sealed class UpdateCustomerAddressRequest
     public string? PostalCode { get; init; }
     public bool? IsPrimary { get; init; }
     public bool? IsActive { get; init; }
+    public IReadOnlyList<string>? ClearFields { get; init; }
 }
 
 public sealed class CreateCustomerContactRequest
@@ -87,6 +89,7 @@ public sealed class UpdateCustomerContactRequest
     public string? Email { get; init; }
     public bool? IsPrimary { get; init; }
     public bool? IsActive { get; init; }
+    public IReadOnlyList<string>? ClearFields { get; init; }
 }
 
 public sealed class UpdateCustomerNoteRequest
@@ -103,6 +106,12 @@ public sealed class CustomerCreateResultDto
     public string LeadStatus { get; init; } = string.Empty;
     public Guid? CurrentSaleId { get; init; }
     public DateTime? ClaimExpiresAt { get; init; }
+}
+
+public sealed class CustomerActivationResultDto
+{
+    public Guid CustomerId { get; init; }
+    public bool IsActive { get; init; }
 }
 
 public sealed class CustomerDetailDto

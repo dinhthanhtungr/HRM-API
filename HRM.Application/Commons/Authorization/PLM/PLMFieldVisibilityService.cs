@@ -20,4 +20,9 @@ internal sealed class PLMFieldVisibilityService : IPLMFieldVisibilityService
     {
         return _currentUser.IsInAnyRole(ApplicationRoleSets.PLM.FormulaMaterialViewers);
     }
+
+    public bool CanViewProductTechnicalInfo()
+    {
+        return _currentUser.IsInAnyRole(ApplicationRoleSets.PLM.ProductTechnicalEditors);
+    }
 }

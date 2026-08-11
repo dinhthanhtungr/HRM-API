@@ -22,6 +22,7 @@ public sealed class WorkTask
     public string? CompletionNote { get; set; }
     public Guid? AssignedToEmployeeId { get; set; }
     public Guid? WorkTaskListId { get; set; }
+    public int SortOrder { get; set; }
     public Guid CompanyId { get; set; }
     public DateTime CreatedDate { get; set; }
     public Guid CreatedBy { get; set; }

@@ -49,6 +49,30 @@ namespace HRM.Domain.Enums.Notifications
         SampleRequestPriceQuoteRequested = 23,
         SampleRequestChangeRequested = 24,
         SampleRequestUpdateRequested = 25,
-        InternalMailMessageCreated = 26
+        InternalMailMessageCreated = 26,
+        SampleRequestUpdateApproved = 27,
+        SampleRequestUpdateRejected = 28,
+
+        // Topic từ đây tuân theo cấu trúc nghiệp vụ cụ thể; các giá trị 0-28 được giữ nguyên tuyệt đối.
+        SampleRequestDataChangeRequested = 29,
+        SampleRequestDataChangeApproved = 30,
+        SampleRequestDataChangeRejected = 31,
+        MerchandiseOrderDeliveryPaused = 32,
+        MerchandiseOrderDeliveryResumed = 33,
+        QuotationSent = 34,
+        QuotationMessageCreated = 35,
+        QuotationRequested = 36,
+        SampleRequestSampleSent = 37,
+        SampleRequestFormulaCompleted = 38,
+        SampleRequestFormulaUpdateRequested = 39,
+        SampleRequestFormulaUpdateApproved = 40,
+        SampleRequestFormulaUpdateRejected = 41,
+        SampleRequestFormulaUpdateCancelled = 42,
+        SampleRequestDirectPatchNotified = 43,
+
+        // ==================== Developer Operations ====================
+        CustomerAiSummaryAutomationStatus = 44,
+        ComplaintInitialDecision = 45,
+        ComplaintFinalDecision = 46
     }
 }

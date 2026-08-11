@@ -14,5 +14,11 @@ namespace HRM.Domain.Enums.Logs
         MerchadiseStatus = 4,
         SamplerStatus = 5,
         SupplyRequestStatus = 6,
+        PLMChangeOrder = 7,
+        PLMApproval = 8,
+        QuotationStatus = 9,
+        PurchaseOrderStatus = 10,
+        CustomerCrm = 11,
+        ComplaintReport = 12,
     }
 }

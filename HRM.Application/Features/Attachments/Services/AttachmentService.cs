@@ -43,33 +43,54 @@ internal sealed class AttachmentService : IAttachmentService
         await ValidateUploadAsync(collectionId, slot, files, rule, cancellationToken);
 
         var attachments = new List<AttachmentModel>(files.Count);
+        var savedPaths = new List<string>(files.Count);
         var relativeFolder = BuildRelativeFolder(collectionId, slot);
 
-        foreach (var file in files)
+        try
         {
-            var storagePath = await _fileStorage.SaveAsync(
-                file.Stream,
-                file.ContentType,
-                file.FileName,
-                relativeFolder,
-                cancellationToken);
-
-            attachments.Add(new AttachmentModel
+            foreach (var file in files)
             {
-                AttachmentId = Guid.CreateVersion7(),
-                AttachmentCollectionId = collectionId,
-                Slot = slot,
-                FileName = Path.GetFileName(file.FileName),
-                SizeBytes = file.Length,
-                StoragePath = storagePath,
-                CreateDate = DateTime.Now,
-                CreateBy = createdBy,
-                IsActive = true
-            });
-        }
+                var storagePath = await _fileStorage.SaveAsync(
+                    file.Stream,
+                    file.ContentType,
+                    file.FileName,
+                    relativeFolder,
+                    cancellationToken);
+                savedPaths.Add(storagePath);
 
-        await _dbContext.AttachmentModels.AddRangeAsync(attachments, cancellationToken);
-        await _dbContext.SaveChangesAsync(cancellationToken);
+                attachments.Add(new AttachmentModel
+                {
+                    AttachmentId = Guid.CreateVersion7(),
+                    AttachmentCollectionId = collectionId,
+                    Slot = slot,
+                    FileName = Path.GetFileName(file.FileName),
+                    SizeBytes = file.Length,
+                    StoragePath = storagePath,
+                    CreateDate = DateTime.Now,
+                    CreateBy = createdBy,
+                    IsActive = true
+                });
+            }
+
+            await _dbContext.AttachmentModels.AddRangeAsync(attachments, cancellationToken);
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch
+        {
+            foreach (var storagePath in savedPaths)
+            {
+                try
+                {
+                    await _fileStorage.DeleteAsync(storagePath, CancellationToken.None);
+                }
+                catch
+                {
+                    // Không che exception gốc của thao tác upload.
+                }
+            }
+
+            throw;
+        }
 
         return attachments.Select(ToDto).ToList();
     }

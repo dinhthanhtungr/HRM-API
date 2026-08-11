@@ -10,6 +10,7 @@ namespace HRM.Application.Features.InternalMail.Queries.GetMessages;
 internal sealed class GetInternalMessagesQueryHandler
     : IRequestHandler<GetInternalMessagesQuery, PagedResult<InternalMessageDto>?>
 {
+    private const int MaxReplyPreviewLength = 300;
     private readonly IInternalMailDbContext _dbContext;
     private readonly ICurrentUser _currentUser;
 
@@ -35,6 +36,7 @@ internal sealed class GetInternalMessagesQueryHandler
             .AnyAsync(x =>
                 x.InternalConversationId == request.ConversationId &&
                 x.EmployeeId == employeeId.Value &&
+                x.IsActive &&
                 x.Conversation.CompanyId == companyId.Value &&
                 x.Conversation.IsActive,
                 cancellationToken);
@@ -67,6 +69,19 @@ internal sealed class GetInternalMessagesQueryHandler
                 Body = x.IsDeleted ? string.Empty : x.Body,
                 PayloadJson = x.IsDeleted ? null : x.PayloadJson,
                 ReplyToMessageId = x.ReplyToMessageId,
+                ReplyTo = x.ReplyToMessageId == null ? null : new InternalMessageReplyDto
+                {
+                    MessageId = x.ReplyToMessage!.InternalMessageId,
+                    SenderEmployeeId = x.ReplyToMessage.SenderEmployeeId,
+                    SenderName = x.ReplyToMessage.SenderEmployee.FullName,
+                    BodyPreview = x.ReplyToMessage.IsDeleted
+                        ? string.Empty
+                        : x.ReplyToMessage.Body.Length <= MaxReplyPreviewLength
+                            ? x.ReplyToMessage.Body
+                            : x.ReplyToMessage.Body.Substring(0, MaxReplyPreviewLength),
+                    MessageType = x.ReplyToMessage.MessageType,
+                    IsDeleted = x.ReplyToMessage.IsDeleted
+                },
                 IsUrgent = x.IsUrgent,
                 SentAt = x.SentAt,
                 IsEdited = x.IsEdited,
@@ -126,10 +141,16 @@ internal sealed class GetInternalMessagesQueryHandler
                     .Where(x => x.InternalMessageId == item.MessageId)
                     .Select(x => x.Item)
                     .ToList();
-                item.Attachments = attachments
+                var messageAttachments = attachments
                     .Where(x => x.InternalMessageId == item.MessageId)
                     .Select(x => x.Item)
                     .ToList();
+                foreach (var attachment in messageAttachments)
+                {
+                    InternalMessageAttachmentPresentation.Enrich(attachment);
+                }
+
+                item.Attachments = messageAttachments;
             }
         }
 

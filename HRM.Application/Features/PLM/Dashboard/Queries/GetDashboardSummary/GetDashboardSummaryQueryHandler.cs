@@ -1,4 +1,5 @@
 using HRM.Application.Abstractions.Persistence.PLM;
+using HRM.Application.Features.CRM.CustomerCare.Visibility;
 using HRM.Application.Features.PLM.Dashboard.Dtos;
 using HRM.Application.Features.PLM.Dashboard.Shared.Services;
 using HRM.Application.Features.PLM.Dashboard.Shared.Services.Rules;
@@ -11,31 +12,34 @@ internal sealed class GetDashboardSummaryQueryHandler
     : IRequestHandler<GetDashboardSummaryQuery, PlmDashboardSummaryDto>
 {
     private readonly IPLMReadDbContext _dbContext;
+    private readonly ICustomerVisibilityService _visibilityService;
 
-    public GetDashboardSummaryQueryHandler(IPLMReadDbContext dbContext)
+    public GetDashboardSummaryQueryHandler(
+        IPLMReadDbContext dbContext,
+        ICustomerVisibilityService visibilityService)
     {
         _dbContext = dbContext;
+        _visibilityService = visibilityService;
     }
 
     public async Task<PlmDashboardSummaryDto> Handle(
         GetDashboardSummaryQuery request,
         CancellationToken cancellationToken)
     {
+        var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+        var includeInternalCustomer = PLMRules.ShouldIncludeInternalCustomer(scope);
+        var customerQuery = _dbContext.Customers.AsNoTracking();
+        var visibleCustomerIds = _visibilityService.ApplyCustomerVisibility(customerQuery, scope)
+            .Select(x => x.CustomerId);
 
-        //var sampleRequests = _dbContext.SampleRequests
-        //    .AsNoTracking()
-        //    .AsQueryable();
-
-        //var productionOrders = _dbContext.MfgProductionOrders
-        //    .AsNoTracking()
-        //    .AsQueryable();
-
-        var sampleRequests = _dbContext.SampleRequests
+        var sampleRequests = _visibilityService.ApplySampleRequestVisibility(
+                _dbContext.SampleRequests.AsNoTracking(),
+                customerQuery,
+                scope)
             .AsNoTracking()
             .AsQueryable()
             .Where(x =>
-                x.IsActive &&
-                x.Customer.ExternalId != PLMRules.InternalCustomerExternalId &&
+                (includeInternalCustomer || x.Customer.ExternalId != PLMRules.InternalCustomerExternalId) &&
                 !PLMRules.SampleRequestExcludedStatuses.Contains(x.Status));
 
         var productionOrders = _dbContext.MfgProductionOrders
@@ -43,15 +47,20 @@ internal sealed class GetDashboardSummaryQueryHandler
             .AsQueryable()
             .Where(x =>
                 x.IsActive &&
+                x.CompanyId == scope.CompanyId &&
                 x.Customer != null &&
+                x.CustomerId.HasValue &&
+                visibleCustomerIds.Contains(x.CustomerId.Value) &&
                 x.Customer.ExternalId != PLMRules.InternalCustomerExternalId &&
                 !PLMRules.ProductionOrderExcludedStatuses.Contains(x.Status));
 
-        var orders = _dbContext.MerchandiseOrders
+        var orders = _visibilityService.ApplyMerchandiseOrderVisibility(
+                _dbContext.MerchandiseOrders.AsNoTracking(),
+                customerQuery,
+                scope)
             .AsNoTracking()
             .AsQueryable()
             .Where(x =>
-                x.IsActive &&
                 x.Customer != null &&
                 x.Customer.ExternalId != PLMRules.InternalCustomerExternalId &&
                 !PLMRules.OrderExcludedStatuses.Contains(x.Status));

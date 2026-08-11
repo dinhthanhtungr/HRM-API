@@ -20,7 +20,10 @@ namespace HRM.Infrastructure.DatabaseContext.ApplicationDbs.Configurations.Order
                   .HasName("PK__Merchand__D0AB7E7AFDA62167");
 
             // Bảng + schema
-            entity.ToTable("MerchandiseOrders", "Orders");
+            entity.ToTable("MerchandiseOrders", "Orders", table =>
+                table.HasCheckConstraint(
+                    "CK_MerchandiseOrders_ComplaintReport_OrderType",
+                    "\"ComplaintReportId\" IS NULL OR \"OrderType\" = 2"));
 
             // ===== Columns =====
             entity.Property(e => e.MerchandiseOrderId)
@@ -37,6 +40,9 @@ namespace HRM.Infrastructure.DatabaseContext.ApplicationDbs.Configurations.Order
             entity.Property(e => e.ExternalId)
                  .HasColumnName("ExternalId")
                  .HasColumnType("citext");
+
+            entity.Property(e => e.ComplaintReportId)
+                 .HasColumnName("ComplaintReportId");
 
             entity.Property(e => e.DeliveryAddress)
                  .HasColumnName("DeliveryAddress")
@@ -102,6 +108,27 @@ namespace HRM.Infrastructure.DatabaseContext.ApplicationDbs.Configurations.Order
             entity.Property(e => e.UpdatedDate)
                  .HasColumnName("UpdatedDate");
 
+            entity.Property(e => e.IsDeliveryPaused)
+                 .HasColumnName("IsDeliveryPaused")
+                 .HasDefaultValue(false);
+
+            entity.Property(e => e.DeliveryPausedFrom)
+                 .HasColumnName("DeliveryPausedFrom");
+
+            entity.Property(e => e.DeliveryPausedTo)
+                 .HasColumnName("DeliveryPausedTo");
+
+            entity.Property(e => e.DeliveryPauseReason)
+                 .HasColumnName("DeliveryPauseReason")
+                 .HasColumnType("text");
+
+            entity.Property(e => e.DeliveryPauseType)
+                 .HasColumnName("DeliveryPauseType")
+                 .HasColumnType("citext");
+
+            entity.Property(e => e.DeliveryPausedBy)
+                 .HasColumnName("DeliveryPausedBy");
+
             // ===== Indexes =====
             entity.HasIndex(e => new { e.CompanyId, e.ExternalId })
                  .IsUnique()
@@ -111,6 +138,10 @@ namespace HRM.Infrastructure.DatabaseContext.ApplicationDbs.Configurations.Order
             entity.HasIndex(e => e.CustomerId).HasDatabaseName("IX_MerchandiseOrders_CustomerId");
             entity.HasIndex(e => e.ManagerById).HasDatabaseName("IX_MerchandiseOrders_ManagerById");
             entity.HasIndex(e => e.AttachmentCollectionId).HasDatabaseName("IX_Order_AttachmentCollection");
+            entity.HasIndex(e => e.ComplaintReportId)
+                 .IsUnique()
+                 .HasFilter("\"ComplaintReportId\" IS NOT NULL AND \"IsActive\" = TRUE")
+                 .HasDatabaseName("UX_MerchandiseOrders_Active_ComplaintReport");
 
             // EF Core 8: sort index (CreateDate DESC, PK DESC) + filter Active
             entity.HasIndex(e => new { e.CompanyId, e.CreateDate, e.MerchandiseOrderId })
@@ -134,6 +165,12 @@ namespace HRM.Infrastructure.DatabaseContext.ApplicationDbs.Configurations.Order
                  .OnDelete(DeleteBehavior.Restrict)
                  .HasConstraintName("FK_MerchandiseOrders_AttachmentCollection");
 
+            entity.HasOne(d => d.ComplaintReport)
+                 .WithMany(p => p.ProcessingMerchandiseOrders)
+                 .HasForeignKey(d => d.ComplaintReportId)
+                 .OnDelete(DeleteBehavior.Restrict)
+                 .HasConstraintName("FK_MerchandiseOrders_ComplaintReport");
+
             entity.HasOne(d => d.Company)
                  .WithMany(p => p.MerchandiseOrders)
                  .HasForeignKey(d => d.CompanyId)
@@ -153,6 +190,12 @@ namespace HRM.Infrastructure.DatabaseContext.ApplicationDbs.Configurations.Order
                  .WithMany(p => p.MerchandiseOrderManagerBies)
                  .HasForeignKey(d => d.ManagerById)
                  .HasConstraintName("FK_MerchandiseOrders_ManagerById");
+
+            entity.HasOne(d => d.DeliveryPausedByNavigation)
+                 .WithMany(p => p.MerchandiseOrderDeliveryPausedBies)
+                 .HasForeignKey(d => d.DeliveryPausedBy)
+                 .OnDelete(DeleteBehavior.SetNull)
+                 .HasConstraintName("FK_MerchandiseOrders_DeliveryPausedBy");
 
             entity.HasOne(d => d.UpdatedByNavigation)
                  .WithMany(p => p.MerchandiseOrderUpdatedByNavigations)

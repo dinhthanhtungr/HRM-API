@@ -56,6 +56,18 @@ internal sealed class GetCustomerInteractionByIdQueryHandler
             NextFollowUpDate = x.NextFollowUpDate,
             AssignedSaleEmployeeId = x.AssignedSaleEmployeeId,
             AssignedSaleEmployeeName = x.AssignedSaleEmployee != null ? x.AssignedSaleEmployee.FullName : null,
-            IsActive = x.IsActive
+            IsActive = x.IsActive,
+            References = x.References
+                .OrderByDescending(reference => reference.IsPrimary)
+                .ThenBy(reference => reference.ReferenceType)
+                .Select(reference => new CustomerInteractionReferenceDto
+                {
+                    ReferenceId = reference.ReferenceId,
+                    ReferenceType = reference.ReferenceType,
+                    ReferenceCodeSnapshot = reference.ReferenceCodeSnapshot,
+                    ReferenceNameSnapshot = reference.ReferenceNameSnapshot,
+                    IsPrimary = reference.IsPrimary
+                })
+                .ToList()
         });
 }

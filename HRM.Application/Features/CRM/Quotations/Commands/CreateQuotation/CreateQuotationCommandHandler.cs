@@ -105,7 +105,7 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.CreateQuotation
             var externalId = string.IsNullOrWhiteSpace(request.ExternalId)
                 ? await _externalIdService.GenerateMonthlyCodeAsync(
                     scope.CompanyId,
-                    DocumentPrefix.BG.ToString(),
+                    DocumentPrefix.BBG.ToString(),
                     cancellationToken)
                 : request.ExternalId.Trim();
 
@@ -126,6 +126,7 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.CreateQuotation
             var lineResult = await _lineBuilder.BuildAsync(
                 quotationId,
                 scope.CompanyId,
+                request.CustomerId,
                 request.Lines,
                 cancellationToken);
             if (!lineResult.Success || lineResult.Data is null)
@@ -145,6 +146,7 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.CreateQuotation
                 Status = QuotationStatus.Draft,
                 Currency = currency.ToUpperInvariant(),
                 ExchangeRate = request.ExchangeRate,
+                TaxPercent = Math.Clamp(request.TaxPercent, 0m, 100m),
                 QuotationDate = quotationDate,
                 ValidUntil = request.ValidUntil,
                 PaymentTerms = QuotationRules.TrimToNull(request.PaymentTerms),
@@ -166,7 +168,12 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.CreateQuotation
             return OperationResult<QuotationCreateResultDto>.Ok(new QuotationCreateResultDto
             {
                 QuotationId = quotationId,
-                ExternalId = externalId
+                ExternalId = externalId,
+                SubTotal = quotation.SubTotal,
+                DiscountAmount = quotation.DiscountAmount,
+                TaxPercent = quotation.TaxPercent,
+                TaxAmount = quotation.TaxAmount,
+                TotalAmount = quotation.TotalAmount
             }, "Quotation draft created successfully.");
         }
 

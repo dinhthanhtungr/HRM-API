@@ -1,6 +1,8 @@
 using HRM.Application.Abstractions.Commons.ExternalIds;
 using HRM.Application.Abstractions.Commons.Time;
 using HRM.Application.Abstractions.Persistence.CRM.CustomerCare;
+using HRM.Application.Abstractions.Security;
+using HRM.Application.Commons.Authorization;
 using HRM.Application.Commons.Models;
 using HRM.Application.Features.CRM.CustomerCare.Dtos;
 using HRM.Application.Features.CRM.CustomerCare.Services;
@@ -25,6 +27,7 @@ internal sealed class CreateCustomerCommandHandler
     private readonly IExternalIdService _externalIdService;
     private readonly IDateTimeProvider _dateTimeProvider;
     private readonly CustomerTaxCodeConflictService _taxCodeConflictService;
+    private readonly ICurrentUser _currentUser;
 
     public CreateCustomerCommandHandler(
         ICRMReadDbContext readDbContext,
@@ -32,7 +35,8 @@ internal sealed class CreateCustomerCommandHandler
         ICustomerVisibilityService visibilityService,
         IExternalIdService externalIdService,
         IDateTimeProvider dateTimeProvider,
-        CustomerTaxCodeConflictService taxCodeConflictService)
+        CustomerTaxCodeConflictService taxCodeConflictService,
+        ICurrentUser currentUser)
     {
         _readDbContext = readDbContext;
         _writeDbContext = writeDbContext;
@@ -40,6 +44,7 @@ internal sealed class CreateCustomerCommandHandler
         _externalIdService = externalIdService;
         _dateTimeProvider = dateTimeProvider;
         _taxCodeConflictService = taxCodeConflictService;
+        _currentUser = currentUser;
     }
 
     public async Task<OperationResult<CustomerCreateResultDto>> Handle(
@@ -47,6 +52,11 @@ internal sealed class CreateCustomerCommandHandler
         CancellationToken cancellationToken)
     {
         var request = command.Request;
+        if (!_currentUser.IsInAnyRole(ApplicationRoleSets.CRM.CustomerEditors))
+        {
+            return OperationResult<CustomerCreateResultDto>.Fail("You are not allowed to create customers.");
+        }
+
         if (string.IsNullOrWhiteSpace(request.CustomerName))
         {
             return OperationResult<CustomerCreateResultDto>.Fail("CustomerName is required.");
@@ -87,12 +97,10 @@ internal sealed class CreateCustomerCommandHandler
                 CustomerTaxCodeConflictService.BuildConflictMessage(request.TaxNumber, taxConflict));
         }
 
-        var externalId = string.IsNullOrWhiteSpace(request.ExternalId)
-            ? await _externalIdService.GenerateGlobalCodeAsync(
-                scope.CompanyId,
-                DocumentPrefix.KH.ToString(),
-                cancellationToken)
-            : request.ExternalId.Trim();
+        var externalId = await _externalIdService.GenerateGlobalCodeAsync(
+            scope.CompanyId,
+            DocumentPrefix.KH.ToString(),
+            cancellationToken);
 
         var externalIdExists = await _readDbContext.Customers
             .AsNoTracking()

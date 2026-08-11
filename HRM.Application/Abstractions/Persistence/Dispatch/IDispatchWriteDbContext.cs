@@ -1,6 +1,7 @@
 ﻿using HRM.Domain.Entities.DeliverySchema;
 using HRM.Domain.Entities.OrderSchema;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -19,6 +20,8 @@ namespace HRM.Application.Abstractions.Persistence.Dispatch
         DbSet<DelivererInfor> DelivererInfors { get; }
         DbSet<MerchandiseOrderDetail> MerchandiseOrderDetails { get; }
 
+        Task<IDbContextTransaction> BeginDeliveryOrderTransactionAsync(
+            CancellationToken cancellationToken = default);
         Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
     }
 }

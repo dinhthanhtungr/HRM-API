@@ -6,6 +6,7 @@ using HRM.Application.Features.CRM.CustomerCare.Dtos;
 using HRM.Application.Features.CRM.CustomerCare.Services;
 using HRM.Domain.Entities.CustomerSchema;
 using HRM.Domain.Entities.WorkTaskSchema;
+using HRM.Domain.Enums.CustomerEnum;
 using HRM.Domain.Enums.WorkTaskEnums;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -16,6 +17,7 @@ internal sealed class CreateCustomerInteractionCommandHandler
     : IRequestHandler<CreateCustomerInteractionCommand, OperationResult<Guid>>
 {
     private const string DefaultFollowUpTitle = "Customer follow-up";
+    private const int MaxReferenceCount = 10;
     private readonly ICRMReadDbContext _readDbContext;
     private readonly ICRMWriteDbContext _writeDbContext;
     private readonly CustomerCrmAccessService _accessService;
@@ -73,6 +75,16 @@ internal sealed class CreateCustomerInteractionCommandHandler
         }
 
         var now = _dateTimeProvider.Now;
+        var referencesResult = await ResolveReferencesAsync(
+            request.References,
+            customer.CustomerId,
+            scope.CompanyId,
+            cancellationToken);
+        if (!referencesResult.Success || referencesResult.Data is null)
+        {
+            return OperationResult<Guid>.Fail(referencesResult.Message ?? "Interaction references are invalid.");
+        }
+
         var interactionAt = request.InteractionAt == default ? now : request.InteractionAt;
         var interactionId = Guid.CreateVersion7();
         var interaction = new CustomerInteraction
@@ -95,6 +107,23 @@ internal sealed class CreateCustomerInteractionCommandHandler
         };
 
         await _writeDbContext.CustomerInteractions.AddAsync(interaction, cancellationToken);
+        foreach (var reference in referencesResult.Data)
+        {
+            await _writeDbContext.CustomerInteractionReferences.AddAsync(new CustomerInteractionReference
+            {
+                Id = Guid.CreateVersion7(),
+                InteractionId = interactionId,
+                ReferenceType = reference.ReferenceType,
+                ReferenceId = reference.ReferenceId,
+                ReferenceCodeSnapshot = reference.ReferenceCodeSnapshot,
+                ReferenceNameSnapshot = reference.ReferenceNameSnapshot,
+                IsPrimary = reference.IsPrimary,
+                CompanyId = scope.CompanyId,
+                CreatedDate = now,
+                CreatedBy = scope.EmployeeId
+            }, cancellationToken);
+        }
+
         customer.LastContactDate = !customer.LastContactDate.HasValue || interactionAt > customer.LastContactDate
             ? interactionAt
             : customer.LastContactDate;
@@ -203,4 +232,128 @@ internal sealed class CreateCustomerInteractionCommandHandler
 
     private static string? Normalize(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private async Task<OperationResult<List<ReferenceDraft>>> ResolveReferencesAsync(
+        IReadOnlyList<CustomerInteractionReferenceRequest> references,
+        Guid customerId,
+        Guid companyId,
+        CancellationToken cancellationToken)
+    {
+        if (references.Count == 0)
+        {
+            return OperationResult<List<ReferenceDraft>>.Ok([]);
+        }
+
+        if (references.Count > MaxReferenceCount)
+        {
+            return OperationResult<List<ReferenceDraft>>.Fail($"Interaction references cannot exceed {MaxReferenceCount} items.");
+        }
+
+        var duplicated = references
+            .GroupBy(x => new { x.ReferenceType, x.ReferenceId })
+            .Any(x => x.Key.ReferenceId == Guid.Empty || x.Count() > 1);
+        if (duplicated)
+        {
+            return OperationResult<List<ReferenceDraft>>.Fail("Interaction references contain empty or duplicate values.");
+        }
+
+        if (references.Count(x => x.IsPrimary) > 1)
+        {
+            return OperationResult<List<ReferenceDraft>>.Fail("Only one interaction reference can be primary.");
+        }
+
+        var result = new List<ReferenceDraft>();
+        foreach (var reference in references)
+        {
+            if (!Enum.IsDefined(reference.ReferenceType))
+            {
+                return OperationResult<List<ReferenceDraft>>.Fail("Interaction reference type is invalid.");
+            }
+
+            var resolved = await ResolveReferenceAsync(reference, customerId, companyId, cancellationToken);
+            if (resolved is null)
+            {
+                return OperationResult<List<ReferenceDraft>>.Fail(
+                    $"Reference {reference.ReferenceType}/{reference.ReferenceId} was not found or is outside this customer.");
+            }
+
+            result.Add(resolved);
+        }
+
+        if (result.Count > 0 && result.All(x => !x.IsPrimary))
+        {
+            result[0] = result[0] with { IsPrimary = true };
+        }
+
+        return OperationResult<List<ReferenceDraft>>.Ok(result);
+    }
+
+    private async Task<ReferenceDraft?> ResolveReferenceAsync(
+        CustomerInteractionReferenceRequest reference,
+        Guid customerId,
+        Guid companyId,
+        CancellationToken cancellationToken)
+    {
+        return reference.ReferenceType switch
+        {
+            CustomerInteractionReferenceType.SampleRequest => await _readDbContext.SampleRequests
+                .AsNoTracking()
+                .Where(x =>
+                    x.SampleRequestId == reference.ReferenceId &&
+                    x.CustomerId == customerId &&
+                    x.CompanyId == companyId &&
+                    x.IsActive)
+                .Select(x => new ReferenceDraft(
+                    reference.ReferenceType,
+                    x.SampleRequestId,
+                    Normalize(reference.ReferenceCodeSnapshot) ?? x.ExternalId,
+                    Normalize(reference.ReferenceNameSnapshot) ?? x.Product.Name,
+                    reference.IsPrimary))
+                .FirstOrDefaultAsync(cancellationToken),
+
+            CustomerInteractionReferenceType.SampleTrial => await _readDbContext.SampleRequestSampleTrials
+                .AsNoTracking()
+                .Where(x =>
+                    x.SampleRequestSampleTrialId == reference.ReferenceId &&
+                    x.IsActive &&
+                    x.SampleRequest.CustomerId == customerId &&
+                    x.SampleRequest.CompanyId == companyId &&
+                    x.SampleRequest.IsActive)
+                .Select(x => new ReferenceDraft(
+                    reference.ReferenceType,
+                    x.SampleRequestSampleTrialId,
+                    Normalize(reference.ReferenceCodeSnapshot) ??
+                    x.SampleRequestExternalIdSnapshot ??
+                    x.SampleRequest.ExternalId,
+                    Normalize(reference.ReferenceNameSnapshot) ??
+                    x.ProductNameSnapshot ??
+                    x.SampleRequest.Product.Name,
+                    reference.IsPrimary))
+                .FirstOrDefaultAsync(cancellationToken),
+
+            CustomerInteractionReferenceType.Quotation => await _readDbContext.Quotations
+                .AsNoTracking()
+                .Where(x =>
+                    x.QuotationId == reference.ReferenceId &&
+                    x.CustomerId == customerId &&
+                    x.CompanyId == companyId &&
+                    x.IsActive)
+                .Select(x => new ReferenceDraft(
+                    reference.ReferenceType,
+                    x.QuotationId,
+                    Normalize(reference.ReferenceCodeSnapshot) ?? x.ExternalId,
+                    Normalize(reference.ReferenceNameSnapshot) ?? x.Status.ToString(),
+                    reference.IsPrimary))
+                .FirstOrDefaultAsync(cancellationToken),
+
+            _ => null
+        };
+    }
+
+    private sealed record ReferenceDraft(
+        CustomerInteractionReferenceType ReferenceType,
+        Guid ReferenceId,
+        string? ReferenceCodeSnapshot,
+        string? ReferenceNameSnapshot,
+        bool IsPrimary);
 }

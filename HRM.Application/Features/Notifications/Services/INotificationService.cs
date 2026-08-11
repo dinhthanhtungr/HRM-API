@@ -21,7 +21,8 @@ public interface INotificationService
         int take = 20,
         Guid? afterId = null,
         DateTime? afterCreated = null,
-        NotificationCategory category = NotificationCategory.All,
+        string? categoryCode = null,
+        string? eventGroupCode = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

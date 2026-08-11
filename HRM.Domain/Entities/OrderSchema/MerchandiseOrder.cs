@@ -17,6 +17,7 @@ public partial class MerchandiseOrder
     public OrderType OrderType { get; set; } = OrderType.Merchandise;
 
     public Guid AttachmentCollectionId { get; set; }
+    public Guid? ComplaintReportId { get; set; }
 
 
     public Guid CustomerId { get; set; }
@@ -52,6 +53,13 @@ public partial class MerchandiseOrder
     public string? ShippingMethod { get; set; }
     public string PONo { get; set; } = string.Empty;
 
+    public bool IsDeliveryPaused { get; set; }
+    public DateTime? DeliveryPausedFrom { get; set; }
+    public DateTime? DeliveryPausedTo { get; set; }
+    public string? DeliveryPauseReason { get; set; }
+    public string? DeliveryPauseType { get; set; }
+    public Guid? DeliveryPausedBy { get; set; }
+
     public DateTime CreateDate { get; set; }
     public Guid CreatedBy { get; set; }
     public DateTime UpdatedDate { get; set; }
@@ -65,8 +73,11 @@ public partial class MerchandiseOrder
 
     public virtual Employee? ManagerBy { get; set; }
 
+    public virtual Employee? DeliveryPausedByNavigation { get; set; }
+
 
     public virtual AttachmentCollection AttachmentCollection { get; set; } = null!;
+    public virtual ComplaintReport? ComplaintReport { get; set; }
     public virtual ICollection<DeliveryOrderPO> DeliveryOrderPOs { get; set; } = new List<DeliveryOrderPO>();
     public virtual ICollection<PurchaseOrderLink> PurchaseOrderLinks { get; set; } = new List<PurchaseOrderLink>();
     //public virtual ICollection<DeliveryOrderDetail> DeliveryOrderDetails { get; set; } = new List<DeliveryOrderDetail>();

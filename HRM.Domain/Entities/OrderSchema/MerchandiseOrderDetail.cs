@@ -11,6 +11,7 @@ public partial class MerchandiseOrderDetail
     public Guid MerchandiseOrderDetailId { get; set; }
 
     public Guid MerchandiseOrderId { get; set; }
+    public Guid? ComplaintReportLineId { get; set; }
 
     public Guid ProductId { get; set; }
     public string ProductExternalIdSnapshot { get; set; } = string.Empty;
@@ -41,6 +42,8 @@ public partial class MerchandiseOrderDetail
     public bool IsActive { get; set; } = true;
 
     public virtual ICollection<DeliveryOrderDetail> DeliveryOrderDetails { get; set; } = new List<DeliveryOrderDetail>();
+    public virtual ICollection<ComplaintReportLine> ComplaintReportLines { get; set; } = new List<ComplaintReportLine>();
+    public virtual ComplaintReportLine? ComplaintReportLine { get; set; }
     public virtual MerchandiseOrder MerchandiseOrder { get; set; } = null!;
     public virtual Product Product { get; set; } = null!;
     public virtual Formula Formula { get; set; } = null!;

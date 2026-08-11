@@ -39,6 +39,7 @@ namespace HRM.Application.Features.CRM.Quotations.Queries.GetQuotations
             }
 
             var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+
             var query = _visibilityService.ApplyQuotationVisibility(
                 _dbContext.Quotations.AsNoTracking(),
                 _dbContext.Customers.AsNoTracking(),
@@ -111,19 +112,28 @@ namespace HRM.Application.Features.CRM.Quotations.Queries.GetQuotations
         {
             return request.NormalizedSortBy?.ToLowerInvariant() switch
             {
-                "externalid" => request.SortDescending
-                    ? query.OrderByDescending(x => x.ExternalId).ThenByDescending(x => x.QuotationId)
-                    : query.OrderBy(x => x.ExternalId).ThenByDescending(x => x.QuotationId),
-                "totalamount" => request.SortDescending
+                QuotationsSortFeilds.ExternalId => request.SortDescending
+                    ? query.OrderByDescending(x => x.ExternalId).ThenByDescending(x => x.CreatedDate)
+                    : query.OrderBy(x => x.ExternalId).ThenByDescending(x => x.CreatedDate),
+
+                QuotationsSortFeilds.TotalAmount => request.SortDescending
                     ? query.OrderByDescending(x => x.TotalAmount).ThenByDescending(x => x.QuotationId)
                     : query.OrderBy(x => x.TotalAmount).ThenByDescending(x => x.QuotationId),
-                "status" => request.SortDescending
-                    ? query.OrderByDescending(x => x.Status).ThenByDescending(x => x.QuotationId)
-                    : query.OrderBy(x => x.Status).ThenByDescending(x => x.QuotationId),
-                "quotationdate" => request.SortDescending
+
+                QuotationsSortFeilds.QuotationDate => request.SortDescending
                     ? query.OrderByDescending(x => x.QuotationDate).ThenByDescending(x => x.QuotationId)
                     : query.OrderBy(x => x.QuotationDate).ThenBy(x => x.QuotationId),
-                _ => query.OrderByDescending(x => x.QuotationDate).ThenByDescending(x => x.QuotationId)
+
+                QuotationsSortFeilds.UpdatedDate => request.SortDescending
+                    ? query.OrderByDescending(x => x.UpdatedDate).ThenByDescending(x => x.CreatedDate)
+                    : query.OrderBy(x => x.UpdatedDate).ThenByDescending(x => x.CreatedDate),
+
+                QuotationsSortFeilds.CreatedDate => request.SortDescending
+                    ? query.OrderByDescending(x => x.CreatedDate).ThenByDescending(x => x.UpdatedDate)
+                    : query.OrderBy(x => x.CreatedDate).ThenByDescending(x => x.UpdatedDate),
+
+                _ => query
+                    .OrderBy(x => x.CreatedDate)
             };
         }
     }

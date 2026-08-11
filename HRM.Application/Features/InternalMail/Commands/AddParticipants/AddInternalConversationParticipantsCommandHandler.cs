@@ -54,6 +54,7 @@ internal sealed class AddInternalConversationParticipantsCommandHandler
             .AnyAsync(x =>
                 x.InternalConversationId == request.ConversationId &&
                 x.EmployeeId == actorId.Value &&
+                x.IsActive &&
                 x.Role == InternalConversationParticipantRole.Owner &&
                 x.Conversation.CompanyId == companyId.Value &&
                 x.Conversation.IsActive,
@@ -73,14 +74,23 @@ internal sealed class AddInternalConversationParticipantsCommandHandler
             return OperationResult.Fail("Some employees do not exist or are inactive.");
         }
 
-        var existingIds = await _dbContext.InternalConversationParticipants
-            .AsNoTracking()
+        var existingParticipants = await _dbContext.InternalConversationParticipants
             .Where(x => x.InternalConversationId == request.ConversationId && employeeIds.Contains(x.EmployeeId))
-            .Select(x => x.EmployeeId)
             .ToListAsync(cancellationToken);
         var now = _dateTimeProvider.Now;
 
-        foreach (var employeeId in validEmployeeIds.Except(existingIds))
+        foreach (var participant in existingParticipants.Where(x => !x.IsActive))
+        {
+            participant.IsActive = true;
+            participant.DeletedAt = null;
+            participant.DeletedByEmployeeId = null;
+            participant.IsArchived = false;
+            participant.ArchivedAt = null;
+            participant.IsMuted = false;
+        }
+
+        var existingIds = existingParticipants.Select(x => x.EmployeeId).ToHashSet();
+        foreach (var employeeId in validEmployeeIds.Where(x => !existingIds.Contains(x)))
         {
             await _dbContext.InternalConversationParticipants.AddAsync(new InternalConversationParticipant
             {

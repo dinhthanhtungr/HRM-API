@@ -18,4 +18,13 @@ public sealed class GetInternalConversationsQuery
 
     public bool UnreadOnly { get; init; }
     public bool Archived { get; init; }
+
+    /// <summary>
+    /// Alias de FE dung search=... trong Notification Hub; Keyword van duoc giu cho contract phan trang chung.
+    /// </summary>
+    public string? Search { get; init; }
+
+    [JsonIgnore]
+    public string? NormalizedSearchKeyword =>
+        string.IsNullOrWhiteSpace(Search) ? NormalizedKeyword : Search.Trim();
 }

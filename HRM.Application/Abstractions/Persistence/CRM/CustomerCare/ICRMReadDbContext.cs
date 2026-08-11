@@ -20,17 +20,22 @@ public interface ICRMReadDbContext
     DbSet<CustomerTransferLog> CustomerTransferLogs { get; }
     DbSet<DetailCustomerTransfer> DetailCustomerTransfers { get; }
     DbSet<CustomerInteraction> CustomerInteractions { get; }
+    DbSet<CustomerInteractionReference> CustomerInteractionReferences { get; }
     DbSet<CustomerInteractionAiSummary> CustomerInteractionAiSummaries { get; }
     DbSet<Quotation> Quotations { get; }
     DbSet<QuotationLine> QuotationLines { get; }
+    DbSet<QuotationLinePriceTier> QuotationLinePriceTiers { get; }
     DbSet<QuotationStatusHistory> QuotationStatusHistories { get; }
     DbSet<Product> Products { get; }
+    DbSet<SampleRequest> SampleRequests { get; }
+    DbSet<SampleRequestSampleTrial> SampleRequestSampleTrials { get; }
 
     // Legacy CRM task/plan DbSets remain mapped for backward compatibility but new CRM code does not use them.
     DbSet<CustomerFollowUpTask> CustomerFollowUpTasks { get; }
     DbSet<CustomerWorkPlan> CustomerWorkPlans { get; }
 
     DbSet<WorkTask> WorkTasks { get; }
+    DbSet<WorkTaskList> WorkTaskLists { get; }
     DbSet<WorkTaskAssignee> WorkTaskAssignees { get; }
     DbSet<WorkTaskReference> WorkTaskReferences { get; }
     DbSet<WorkPlan> WorkPlans { get; }

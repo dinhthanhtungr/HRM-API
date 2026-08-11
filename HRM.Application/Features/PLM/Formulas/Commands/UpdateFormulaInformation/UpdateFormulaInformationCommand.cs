@@ -1,14 +1,10 @@
-﻿using HRM.Application.Commons.Models;
+using HRM.Application.Commons.Models;
+using HRM.Application.Features.PLM.Formulas.Dtos.Commons;
 using MediatR;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
-namespace HRM.Application.Features.PLM.Formulas.Commands.UpdateFormulaInformation
-{
-    public sealed class UpdateFormulaInformationCommand : IRequest<OperationResult<Guid>>
-    {
-    }
-}
+namespace HRM.Application.Features.PLM.Formulas.Commands.UpdateFormulaInformation;
+
+public sealed record UpdateFormulaInformationCommand(
+    Guid FormulaId,
+    UpsertFormulaRequest Request)
+    : IRequest<OperationResult<FormulaWriteResultDto>>;

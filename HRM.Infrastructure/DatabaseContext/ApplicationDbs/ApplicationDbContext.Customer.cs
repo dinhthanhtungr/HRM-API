@@ -20,6 +20,7 @@ namespace HRM.Infrastructure.DatabaseContext.ApplicationDbs
         public virtual DbSet<DetailCustomerTransfer> DetailCustomerTransfers { get; set; } = default!;
 
         public virtual DbSet<CustomerInteraction> CustomerInteractions { get; set; } = default!;
+        public virtual DbSet<CustomerInteractionReference> CustomerInteractionReferences { get; set; } = default!;
         public virtual DbSet<CustomerInteractionAiSummary> CustomerInteractionAiSummaries { get; set; } = default!;
         public virtual DbSet<CustomerFollowUpTask> CustomerFollowUpTasks { get; set; } = default!;
         public virtual DbSet<CustomerWorkPlan> CustomerWorkPlans { get; set; } = default!;

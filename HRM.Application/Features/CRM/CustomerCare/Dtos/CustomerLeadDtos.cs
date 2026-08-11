@@ -2,24 +2,8 @@ using HRM.Domain.Enums.CustomerEnum;
 
 namespace HRM.Application.Features.CRM.CustomerCare.Dtos;
 
-public sealed class UpdateLeadRequest
+public sealed class UpdateLeadRequest : CustomerProfilePatchRequest
 {
-    public string? CustomerName { get; init; }
-    public string? CustomerGroup { get; init; }
-    public string? ApplicationName { get; init; }
-    public string? RegistrationNumber { get; init; }
-    public string? RegistrationAddress { get; init; }
-    public string? TaxNumber { get; init; }
-    public string? Phone { get; init; }
-    public string? Website { get; init; }
-    public DateTime? IssueDate { get; init; }
-    public string? IssuedPlace { get; init; }
-    public string? FaxNumber { get; init; }
-    public bool? IsActive { get; init; }
-    public LeadStatus? LeadStatus { get; init; }
-    public UpdateCustomerNoteRequest? Note { get; init; }
-    public IReadOnlyList<UpdateCustomerAddressRequest>? Addresses { get; init; }
-    public IReadOnlyList<UpdateCustomerContactRequest>? Contacts { get; init; }
 }
 
 public sealed class ClaimLeadRequest
@@ -29,6 +13,9 @@ public sealed class ClaimLeadRequest
     public int ClaimTtlDays { get; init; } = 365;
 }
 
+/// <summary>
+/// Contract nội bộ còn được giữ cho command chuyển lead; CRM controller không public action này cho FE.
+/// </summary>
 public sealed class ConvertLeadRequest
 {
     public Guid? EmployeeId { get; init; }

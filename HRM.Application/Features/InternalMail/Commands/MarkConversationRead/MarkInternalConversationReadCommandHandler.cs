@@ -37,6 +37,7 @@ internal sealed class MarkInternalConversationReadCommandHandler
             .FirstOrDefaultAsync(x =>
                 x.InternalConversationId == request.ConversationId &&
                 x.EmployeeId == employeeId.Value &&
+                x.IsActive &&
                 x.Conversation.CompanyId == companyId.Value &&
                 x.Conversation.IsActive,
                 cancellationToken);

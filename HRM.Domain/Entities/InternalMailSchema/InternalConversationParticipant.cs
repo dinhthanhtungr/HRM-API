@@ -12,6 +12,13 @@ public class InternalConversationParticipant
     public virtual Employee Employee { get; set; } = default!;
 
     /// <summary>
+    /// Soft delete participant khoi conversation, doc lap voi trang thai archive ca nhan.
+    /// </summary>
+    public bool IsActive { get; set; } = true;
+    public DateTime? DeletedAt { get; set; }
+    public Guid? DeletedByEmployeeId { get; set; }
+
+    /// <summary>
     /// Vai tro cua nhan vien trong conversation, dung cho quyen quan ly thread o cac phase sau.
     /// </summary>
     public InternalConversationParticipantRole Role { get; set; } = InternalConversationParticipantRole.Member;

@@ -24,6 +24,7 @@ public sealed class WorkTaskConfiguration : IEntityTypeConfiguration<WorkTask>
         entity.Property(x => x.CompletionNote).HasColumnName("CompletionNote").HasColumnType("text");
         entity.Property(x => x.AssignedToEmployeeId).HasColumnName("AssignedToEmployeeId");
         entity.Property(x => x.WorkTaskListId).HasColumnName("WorkTaskListId");
+        entity.Property(x => x.SortOrder).HasColumnName("SortOrder").HasDefaultValue(0);
         entity.Property(x => x.CompanyId).HasColumnName("CompanyId").IsRequired();
         entity.Property(x => x.CreatedDate).HasColumnName("CreatedDate");
         entity.Property(x => x.CreatedBy).HasColumnName("CreatedBy");

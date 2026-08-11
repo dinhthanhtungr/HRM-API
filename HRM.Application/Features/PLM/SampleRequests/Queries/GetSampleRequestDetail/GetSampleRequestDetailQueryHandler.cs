@@ -1,6 +1,7 @@
 using HRM.Application.Abstractions.Persistence.PLM;
 using HRM.Application.Commons.Authorization.PLM;
 using HRM.Application.Features.Attachments.Services;
+using HRM.Application.Features.CRM.CustomerCare.Visibility;
 using HRM.Application.Features.PLM.SampleRequests.Dtos.Common;
 using HRM.Application.Features.PLM.SampleRequests.Dtos.Detail;
 using MediatR;
@@ -13,13 +14,16 @@ internal sealed class GetSampleRequestDetailQueryHandler
 {
     private readonly IPLMReadDbContext _dbContext;
     private readonly IPLMFieldVisibilityService _fieldVisibility;
+    private readonly ICustomerVisibilityService _visibilityService;
 
     public GetSampleRequestDetailQueryHandler(
         IPLMReadDbContext dbContext,
-        IPLMFieldVisibilityService fieldVisibility)
+        IPLMFieldVisibilityService fieldVisibility,
+        ICustomerVisibilityService visibilityService)
     {
         _dbContext = dbContext;
         _fieldVisibility = fieldVisibility;
+        _visibilityService = visibilityService;
     }
 
     public async Task<SampleRequestDetailDto?> Handle(
@@ -31,9 +35,16 @@ internal sealed class GetSampleRequestDetailQueryHandler
             return null;
         }
 
-        var detail = await _dbContext.SampleRequests
+        var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+        var sampleRequestQuery = _visibilityService.ApplySampleRequestVisibility(
+            _dbContext.SampleRequests
+                .Where(x => x.SampleRequestId == request.SampleRequestId)
+                .AsNoTracking(),
+            _dbContext.Customers.AsNoTracking(),
+            scope);
+
+        var detail = await sampleRequestQuery
             .AsNoTracking()
-            .Where(x => x.SampleRequestId == request.SampleRequestId && x.IsActive)
             .Select(x => new SampleRequestDetailDto
             {
                 Hero = new SampleRequestDetailHeroDto
@@ -110,7 +121,7 @@ internal sealed class GetSampleRequestDetailQueryHandler
                     Application = x.Product.Application,
                     ProductUsage = x.Product.ProductUsage,
                     PolymerMatchedIn = x.Product.PolymerMatchedIn,
-                    EndUser = x.Product.EndUser,
+                    EndUser = x.Product.EndUser,    
                     FoodSafety = x.Product.FoodSafety,
                     RohsStandard = x.Product.RohsStandard,
                     ReachStandard = x.Product.ReachStandard,
