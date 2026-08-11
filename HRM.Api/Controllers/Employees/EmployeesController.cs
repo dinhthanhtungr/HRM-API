@@ -5,6 +5,8 @@ using HRM.Application.Features.Employees.Administration.CreateEmployeeRole;
 using HRM.Application.Features.Employees.Administration.GetEmployeeAccountPermissions;
 using HRM.Application.Features.Employees.Administration.GetEmployeeRoleLookup;
 using HRM.Application.Features.Employees.Administration.RevokeEmployeeRole;
+using HRM.Application.Features.Employees.Administration.SetEmployeeAccountStatus;
+using HRM.Application.Features.Employees.Administration.SetEmployeeStatus;
 using HRM.Application.Features.Employees.Commands.CreateEmployee;
 using HRM.Application.Features.Employees.Queries.GetCompanyLookup;
 using HRM.Application.Features.Employees.Queries.GetEmployeeBasicInfoById;
@@ -146,6 +148,28 @@ public sealed class EmployeesController : ControllerBase
     public async Task<IActionResult> CreateAccount(
         [FromRoute] Guid employeeId,
         [FromBody] CreateEmployeeAccountCommand command,
+        CancellationToken cancellationToken)
+    {
+        command.EmployeeId = employeeId;
+        var result = await _sender.Send(command, cancellationToken);
+        return ToAdministrationActionResult(result);
+    }
+
+    [HttpPatch("{employeeId:guid}/account/status")]
+    public async Task<IActionResult> SetAccountStatus(
+        [FromRoute] Guid employeeId,
+        [FromBody] SetEmployeeAccountStatusCommand command,
+        CancellationToken cancellationToken)
+    {
+        command.EmployeeId = employeeId;
+        var result = await _sender.Send(command, cancellationToken);
+        return ToAdministrationActionResult(result);
+    }
+
+    [HttpPatch("{employeeId:guid}/status")]
+    public async Task<IActionResult> SetEmployeeStatus(
+        [FromRoute] Guid employeeId,
+        [FromBody] SetEmployeeStatusCommand command,
         CancellationToken cancellationToken)
     {
         command.EmployeeId = employeeId;

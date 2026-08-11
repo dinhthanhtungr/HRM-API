@@ -23,7 +23,8 @@ public sealed class EmployeeIdentityAdministrationService(
             {
                 item.Id,
                 item.UserName,
-                item.Email
+                item.Email,
+                item.IsActive
             })
             .FirstOrDefaultAsync(cancellationToken);
 
@@ -47,6 +48,7 @@ public sealed class EmployeeIdentityAdministrationService(
             user.Id,
             user.UserName,
             user.Email,
+            user.IsActive,
             roles);
     }
 
@@ -89,6 +91,7 @@ public sealed class EmployeeIdentityAdministrationService(
             EmployeeId = employeeId,
             UserName = userName,
             Email = email,
+            IsActive = true,
             personName = null,
             RefreshTokenExpirationDateTime = DateTime.MinValue,
             UserRoles = []
@@ -106,7 +109,42 @@ public sealed class EmployeeIdentityAdministrationService(
                 user.Id,
                 user.UserName,
                 user.Email,
+                user.IsActive,
                 []));
+    }
+
+    public async Task<IdentityAdministrationResult<EmployeeIdentityAccount>> SetAccountActiveAsync(
+        Guid employeeId,
+        bool isActive,
+        CancellationToken cancellationToken = default)
+    {
+        var user = await userManager.Users
+            .FirstOrDefaultAsync(item => item.EmployeeId == employeeId, cancellationToken);
+        if (user is null)
+        {
+            return IdentityAdministrationResult<EmployeeIdentityAccount>.Fail(
+                "Nhân viên chưa có tài khoản.");
+        }
+
+        user.IsActive = isActive;
+        if (!isActive)
+        {
+            user.RefreshToken = null;
+            user.RefreshTokenExpirationDateTime = DateTime.MinValue;
+        }
+
+        var updateResult = await userManager.UpdateAsync(user);
+        if (!updateResult.Succeeded)
+        {
+            return IdentityAdministrationResult<EmployeeIdentityAccount>.Fail(
+                string.Join(" ", updateResult.Errors.Select(error => error.Description)));
+        }
+
+        var account = await GetAccountAsync(employeeId, cancellationToken);
+        return account is null
+            ? IdentityAdministrationResult<EmployeeIdentityAccount>.Fail(
+                "Không thể tải lại tài khoản nhân viên.")
+            : IdentityAdministrationResult<EmployeeIdentityAccount>.Ok(account);
     }
 
     public async Task<IdentityAdministrationResult> AssignRoleAsync(

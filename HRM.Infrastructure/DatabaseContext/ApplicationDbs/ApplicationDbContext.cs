@@ -111,7 +111,14 @@ namespace HRM.Infrastructure.DatabaseContext.ApplicationDbs
                 .OnDelete(DeleteBehavior.Restrict);
 
             modelBuilder.Entity<ApplicationUser>()
-                .HasIndex(u => u.EmployeeId);
+                .HasIndex(u => u.EmployeeId)
+                .IsUnique()
+                .HasFilter("\"EmployeeId\" IS NOT NULL")
+                .HasDatabaseName("UX_AspNetUsers_EmployeeId_NotNull");
+
+            modelBuilder.Entity<ApplicationUser>()
+                .Property(u => u.IsActive)
+                .HasDefaultValue(true);
 
             modelBuilder.Entity<AttachmentModel>(entity =>
             {

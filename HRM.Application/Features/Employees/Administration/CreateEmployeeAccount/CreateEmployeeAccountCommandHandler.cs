@@ -73,7 +73,8 @@ internal sealed class CreateEmployeeAccountCommandHandler
             .Select(item => new
             {
                 item.EmployeeId,
-                item.Email
+                item.Email,
+                item.IsActive
             })
             .FirstOrDefaultAsync(cancellationToken);
         if (employee is null)
@@ -81,6 +82,13 @@ internal sealed class CreateEmployeeAccountCommandHandler
             return EmployeeAdministrationResult<EmployeeAccountPermissionsDto>.Fail(
                 EmployeeAdministrationError.NotFound,
                 "Không tìm thấy nhân viên trong phạm vi được quản lý.");
+        }
+
+        if (!employee.IsActive)
+        {
+            return EmployeeAdministrationResult<EmployeeAccountPermissionsDto>.Fail(
+                EmployeeAdministrationError.Conflict,
+                "Không thể tạo tài khoản cho nhân viên đã ngừng hoạt động.");
         }
 
         var accountResult = await _identityService.CreateAccountAsync(
@@ -99,6 +107,7 @@ internal sealed class CreateEmployeeAccountCommandHandler
         return EmployeeAdministrationResult<EmployeeAccountPermissionsDto>.Ok(
             GetEmployeeAccountPermissionsQueryHandler.MapAccount(
                 employee.EmployeeId,
+                employee.IsActive,
                 accountResult.Data));
     }
 

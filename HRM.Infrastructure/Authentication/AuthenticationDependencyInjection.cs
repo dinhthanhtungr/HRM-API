@@ -14,6 +14,7 @@ internal static class AuthenticationDependencyInjection
     {
         services.AddScoped<IIdentityAuthenticationService, IdentityAuthenticationService>();
         services.AddScoped<IEmployeeIdentityAdministrationService, EmployeeIdentityAdministrationService>();
+        services.AddScoped<IIdentityAccessValidator, IdentityAccessValidator>();
         services.AddSingleton<ITokenService, JwtTokenService>();
 
         services.AddIdentityCore<ApplicationUser>(options =>

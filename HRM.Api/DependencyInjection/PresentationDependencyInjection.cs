@@ -3,6 +3,7 @@ using System.Reflection;
 using HRM.Api.Backgrounds;
 using HRM.Domain.Entities.Security;
 using HRM.Application.Abstractions.Security;
+using HRM.Application.Abstractions.Identity;
 using HRM.Api.Security.Authorization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Hosting;
@@ -152,6 +153,30 @@ internal static class PresentationDependencyInjection
                         }
 
                         return Task.CompletedTask;
+                    },
+                    OnTokenValidated = async context =>
+                    {
+                        var principal = context.Principal;
+                        var userIdValue = principal?.FindFirst("sub")?.Value;
+                        if (!Guid.TryParse(userIdValue, out var userId))
+                        {
+                            context.Fail("JWT subject is invalid.");
+                            return;
+                        }
+
+                        var employeeId = TryReadOptionalGuid(principal, "employeeId");
+                        var companyId = TryReadOptionalGuid(principal, "companyId");
+                        var accessValidator = context.HttpContext.RequestServices
+                            .GetRequiredService<IIdentityAccessValidator>();
+                        var isAllowed = await accessValidator.IsAccessAllowedAsync(
+                            userId,
+                            employeeId,
+                            companyId,
+                            context.HttpContext.RequestAborted);
+                        if (!isAllowed)
+                        {
+                            context.Fail("Account or employee is inactive.");
+                        }
                     }
                 };
             });
@@ -164,5 +189,13 @@ internal static class PresentationDependencyInjection
     private static string CreateSwaggerSchemaId(Type type)
     {
         return type.FullName?.Replace('+', '.') ?? type.Name;
+    }
+
+    private static Guid? TryReadOptionalGuid(
+        System.Security.Claims.ClaimsPrincipal? principal,
+        string claimType)
+    {
+        var value = principal?.FindFirst(claimType)?.Value;
+        return Guid.TryParse(value, out var parsed) ? parsed : null;
     }
 }

@@ -38,11 +38,11 @@ internal sealed class RevokeEmployeeRoleCommandHandler
                 "Bạn không có quyền thu hồi quyền nhân viên.");
         }
 
-        var targetExists = await BuildEmployeeScope()
-            .AnyAsync(
-                employee => employee.EmployeeId == request.EmployeeId,
-                cancellationToken);
-        if (!targetExists)
+        var target = await BuildEmployeeScope()
+            .Where(employee => employee.EmployeeId == request.EmployeeId)
+            .Select(employee => new { employee.IsActive })
+            .FirstOrDefaultAsync(cancellationToken);
+        if (target is null)
         {
             return Fail(
                 EmployeeAdministrationError.NotFound,
@@ -111,6 +111,7 @@ internal sealed class RevokeEmployeeRoleCommandHandler
         return EmployeeAdministrationResult<EmployeeAccountPermissionsDto>.Ok(
             GetEmployeeAccountPermissionsQueryHandler.MapAccount(
                 request.EmployeeId,
+                target.IsActive,
                 updatedAccount));
     }
 

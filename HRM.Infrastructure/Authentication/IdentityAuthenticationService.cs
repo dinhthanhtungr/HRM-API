@@ -29,7 +29,7 @@ public sealed class IdentityAuthenticationService(
             return null;
         }
 
-        if (await userManager.IsLockedOutAsync(user))
+        if (!user.IsActive || await userManager.IsLockedOutAsync(user))
         {
             return null;
         }
@@ -43,17 +43,13 @@ public sealed class IdentityAuthenticationService(
 
         await userManager.ResetAccessFailedCountAsync(user);
 
-        var roles = await GetActiveRolesAsync(user, cancellationToken);
-
-        Guid? companyId = null;
-
-        if (user.EmployeeId.HasValue)
+        var employeeAccess = await GetEmployeeAccessAsync(user, cancellationToken);
+        if (user.EmployeeId.HasValue && employeeAccess is null)
         {
-            companyId = await dbContext.Employees
-                .Where(x => x.EmployeeId == user.EmployeeId.Value)
-                .Select(x => x.CompanyId)
-                .FirstOrDefaultAsync(cancellationToken);
+            return null;
         }
+
+        var roles = await GetActiveRolesAsync(user, cancellationToken);
 
         return new AuthenticatedUserDto
         {
@@ -61,7 +57,7 @@ public sealed class IdentityAuthenticationService(
             UserName = user.UserName,
             Email = user.Email,
             EmployeeId = user.EmployeeId,
-            CompanyId = companyId,
+            CompanyId = employeeAccess?.CompanyId,
             Roles = roles.ToArray()
         };
     }
@@ -73,11 +69,11 @@ public sealed class IdentityAuthenticationService(
         CancellationToken cancellationToken = default)
     {
         var user = await userManager.Users
-            .FirstOrDefaultAsync(x => x.Id == userId, cancellationToken);
+            .FirstOrDefaultAsync(x => x.Id == userId && x.IsActive, cancellationToken);
 
         if (user is null)
         {
-            throw new InvalidOperationException("User not found.");
+            throw new InvalidOperationException("User not found or inactive.");
         }
 
         user.RefreshToken = refreshToken;
@@ -97,8 +93,9 @@ public sealed class IdentityAuthenticationService(
 
             var user = await userManager.Users
                 .FirstOrDefaultAsync(
-                    x => x.RefreshToken == refreshToken &&
-                         x.RefreshTokenExpirationDateTime > DateTime.Now,
+                    x => x.IsActive &&
+                         x.RefreshToken == refreshToken &&
+                         x.RefreshTokenExpirationDateTime > DateTime.UtcNow,
                     cancellationToken);
 
             if (user is null)
@@ -106,17 +103,13 @@ public sealed class IdentityAuthenticationService(
                 return null;
             }
 
-            var roles = await GetActiveRolesAsync(user, cancellationToken);
-
-            Guid? companyId = null;
-
-            if (user.EmployeeId.HasValue)
+            var employeeAccess = await GetEmployeeAccessAsync(user, cancellationToken);
+            if (user.EmployeeId.HasValue && employeeAccess is null)
             {
-                companyId = await dbContext.Employees
-                    .Where(x => x.EmployeeId == user.EmployeeId.Value)
-                    .Select(x => x.CompanyId)
-                    .FirstOrDefaultAsync(cancellationToken);
+                return null;
             }
+
+            var roles = await GetActiveRolesAsync(user, cancellationToken);
 
             return new AuthenticatedUserDto
             {
@@ -124,7 +117,7 @@ public sealed class IdentityAuthenticationService(
                 UserName = user.UserName,
                 Email = user.Email,
                 EmployeeId = user.EmployeeId,
-                CompanyId = companyId,
+                CompanyId = employeeAccess?.CompanyId,
                 Roles = roles
             };
         }
@@ -178,4 +171,24 @@ public sealed class IdentityAuthenticationService(
 
         return activeRoles;
     }
+
+    private async Task<EmployeeAccess?> GetEmployeeAccessAsync(
+        ApplicationUser user,
+        CancellationToken cancellationToken)
+    {
+        if (!user.EmployeeId.HasValue)
+        {
+            return null;
+        }
+
+        return await dbContext.Employees
+            .AsNoTracking()
+            .Where(employee =>
+                employee.EmployeeId == user.EmployeeId.Value &&
+                employee.IsActive)
+            .Select(employee => new EmployeeAccess(employee.CompanyId))
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    private sealed record EmployeeAccess(Guid? CompanyId);
 }

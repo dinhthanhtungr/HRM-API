@@ -93,9 +93,15 @@ Response:
   "userId": "00000000-0000-0000-0000-000000000000",
   "userName": "nv001",
   "email": "nv001@example.com",
+  "employeeIsActive": true,
+  "accountIsActive": true,
   "roles": ["SaleUser"]
 }
 ```
+
+`employeeIsActive` là trạng thái hồ sơ nhân viên. `accountIsActive` là trạng thái đăng nhập và là `null` khi
+nhân viên chưa có tài khoản. Account inactive hoặc account liên kết Employee inactive đều không được đăng nhập
+hay dùng refresh token.
 
 ### Tạo account
 
@@ -112,6 +118,40 @@ POST /api/v1/employees/{employeeId}/account
 ```
 
 Password đi qua ASP.NET Core Identity policy và không được ghi log hoặc trả lại response.
+
+### Khóa/mở account
+
+```http
+PATCH /api/v1/employees/{employeeId}/account/status
+```
+
+```json
+{
+  "isActive": false
+}
+```
+
+Khi khóa account, backend thu hồi refresh token hiện tại. Không cho current user tự khóa account của mình.
+Muốn mở account thì Employee phải đang active.
+
+### Ngừng/kích hoạt lại Employee
+
+```http
+PATCH /api/v1/employees/{employeeId}/status
+```
+
+```json
+{
+  "isActive": false
+}
+```
+
+Ngừng Employee tự động vô hiệu hóa account đã liên kết và thu hồi refresh token. Kích hoạt lại Employee không
+tự mở account; quản trị viên phải mở account bằng endpoint account status. Không cho current user tự ngừng
+Employee của mình.
+
+Quan hệ `ApplicationUser.EmployeeId` là một-một khi `EmployeeId` khác null. Script triển khai
+`20260811_HardenEmployeeIdentityLink.sql` sẽ dừng nếu phát hiện dữ liệu trùng trước khi tạo unique index.
 
 ### Lookup role
 

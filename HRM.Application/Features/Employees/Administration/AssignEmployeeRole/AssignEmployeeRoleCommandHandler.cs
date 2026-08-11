@@ -59,6 +59,7 @@ internal sealed class AssignEmployeeRoleCommandHandler
         return EmployeeAdministrationResult<EmployeeAccountPermissionsDto>.Ok(
             GetEmployeeAccountPermissionsQueryHandler.MapAccount(
                 request.EmployeeId,
+                true,
                 account));
     }
 

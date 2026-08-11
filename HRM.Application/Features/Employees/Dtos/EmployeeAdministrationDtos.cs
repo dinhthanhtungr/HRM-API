@@ -17,10 +17,12 @@ public sealed class EmployeePartLookupDto
 public sealed class EmployeeAccountPermissionsDto
 {
     public Guid EmployeeId { get; init; }
+    public bool EmployeeIsActive { get; init; }
     public bool HasAccount { get; init; }
     public Guid? UserId { get; init; }
     public string? UserName { get; init; }
     public string? Email { get; init; }
+    public bool? AccountIsActive { get; init; }
     public IReadOnlyList<string> Roles { get; init; } = [];
 }
 

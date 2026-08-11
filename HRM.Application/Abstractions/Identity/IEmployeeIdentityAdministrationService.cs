@@ -4,6 +4,7 @@ public sealed record EmployeeIdentityAccount(
     Guid UserId,
     string? UserName,
     string? Email,
+    bool IsActive,
     IReadOnlyList<string> ActiveRoles);
 
 public sealed record EmployeeIdentityRole(
@@ -42,6 +43,11 @@ public interface IEmployeeIdentityAdministrationService
         string userName,
         string? email,
         string password,
+        CancellationToken cancellationToken = default);
+
+    Task<IdentityAdministrationResult<EmployeeIdentityAccount>> SetAccountActiveAsync(
+        Guid employeeId,
+        bool isActive,
         CancellationToken cancellationToken = default);
 
     Task<IdentityAdministrationResult> AssignRoleAsync(

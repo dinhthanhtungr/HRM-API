@@ -37,11 +37,11 @@ internal sealed class GetEmployeeAccountPermissionsQueryHandler
                 "Bạn không có quyền xem phân quyền nhân viên.");
         }
 
-        var employeeExists = await BuildEmployeeScope()
-            .AnyAsync(
-                employee => employee.EmployeeId == request.EmployeeId,
-                cancellationToken);
-        if (!employeeExists)
+        var employee = await BuildEmployeeScope()
+            .Where(item => item.EmployeeId == request.EmployeeId)
+            .Select(item => new { item.EmployeeId, item.IsActive })
+            .FirstOrDefaultAsync(cancellationToken);
+        if (employee is null)
         {
             return EmployeeAdministrationResult<EmployeeAccountPermissionsDto>.Fail(
                 EmployeeAdministrationError.NotFound,
@@ -53,7 +53,7 @@ internal sealed class GetEmployeeAccountPermissionsQueryHandler
             cancellationToken);
 
         return EmployeeAdministrationResult<EmployeeAccountPermissionsDto>.Ok(
-            MapAccount(request.EmployeeId, account));
+            MapAccount(request.EmployeeId, employee.IsActive, account));
     }
 
     private IQueryable<HRM.Domain.Entities.HrSchema.Employee> BuildEmployeeScope()
@@ -70,14 +70,17 @@ internal sealed class GetEmployeeAccountPermissionsQueryHandler
 
     internal static EmployeeAccountPermissionsDto MapAccount(
         Guid employeeId,
+        bool employeeIsActive,
         EmployeeIdentityAccount? account)
         => new()
         {
             EmployeeId = employeeId,
+            EmployeeIsActive = employeeIsActive,
             HasAccount = account is not null,
             UserId = account?.UserId,
             UserName = account?.UserName,
             Email = account?.Email,
+            AccountIsActive = account?.IsActive,
             Roles = account?.ActiveRoles ?? []
         };
 }
