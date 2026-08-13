@@ -10,6 +10,7 @@ using HRM.Application.Features.PLM.SampleRequests.SampleReceiptConfirmations;
 using HRM.Domain.Entities.InternalMailSchema;
 using HRM.Domain.Entities.SampleRequestSchema;
 using HRM.Domain.Enums.InternalMailEnums;
+using HRM.Domain.Enums.SampleRequests;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -130,25 +131,10 @@ internal sealed class ConfirmSampleRequestSampleReceiptCommandHandler
                 "Current employee was not found in this company.");
         }
 
-        if (IsConfirmed(trial))
+        if (IsConfirmed(receiptAction))
         {
-            var originalReceiverName = await _dbContext.Employees
-                .AsNoTracking()
-                .Where(x =>
-                    x.EmployeeId == trial.SampleReceivedByEmployeeId!.Value &&
-                    x.CompanyId == scope.CompanyId)
-                .Select(x => x.FullName)
-                .FirstOrDefaultAsync(cancellationToken);
-            originalReceiverName ??= receiptAction.SampleReceivedByName;
-
-            var payloadChanged = SynchronizePayload(message, payload, trial, originalReceiverName);
-            if (payloadChanged)
-            {
-                await _dbContext.SaveChangesAsync(cancellationToken);
-            }
-
             return OperationResult<SampleReceiptConfirmationDto>.Ok(
-                ToDto(request.MessageId, trial, originalReceiverName),
+                ToDto(request.MessageId, trial, receiptAction),
                 "Sample receipt was already confirmed.");
         }
 
@@ -168,9 +154,8 @@ internal sealed class ConfirmSampleRequestSampleReceiptCommandHandler
             return OperationResult<SampleReceiptConfirmationDto>.Fail(validationError);
         }
 
-        trial.SampleReceivedDate = receivedDate;
-        trial.SampleReceivedByEmployeeId = employeeId;
-        trial.SampleReceiptConfirmedAt = now;
+        trial.RequestReceivedDate = receivedDate;
+        trial.Status = SampleTrialStatus.WaitingCustomerFeedback;
         trial.UpdatedBy = employeeId;
         trial.UpdatedDate = now;
 
@@ -179,7 +164,7 @@ internal sealed class ConfirmSampleRequestSampleReceiptCommandHandler
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         return OperationResult<SampleReceiptConfirmationDto>.Ok(
-            ToDto(request.MessageId, trial, currentEmployeeName),
+            ToDto(request.MessageId, trial, payload.SampleReceiptAction!),
             "Confirmed sample receipt successfully.");
     }
 
@@ -202,35 +187,14 @@ internal sealed class ConfirmSampleRequestSampleReceiptCommandHandler
         }
     }
 
-    private static bool IsConfirmed(SampleRequestSampleTrial trial)
-        => trial.SampleReceivedDate.HasValue &&
-           trial.SampleReceivedByEmployeeId.HasValue &&
-           trial.SampleReceiptConfirmedAt.HasValue;
-
-    private static bool SynchronizePayload(
-        InternalMessage message,
-        SampleRequestThreadMessagePayload payload,
-        SampleRequestSampleTrial trial,
-        string? receivedByName)
-    {
-        var action = payload.SampleReceiptAction!;
-        if (string.Equals(action.Status, SampleReceiptActionStatuses.Confirmed, StringComparison.Ordinal) &&
-            action.SampleReceivedDate == trial.SampleReceivedDate &&
-            action.SampleReceivedByEmployeeId == trial.SampleReceivedByEmployeeId &&
-            action.SampleReceiptConfirmedAt == trial.SampleReceiptConfirmedAt &&
-            string.Equals(action.SampleReceivedByName, receivedByName, StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        action.Status = SampleReceiptActionStatuses.Confirmed;
-        action.SampleReceivedDate = trial.SampleReceivedDate;
-        action.SampleReceivedByEmployeeId = trial.SampleReceivedByEmployeeId;
-        action.SampleReceivedByName = receivedByName;
-        action.SampleReceiptConfirmedAt = trial.SampleReceiptConfirmedAt;
-        message.PayloadJson = JsonSerializer.Serialize(payload, PayloadJsonOptions);
-        return true;
-    }
+    private static bool IsConfirmed(SampleReceiptActionPayload action)
+        => string.Equals(
+               action.Status,
+               SampleReceiptActionStatuses.Confirmed,
+               StringComparison.OrdinalIgnoreCase) &&
+           action.SampleReceivedDate.HasValue &&
+           action.SampleReceivedByEmployeeId.HasValue &&
+           action.SampleReceiptConfirmedAt.HasValue;
 
     private static void ApplyConfirmedPayload(
         InternalMessage message,
@@ -242,10 +206,10 @@ internal sealed class ConfirmSampleRequestSampleReceiptCommandHandler
     {
         var action = payload.SampleReceiptAction!;
         action.Status = SampleReceiptActionStatuses.Confirmed;
-        action.SampleReceivedDate = trial.SampleReceivedDate;
-        action.SampleReceivedByEmployeeId = trial.SampleReceivedByEmployeeId;
+        action.SampleReceivedDate = trial.RequestReceivedDate;
+        action.SampleReceivedByEmployeeId = employeeId;
         action.SampleReceivedByName = receivedByName;
-        action.SampleReceiptConfirmedAt = trial.SampleReceiptConfirmedAt;
+        action.SampleReceiptConfirmedAt = now;
 
         message.PayloadJson = JsonSerializer.Serialize(payload, PayloadJsonOptions);
         message.IsEdited = true;
@@ -256,17 +220,17 @@ internal sealed class ConfirmSampleRequestSampleReceiptCommandHandler
     private static SampleReceiptConfirmationDto ToDto(
         Guid messageId,
         SampleRequestSampleTrial trial,
-        string? receivedByName)
+        SampleReceiptActionPayload action)
         => new()
         {
             SampleRequestId = trial.SampleRequestId,
             SampleRequestSampleTrialId = trial.SampleRequestSampleTrialId,
             MessageId = messageId,
             Status = SampleReceiptActionStatuses.Confirmed,
-            SampleReceivedDate = trial.SampleReceivedDate!.Value,
-            SampleReceivedByEmployeeId = trial.SampleReceivedByEmployeeId!.Value,
-            SampleReceivedByName = receivedByName,
-            SampleReceiptConfirmedAt = trial.SampleReceiptConfirmedAt!.Value,
-            UpdatedDate = trial.UpdatedDate ?? trial.SampleReceiptConfirmedAt.Value
+            SampleReceivedDate = action.SampleReceivedDate!.Value,
+            SampleReceivedByEmployeeId = action.SampleReceivedByEmployeeId!.Value,
+            SampleReceivedByName = action.SampleReceivedByName,
+            SampleReceiptConfirmedAt = action.SampleReceiptConfirmedAt!.Value,
+            UpdatedDate = trial.UpdatedDate ?? action.SampleReceiptConfirmedAt.Value
         };
 }

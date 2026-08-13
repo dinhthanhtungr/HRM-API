@@ -75,9 +75,6 @@ public sealed class SampleRequestSampleTrialConfiguration : IEntityTypeConfigura
         entity.HasIndex(x => x.SentDate)
             .HasDatabaseName("IX_SampleRequestSampleTrials_SentDate");
 
-        entity.HasIndex(x => x.SampleReceivedDate)
-            .HasDatabaseName("IX_SampleRequestSampleTrials_SampleReceivedDate");
-
         entity.HasIndex(x => x.CustomerReplyDate)
             .HasDatabaseName("IX_SampleRequestSampleTrials_CustomerReplyDate");
 

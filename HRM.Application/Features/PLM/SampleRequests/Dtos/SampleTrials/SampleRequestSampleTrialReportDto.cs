@@ -35,11 +35,6 @@ public sealed class SampleRequestSampleTrialReportDto
     public Guid? SentByEmployeeId { get; set; }
     public string? SentByName { get; set; }
     public string? DeliveryMethod { get; set; }
-    public DateTime? SampleReceivedDate { get; set; }
-    public Guid? SampleReceivedByEmployeeId { get; set; }
-    public string? SampleReceivedByName { get; set; }
-    public DateTime? SampleReceiptConfirmedAt { get; set; }
-
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public SampleTrialStatus? Status { get; set; }
     public string? CustomerReplyStatus { get; set; }

@@ -6,7 +6,7 @@ Trial là bản ghi lịch sử của một lần giao mẫu thực tế, không
 
 1. Lab làm Formula `Draft`/`Approved`, Sample Request ở `New` hoặc `InProgress`: chưa có Trial.
 2. Lab chuyển Formula `Approved -> SampleSent`, hoặc gửi lại Formula đang `SampleSent`, qua endpoint Formula status. Request bắt buộc có `sampleRequestId` và `deliveredSampleQuantityKg >= 0`. Mỗi lần gọi thành công, backend tạo một Trial `SampleSent` mới với `TrialNo = max + 1` và lưu khối lượng gửi. Cùng transaction này, Sample Request chuyển sang `SampleSent`, rồi mới gửi message có kèm khối lượng cho Sale trong cùng conversation.
-3. Sale xác nhận đã nhận mẫu ngay trên message Lab gửi; backend cập nhật ngày/người xác nhận vào đúng Trial.
+3. Sale xác nhận đã nhận mẫu ngay trên message Lab gửi; backend cập nhật `RequestReceivedDate`, chuyển Trial sang `WaitingCustomerFeedback` và ghi audit `UpdatedBy/UpdatedDate`.
 4. Sale ghi nhận phản hồi khách qua action `customer-feedback`:
    - `Approved`: Trial `Approved`, Formula của Trial `Completed`, Formula đó được chọn, Sample Request `Completed`.
    - `Failed`: Trial `Failed`, Sample Request trở về `InProgress`; Lab tạo/clone Formula mới và gửi mẫu lại để tạo Trial kế tiếp.
@@ -35,15 +35,9 @@ POST /api/v1/plm/sample-requests/{sampleRequestId}/sample-trials/{trialId}/confi
 
 Chỉ `ApplicationRoleSets.PLM.FormulaSelectors` (Sale/Leader và super user) được xác nhận. Backend kiểm tra company, customer visibility, Trial thuộc đúng Sample Request và `messageId` đúng message có action của Trial để tránh IDOR. Lần gọi lại trả kết quả đã xác nhận và không ghi nhận lần thứ hai.
 
-Trial lưu ba field riêng, không tái sử dụng `RequestReceivedDate`:
+Ngày Sale chọn được lưu trực tiếp vào `Trial.RequestReceivedDate`, là field ngày nhận mẫu đã có sẵn. Backend đồng thời chuyển `Trial.Status` sang `WaitingCustomerFeedback`; `UpdatedBy/UpdatedDate` ghi nhận người và thời điểm thực hiện action.
 
-```text
-SampleReceivedDate
-SampleReceivedByEmployeeId
-SampleReceiptConfirmedAt
-```
-
-Sau khi lưu, backend cập nhật `sampleReceiptAction.status = Confirmed` trong payload message để FE khóa nút và hiển thị ngày/người xác nhận. API report Trial cũng trả ba field trên cùng `sampleReceivedByName`.
+Sau khi lưu, backend cập nhật `sampleReceiptAction.status = Confirmed` trong payload message để FE khóa nút và hiển thị ngày/người xác nhận. API report Trial tiếp tục trả `requestReceivedDate` theo contract hiện có; không bổ sung cột database mới.
 
 ## Ghi nhận phản hồi khách
 
