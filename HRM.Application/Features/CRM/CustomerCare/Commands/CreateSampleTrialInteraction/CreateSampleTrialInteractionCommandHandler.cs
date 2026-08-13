@@ -19,6 +19,8 @@ internal sealed class CreateSampleTrialInteractionCommandHandler
 {
     private const string DefaultSubject = "Sample trial update";
     private const string DefaultFollowUpTitle = "Sample trial follow-up";
+    private const int MaxCustomerReplyStatusLength = 50;
+    private const int MaxCustomerReplyNoteLength = 5000;
     private readonly ICRMReadDbContext _readDbContext;
     private readonly ICRMWriteDbContext _writeDbContext;
     private readonly CustomerCrmAccessService _accessService;
@@ -49,7 +51,36 @@ internal sealed class CreateSampleTrialInteractionCommandHandler
             return OperationResult<Guid>.Fail("Customer, sample trial and interaction content are required.");
         }
 
+        if (!Enum.IsDefined(request.InteractionType))
+        {
+            return OperationResult<Guid>.Fail("InteractionType is invalid.");
+        }
+
+        var replyStatus = Normalize(request.CustomerReplyStatus);
+        var replyNote = Normalize(request.CustomerReplyNote);
+        if (replyStatus is { Length: > MaxCustomerReplyStatusLength } ||
+            request.IdempotencyKey.HasValue && replyStatus is null)
+        {
+            return OperationResult<Guid>.Fail(
+                $"CustomerReplyStatus is required and cannot exceed {MaxCustomerReplyStatusLength} characters.");
+        }
+
+        if (replyNote is { Length: > MaxCustomerReplyNoteLength })
+        {
+            return OperationResult<Guid>.Fail(
+                $"CustomerReplyNote cannot exceed {MaxCustomerReplyNoteLength} characters.");
+        }
+
         var scope = await _accessService.BuildScopeAsync(cancellationToken);
+        var interactionId = request.IdempotencyKey.HasValue && request.IdempotencyKey.Value != Guid.Empty
+            ? SampleTrialInteractionIdempotency.CreateInteractionId(scope.CompanyId, request.IdempotencyKey.Value)
+            : Guid.CreateVersion7();
+
+        if (request.IdempotencyKey == Guid.Empty)
+        {
+            return OperationResult<Guid>.Fail("IdempotencyKey cannot be empty when supplied.");
+        }
+
         var customer = await GetVisibleCustomerForUpdateAsync(
             request.CustomerId,
             scope.CompanyId,
@@ -86,16 +117,49 @@ internal sealed class CreateSampleTrialInteractionCommandHandler
             return OperationResult<Guid>.Fail("Sample trial was not found or is outside this customer.");
         }
 
+        if (request.IdempotencyKey.HasValue)
+        {
+            var replayResult = await ResolveIdempotentReplayAsync(
+                interactionId,
+                request.CustomerId,
+                request.SampleRequestSampleTrialId,
+                scope.CompanyId,
+                cancellationToken);
+            if (replayResult is not null)
+            {
+                return replayResult;
+            }
+        }
+
+        if (request.ExpectedTrialUpdatedDate.HasValue &&
+            trial.UpdatedDate != request.ExpectedTrialUpdatedDate.Value)
+        {
+            return OperationResult<Guid>.Fail(
+                "Sample trial was changed by another user. Reload before saving feedback.");
+        }
+
         var now = _dateTimeProvider.Now;
         var interactionAt = request.InteractionAt == default ? now : request.InteractionAt;
+        if (request.IdempotencyKey.HasValue &&
+            (interactionAt > now.AddMinutes(5) || request.CustomerReplyDate > now.AddMinutes(5)))
+        {
+            return OperationResult<Guid>.Fail("InteractionAt and CustomerReplyDate cannot be in the future.");
+        }
+
+        if (request.IdempotencyKey.HasValue &&
+            request.NextFollowUpDate.HasValue &&
+            request.NextFollowUpDate.Value < interactionAt)
+        {
+            return OperationResult<Guid>.Fail("NextFollowUpDate cannot be earlier than InteractionAt.");
+        }
+
         var subject = Normalize(request.Subject) ?? BuildDefaultSubject(trial);
-        var interactionId = Guid.CreateVersion7();
         var interaction = new CustomerInteraction
         {
             Id = interactionId,
             CustomerId = customer.CustomerId,
             ContactId = request.ContactId,
-            InteractionType = CustomerInteractionType.SampleTrial,
+            InteractionType = request.InteractionType,
             Subject = subject,
             Content = request.Content.Trim(),
             Outcome = Normalize(request.Outcome),
@@ -124,7 +188,12 @@ internal sealed class CreateSampleTrialInteractionCommandHandler
             CreatedBy = scope.EmployeeId
         }, cancellationToken);
 
-        ApplyCustomerReply(trial, request, interactionAt, scope.EmployeeId, now);
+        SampleTrialInteractionMutation.ApplyCustomerReply(
+            trial,
+            request,
+            interactionAt,
+            scope.EmployeeId,
+            now);
         customer.LastContactDate = !customer.LastContactDate.HasValue || interactionAt > customer.LastContactDate
             ? interactionAt
             : customer.LastContactDate;
@@ -147,8 +216,59 @@ internal sealed class CreateSampleTrialInteractionCommandHandler
                 cancellationToken);
         }
 
-        await _writeDbContext.SaveChangesAsync(cancellationToken);
-        return OperationResult<Guid>.Ok(interactionId);
+        try
+        {
+            await _writeDbContext.SaveChangesAsync(cancellationToken);
+            return OperationResult<Guid>.Ok(interactionId);
+        }
+        catch (DbUpdateException) when (request.IdempotencyKey.HasValue)
+        {
+            _writeDbContext.ClearTrackedChanges();
+            var replayResult = await ResolveIdempotentReplayAsync(
+                interactionId,
+                request.CustomerId,
+                request.SampleRequestSampleTrialId,
+                scope.CompanyId,
+                cancellationToken);
+            if (replayResult is not null)
+            {
+                return replayResult;
+            }
+
+            throw;
+        }
+    }
+
+    private async Task<OperationResult<Guid>?> ResolveIdempotentReplayAsync(
+        Guid interactionId,
+        Guid customerId,
+        Guid trialId,
+        Guid companyId,
+        CancellationToken cancellationToken)
+    {
+        var existing = await _readDbContext.CustomerInteractions
+            .AsNoTracking()
+            .Where(x => x.Id == interactionId)
+            .Select(x => new
+            {
+                x.CustomerId,
+                x.CompanyId,
+                HasMatchingTrial = x.References.Any(reference =>
+                    reference.ReferenceType == CustomerInteractionReferenceType.SampleTrial &&
+                    reference.ReferenceId == trialId)
+            })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (existing is null)
+        {
+            return null;
+        }
+
+        return existing.CompanyId == companyId &&
+               existing.CustomerId == customerId &&
+               existing.HasMatchingTrial
+            ? OperationResult<Guid>.Ok(interactionId, "Customer feedback interaction was already recorded.")
+            : OperationResult<Guid>.Fail("IdempotencyKey was already used for a different interaction.");
     }
 
     private async Task<Customer?> GetVisibleCustomerForUpdateAsync(
@@ -185,27 +305,6 @@ internal sealed class CreateSampleTrialInteractionCommandHandler
                 x.SampleRequest.CompanyId == companyId &&
                 x.SampleRequest.IsActive,
                 cancellationToken);
-
-    private static void ApplyCustomerReply(
-        SampleRequestSampleTrial trial,
-        CreateSampleTrialInteractionRequest request,
-        DateTime interactionAt,
-        Guid employeeId,
-        DateTime now)
-    {
-        var replyStatus = Normalize(request.CustomerReplyStatus);
-        if (replyStatus is not null)
-        {
-            trial.CustomerReplyStatus = replyStatus;
-        }
-
-        trial.CustomerReplyDate = request.CustomerReplyDate ?? interactionAt;
-        trial.CustomerReplyByEmployeeId = employeeId;
-        trial.CustomerReplyNote = Normalize(request.CustomerReplyNote) ?? request.Content.Trim();
-        trial.OrderDate = request.OrderDate ?? trial.OrderDate;
-        trial.UpdatedDate = now;
-        trial.UpdatedBy = employeeId;
-    }
 
     private async Task CreateLinkedTaskAsync(
         Customer customer,

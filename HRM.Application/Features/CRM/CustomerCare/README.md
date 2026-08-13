@@ -258,6 +258,7 @@ chỉ hydrate các customer người xem được phép thấy.
 ```http
 POST  /api/v1/crm/interactions
 POST  /api/v1/crm/interactions/sample-trial
+POST  /api/v1/plm/sample-requests/{sampleRequestId}/sample-trials/{trialId}/customer-feedback
 PATCH /api/v1/crm/interactions/{interactionId}
 GET   /api/v1/crm/interactions/{interactionId}
 DELETE /api/v1/crm/interactions/{interactionId}
@@ -279,6 +280,10 @@ của SampleTrial vẫn nên đi qua API PLM/SampleRequest chuyên trách hoặc
 loại `SampleTrial`, tạo `CustomerInteractionReference` primary tới `SampleRequestSampleTrial`, đồng thời cập nhật
 phản hồi khách trên trial tương ứng. Nếu có `nextFollowUpDate`, API vẫn tạo follow-up `WorkTask` giống interaction thường.
 API luôn validate customer visibility, contact thuộc customer và trial thuộc đúng customer/company trước khi ghi.
+
+Route PLM `POST /api/v1/plm/sample-requests/{sampleRequestId}/sample-trials/{trialId}/customer-feedback` là contract ưu tiên cho dialog mở từ Trial. Route tự resolve customer từ Trial, chỉ cho nhóm Sale, bắt buộc `idempotencyKey` và cho phép chọn `interactionType`. Một lần `SaveChangesAsync` cập nhật phản hồi Trial, tạo `CustomerInteraction`, tạo reference primary `SampleTrial/trialId` và tạo follow-up task tùy chọn. Vì toàn bộ mutation dùng cùng CRM write context, lỗi ở bất kỳ phần nào làm transaction rollback, không để Trial hoặc CRM interaction bị lưu riêng lẻ.
+
+Idempotency không cần thêm cột database: interaction ID được tạo ổn định từ `CompanyId + IdempotencyKey`. Retry cùng key/Trial trả interaction cũ; key đã dùng cho customer/Trial khác bị từ chối. `expectedTrialUpdatedDate` hỗ trợ optimistic concurrency trước khi mutation.
 
 ### Follow-up task dùng WorkTask
 

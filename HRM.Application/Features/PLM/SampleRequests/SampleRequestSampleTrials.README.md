@@ -41,6 +41,45 @@ Sau khi lưu, backend cập nhật `sampleReceiptAction.status = Confirmed` tron
 
 ## Ghi nhận phản hồi khách
 
+### Composer Trial + CRM interaction dành cho Sale
+
+```http
+POST /api/v1/plm/sample-requests/{sampleRequestId}/sample-trials/{trialId}/customer-feedback
+```
+
+Endpoint này phục vụ dialog **Phản hồi khách hàng/Ghi chú phản hồi**. FE chỉ gửi dữ liệu người dùng nhập; backend tự resolve customer từ Trial và không nhận `customerId`, `sampleRequestId` hoặc `trialId` trong body.
+
+```json
+{
+  "idempotencyKey": "00000000-0000-0000-0000-000000000001",
+  "interactionType": "Call",
+  "interactionAt": "2026-08-13T09:30:00",
+  "content": "Khách đã nhận mẫu và đang kiểm tra.",
+  "customerReplyStatus": "RECEIVED",
+  "customerReplyNote": "Hẹn phản hồi sau ba ngày.",
+  "outcome": "Đã nhận mẫu",
+  "nextAction": "Gọi lại sau ba ngày",
+  "nextFollowUpDate": "2026-08-16T09:30:00",
+  "expectedTrialUpdatedDate": "2026-08-13T09:00:00"
+}
+```
+
+`idempotencyKey` là UUID bắt buộc và phải được FE giữ nguyên khi retry cùng một lần lưu. Backend tạo interaction ID ổn định theo company/key; retry trả lại interaction đã tạo, còn tái sử dụng key cho Trial khác bị từ chối.
+
+Trong đúng một `SaveChangesAsync`/transaction, backend:
+
+- cập nhật `CustomerReplyStatus`, `CustomerReplyDate`, `CustomerReplyByEmployeeId`, `CustomerReplyNote`, `OrderDate` và audit của Trial;
+- tạo `CustomerInteraction` với `InteractionType` do Sale chọn;
+- tạo reference primary có `ReferenceType = SampleTrial`, `ReferenceId = trialId`;
+- cập nhật `Customer.LastContactDate/CurrentSaleId`;
+- tạo follow-up `WorkTask` nếu có `nextFollowUpDate`.
+
+Chỉ role thuộc `ApplicationRoleSets.Modules.Sales` được gọi route PLM này. Backend tiếp tục kiểm tra company, customer visibility, contact/employee scope và Trial thuộc đúng Sample Request/customer. `customerReplyStatus` và `content` bắt buộc; `expectedTrialUpdatedDate` là concurrency token tùy chọn.
+
+Endpoint cũ `POST /api/v1/plm/sample-requests/{sampleRequestId}/customer-feedback` vẫn là action lifecycle (`Approved/Failed/Cancelled`) và không tạo CRM interaction; FE dialog tương tác mới phải gọi route có `trialId` ở trên.
+
+### Phản hồi lifecycle cũ
+
 ```http
 POST /api/v1/plm/sample-requests/{sampleRequestId}/customer-feedback
 ```

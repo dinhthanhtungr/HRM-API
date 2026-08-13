@@ -38,9 +38,12 @@ public sealed class CustomerInteractionReferenceRequest
 /// </summary>
 public sealed class CreateSampleTrialInteractionRequest
 {
+    public Guid? IdempotencyKey { get; set; }
     public Guid CustomerId { get; set; }
     public Guid SampleRequestSampleTrialId { get; set; }
     public Guid? ContactId { get; set; }
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public CustomerInteractionType InteractionType { get; set; } = CustomerInteractionType.SampleTrial;
     public string? Subject { get; set; }
     public string Content { get; set; } = string.Empty;
     public string? Outcome { get; set; }
@@ -52,6 +55,7 @@ public sealed class CreateSampleTrialInteractionRequest
     public DateTime? CustomerReplyDate { get; set; }
     public string? CustomerReplyNote { get; set; }
     public DateTime? OrderDate { get; set; }
+    public DateTime? ExpectedTrialUpdatedDate { get; set; }
 }
 
 /// <summary>

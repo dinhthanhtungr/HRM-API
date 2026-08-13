@@ -2,6 +2,8 @@
 
 ## Sample trial report
 
+Dialog **Phản hồi khách hàng/Ghi chú phản hồi** dùng composer `POST /api/v1/plm/sample-requests/{sampleRequestId}/sample-trials/{trialId}/customer-feedback`. Endpoint chỉ dành cho Sale, bắt buộc `idempotencyKey`, tự resolve customer từ Trial và trong một transaction vừa cập nhật phản hồi Trial vừa tạo CRM interaction/reference `SampleTrial/trialId` cùng follow-up task tùy chọn. Contract đầy đủ nằm trong `SampleRequestSampleTrials.README.md`.
+
 Khi Lab gửi mẫu, message trong Notification Hub trả thêm `sampleReceiptAction` gắn chính xác với Trial vừa tạo. Sale/Leader xác nhận đã nhận mẫu bằng `POST /api/v1/plm/sample-requests/{sampleRequestId}/sample-trials/{trialId}/confirm-receipt`. Nếu không gửi `sampleReceivedDate`, backend dùng thời điểm hiện tại; kết quả được lưu vào Trial và action chuyển từ `Pending` sang `Confirmed`.
 
 Ngày Sale nhận mẫu được lưu vào `Trial.RequestReceivedDate` đã có sẵn. Action chuyển Trial từ `SampleSent` sang `WaitingCustomerFeedback` và dùng `UpdatedBy/UpdatedDate` để audit; không bổ sung cột database mới.

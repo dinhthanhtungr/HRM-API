@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-08-13
+
+- Added: composer PLM `POST /api/v1/plm/sample-requests/{sampleRequestId}/sample-trials/{trialId}/customer-feedback` dành cho Sale, cập nhật phản hồi Trial và tạo CRM interaction/reference/follow-up trong một transaction.
+- Added: `idempotencyKey` theo company để retry không tạo interaction trùng; thêm optimistic concurrency bằng `expectedTrialUpdatedDate`.
+
 ## 2026-08-02
 
 - Added: `GET /api/v1/crm/customer-purchase-health` để theo dõi khách đã lên đơn Merchandise, chưa từng lên đơn

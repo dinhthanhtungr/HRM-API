@@ -11,6 +11,7 @@ using HRM.Application.Features.PLM.SampleRequests.Commands.SendSampleRequestMess
 using HRM.Application.Features.PLM.SampleRequests.Commands.PatchSampleRequest;
 using HRM.Application.Features.PLM.SampleRequests.Commands.PatchSampleRequestSampleTrial;
 using HRM.Application.Features.PLM.SampleRequests.Commands.RecordSampleRequestSampleTrialCustomerFeedback;
+using HRM.Application.Features.PLM.SampleRequests.Commands.RecordSampleTrialCustomerFeedbackInteraction;
 using HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestDetail;
 using HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestFormOptions;
 using HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestHistory;
@@ -103,6 +104,23 @@ public sealed class SampleRequestsController : ControllerBase
         Guid sampleRequestId,
         Guid trialId,
         [FromBody] ConfirmSampleRequestSampleReceiptCommand command,
+        CancellationToken cancellationToken)
+    {
+        command.SampleRequestId = sampleRequestId;
+        command.SampleRequestSampleTrialId = trialId;
+        var result = await _sender.Send(command, cancellationToken);
+
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    /// <summary>
+    /// Sale cập nhật phản hồi của Trial và tạo CRM interaction liên kết trong cùng một transaction.
+    /// </summary>
+    [HttpPost("{sampleRequestId:guid}/sample-trials/{trialId:guid}/customer-feedback")]
+    public async Task<IActionResult> RecordSampleTrialCustomerFeedbackInteraction(
+        Guid sampleRequestId,
+        Guid trialId,
+        [FromBody] RecordSampleTrialCustomerFeedbackInteractionCommand command,
         CancellationToken cancellationToken)
     {
         command.SampleRequestId = sampleRequestId;
