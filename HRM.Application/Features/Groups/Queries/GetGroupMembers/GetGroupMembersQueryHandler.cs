@@ -60,7 +60,8 @@ internal sealed class GetGroupMembersQueryHandler
                 EmployeeId = member.Profile!.Value,
                 EmployeeExternalId = member.ProfileNavigation!.ExternalId,
                 FullName = member.ProfileNavigation.FullName,
-                IsLeader = member.IsAdmin == true
+                IsLeader = member.IsAdmin == true,
+                IsActive = member.IsActive
             })
             .ToListAsync(cancellationToken);
 

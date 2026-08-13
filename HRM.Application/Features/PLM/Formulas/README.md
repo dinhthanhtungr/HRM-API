@@ -11,6 +11,34 @@ PATCH  /api/v1/plm/formulas/{formulaId}/status
 DELETE /api/v1/plm/formulas/{formulaId}
 ```
 
+## Gửi mẫu và tạo Trial
+
+Lab gửi mẫu bằng endpoint trạng thái của Formula, không tạo `SampleRequestSampleTrial` độc lập từ FE:
+
+```http
+PATCH /api/v1/plm/formulas/{formulaId}/status
+```
+
+Khi `status = SampleSent`, FE gửi `sampleRequestId` để xác định đúng hồ sơ đang giao mẫu và `deliveredSampleQuantityKg` là khối lượng thực gửi, bắt buộc lớn hơn hoặc bằng 0.
+`sampleRequestId` không thể tự suy ra từ Formula vì một Formula có thể xuất hiện trong nhiều ngữ cảnh Sample Request.
+
+```json
+{
+  "status": "SampleSent",
+  "sampleRequestId": "00000000-0000-0000-0000-000000000000",
+  "deliveredSampleQuantityKg": 2.5,
+  "expectedUpdatedDate": "2026-08-12T10:30:00"
+}
+```
+
+Backend cho phép gửi Formula đang `Approved` hoặc gửi lại Formula đang `SampleSent`. Mỗi lần gửi luôn tạo một Trial mới, lưu `DeliveredSampleQuantityKg`, tự gán `SentBy` là employee hiện tại, `SentDate` và `UpdatedDate` là thời điểm xử lý. Notification cho các participant liên quan có kèm khối lượng mẫu.
+Endpoint này chỉ nhận trạng thái `Approved` hoặc `SampleSent`; không nhận `Completed`.
+Formula chỉ được hoàn thành khi Sale ghi nhận Trial `Approved` qua action phản hồi khách.
+Trong một lần lưu, backend đổi `Formula.Status = SampleSent`, đổi `SampleRequest.Status = SampleSent`, tạo Trial có
+`TrialNo = max + 1` và snapshot khách hàng/sản phẩm/mã màu. `SampleRequest.FormulaId` chưa được gán ở bước này;
+nó chỉ được gán khi Sale ghi nhận khách đã chấp nhận một Trial. Sau khi lưu thành công, backend gửi message/notification
+trong conversation hiện có của Sample Request.
+
 ## File liên quan của NVL trong công thức
 
 ```http
@@ -100,7 +128,7 @@ SampleSent -> Formula.Status = SampleSent, Formula.SentBy/SentDate = current emp
 Completed  -> Formula.Status = Completed, Formula.IsSelect = true, SampleRequest.Status = Completed.
 ```
 
-`SampleSent` chỉ được chuyển khi công thức hiện đang ở trạng thái `Approved`; backend từ chối chuyển thẳng từ `Draft`, `Cancelled` hoặc trạng thái khác sang `SampleSent`.
+`SampleSent` được chuyển khi công thức hiện đang ở trạng thái `Approved`, hoặc gửi lại khi công thức đã là `SampleSent`; backend từ chối chuyển thẳng từ `Draft`, `Cancelled` hoặc trạng thái khác sang `SampleSent`.
 `Completed` chỉ được chuyển khi công thức hiện đang ở trạng thái `SampleSent`.
 
 Thiết kế lifecycle mới của công thức dùng thêm ý nghĩa trạng thái:
@@ -121,6 +149,7 @@ Payload:
 {
   "status": "SampleSent",
   "sampleRequestId": "00000000-0000-0000-0000-000000000000",
+  "deliveredSampleQuantityKg": 2.5,
   "expectedUpdatedDate": "2026-07-28T10:30:00"
 }
 ```

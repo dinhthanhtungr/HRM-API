@@ -27,9 +27,11 @@ internal sealed class GetGroupsQueryHandler
         var companyId = _currentUser.CompanyId
             ?? throw new UnauthorizedAccessException("Current user has no CompanyId.");
 
-        return await _dbContext.Groups
+        var query = _dbContext.Groups
             .AsNoTracking()
-            .Where(group => group.CompanyId == companyId)
+            .Where(group => group.CompanyId == companyId);
+
+        return await query
             .OrderBy(group => group.Name)
             .ThenBy(group => group.ExternalId)
             .Select(group => new GroupDto

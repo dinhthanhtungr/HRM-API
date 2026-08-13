@@ -2,9 +2,11 @@ using HRM.Application.Abstractions.Persistence.PLM;
 using HRM.Application.Commons.Authorization.PLM;
 using HRM.Application.Commons.Pagination;
 using HRM.Application.Features.CRM.CustomerCare.Visibility;
+using HRM.Application.Features.PLM.Shared.Rules;
 using HRM.Application.Features.PLM.SampleRequests.Dtos.SampleTrials;
 using HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestSampleTrials.Models;
 using HRM.Application.Features.PLM.SampleRequests.Rules;
+using HRM.Domain.Enums.SampleRequests;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -33,9 +35,10 @@ internal sealed class GetSampleRequestSampleTrialsQueryHandler
     {
         var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
         var visibleSampleRequests = _visibilityService.ApplySampleRequestVisibility(
-            _dbContext.SampleRequests.AsNoTracking(),
+            _dbContext.SampleRequests.AsNoTracking().Where(x => x.Status != SampleRequestStatus.Cancelled.ToString() && x.IsActive),
             _dbContext.Customers.AsNoTracking(),
-            scope);
+            scope)
+            .Where(x => x.Customer.ExternalId != PLMCustomerRules.InternalCustomerExternalId);
 
         if (request.SampleRequestId.HasValue)
         {
@@ -51,7 +54,7 @@ internal sealed class GetSampleRequestSampleTrialsQueryHandler
 
         var activeTrials = _dbContext.SampleRequestSampleTrials
             .AsNoTracking()
-            .Where(x => x.IsActive);
+            .Where(x => x.IsActive );
 
         var query =
             from sampleRequest in visibleSampleRequests
@@ -120,20 +123,25 @@ internal sealed class GetSampleRequestSampleTrialsQueryHandler
                 FormulaId = x.Trial != null ? x.Trial.FormulaId : x.SampleRequest.FormulaId,
                 TrialNo = x.Trial != null ? x.Trial.TrialNo : null,
                 HasTrial = x.Trial != null,
+                CanCreateTrial = canViewTechnicalFields,
+                CanUpdateTrial = canViewTechnicalFields && x.Trial != null,
+
                 SampleRequestStatus = x.SampleRequest.Status,
-                CustomerName = (x.Trial != null ? x.Trial.CustomerNameSnapshot : null) ?? x.SampleRequest.Customer.CustomerName,
-                SampleRequestExternalId = (x.Trial != null ? x.Trial.SampleRequestExternalIdSnapshot : null) ?? x.SampleRequest.ExternalId,
+                CustomerName = x.SampleRequest.Customer.CustomerName,
+                ManagerSalesName = x.SampleRequest.ManagerByNavigation.FullName,
+
+                SampleRequestExternalId = x.SampleRequest.ExternalId,
                 RequestedSampleQuantity = x.SampleRequest.SampleQuantity,
                 DeliveredSampleQuantityKg = x.Trial != null ? x.Trial.DeliveredSampleQuantityKg : null,
-                ProductName = (x.Trial != null ? x.Trial.ProductNameSnapshot : null) ?? x.SampleRequest.Product.Name ?? string.Empty,
-                CategoryName = (x.Trial != null ? x.Trial.CategoryNameSnapshot : null) ?? (x.SampleRequest.Product.Category != null
-                    ? x.SampleRequest.Product.Category.Name
-                    : null),
-                ColourCode = (x.Trial != null ? x.Trial.ColourCodeSnapshot : null) ?? x.SampleRequest.Product.ColourCode,
+
+                ProductName = x.SampleRequest.Product.Name ?? string.Empty,
+                CategoryName = x.SampleRequest.Product.Category != null ? x.SampleRequest.Product.Category.Name : null,
+                ColourCode = x.SampleRequest.Product.ColourCode,
                 BatchNo = x.Trial != null ? x.Trial.BatchNo : null,
                 RequestReceivedDate = x.Trial != null ? x.Trial.RequestReceivedDate : null,
                 FinishedDate = x.Trial != null ? x.Trial.FinishedDate : null,
-                SentDate = x.Trial != null ? x.Trial.SentDate : x.SampleRequest.SendDate,
+
+                SentDate = x.Trial != null ? x.Trial.SentDate : null,
                 SentByEmployeeId = x.Trial != null ? x.Trial.SentByEmployeeId : x.SampleRequest.SendBy,
                 SentByName = x.Trial != null && x.Trial.SentByEmployeeId.HasValue
                     ? _dbContext.Employees
@@ -143,13 +151,14 @@ internal sealed class GetSampleRequestSampleTrialsQueryHandler
                     : x.SampleRequest.SendByNavigation != null
                         ? x.SampleRequest.SendByNavigation.FullName
                         : null,
+
                 DeliveryMethod = x.Trial != null ? x.Trial.DeliveryMethod : null,
                 Status = x.Trial != null ? x.Trial.Status : null,
                 CustomerReplyStatus = x.Trial != null ? x.Trial.CustomerReplyStatus : null,
                 CustomerReplyDate = x.Trial != null ? x.Trial.CustomerReplyDate : null,
                 CustomerReplyNote = x.Trial != null ? x.Trial.CustomerReplyNote : null,
                 OrderDate = x.Trial != null ? x.Trial.OrderDate : null,
-                AdditiveRate = canViewTechnicalFields && x.Trial != null ? x.Trial.AdditiveRate : null,
+                AdditiveRate = x.SampleRequest.Product.UsageRate != null ? x.SampleRequest.Product.UsageRate : null ,
                 LabNote = canViewTechnicalFields && x.Trial != null ? x.Trial.LabNote : null,
                 CreatedDate = x.Trial != null ? x.Trial.CreatedDate : x.SampleRequest.CreatedDate,
                 UpdatedDate = x.Trial != null ? x.Trial.UpdatedDate : x.SampleRequest.UpdatedDate
@@ -198,9 +207,7 @@ internal sealed class GetSampleRequestSampleTrialsQueryHandler
                 ? query.OrderByDescending(x => x.Trial != null ? x.Trial.UpdatedDate : x.SampleRequest.UpdatedDate)
                 : query.OrderBy(x => x.Trial != null ? x.Trial.UpdatedDate : x.SampleRequest.UpdatedDate),
             _ => query
-                .OrderByDescending(x => x.Trial != null
-                    ? x.Trial.FinishedDate ?? x.Trial.SentDate ?? x.Trial.RequestReceivedDate ?? x.Trial.CreatedDate
-                    : x.SampleRequest.CreatedDate)
+                .OrderByDescending(x => x.SampleRequest.CreatedDate)
                 .ThenByDescending(x => x.Trial != null ? x.Trial.TrialNo : (int?)null)
         };
     }

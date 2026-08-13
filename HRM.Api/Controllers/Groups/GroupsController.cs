@@ -2,6 +2,10 @@ using HRM.Application.Features.Employees.Queries.GetGroupLookup;
 using HRM.Application.Features.Groups.Commands;
 using HRM.Application.Features.Groups.Commands.AddGroupMember;
 using HRM.Application.Features.Groups.Commands.CreateGroup;
+using HRM.Application.Features.Groups.Commands.RemoveGroupMember;
+using HRM.Application.Features.Groups.Commands.SetGroupLeader;
+using HRM.Application.Features.Groups.Commands.UpdateGroup;
+using HRM.Application.Features.Groups.Queries.GetGroupLeaders;
 using HRM.Application.Features.Groups.Queries.GetGroupMembers;
 using HRM.Application.Features.Groups.Queries.GetGroups;
 using HRM.Application.Features.Groups.Queries.GetPartLookup;
@@ -48,6 +52,17 @@ public sealed class GroupsController : ControllerBase
         return ToActionResult(result);
     }
 
+    [HttpPut("{groupId:guid}")]
+    public async Task<IActionResult> UpdateGroup(
+        [FromRoute] Guid groupId,
+        [FromBody] UpdateGroupCommand command,
+        CancellationToken cancellationToken)
+    {
+        command.GroupId = groupId;
+        var result = await _sender.Send(command, cancellationToken);
+        return ToActionResult(result);
+    }
+
     /// <summary>
     /// Lấy các thành viên active của nhóm.
     /// </summary>
@@ -73,6 +88,53 @@ public sealed class GroupsController : ControllerBase
     {
         command.GroupId = groupId;
         var result = await _sender.Send(command, cancellationToken);
+        return ToActionResult(result);
+    }
+
+    [HttpDelete("{groupId:guid}/members/{employeeId:guid}")]
+    public async Task<IActionResult> RemoveGroupMember(
+        [FromRoute] Guid groupId,
+        [FromRoute] Guid employeeId,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(
+            new RemoveGroupMemberCommand(groupId, employeeId),
+            cancellationToken);
+        return ToActionResult(result);
+    }
+
+    [HttpGet("{groupId:guid}/leaders")]
+    public async Task<IActionResult> GetGroupLeaders(
+        [FromRoute] Guid groupId,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new GetGroupLeadersQuery(groupId), cancellationToken);
+        return result is null
+            ? NotFound(new { message = "Không tìm thấy nhóm trong công ty hiện tại." })
+            : Ok(result);
+    }
+
+    [HttpPut("{groupId:guid}/leaders/{employeeId:guid}")]
+    public async Task<IActionResult> AssignGroupLeader(
+        [FromRoute] Guid groupId,
+        [FromRoute] Guid employeeId,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(
+            new SetGroupLeaderCommand(groupId, employeeId, true),
+            cancellationToken);
+        return ToActionResult(result);
+    }
+
+    [HttpDelete("{groupId:guid}/leaders/{employeeId:guid}")]
+    public async Task<IActionResult> RevokeGroupLeader(
+        [FromRoute] Guid groupId,
+        [FromRoute] Guid employeeId,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(
+            new SetGroupLeaderCommand(groupId, employeeId, false),
+            cancellationToken);
         return ToActionResult(result);
     }
 

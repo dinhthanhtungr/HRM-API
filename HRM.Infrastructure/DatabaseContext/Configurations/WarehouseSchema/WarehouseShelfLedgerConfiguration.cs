@@ -78,8 +78,8 @@ namespace HRM.Infrastructure.DatabaseContext.Configurations.WarehouseSchema
                   .HasDatabaseName("ix_wsledger_voucher");
 
             // Ràng buộc: After = Before + Delta
-            entity.HasCheckConstraint("ck_wsledger_flow",
-                "\"afterKg\" = \"beforeKg\" + \"deltaKg\"");
+            //entity.HasCheckConstraint("ck_wsledger_flow",
+            //    "\"afterKg\" = \"beforeKg\" + \"deltaKg\"");
 
             // FKs
             entity.HasOne(x => x.Shelf)

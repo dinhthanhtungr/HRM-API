@@ -29,7 +29,6 @@ namespace HRM.Infrastructure.DatabaseContext.Configurations.CompanySchema
             entity.Property(e => e.UpdatedDate).HasColumnName("UpdatedDate");
             entity.Property(e => e.UpdatedBy).HasColumnName("UpdatedBy");
             entity.Property(e => e.CompanyId).HasColumnName("CompanyId");
-
             entity.HasIndex(e => e.CompanyId).HasDatabaseName("IX_Groups_CompanyId");
             entity.HasIndex(e => e.CreatedBy).HasDatabaseName("IX_Groups_CreatedBy");
             entity.HasIndex(e => e.UpdatedBy).HasDatabaseName("IX_Groups_UpdatedBy");

@@ -1,6 +1,7 @@
 using HRM.Application.Abstractions.Commons.ExternalIds;
 using HRM.Application.Abstractions.Persistence.PLM;
 using HRM.Application.Features.PLM.Formulas.Dtos.Commons;
+using HRM.Application.Features.PLM.SampleRequests.SampleTrials;
 using HRM.Domain.Entities.SampleRequestSchema;
 using HRM.Domain.Enums.Category;
 using HRM.Domain.Enums.Formulas;
@@ -171,6 +172,8 @@ internal sealed class FormulaWriteService
         Guid companyId,
         Guid employeeId,
         DateTime now,
+        Guid sentByEmployeeId,
+        DateTime sentDate,
         Guid? sampleRequestId,
         CancellationToken cancellationToken)
     {
@@ -192,8 +195,8 @@ internal sealed class FormulaWriteService
         foreach (var sampleRequest in sampleRequests)
         {
             sampleRequest.Status = SampleRequestStatus.SampleSent.ToString();
-            sampleRequest.SendBy = employeeId;
-            sampleRequest.SendDate = now;
+            sampleRequest.SendBy = sentByEmployeeId;
+            sampleRequest.SendDate = sentDate;
             sampleRequest.UpdatedBy = employeeId;
             sampleRequest.UpdatedDate = now;
         }
@@ -201,6 +204,42 @@ internal sealed class FormulaWriteService
         return sampleRequests
             .Select(x => new SampleRequestSampleSentTarget(x.SampleRequestId, x.ExternalId))
             .ToArray();
+    }
+
+    public async Task<SampleRequestSampleTrial> EnsureSampleSentTrialAsync(
+        SampleRequest sampleRequest,
+        Guid formulaId,
+        Guid companyId,
+        Guid currentEmployeeId,
+        DateTime now,
+        decimal deliveredSampleQuantityKg,
+        CancellationToken cancellationToken)
+    {
+        var nextTrialNo = (await _dbContext.SampleRequestSampleTrials
+            .Where(x => x.SampleRequestId == sampleRequest.SampleRequestId)
+            .Select(x => (int?)x.TrialNo)
+            .MaxAsync(cancellationToken) ?? 0) + 1;
+
+        var trial = new SampleRequestSampleTrial
+        {
+            SampleRequestSampleTrialId = Guid.CreateVersion7(),
+            SampleRequestId = sampleRequest.SampleRequestId,
+            FormulaId = formulaId,
+            TrialNo = nextTrialNo,
+            Status = SampleTrialStatus.SampleSent,
+            DeliveredSampleQuantityKg = deliveredSampleQuantityKg,
+            SentDate = now,
+            SentByEmployeeId = currentEmployeeId,
+            CreatedBy = currentEmployeeId,
+            CreatedDate = now,
+            UpdatedBy = currentEmployeeId,
+            UpdatedDate = now,
+            IsActive = true
+        };
+
+        SampleRequestSampleTrialMutationRules.PopulateSnapshots(trial, sampleRequest);
+        await _dbContext.SampleRequestSampleTrials.AddAsync(trial, cancellationToken);
+        return trial;
     }
 
     public async Task<IReadOnlyList<SampleRequestFormulaCompletedTarget>> MarkSampleRequestsAsFormulaCompletedAsync(
@@ -271,6 +310,9 @@ internal sealed class FormulaWriteService
         }
 
         var sampleRequest = await _dbContext.SampleRequests
+            .Include(x => x.Customer)
+            .Include(x => x.Product)
+            .ThenInclude(x => x.Category)
             .FirstOrDefaultAsync(x =>
                 x.SampleRequestId == sampleRequestId &&
                 x.CompanyId == companyId &&
@@ -287,6 +329,13 @@ internal sealed class FormulaWriteService
             throw new InvalidOperationException("Formula does not belong to this sample request product.");
         }
 
+        if (string.Equals(sampleRequest.Status, SampleRequestStatus.Completed.ToString(), StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(sampleRequest.Status, SampleRequestStatus.Cancelled.ToString(), StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(sampleRequest.Status, SampleRequestStatus.FormulaUpdateRequested.ToString(), StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("This sample request cannot receive a new sample in its current status.");
+        }
+
         if (sampleRequest.FormulaId.HasValue &&
             sampleRequest.FormulaId.Value != Guid.Empty &&
             sampleRequest.FormulaId.Value != formulaId &&
@@ -297,6 +346,9 @@ internal sealed class FormulaWriteService
 
         return [sampleRequest];
     }
+
+    private static string? TrimToNull(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     private async Task<FormulaMaterial> BuildMaterialRowAsync(
         Formula formula,
@@ -446,11 +498,13 @@ internal sealed class FormulaWriteService
 
     public static FormulaWriteResultDto ToResult(
         Formula formula,
-        int updatedSampleRequestCount = 0)
+        int updatedSampleRequestCount = 0,
+        Guid? sampleRequestSampleTrialId = null)
     {
         return new FormulaWriteResultDto
         {
             FormulaId = formula.FormulaId,
+            SampleRequestSampleTrialId = sampleRequestSampleTrialId,
             ExternalId = formula.ExternalId,
             Status = formula.Status,
             UpdatedSampleRequestCount = updatedSampleRequestCount,

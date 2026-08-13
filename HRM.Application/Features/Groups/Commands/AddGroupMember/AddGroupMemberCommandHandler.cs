@@ -35,11 +35,12 @@ internal sealed class AddGroupMemberCommandHandler
                 "Tài khoản hiện tại chưa được liên kết đầy đủ với công ty và nhân viên.");
         }
 
-        var groupExists = await _dbContext.Groups.AnyAsync(
-            group => group.GroupId == request.GroupId && group.CompanyId == companyId,
-            cancellationToken);
+        var group = await _dbContext.Groups
+            .AsNoTracking()
+            .Where(item => item.GroupId == request.GroupId && item.CompanyId == companyId)
+            .FirstOrDefaultAsync(cancellationToken);
 
-        if (!groupExists)
+        if (group is null)
         {
             return GroupCommandResult<GroupMemberDto>.Fail(
                 GroupCommandError.NotFound,
@@ -98,6 +99,23 @@ internal sealed class AddGroupMemberCommandHandler
                 "Chỉ Admin, President hoặc Developer được gán hay thay đổi quyền leader.");
         }
 
+        if (activeMember?.IsAdmin == true && !request.IsLeader)
+        {
+            var activeLeaderCount = await _dbContext.MemberInGroups.CountAsync(
+                member =>
+                    member.GroupId == request.GroupId &&
+                    member.IsActive &&
+                    member.Profile != null &&
+                    member.IsAdmin == true,
+                cancellationToken);
+            if (!GroupManagementRules.CanRemoveLeader(activeLeaderCount))
+            {
+                return GroupCommandResult<GroupMemberDto>.Fail(
+                    GroupCommandError.Conflict,
+                    "Không thể gỡ leader cuối cùng của nhóm.");
+            }
+        }
+
         if (activeMember is null)
         {
             activeMember = new MemberInGroup
@@ -123,7 +141,8 @@ internal sealed class AddGroupMemberCommandHandler
             EmployeeId = employee.EmployeeId,
             EmployeeExternalId = employee.ExternalId,
             FullName = employee.FullName,
-            IsLeader = activeMember.IsAdmin == true
+            IsLeader = activeMember.IsAdmin == true,
+            IsActive = activeMember.IsActive
         });
     }
 

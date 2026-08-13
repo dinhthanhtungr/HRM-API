@@ -18,6 +18,7 @@ public sealed class GroupMemberDto
     public string EmployeeExternalId { get; init; } = string.Empty;
     public string FullName { get; init; } = string.Empty;
     public bool IsLeader { get; init; }
+    public bool IsActive { get; init; }
 }
 
 public sealed class GroupMembersDto

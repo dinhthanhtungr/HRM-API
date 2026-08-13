@@ -73,6 +73,7 @@ namespace HRM.Domain.Enums.Notifications
         // ==================== Developer Operations ====================
         CustomerAiSummaryAutomationStatus = 44,
         ComplaintInitialDecision = 45,
-        ComplaintFinalDecision = 46
+        ComplaintFinalDecision = 46,
+        SampleRequestCustomerFeedbackRecorded = 47
     }
 }

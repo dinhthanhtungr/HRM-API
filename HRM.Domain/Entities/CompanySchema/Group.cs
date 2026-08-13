@@ -26,6 +26,8 @@ public partial class Group
 
     public Guid? CompanyId { get; set; }
 
+    //public bool IsActive { get; set; } = true;
+
     public virtual Company? Company { get; set; }
 
     public virtual Employee? CreatedByNavigation { get; set; }

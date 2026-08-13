@@ -48,6 +48,7 @@ internal sealed class SampleRequestMessageRecipientResolver : IMessageRecipientR
         }
 
         var suggestedIds = new HashSet<Guid>();
+        var contextRequiredIds = new HashSet<Guid>();
         var suppressRecipients = false;
         string? productCategoryExternalId = null;
         if (request.ContextId is { } sampleRequestId && sampleRequestId != Guid.Empty)
@@ -92,7 +93,6 @@ internal sealed class SampleRequestMessageRecipientResolver : IMessageRecipientR
 
             productCategoryExternalId = sampleRequest.CategoryExternalId;
             suggestedIds.Add(sampleRequest.CreatedBy);
-            suggestedIds.Add(sampleRequest.ManagerBy);
 
             var participantIds = await _internalMailDbContext.InternalConversationParticipants
                 .AsNoTracking()
@@ -105,10 +105,10 @@ internal sealed class SampleRequestMessageRecipientResolver : IMessageRecipientR
                 .Select(x => x.EmployeeId)
                 .ToListAsync(cancellationToken);
 
-            foreach (var participantId in participantIds)
-            {
-                suggestedIds.Add(participantId);
-            }
+            contextRequiredIds.UnionWith(ResolveContextRequiredRecipientIds(
+                participantIds,
+                sampleRequest.ManagerBy,
+                currentEmployeeId.Value));
         }
         else if (request.DraftManagerBy is { } draftManagerBy && draftManagerBy != Guid.Empty)
         {
@@ -135,24 +135,42 @@ internal sealed class SampleRequestMessageRecipientResolver : IMessageRecipientR
                 productCategoryExternalId,
                 cancellationToken);
 
-        var requiredRecipients = defaultRecipients
-            .Where(x => x.Locked)
+        var defaultRequiredRecipients = defaultRecipients
+            .Where(x => x.Locked && x.EmployeeId != currentEmployeeId.Value)
             .Select(ToMessageRecipientDto)
+            .ToList();
+
+        var contextRequiredRecipients = await ResolveEmployeesAsync(
+            contextRequiredIds,
+            companyId.Value,
+            SampleRequestRecipientSources.Required,
+            "Existing sample request conversation recipient",
+            locked: true,
+            cancellationToken);
+
+        var requiredRecipients = defaultRequiredRecipients
+            .Concat(contextRequiredRecipients)
+            .GroupBy(x => x.EmployeeId)
+            .Select(x => x.First())
+            .OrderBy(x => x.FullName)
             .ToList();
 
         var defaultOptionalRecipients = defaultRecipients
-            .Where(x => !x.Locked)
+            .Where(x => !x.Locked && x.EmployeeId != currentEmployeeId.Value)
             .Select(ToMessageRecipientDto)
             .ToList();
-
-        suggestedIds.Add(currentEmployeeId.Value);
 
         var requiredIds = requiredRecipients
             .Select(x => x.EmployeeId)
             .ToHashSet();
 
         var suggestedRecipients = await ResolveEmployeesAsync(
-            suggestedIds.Where(x => x != Guid.Empty && !requiredIds.Contains(x)).ToArray(),
+            suggestedIds
+                .Where(x =>
+                    x != Guid.Empty &&
+                    x != currentEmployeeId.Value &&
+                    !requiredIds.Contains(x))
+                .ToArray(),
             companyId.Value,
             "suggested",
             "Sample request participant",
@@ -160,6 +178,7 @@ internal sealed class SampleRequestMessageRecipientResolver : IMessageRecipientR
             cancellationToken);
 
         suggestedRecipients = defaultOptionalRecipients
+            .Where(x => !requiredIds.Contains(x.EmployeeId))
             .Concat(suggestedRecipients.Where(x => !requiredIds.Contains(x.EmployeeId)))
             .GroupBy(x => x.EmployeeId)
             .Select(x => x.First())
@@ -167,7 +186,7 @@ internal sealed class SampleRequestMessageRecipientResolver : IMessageRecipientR
             .ToList();
 
         var selectedIds = request.SelectedRecipientEmployeeIds?
-            .Where(x => x != Guid.Empty)
+            .Where(x => x != Guid.Empty && x != currentEmployeeId.Value)
             .Distinct()
             .ToArray();
 
@@ -194,6 +213,15 @@ internal sealed class SampleRequestMessageRecipientResolver : IMessageRecipientR
 
         foreach (var selectedRecipient in selectedRecipients)
         {
+            var requiredRecipient = requiredRecipients.FirstOrDefault(x => x.EmployeeId == selectedRecipient.EmployeeId);
+            if (requiredRecipient is not null)
+            {
+                selectedRecipient.Source = requiredRecipient.Source;
+                selectedRecipient.Reason = requiredRecipient.Reason;
+                selectedRecipient.Locked = true;
+                continue;
+            }
+
             var defaultRecipient = defaultRecipients.FirstOrDefault(x => x.EmployeeId == selectedRecipient.EmployeeId);
             if (defaultRecipient is null)
             {
@@ -215,6 +243,23 @@ internal sealed class SampleRequestMessageRecipientResolver : IMessageRecipientR
             CanAddRecipients = true,
             CanRemoveSuggestedRecipients = true
         });
+    }
+
+    internal static IReadOnlyCollection<Guid> ResolveContextRequiredRecipientIds(
+        IEnumerable<Guid> participantIds,
+        Guid managerBy,
+        Guid currentEmployeeId)
+    {
+        var requiredIds = participantIds
+            .Where(x => x != Guid.Empty && x != currentEmployeeId)
+            .ToHashSet();
+
+        if (managerBy != Guid.Empty && managerBy != currentEmployeeId)
+        {
+            requiredIds.Add(managerBy);
+        }
+
+        return requiredIds;
     }
 
     private async Task<IReadOnlyList<MessageRecipientDto>> ResolveEmployeesAsync(

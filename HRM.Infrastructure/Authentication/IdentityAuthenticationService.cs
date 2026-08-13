@@ -29,7 +29,8 @@ public sealed class IdentityAuthenticationService(
             return null;
         }
 
-        if (!user.IsActive || await userManager.IsLockedOutAsync(user))
+        // Temporary compatibility: AspNetUsers does not have an IsActive column yet.
+        if (await userManager.IsLockedOutAsync(user))
         {
             return null;
         }
@@ -69,7 +70,7 @@ public sealed class IdentityAuthenticationService(
         CancellationToken cancellationToken = default)
     {
         var user = await userManager.Users
-            .FirstOrDefaultAsync(x => x.Id == userId && x.IsActive, cancellationToken);
+            .FirstOrDefaultAsync(x => x.Id == userId, cancellationToken);
 
         if (user is null)
         {
@@ -93,9 +94,8 @@ public sealed class IdentityAuthenticationService(
 
             var user = await userManager.Users
                 .FirstOrDefaultAsync(
-                    x => x.IsActive &&
-                         x.RefreshToken == refreshToken &&
-                         x.RefreshTokenExpirationDateTime > DateTime.UtcNow,
+                    x => x.RefreshToken == refreshToken &&
+                         x.RefreshTokenExpirationDateTime > DateTime.Now,
                     cancellationToken);
 
             if (user is null)
@@ -147,17 +147,14 @@ public sealed class IdentityAuthenticationService(
         var roleAssignments = await (
                 from userRole in dbContext.UserRoles
                 join role in dbContext.Roles on userRole.RoleId equals role.Id
-                where userRole.UserId == user.Id
-                select new
-                {
-                    role.Name,
-                    userRole.IsActive
-                })
+                where userRole.UserId == user.Id &&
+                      userRole.IsActive
+                select role.Name)
             .ToListAsync(cancellationToken);
 
         var activeRoles = roleAssignments
-            .Where(x => x.IsActive && !string.IsNullOrWhiteSpace(x.Name))
-            .Select(x => x.Name!)
+            .Where(roleName => !string.IsNullOrWhiteSpace(roleName))
+            .Select(roleName => roleName!)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
 

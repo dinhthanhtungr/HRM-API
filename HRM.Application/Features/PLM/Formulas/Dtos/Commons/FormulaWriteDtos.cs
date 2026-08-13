@@ -42,12 +42,15 @@ public sealed class UpdateFormulaStatusRequest
     [JsonConverter(typeof(NullableGuidEmptyStringConverter))]
     public Guid? SampleRequestId { get; init; }
 
+    public decimal? DeliveredSampleQuantityKg { get; init; }
+
     public DateTime? ExpectedUpdatedDate { get; init; }
 }
 
 public sealed class FormulaWriteResultDto
 {
     public Guid FormulaId { get; init; }
+    public Guid? SampleRequestSampleTrialId { get; init; }
     public string ExternalId { get; init; } = string.Empty;
     public string Status { get; init; } = string.Empty;
     public int UpdatedSampleRequestCount { get; init; }

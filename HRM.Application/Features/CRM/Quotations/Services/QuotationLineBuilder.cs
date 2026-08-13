@@ -119,7 +119,8 @@ internal sealed class QuotationLineBuilder
                 request.Quantity,
                 request.UnitPrice,
                 request.PriceTiers,
-                $"lines[{index}]");
+                $"lines[{index}]",
+                allowMissingPrice: true);
             if (!pricingResult.Success || pricingResult.Data is null)
             {
                 return OperationResult<IReadOnlyList<QuotationLine>>.Fail(pricingResult.Message!);

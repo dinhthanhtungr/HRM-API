@@ -4,6 +4,7 @@ using HRM.Application.Commons.Models;
 using HRM.Application.Commons.Patching;
 using HRM.Application.Commons.Authorization;
 using HRM.Application.Features.InternalMail.Dtos;
+using HRM.Application.Features.CRM.Quotations.Services;
 using HRM.Application.Features.PLM.SampleRequests.Commands;
 using HRM.Application.Features.PLM.SampleRequests.Commands.SendSampleRequestMessage;
 using HRM.Application.Features.PLM.SampleRequests.DataChangeRequests;
@@ -82,17 +83,20 @@ internal sealed class PatchSampleRequestCommandHandler
     private readonly IPLMWriteDbContext _dbContext;
     private readonly ICurrentUser _currentUser;
     private readonly SampleRequestConversationSubjectService _conversationSubjectService;
+    private readonly DraftQuotationProductSnapshotSyncService _draftQuotationProductSnapshotSyncService;
     private readonly ISender _sender;
 
     public PatchSampleRequestCommandHandler(
         IPLMWriteDbContext dbContext,
         ICurrentUser currentUser,
         SampleRequestConversationSubjectService conversationSubjectService,
+        DraftQuotationProductSnapshotSyncService draftQuotationProductSnapshotSyncService,
         ISender sender)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
         _conversationSubjectService = conversationSubjectService;
+        _draftQuotationProductSnapshotSyncService = draftQuotationProductSnapshotSyncService;
         _sender = sender;
     }
 
@@ -137,6 +141,13 @@ internal sealed class PatchSampleRequestCommandHandler
         if (ShouldPatchProduct(request) && !CanPatchProductDirectly(_currentUser, sampleRequest))
         {
             return OperationResult<Guid>.Fail("You are not allowed to update product information directly for this sample request.");
+        }
+
+        if (IsStatus(request.Status, SampleRequestStatus.SampleSent) ||
+            IsStatus(request.Status, SampleRequestStatus.Completed))
+        {
+            return OperationResult<Guid>.Fail(
+                "Use the Formula send-sample action or sample-trial customer feedback action for this lifecycle status.");
         }
 
         var originalStatus = sampleRequest.Status;
@@ -184,6 +195,12 @@ internal sealed class PatchSampleRequestCommandHandler
 
         if (request.FormulaId is { } formulaId && formulaId != Guid.Empty)
         {
+            if (IsStatus(sampleRequest.Status, SampleRequestStatus.SampleSent))
+            {
+                return OperationResult<Guid>.Fail(
+                    "Use sample-trial customer feedback to complete a SampleSent request. Formula cannot be selected directly.");
+            }
+
             var formula = await _dbContext.Formulas
                 .AsNoTracking()
                 .Where(x =>
@@ -232,6 +249,7 @@ internal sealed class PatchSampleRequestCommandHandler
         }
 
         Product? patchedProduct = null;
+        var productColourCodeChanged = false;
 
         // Xác định có phải cập nhật thông tin product không, rồi mới thao tác cập nhật
         if (ShouldPatchProduct(request))
@@ -250,6 +268,7 @@ internal sealed class PatchSampleRequestCommandHandler
             }
 
             var oldProductSnapshot = SampleRequestDataChangeAuditHelper.BuildProductAuditSnapshot(product);
+            var originalColourCode = product.ColourCode;
 
             ApplyProductPatch(product, request);
             ApplyProductClearFields(product, clearFields);
@@ -283,6 +302,10 @@ internal sealed class PatchSampleRequestCommandHandler
             }
 
             patchedProduct = product;
+            productColourCodeChanged = !string.Equals(
+                originalColourCode,
+                product.ColourCode,
+                StringComparison.Ordinal);
 
             if (!string.IsNullOrWhiteSpace(product.ColourCode))
             {
@@ -390,6 +413,17 @@ internal sealed class PatchSampleRequestCommandHandler
                 sampleRequest.CompanyId,
                 sampleRequest.ExternalId,
                 colourCode,
+                cancellationToken);
+        }
+
+        if (productColourCodeChanged && patchedProduct is not null)
+        {
+            await _draftQuotationProductSnapshotSyncService.SyncColourCodeAsync(
+                patchedProduct.ProductId,
+                companyId.Value,
+                patchedProduct.ColourCode,
+                _currentUser.EmployeeId,
+                sampleRequest.UpdatedDate.Value,
                 cancellationToken);
         }
 

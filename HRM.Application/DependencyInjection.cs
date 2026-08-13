@@ -47,6 +47,7 @@ public static class DependencyInjection
         services.AddScoped<QuotationLineBuilder>();
         services.AddScoped<QuotationCurrentPricingResolver>();
         services.AddScoped<QuotationConversationSubjectService>();
+        services.AddScoped<DraftQuotationProductSnapshotSyncService>();
         services.AddSingleton<KeyedMutationLock<Guid>>();
         services.AddScoped<ICustomerCrmWorkService, CustomerCrmWorkService>();
         services.AddScoped<ICustomerCrmAnalyticsService, CustomerCrmAnalyticsService>();

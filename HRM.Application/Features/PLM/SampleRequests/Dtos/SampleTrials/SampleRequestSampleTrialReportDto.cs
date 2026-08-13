@@ -13,9 +13,12 @@ public sealed class SampleRequestSampleTrialReportDto
     public Guid? FormulaId { get; set; }
     public int? TrialNo { get; set; }
     public bool HasTrial { get; set; }
+    public bool CanCreateTrial { get; set; }
+    public bool CanUpdateTrial { get; set; }
     public string SampleRequestStatus { get; set; } = string.Empty;
 
     public string CustomerName { get; set; } = string.Empty;
+    public string ManagerSalesName { get; set; } = string.Empty;
     public string SampleRequestExternalId { get; set; } = string.Empty;
     public double? RequestedSampleQuantity { get; set; }
     public decimal? DeliveredSampleQuantityKg { get; set; }
@@ -40,7 +43,7 @@ public sealed class SampleRequestSampleTrialReportDto
     public string? CustomerReplyNote { get; set; }
     public DateTime? OrderDate { get; set; }
 
-    public decimal? AdditiveRate { get; set; }
+    public double? AdditiveRate { get; set; }
     public string? LabNote { get; set; }
     public DateTime CreatedDate { get; set; }
     public DateTime? UpdatedDate { get; set; }

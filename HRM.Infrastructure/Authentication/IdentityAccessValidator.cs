@@ -16,12 +16,11 @@ public sealed class IdentityAccessValidator(ApplicationDbContext dbContext)
         var account = await dbContext.Users
             .AsNoTracking()
             .Where(user => user.Id == userId)
-            .Select(user => new { user.IsActive, user.EmployeeId })
+            .Select(user => new { user.EmployeeId })
             .FirstOrDefaultAsync(cancellationToken);
 
-        if (account is null ||
-            !account.IsActive ||
-            account.EmployeeId != employeeId)
+        // Account IsActive is temporarily unavailable until AspNetUsers is updated.
+        if (account is null || account.EmployeeId != employeeId)
         {
             return false;
         }

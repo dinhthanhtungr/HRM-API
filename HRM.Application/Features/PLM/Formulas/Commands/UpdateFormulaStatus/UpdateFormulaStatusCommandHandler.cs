@@ -53,10 +53,10 @@ internal sealed class UpdateFormulaStatusCommandHandler
         }
 
         var targetStatus = command.Request.Status;
-        if (targetStatus is not FormulaStatus.Approved and not FormulaStatus.SampleSent and not FormulaStatus.Completed)
+        if (targetStatus is not FormulaStatus.Approved and not FormulaStatus.SampleSent)
         {
             return OperationResult<FormulaWriteResultDto>.Fail(
-                "Formula status can only be changed to Approved, SampleSent or Completed by this endpoint.");
+                "Formula status can only be changed to Approved or SampleSent by this endpoint.");
         }
 
         var formula = await _dbContext.Formulas
@@ -82,22 +82,21 @@ internal sealed class UpdateFormulaStatusCommandHandler
         }
 
         if (targetStatus == FormulaStatus.SampleSent &&
-            !string.Equals(formula.Status, FormulaStatus.Approved.ToString(), StringComparison.OrdinalIgnoreCase))
+            !FormulaSampleSentRules.CanSendFromStatus(formula.Status))
         {
             return OperationResult<FormulaWriteResultDto>.Fail(
-                "Formula can only be changed to SampleSent when its current status is Approved.");
+                "Formula can only be sent when its current status is Approved or SampleSent.");
         }
 
-        if (targetStatus == FormulaStatus.Completed &&
-            !string.Equals(formula.Status, FormulaStatus.SampleSent.ToString(), StringComparison.OrdinalIgnoreCase))
+        var sampleSentValidationError = FormulaSampleSentRules.ValidateRequest(command.Request);
+        if (sampleSentValidationError is not null)
         {
-            return OperationResult<FormulaWriteResultDto>.Fail(
-                "Formula can only be changed to Completed when its current status is SampleSent.");
+            return OperationResult<FormulaWriteResultDto>.Fail(sampleSentValidationError);
         }
 
         var now = DateTime.Now;
         IReadOnlyList<FormulaWriteService.SampleRequestSampleSentTarget> sampleSentTargets = [];
-        IReadOnlyList<FormulaWriteService.SampleRequestFormulaCompletedTarget> formulaCompletedTargets = [];
+        Guid? sampleRequestSampleTrialId = null;
 
         formula.Status = targetStatus.ToString();
         formula.UpdatedBy = employeeId;
@@ -111,9 +110,6 @@ internal sealed class UpdateFormulaStatusCommandHandler
 
         if (targetStatus == FormulaStatus.SampleSent)
         {
-            formula.SentBy = employeeId;
-            formula.SentDate = now;
-
             var sampleSentResult = await MarkSampleSentAsync(
                 formula.FormulaId,
                 formula.ProductId,
@@ -129,28 +125,49 @@ internal sealed class UpdateFormulaStatusCommandHandler
             }
 
             sampleSentTargets = sampleSentResult.Data ?? [];
-        }
-
-        if (targetStatus == FormulaStatus.Completed)
-        {
-            var completedResult = await MarkFormulaCompletedAsync(
-                formula.FormulaId,
-                formula.ProductId,
-                companyId,
-                employeeId,
-                now,
-                command.Request.SampleRequestId,
-                cancellationToken);
-
-            if (!completedResult.Success)
+            var sampleRequest = sampleSentTargets.SingleOrDefault();
+            if (sampleRequest is null)
             {
-                return OperationResult<FormulaWriteResultDto>.Fail(completedResult.Message ?? "Could not complete formula.");
+                return OperationResult<FormulaWriteResultDto>.Fail("Sample request was not available for sample delivery.");
             }
 
-            formulaCompletedTargets = completedResult.Data ?? [];
+            try
+            {
+                var target = await _dbContext.SampleRequests
+                    .Include(x => x.Customer)
+                    .Include(x => x.Product)
+                    .ThenInclude(x => x.Category)
+                    .SingleAsync(x => x.SampleRequestId == sampleRequest.SampleRequestId, cancellationToken);
+
+                var sampleTrial = await _formulaWriteService.EnsureSampleSentTrialAsync(
+                    target,
+                    formula.FormulaId,
+                    companyId,
+                    employeeId,
+                    now,
+                    command.Request.DeliveredSampleQuantityKg!.Value,
+                    cancellationToken);
+
+                sampleRequestSampleTrialId = sampleTrial.SampleRequestSampleTrialId;
+            }
+            catch (InvalidOperationException ex)
+            {
+                return OperationResult<FormulaWriteResultDto>.Fail(ex.Message);
+            }
+
+            formula.SentBy = employeeId;
+            formula.SentDate = now;
         }
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException) when (targetStatus == FormulaStatus.SampleSent)
+        {
+            return OperationResult<FormulaWriteResultDto>.Fail(
+                "Another sample trial was created concurrently. Reload and try again.");
+        }
 
         foreach (var sampleRequest in sampleSentTargets)
         {
@@ -158,35 +175,26 @@ internal sealed class UpdateFormulaStatusCommandHandler
                 sampleRequest.SampleRequestId,
                 sampleRequest.ExternalId,
                 formula.ExternalId,
+                command.Request.DeliveredSampleQuantityKg!.Value,
                 now,
                 cancellationToken);
 
             if (!sendResult.Success)
             {
                 return OperationResult<FormulaWriteResultDto>.Ok(
-                    FormulaWriteService.ToResult(formula, sampleSentTargets.Count),
+                    FormulaWriteService.ToResult(
+                        formula,
+                        sampleSentTargets.Count,
+                        sampleRequestSampleTrialId),
                     $"Updated formula status successfully, but could not send sample-sent notification: {sendResult.Message}");
             }
         }
 
-        foreach (var sampleRequest in formulaCompletedTargets)
-        {
-            var sendResult = await SendFormulaCompletedMessageAsync(
-                sampleRequest.SampleRequestId,
-                sampleRequest.ExternalId,
-                formula.ExternalId,
-                cancellationToken);
-
-            if (!sendResult.Success)
-            {
-                return OperationResult<FormulaWriteResultDto>.Ok(
-                    FormulaWriteService.ToResult(formula, formulaCompletedTargets.Count),
-                    $"Updated formula status successfully, but could not send formula-completed notification: {sendResult.Message}");
-            }
-        }
-
         return OperationResult<FormulaWriteResultDto>.Ok(
-            FormulaWriteService.ToResult(formula, sampleSentTargets.Count + formulaCompletedTargets.Count),
+            FormulaWriteService.ToResult(
+                formula,
+                sampleSentTargets.Count,
+                sampleRequestSampleTrialId),
             "Updated formula status successfully.");
     }
 
@@ -205,6 +213,8 @@ internal sealed class UpdateFormulaStatusCommandHandler
                 formulaId,
                 formulaProductId,
                 companyId,
+                employeeId,
+                now,
                 employeeId,
                 now,
                 sampleRequestId,
@@ -250,6 +260,7 @@ internal sealed class UpdateFormulaStatusCommandHandler
         Guid sampleRequestId,
         string sampleRequestExternalId,
         string formulaExternalId,
+        decimal deliveredSampleQuantityKg,
         DateTime sentAt,
         CancellationToken cancellationToken)
     {
@@ -257,7 +268,7 @@ internal sealed class UpdateFormulaStatusCommandHandler
         {
             SampleRequestId = sampleRequestId,
             Type = SampleRequestNotificationType.GeneralMessage,
-            Message = $"Lab đã gửi mẫu lúc {sentAt:HH:mm dd/MM/yyyy} cho yêu cầu phối mẫu {sampleRequestExternalId}. Công thức: {formulaExternalId}. Sale đã có thể mở hồ sơ để chọn công thức.",
+            Message = $"Lab đã gửi {deliveredSampleQuantityKg:0.####} kg mẫu lúc {sentAt:HH:mm dd/MM/yyyy} cho yêu cầu phối mẫu {sampleRequestExternalId}. Công thức: {formulaExternalId}. Sale vui lòng ghi nhận phản hồi của khách hàng.",
             TopicOverride = TopicNotifications.SampleRequestSampleSent,
             TitleOverride = "Lab đã gửi mẫu"
         }, cancellationToken);

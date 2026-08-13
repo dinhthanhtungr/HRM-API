@@ -113,6 +113,10 @@ Backend thực hiện:
 - Tính lại toàn bộ tổng tiền.
 - Ghi audit người tạo và thời gian tạo.
 
+Báo giá `Draft` được phép có line chưa có giá để Sale lưu trước rồi gửi yêu cầu báo giá nội bộ. Line chưa có giá
+được lưu với `priceMode = Tiered`, `unitPrice = 0` và `priceTiers = []`; subtotal/tax/total của line đó bằng `0`.
+Nếu request đã chứa `priceTiers` thì các tier vẫn phải đầy đủ, không chồng khoảng và có `unitPrice > 0`.
+
 Response thành công là `201 Created`, có `quotationId`, `externalId` và các totals vừa lưu.
 
 ### 5.2. Sửa thông tin chung
@@ -181,8 +185,8 @@ Mỗi dòng cần:
 
 - `productId`.
 - `quantity > 0`.
-- `priceMode`.
-- Giá cố định hoặc danh sách price tiers.
+- `priceMode = Tiered`.
+- Danh sách price tiers hợp lệ, hoặc `priceTiers = []` nếu đang lưu nháp để chờ giá.
 
 `sampleRequestId` là tùy chọn nhưng nếu có phải cùng company, customer và product.
 
@@ -528,8 +532,9 @@ không dùng lại mã form Delivery Order.
 ## 6. Quy tắc giá theo khối lượng của dòng sản phẩm
 
 Contract ghi mới hiện chỉ chấp nhận `Tiered`. `Fixed` được giữ trong enum/database để đọc dữ liệu lịch sử và
-chuyển đổi các draft cũ, nhưng create/replace/refresh line sẽ từ chối `Fixed`. Mọi line phải lưu toàn bộ tiers làm
-snapshot, kể cả khi sale giữ nguyên giá gợi ý mà không chỉnh tay. Mỗi tier phải có `unitPrice > 0`.
+chuyển đổi các draft cũ, nhưng create/replace/refresh line sẽ từ chối `Fixed`. Create/replace cho phép line nháp
+chưa có giá với `priceTiers = []`; refresh giá vẫn yêu cầu danh sách tier hoàn chỉnh. Khi line đã có giá, phải lưu
+toàn bộ tiers làm snapshot, kể cả khi Sale giữ nguyên giá gợi ý mà không chỉnh tay. Mỗi tier phải có `unitPrice > 0`.
 
 `mark-sent` từ chối báo giá có line Fixed, thiếu tiers hoặc có tier giá không dương. FE phải chuyển draft cũ sang
 Tiered trước khi xác nhận đã gửi khách hàng.
@@ -688,6 +693,9 @@ message hoặc notification.
 Endpoint chỉ áp dụng cho báo giá `Draft` mà người gọi được phép xem. Mỗi lần gọi tạo một action message mới và
 publish notification `QuotationRequested`; endpoint không đổi trạng thái báo giá và không gửi email ra ngoài.
 
+Yêu cầu nội bộ được phép gửi khi một hoặc nhiều line chưa có giá. Báo giá vẫn giữ trạng thái `Draft` để quản lý
+bổ sung giá và Sale tiếp tục chỉnh sửa.
+
 Backend tìm hoặc tạo conversation theo đúng khóa:
 
 ```text
@@ -822,6 +830,11 @@ subject đang lưu. Khi `PUT /quotations/{quotationId}/lines` thay danh sách d�
 `InternalConversation.Subject` nếu conversation đã tồn tại; không tự tạo conversation, không sửa body message,
 notification hoặc payload lịch sử. Khi `/request` hoặc `/mark-sent` tạo hay tái sử dụng conversation, subject
 cũng được dựng lại từ snapshot line hiện tại.
+
+Khi Lab đổi `Product.ColourCode` qua PATCH Sample Request, backend tự đồng bộ mã mới vào
+`ProductExternalIdSnapshot` của mọi line thuộc báo giá `Draft` đang tham chiếu sản phẩm đó và dựng lại subject
+conversation. Báo giá được cập nhật `UpdatedDate` để FE đang giữ dữ liệu cũ phải tải lại trước khi ghi tiếp.
+Báo giá không còn ở `Draft`, body message, message reference, notification và payload lịch sử không bị thay đổi.
 
 FE ở Notification Hub mục Báo giá sẽ lấy dữ liệu từ hai nguồn:
 

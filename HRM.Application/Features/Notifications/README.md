@@ -255,6 +255,7 @@ SampleRequestFormulaUpdateRejected  = 41 -> plm.sample_request.formula_update.re
 SampleRequestFormulaUpdateCancelled = 42 -> plm.sample_request.formula_update.cancelled -> sample_request/formula
 SampleRequestDirectPatchNotified    = 43 -> plm.sample_request.direct_patch.notified    -> sample_request/change
 CustomerAiSummaryAutomationStatus   = 44 -> dev.customer.ai_summary.automation_status   -> system/automation
+SampleRequestCustomerFeedbackRecorded = 47 -> plm.sample_request.customer_feedback.recorded -> sample_request/sample
 ```
 
 `SampleRequestUpdateRequested = 25`, `SampleRequestUpdateApproved = 27` và

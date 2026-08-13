@@ -23,8 +23,7 @@ public sealed class EmployeeIdentityAdministrationService(
             {
                 item.Id,
                 item.UserName,
-                item.Email,
-                item.IsActive
+                item.Email
             })
             .FirstOrDefaultAsync(cancellationToken);
 
@@ -48,7 +47,7 @@ public sealed class EmployeeIdentityAdministrationService(
             user.Id,
             user.UserName,
             user.Email,
-            user.IsActive,
+            true,
             roles);
     }
 
@@ -91,7 +90,6 @@ public sealed class EmployeeIdentityAdministrationService(
             EmployeeId = employeeId,
             UserName = userName,
             Email = email,
-            IsActive = true,
             personName = null,
             RefreshTokenExpirationDateTime = DateTime.MinValue,
             UserRoles = []
@@ -109,7 +107,7 @@ public sealed class EmployeeIdentityAdministrationService(
                 user.Id,
                 user.UserName,
                 user.Email,
-                user.IsActive,
+                true,
                 []));
     }
 
@@ -126,7 +124,8 @@ public sealed class EmployeeIdentityAdministrationService(
                 "Nhân viên chưa có tài khoản.");
         }
 
-        user.IsActive = isActive;
+        // Temporary compatibility: AspNetUsers does not have an IsActive column yet.
+        // Restore account status persistence after the database schema is updated.
         if (!isActive)
         {
             user.RefreshToken = null;

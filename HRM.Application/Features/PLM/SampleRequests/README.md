@@ -6,6 +6,8 @@
 
 Contract chi tiết, mapping dữ liệu và script tạo bảng nằm trong `SampleRequestSampleTrials.README.md`.
 
+Trial được tạo bằng `POST /api/v1/plm/sample-requests/{sampleRequestId}/sample-trials` và cập nhật bằng `PATCH /api/v1/plm/sample-requests/{sampleRequestId}/sample-trials/{trialId}`. PATCH dùng `clearFields` whitelist để xóa field nullable; backend không dùng upsert và không tự đoán create/update.
+
 ## GetSampleRequestSummary Attachments
 
 `GetSampleRequestSummary` returns sample request attachments as lightweight metadata under each summary item.
@@ -262,6 +264,22 @@ Sample Request active đang trỏ tới `FormulaId` đó sang `SampleRequestStat
 
 ## Sample Request Formula Lifecycle
 
+Khi Lab gửi mẫu lần đầu hoặc gửi lại mẫu, `SampleRequest.FormulaId` chưa là Formula được khách chọn.
+Backend tạo một `SampleRequestSampleTrial` trong cùng transaction với Formula/SampleRequest:
+
+```text
+Formula.Status = SampleSent
+SampleRequest.Status = SampleSent
+SampleRequest.FormulaId = null hoặc giữ Formula đã chốt trước đó (không ghi đè bằng Formula vừa gửi)
+SampleRequestSampleTrial.Status = SampleSent
+SampleRequestSampleTrial.TrialNo = max(TrialNo) + 1
+```
+
+Chỉ khi Sale ghi nhận Trial `Approved`, backend mới chọn Formula của Trial, chuyển Formula và Sample Request sang `Completed`.
+Nếu Trial `Failed`, Sample Request quay về `InProgress` để Lab làm/clone Formula mới; nếu `Cancelled`, Sample Request chuyển `Cancelled`.
+`PATCH /api/v1/plm/sample-requests/{sampleRequestId}` không được phép gán trực tiếp `SampleSent`/`Completed`,
+hoặc chọn Formula khi Sample Request đang `SampleSent`; FE phải gọi action nghiệp vụ tương ứng.
+
 Luồng chốt công thức của Sample Request được tách theo ý nghĩa nghiệp vụ:
 
 ```text
@@ -278,7 +296,9 @@ Kết quả nghiệp vụ:
 ```text
 Formula.Status = SampleSent
 SampleRequest.Status = SampleSent
-SampleRequest.FormulaId = Formula vừa gửi mẫu
+SampleRequest.FormulaId không bị gán bằng Formula vừa gửi
+SampleRequestSampleTrial.TrialNo = max(TrialNo) + 1
+SampleRequestSampleTrial.DeliveredSampleQuantityKg = khối lượng thực gửi
 ```
 
 BE phải tạo một message công khai trong đúng `InternalConversation` của Sample Request, không tạo conversation mới. Message này thông báo cho Sale/participants rằng Lab đã gửi mẫu, kèm tối thiểu `SampleRequestId`, `SampleRequest.ExternalId`, `FormulaId`, `Formula.ExternalId`, `Product.ColourCode` và `Product.Name` nếu có.
@@ -424,13 +444,15 @@ Payload gửi mẫu:
 {
   "status": "SampleSent",
   "sampleRequestId": "00000000-0000-0000-0000-000000000000",
+  "deliveredSampleQuantityKg": 2.5,
   "expectedUpdatedDate": "2026-07-28T10:30:00"
 }
 ```
 
-Khi `status = SampleSent`, backend validate formula cùng product với Sample Request, tự gắn
-`SampleRequest.FormulaId = FormulaId`, chuyển `SampleRequest.Status = SampleSent`, ghi `SendBy/SendDate`, và tạo message
-InternalMail topic `SampleRequestSampleSent` với nội dung có giờ gửi mẫu và nhắc Sale đã có thể chọn công thức.
+Khi `status = SampleSent`, backend validate formula cùng product với Sample Request, yêu cầu khối lượng lớn hơn hoặc bằng 0,
+chuyển `SampleRequest.Status = SampleSent`, ghi `SendBy/SendDate`, tạo Trial mới có `TrialNo = max + 1` và lưu
+`DeliveredSampleQuantityKg`. Backend không gán `SampleRequest.FormulaId` ở bước này. Sau khi lưu thành công, backend tạo
+message InternalMail topic `SampleRequestSampleSent` với nội dung có giờ gửi, khối lượng mẫu và nhắc Sale ghi nhận.
 
 Payload xác nhận công thức hoàn thành:
 
@@ -515,7 +537,7 @@ All Sample Request thread message types resolve default recipients through `Samp
 - `PHM` (Hạt màu), `PBM` (Bột màu), `PDM` (Dry mix) -> `QAQC.MAU`.
 - `PKH`, `PTP`, `PMS`, `PPB`, or unknown/unmapped category -> fallback `QAQC.RD` and `QAQC.MAU`.
 
-Regular `LabUser` employees are not required recipients unless FE/user adds them or they already belong to the existing conversation. Existing conversation participants, the current sender, and the sample request manager are still kept in the thread participant set.
+Regular `LabUser` employees are not required recipients unless FE/user adds them or they already belong to the existing conversation. For an existing conversation, preview returns every active participant and the sample request manager, except the current sender, as locked selected recipients because real send always keeps them in the thread participant set. This keeps `selectedRecipients` aligned with the people who will actually receive the message.
 
 Internal sample requests (`RequestType` internal or customer `KH_VIETAUS`) skip this recipient resolution during real send. Preview with an existing `contextId` also returns empty `requiredRecipients`, `suggestedRecipients`, `selectedRecipients` and `canAddRecipients = false`.
 
@@ -565,7 +587,7 @@ Direct patch notification preview uses the same resolver:
 }
 ```
 
-The response contains `requiredRecipients`, `suggestedRecipients`, and `selectedRecipients`. Only `President`/`LabAdmin` users are locked in `requiredRecipients`. Category-matched QAQC leaders are returned as default, unlocked recipients and are selected by default on the first preview. FE may remove or add these optional recipients, then submit the selected optional ids back through:
+The response contains `requiredRecipients`, `suggestedRecipients`, and `selectedRecipients`. `President`/`LabAdmin` users are locked required recipients. For an existing thread, active participants and the sample request manager are also locked, except the current sender. Category-matched QAQC leaders are returned as default, unlocked recipients and are selected by default on the first preview. FE may remove or add these optional recipients, then submit the selected optional ids back through:
 
 ```text
 CreateSampleRequestCommand.InitialLabRecipientEmployeeIds
@@ -594,6 +616,10 @@ backfill hoặc sửa dữ liệu đó; response bổ sung `displayTitle` và lo
 FE dùng `displayTitle` ở cột inbox, còn màn hình chi tiết vẫn có thể dùng `subject` đầy đủ.
 
 Khi Lab lưu `ColourCode` hoặc khi PATCH SampleRequest làm đổi product/colour code, BE gọi `SampleRequestConversationSubjectService.SyncSubjectAsync` để cập nhật đúng một conversation đang active của sample request đó. Luồng này chỉ cập nhật metadata thread hiện tại, không sửa body message cũ, notification cũ hoặc payload lịch sử.
+
+Nếu `ColourCode` thực sự đổi sang một giá trị mới, BE đồng thời cập nhật mã snapshot và subject conversation của
+các báo giá `Draft` cùng company đang dùng `ProductId` đó. Báo giá đã gửi hoặc không còn là `Draft` vẫn giữ nguyên
+snapshot; message, notification và payload lịch sử không bị viết lại.
 
 Các điểm đang sync:
 

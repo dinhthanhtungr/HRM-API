@@ -76,6 +76,7 @@ public static class NotificationTopicCatalog
             TopicNotifications.CustomerAiSummaryAutomationStatus => System("dev.customer.ai_summary.automation_status", "automation", "Customer"),
             TopicNotifications.ComplaintInitialDecision => SalesOrder("plm.complaint.initial_decision", "complaint", "ComplaintReport"),
             TopicNotifications.ComplaintFinalDecision => SalesOrder("plm.complaint.final_decision", "complaint", "ComplaintReport"),
+            TopicNotifications.SampleRequestCustomerFeedbackRecorded => SampleRequest("plm.sample_request.customer_feedback.recorded", "sample"),
 
             _ => System($"{UnknownCodePrefix}{(int)topic}", "unknown", null)
         };

@@ -114,6 +114,7 @@ internal sealed class CreateGroupCommandHandler
             GroupType = groupType,
             PartId = request.PartId,
             CompanyId = companyId,
+            //IsActive = true,
             CreatedBy = employeeId,
             CreatedDate = DateTime.Now
         };
@@ -127,7 +128,7 @@ internal sealed class CreateGroupCommandHandler
             ExternalId = group.ExternalId,
             Name = group.Name,
             GroupType = group.GroupType,
-            PartId = group.PartId
+            PartId = group.PartId,
         });
     }
 

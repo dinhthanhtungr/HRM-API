@@ -116,9 +116,7 @@ namespace HRM.Infrastructure.DatabaseContext.ApplicationDbs
                 .HasFilter("\"EmployeeId\" IS NOT NULL")
                 .HasDatabaseName("UX_AspNetUsers_EmployeeId_NotNull");
 
-            modelBuilder.Entity<ApplicationUser>()
-                .Property(u => u.IsActive)
-                .HasDefaultValue(true);
+            // ApplicationUser.IsActive is temporarily disabled until AspNetUsers is updated.
 
             modelBuilder.Entity<AttachmentModel>(entity =>
             {

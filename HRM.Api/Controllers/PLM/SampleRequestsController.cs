@@ -1,5 +1,6 @@
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Features.PLM.SampleRequests.Commands.CreateSampleRequest;
+using HRM.Application.Features.PLM.SampleRequests.Commands.CreateSampleRequestSampleTrial;
 using HRM.Application.Features.PLM.SampleRequests.Commands.CreateSampleRequestDataChangeRequest;
 using HRM.Application.Features.PLM.SampleRequests.Commands.CreateSampleRequestDirectPatchNotification;
 using HRM.Application.Features.PLM.SampleRequests.Commands.CreateSampleRequestFormulaChangeRequest;
@@ -7,6 +8,8 @@ using HRM.Application.Features.PLM.SampleRequests.Commands.DecideSampleRequestDa
 using HRM.Application.Features.PLM.SampleRequests.Commands.DecideSampleRequestFormulaChange;
 using HRM.Application.Features.PLM.SampleRequests.Commands.SendSampleRequestMessage;
 using HRM.Application.Features.PLM.SampleRequests.Commands.PatchSampleRequest;
+using HRM.Application.Features.PLM.SampleRequests.Commands.PatchSampleRequestSampleTrial;
+using HRM.Application.Features.PLM.SampleRequests.Commands.RecordSampleRequestSampleTrialCustomerFeedback;
 using HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestDetail;
 using HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestFormOptions;
 using HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestHistory;
@@ -55,6 +58,56 @@ public sealed class SampleRequestsController : ControllerBase
         var result = await _sender.Send(query, cancellationToken);
 
         return Ok(result);
+    }
+
+    /// <summary>
+    /// Tạo lần thử/gửi mẫu tiếp theo; backend tự cấp TrialNo và snapshot dữ liệu báo cáo.
+    /// </summary>
+    [HttpPost("{sampleRequestId:guid}/sample-trials")]
+    public async Task<IActionResult> CreateSampleTrial(
+        Guid sampleRequestId,
+        [FromBody] CreateSampleRequestSampleTrialCommand command,
+        CancellationToken cancellationToken)
+    {
+        command.SampleRequestId = sampleRequestId;
+        var result = await _sender.Send(command, cancellationToken);
+
+        return result.Success
+            ? CreatedAtAction(nameof(GetSampleTrials), new { sampleRequestId }, result)
+            : BadRequest(result);
+    }
+
+    /// <summary>
+    /// Cập nhật một trial; field nằm trong clearFields được chuyển thành null.
+    /// </summary>
+    [HttpPatch("{sampleRequestId:guid}/sample-trials/{trialId:guid}")]
+    public async Task<IActionResult> PatchSampleTrial(
+        Guid sampleRequestId,
+        Guid trialId,
+        [FromBody] PatchSampleRequestSampleTrialCommand command,
+        CancellationToken cancellationToken)
+    {
+        command.SampleRequestId = sampleRequestId;
+        command.SampleRequestSampleTrialId = trialId;
+        var result = await _sender.Send(command, cancellationToken);
+
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    /// <summary>
+    /// Sale records customer feedback for a sent sample. Terminal outcomes advance
+    /// the trial, sample request, and selected formula in one business action.
+    /// </summary>
+    [HttpPost("{sampleRequestId:guid}/customer-feedback")]
+    public async Task<IActionResult> RecordSampleTrialCustomerFeedback(
+        Guid sampleRequestId,
+        [FromBody] RecordSampleRequestSampleTrialCustomerFeedbackCommand command,
+        CancellationToken cancellationToken)
+    {
+        command.SampleRequestId = sampleRequestId;
+        var result = await _sender.Send(command, cancellationToken);
+
+        return result.Success ? Ok(result) : BadRequest(result);
     }
 
     [HttpGet("form-options")]

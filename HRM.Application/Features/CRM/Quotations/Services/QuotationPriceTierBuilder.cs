@@ -13,7 +13,8 @@ internal static class QuotationPriceTierBuilder
         decimal quantity,
         decimal fixedUnitPrice,
         IReadOnlyList<QuotationLinePriceTierRequest>? requests,
-        string fieldPath)
+        string fieldPath,
+        bool allowMissingPrice = false)
     {
         if (!Enum.IsDefined(priceMode))
         {
@@ -27,11 +28,20 @@ internal static class QuotationPriceTierBuilder
                 $"{fieldPath}.priceMode must be Tiered.");
         }
 
-        if (requests.Count == 0 || requests.Count > QuotationRules.MaximumPriceTierCountPerLine)
+        if (requests.Count == 0)
+        {
+            return allowMissingPrice
+                ? OperationResult<QuotationLinePricing>.Ok(
+                    new QuotationLinePricing(0m, []))
+                : OperationResult<QuotationLinePricing>.Fail(
+                    $"{fieldPath}.priceTiers must contain at least one tier for Tiered pricing.");
+        }
+
+        if (requests.Count > QuotationRules.MaximumPriceTierCountPerLine)
         {
             return OperationResult<QuotationLinePricing>.Fail(
-                $"{fieldPath}.priceTiers must contain between 1 and " +
-                $"{QuotationRules.MaximumPriceTierCountPerLine} tiers for Tiered pricing.");
+                $"{fieldPath}.priceTiers cannot contain more than " +
+                $"{QuotationRules.MaximumPriceTierCountPerLine} tiers.");
         }
 
         var normalized = new List<NormalizedTier>(requests.Count);

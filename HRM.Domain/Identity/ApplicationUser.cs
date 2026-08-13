@@ -14,7 +14,7 @@ namespace HRM.Domain.Identity
         public string? RefreshToken {  get; set; }
         // FK → Employees
         public Guid? EmployeeId { get; set; }          // để nullable cho dễ migrate lần đầu
-        public bool IsActive { get; set; } = true;
+        //public bool IsActive { get; set; } = true;
         public DateTime RefreshTokenExpirationDateTime {  get; set; }
         //public virtual ICollection<ApplicationUserRole> UserRoles { get; set; }
         public ICollection<ApplicationUserRole> UserRoles { get; set; } = [];
