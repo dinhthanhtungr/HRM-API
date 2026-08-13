@@ -340,6 +340,12 @@ liệu và để service worker chịu trách nhiệm hiển thị notification 
   `notificationId`.
 - Web Push chưa áp dụng quiet hours, mức severity tối thiểu hoặc channel preference.
 - Không tạo/chạy migration trong phần tích hợp Web Push; database được giả định đã có schema.
+## Sample Request sample-receipt action
+
+Topic không đổi: `SampleRequestSampleSent = 37`, `topicCode = plm.sample_request.sample_sent`, category `sample_request`, event group `sample`. Payload message/notification bổ sung `sampleReceiptAction.sampleRequestSampleTrialId` với trạng thái ban đầu `Pending` để FE hiển thị nút xác nhận nhận mẫu; payload không chứa công thức, giá hoặc dữ liệu kỹ thuật nhạy cảm.
+
+Khi Sale xác nhận, backend cập nhật Trial và payload của `InternalMessage` sang `Confirmed`. Luồng xác nhận không publish notification mới và không thay đổi SignalR/Web Push/outbox; FE dùng response hoặc tải lại thread để lấy trạng thái action mới nhất.
+
 ## Complaint decision topics
 
 - `ComplaintInitialDecision = 45`: topic code `plm.complaint.initial_decision`, `sales_order/complaint`.

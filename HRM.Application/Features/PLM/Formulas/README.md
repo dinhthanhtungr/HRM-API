@@ -13,6 +13,8 @@ DELETE /api/v1/plm/formulas/{formulaId}
 
 ## Gửi mẫu và tạo Trial
 
+Message `SampleRequestSampleSent` kèm `sampleReceiptAction` chứa Trial id để Sale xác nhận đã nhận mẫu ngay trong Notification Hub. Action xác nhận thuộc API Sample Request/Trial, chỉ cập nhật dữ liệu nhận mẫu và audit trên Trial; không thay đổi trạng thái Formula và không dùng ngày phản hồi khách hàng.
+
 Lab gửi mẫu bằng endpoint trạng thái của Formula, không tạo `SampleRequestSampleTrial` độc lập từ FE:
 
 ```http

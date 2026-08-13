@@ -2,6 +2,10 @@
 
 ## Sample trial report
 
+Khi Lab gửi mẫu, message trong Notification Hub trả thêm `sampleReceiptAction` gắn chính xác với Trial vừa tạo. Sale/Leader xác nhận đã nhận mẫu bằng `POST /api/v1/plm/sample-requests/{sampleRequestId}/sample-trials/{trialId}/confirm-receipt`. Nếu không gửi `sampleReceivedDate`, backend dùng thời điểm hiện tại; kết quả được lưu vào Trial và action chuyển từ `Pending` sang `Confirmed`.
+
+Ngày Sale nhận mẫu được lưu riêng bằng `SampleReceivedDate`, `SampleReceivedByEmployeeId` và `SampleReceiptConfirmedAt`; không tái sử dụng `RequestReceivedDate` vì field đó mang nghĩa ngày Lab nhận yêu cầu.
+
 `GET /api/v1/plm/sample-requests/sample-trials` trả danh sách phân trang để FE dựng bảng theo dõi Lab giống báo cáo Excel. Query dùng Sample Request visible làm nguồn và left join trial: hồ sơ chưa có trial vẫn xuất hiện một dòng với `hasTrial = false`; hồ sơ có nhiều trial trả mỗi trial một dòng. Endpoint hỗ trợ keyword, khoảng ngày, Sample Request, customer, trial status, customer reply status và sorting. Dữ liệu luôn đi qua company/customer visibility; `additiveRate` và `labNote` trả `null` nếu current user không có quyền xem thông tin kỹ thuật PLM.
 
 Contract chi tiết, mapping dữ liệu và script tạo bảng nằm trong `SampleRequestSampleTrials.README.md`.

@@ -2,6 +2,7 @@ using HRM.Domain.Enums.Notifications;
 using HRM.Application.Features.PLM.SampleRequests.DataChangeRequests;
 using HRM.Application.Features.PLM.SampleRequests.DirectPatchNotifications;
 using HRM.Application.Features.PLM.SampleRequests.FormulaChangeRequests;
+using HRM.Application.Features.PLM.SampleRequests.SampleReceiptConfirmations;
 
 namespace HRM.Application.Features.PLM.SampleRequests.Dtos.InternalMail;
 
@@ -44,4 +45,6 @@ public sealed class SampleRequestMessageDto
     public SampleRequestFormulaChangeActionDto? FormulaChangeAction { get; set; }
 
     public SampleRequestDirectPatchNotificationPayload? DirectPatchNotification { get; set; }
+
+    public SampleReceiptActionDto? SampleReceiptAction { get; set; }
 }

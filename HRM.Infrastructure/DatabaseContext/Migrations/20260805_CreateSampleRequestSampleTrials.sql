@@ -28,6 +28,10 @@ CREATE TABLE IF NOT EXISTS "SampleRequests"."SampleRequestSampleTrials"
     "LabNote" text NULL,
     "SentByEmployeeId" uuid NULL,
 
+    "SampleReceivedDate" timestamp without time zone NULL,
+    "SampleReceivedByEmployeeId" uuid NULL,
+    "SampleReceiptConfirmedAt" timestamp without time zone NULL,
+
     "CustomerReplyStatus" character varying(50) NULL,
     "CustomerReplyDate" timestamp without time zone NULL,
     "CustomerReplyByEmployeeId" uuid NULL,
@@ -63,6 +67,9 @@ CREATE INDEX IF NOT EXISTS "IX_SampleRequestSampleTrials_Status_ReplyStatus"
 
 CREATE INDEX IF NOT EXISTS "IX_SampleRequestSampleTrials_SentDate"
     ON "SampleRequests"."SampleRequestSampleTrials" ("SentDate");
+
+CREATE INDEX IF NOT EXISTS "IX_SampleRequestSampleTrials_SampleReceivedDate"
+    ON "SampleRequests"."SampleRequestSampleTrials" ("SampleReceivedDate");
 
 CREATE INDEX IF NOT EXISTS "IX_SampleRequestSampleTrials_CustomerReplyDate"
     ON "SampleRequests"."SampleRequestSampleTrials" ("CustomerReplyDate");

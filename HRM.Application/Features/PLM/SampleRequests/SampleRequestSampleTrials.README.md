@@ -6,13 +6,44 @@ Trial là bản ghi lịch sử của một lần giao mẫu thực tế, không
 
 1. Lab làm Formula `Draft`/`Approved`, Sample Request ở `New` hoặc `InProgress`: chưa có Trial.
 2. Lab chuyển Formula `Approved -> SampleSent`, hoặc gửi lại Formula đang `SampleSent`, qua endpoint Formula status. Request bắt buộc có `sampleRequestId` và `deliveredSampleQuantityKg >= 0`. Mỗi lần gọi thành công, backend tạo một Trial `SampleSent` mới với `TrialNo = max + 1` và lưu khối lượng gửi. Cùng transaction này, Sample Request chuyển sang `SampleSent`, rồi mới gửi message có kèm khối lượng cho Sale trong cùng conversation.
-3. Sale ghi nhận phản hồi khách qua action `customer-feedback`:
+3. Sale xác nhận đã nhận mẫu ngay trên message Lab gửi; backend cập nhật ngày/người xác nhận vào đúng Trial.
+4. Sale ghi nhận phản hồi khách qua action `customer-feedback`:
    - `Approved`: Trial `Approved`, Formula của Trial `Completed`, Formula đó được chọn, Sample Request `Completed`.
    - `Failed`: Trial `Failed`, Sample Request trở về `InProgress`; Lab tạo/clone Formula mới và gửi mẫu lại để tạo Trial kế tiếp.
    - `Cancelled`: Trial `Cancelled`, Sample Request `Cancelled`.
-4. Khi Sample Request đã `Completed`, Lab dùng luồng `formula-change-requests` hiện có để đề xuất Formula cải tiến; không gửi lại SampleSent cho hồ sơ đã hoàn tất.
+5. Khi Sample Request đã `Completed`, Lab dùng luồng `formula-change-requests` hiện có để đề xuất Formula cải tiến; không gửi lại SampleSent cho hồ sơ đã hoàn tất.
 
 Mọi chuyển trạng thái trên được lưu trước; message/notification chỉ được gửi sau khi lưu thành công. Message dùng lại conversation của Sample Request và vẫn no-op cho VU nội bộ/private theo `SampleRequestMessageRules`.
+
+## Sale xác nhận đã nhận mẫu
+
+Message được tạo khi Lab gửi mẫu có `sampleReceiptAction` trong payload, gồm `sampleRequestSampleTrialId`, `status` và dữ liệu xác nhận. FE hiển thị ô ngày/giờ mặc định là thời điểm hiện tại cùng nút **Đã nhận mẫu** khi `canConfirm = true`.
+
+```http
+POST /api/v1/plm/sample-requests/{sampleRequestId}/sample-trials/{trialId}/confirm-receipt
+```
+
+```json
+{
+  "messageId": "00000000-0000-0000-0000-000000000000",
+  "sampleReceivedDate": null,
+  "expectedUpdatedDate": "2026-08-13T12:16:00"
+}
+```
+
+`sampleReceivedDate` là tùy chọn; không gửi hoặc gửi `null` thì backend dùng `IDateTimeProvider.Now`. Sale có thể chọn lại ngày/giờ trước khi bấm xác nhận. Ngày tương lai vượt quá sai số đồng hồ 5 phút bị từ chối. Action chỉ áp dụng cho Trial `SampleSent` hoặc `WaitingCustomerFeedback`.
+
+Chỉ `ApplicationRoleSets.PLM.FormulaSelectors` (Sale/Leader và super user) được xác nhận. Backend kiểm tra company, customer visibility, Trial thuộc đúng Sample Request và `messageId` đúng message có action của Trial để tránh IDOR. Lần gọi lại trả kết quả đã xác nhận và không ghi nhận lần thứ hai.
+
+Trial lưu ba field riêng, không tái sử dụng `RequestReceivedDate`:
+
+```text
+SampleReceivedDate
+SampleReceivedByEmployeeId
+SampleReceiptConfirmedAt
+```
+
+Sau khi lưu, backend cập nhật `sampleReceiptAction.status = Confirmed` trong payload message để FE khóa nút và hiển thị ngày/người xác nhận. API report Trial cũng trả ba field trên cùng `sampleReceivedByName`.
 
 ## Ghi nhận phản hồi khách
 

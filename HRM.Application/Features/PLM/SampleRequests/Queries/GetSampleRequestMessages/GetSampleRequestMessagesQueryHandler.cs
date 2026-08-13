@@ -1,11 +1,13 @@
 using System.Text.Json;
 using HRM.Application.Abstractions.Persistence.PLM;
 using HRM.Application.Abstractions.Security;
+using HRM.Application.Commons.Authorization;
 using HRM.Application.Features.CRM.CustomerCare.Visibility;
 using HRM.Application.Features.PLM.SampleRequests.Dtos.InternalMail;
 using HRM.Application.Features.PLM.SampleRequests.DataChangeRequests;
 using HRM.Application.Features.PLM.SampleRequests.FormulaChangeRequests;
 using HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestMessages.Models;
+using HRM.Application.Features.PLM.SampleRequests.SampleReceiptConfirmations;
 using HRM.Domain.Enums.InternalMailEnums;
 using HRM.Domain.Enums.Notifications;
 using HRM.Domain.Enums.SampleRequests;
@@ -115,16 +117,22 @@ internal sealed class GetSampleRequestMessagesQueryHandler
 
         var canDecideDataChange = SampleRequestDataChangeAuthorization.CanApprove(_currentUser);
         var canDecideFormulaChange = SampleRequestFormulaChangeAuthorization.CanApproveOrReject(_currentUser);
+        var canConfirmSampleReceipt = _currentUser.IsInAnyRole(ApplicationRoleSets.PLM.FormulaSelectors);
 
         return rows
-            .Select(row => ToDto(row, canDecideDataChange, canDecideFormulaChange))
+            .Select(row => ToDto(
+                row,
+                canDecideDataChange,
+                canDecideFormulaChange,
+                canConfirmSampleReceipt))
             .ToList();
     }
 
     private static SampleRequestMessageDto ToDto(
         SampleRequestMessageProjection row,
         bool canDecideDataChange,
-        bool canDecideFormulaChange)
+        bool canDecideFormulaChange,
+        bool canConfirmSampleReceipt)
     {
         var payload = ParsePayload(row.PayloadJson);
 
@@ -146,7 +154,8 @@ internal sealed class GetSampleRequestMessagesQueryHandler
             ReadDate = row.ReadDate,
             Action = ToActionDto(payload, canDecideDataChange),
             FormulaChangeAction = ToFormulaChangeActionDto(payload, canDecideFormulaChange),
-            DirectPatchNotification = payload.DirectPatchNotification
+            DirectPatchNotification = payload.DirectPatchNotification,
+            SampleReceiptAction = ToSampleReceiptActionDto(payload, canConfirmSampleReceipt)
         };
     }
 
@@ -229,6 +238,35 @@ internal sealed class GetSampleRequestMessagesQueryHandler
                     formulaChange.Status,
                     SampleRequestFormulaChangeStatuses.Pending,
                     StringComparison.OrdinalIgnoreCase)
+        };
+    }
+
+    private static SampleReceiptActionDto? ToSampleReceiptActionDto(
+        SampleRequestThreadMessagePayload payload,
+        bool canConfirm)
+    {
+        if (payload.SampleReceiptAction is not { } action ||
+            action.SampleRequestSampleTrialId == Guid.Empty ||
+            payload.SampleRequestId is not { } sampleRequestId)
+        {
+            return null;
+        }
+
+        var isPending = string.Equals(
+            action.Status,
+            SampleReceiptActionStatuses.Pending,
+            StringComparison.OrdinalIgnoreCase);
+
+        return new SampleReceiptActionDto
+        {
+            SampleRequestId = sampleRequestId,
+            SampleRequestSampleTrialId = action.SampleRequestSampleTrialId,
+            Status = action.Status,
+            CanConfirm = canConfirm && isPending,
+            SampleReceivedDate = action.SampleReceivedDate,
+            SampleReceivedByEmployeeId = action.SampleReceivedByEmployeeId,
+            SampleReceivedByName = action.SampleReceivedByName,
+            SampleReceiptConfirmedAt = action.SampleReceiptConfirmedAt
         };
     }
 

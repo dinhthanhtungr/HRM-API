@@ -153,6 +153,15 @@ internal sealed class GetSampleRequestSampleTrialsQueryHandler
                         : null,
 
                 DeliveryMethod = x.Trial != null ? x.Trial.DeliveryMethod : null,
+                SampleReceivedDate = x.Trial != null ? x.Trial.SampleReceivedDate : null,
+                SampleReceivedByEmployeeId = x.Trial != null ? x.Trial.SampleReceivedByEmployeeId : null,
+                SampleReceivedByName = x.Trial != null && x.Trial.SampleReceivedByEmployeeId.HasValue
+                    ? _dbContext.Employees
+                        .Where(employee => employee.EmployeeId == x.Trial.SampleReceivedByEmployeeId.Value)
+                        .Select(employee => employee.FullName)
+                        .FirstOrDefault()
+                    : null,
+                SampleReceiptConfirmedAt = x.Trial != null ? x.Trial.SampleReceiptConfirmedAt : null,
                 Status = x.Trial != null ? x.Trial.Status : null,
                 CustomerReplyStatus = x.Trial != null ? x.Trial.CustomerReplyStatus : null,
                 CustomerReplyDate = x.Trial != null ? x.Trial.CustomerReplyDate : null,

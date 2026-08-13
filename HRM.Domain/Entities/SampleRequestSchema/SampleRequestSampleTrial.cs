@@ -26,6 +26,10 @@ public partial class SampleRequestSampleTrial
     public string? LabNote { get; set; }
     public Guid? SentByEmployeeId { get; set; }
 
+    public DateTime? SampleReceivedDate { get; set; }
+    public Guid? SampleReceivedByEmployeeId { get; set; }
+    public DateTime? SampleReceiptConfirmedAt { get; set; }
+
     public string? CustomerReplyStatus { get; set; }
     public DateTime? CustomerReplyDate { get; set; }
     public Guid? CustomerReplyByEmployeeId { get; set; }

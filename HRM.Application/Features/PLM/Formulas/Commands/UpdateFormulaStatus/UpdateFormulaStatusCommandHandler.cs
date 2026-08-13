@@ -5,6 +5,7 @@ using HRM.Application.Features.InternalMail.Dtos;
 using HRM.Application.Features.PLM.Formulas.Dtos.Commons;
 using HRM.Application.Features.PLM.Formulas.Services;
 using HRM.Application.Features.PLM.SampleRequests.Commands.SendSampleRequestMessage;
+using HRM.Application.Features.PLM.SampleRequests.SampleReceiptConfirmations;
 using HRM.Domain.Enums.Notifications;
 using HRM.Domain.Enums.Products;
 using HRM.Domain.Enums.SampleRequests;
@@ -176,6 +177,7 @@ internal sealed class UpdateFormulaStatusCommandHandler
                 sampleRequest.ExternalId,
                 formula.ExternalId,
                 command.Request.DeliveredSampleQuantityKg!.Value,
+                sampleRequestSampleTrialId!.Value,
                 now,
                 cancellationToken);
 
@@ -261,6 +263,7 @@ internal sealed class UpdateFormulaStatusCommandHandler
         string sampleRequestExternalId,
         string formulaExternalId,
         decimal deliveredSampleQuantityKg,
+        Guid sampleRequestSampleTrialId,
         DateTime sentAt,
         CancellationToken cancellationToken)
     {
@@ -269,6 +272,10 @@ internal sealed class UpdateFormulaStatusCommandHandler
             SampleRequestId = sampleRequestId,
             Type = SampleRequestNotificationType.GeneralMessage,
             Message = $"Lab đã gửi {deliveredSampleQuantityKg:0.####} kg mẫu lúc {sentAt:HH:mm dd/MM/yyyy} cho yêu cầu phối mẫu {sampleRequestExternalId}. Công thức: {formulaExternalId}. Sale vui lòng ghi nhận phản hồi của khách hàng.",
+            SampleReceiptAction = new SampleReceiptActionPayload
+            {
+                SampleRequestSampleTrialId = sampleRequestSampleTrialId
+            },
             TopicOverride = TopicNotifications.SampleRequestSampleSent,
             TitleOverride = "Lab đã gửi mẫu"
         }, cancellationToken);

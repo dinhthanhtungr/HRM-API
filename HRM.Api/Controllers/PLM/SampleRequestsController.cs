@@ -1,6 +1,7 @@
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Features.PLM.SampleRequests.Commands.CreateSampleRequest;
 using HRM.Application.Features.PLM.SampleRequests.Commands.CreateSampleRequestSampleTrial;
+using HRM.Application.Features.PLM.SampleRequests.Commands.ConfirmSampleRequestSampleReceipt;
 using HRM.Application.Features.PLM.SampleRequests.Commands.CreateSampleRequestDataChangeRequest;
 using HRM.Application.Features.PLM.SampleRequests.Commands.CreateSampleRequestDirectPatchNotification;
 using HRM.Application.Features.PLM.SampleRequests.Commands.CreateSampleRequestFormulaChangeRequest;
@@ -85,6 +86,23 @@ public sealed class SampleRequestsController : ControllerBase
         Guid sampleRequestId,
         Guid trialId,
         [FromBody] PatchSampleRequestSampleTrialCommand command,
+        CancellationToken cancellationToken)
+    {
+        command.SampleRequestId = sampleRequestId;
+        command.SampleRequestSampleTrialId = trialId;
+        var result = await _sender.Send(command, cancellationToken);
+
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    /// <summary>
+    /// Sale xác nhận đã nhận mẫu từ action trong Notification Hub; nếu không gửi ngày nhận, backend dùng thời điểm hiện tại.
+    /// </summary>
+    [HttpPost("{sampleRequestId:guid}/sample-trials/{trialId:guid}/confirm-receipt")]
+    public async Task<IActionResult> ConfirmSampleReceipt(
+        Guid sampleRequestId,
+        Guid trialId,
+        [FromBody] ConfirmSampleRequestSampleReceiptCommand command,
         CancellationToken cancellationToken)
     {
         command.SampleRequestId = sampleRequestId;

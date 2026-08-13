@@ -4,6 +4,7 @@ using HRM.Application.Features.InternalMail.Dtos;
 using HRM.Application.Features.PLM.SampleRequests.DataChangeRequests;
 using HRM.Application.Features.PLM.SampleRequests.DirectPatchNotifications;
 using HRM.Application.Features.PLM.SampleRequests.FormulaChangeRequests;
+using HRM.Application.Features.PLM.SampleRequests.SampleReceiptConfirmations;
 using HRM.Domain.Enums.Notifications;
 using HRM.Domain.Enums.SampleRequests;
 using MediatR;
@@ -39,6 +40,9 @@ public sealed class SendSampleRequestMessageCommand : IRequest<OperationResult<S
 
     [JsonIgnore]
     internal SampleRequestDirectPatchNotificationPayload? DirectPatchNotification { get; set; }
+
+    [JsonIgnore]
+    internal SampleReceiptActionPayload? SampleReceiptAction { get; set; }
 
     [JsonIgnore]
     internal TopicNotifications? TopicOverride { get; set; }

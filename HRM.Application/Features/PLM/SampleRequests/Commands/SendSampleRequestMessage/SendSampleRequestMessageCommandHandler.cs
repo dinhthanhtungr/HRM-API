@@ -222,7 +222,8 @@ internal sealed class SendSampleRequestMessageCommandHandler
             ReplyToMessageId = internalMessage.ReplyToMessageId,
             DataChangeRequest = request.DataChangeRequest,
             FormulaChangeRequest = request.FormulaChangeRequest,
-            DirectPatchNotification = request.DirectPatchNotification
+            DirectPatchNotification = request.DirectPatchNotification,
+            SampleReceiptAction = request.SampleReceiptAction
         }, PayloadJsonOptions);
 
         await _dbContext.InternalMessages.AddAsync(internalMessage, cancellationToken);
@@ -261,7 +262,8 @@ internal sealed class SendSampleRequestMessageCommandHandler
             ReplyToMessageId = internalMessage.ReplyToMessageId,
             DataChangeRequest = request.DataChangeRequest,
             FormulaChangeRequest = request.FormulaChangeRequest,
-            DirectPatchNotification = request.DirectPatchNotification
+            DirectPatchNotification = request.DirectPatchNotification,
+            SampleReceiptAction = request.SampleReceiptAction
         }, PayloadJsonOptions);
 
         var createdByName = await _dbContext.Employees
