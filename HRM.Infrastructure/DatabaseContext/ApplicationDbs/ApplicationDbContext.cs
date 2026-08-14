@@ -49,6 +49,8 @@ namespace HRM.Infrastructure.DatabaseContext.ApplicationDbs
         public virtual DbSet<Formula> Formulas { get; set; }
 
         public virtual DbSet<FormulaMaterial> FormulaMaterials { get; set; }
+        public virtual DbSet<FormulaVersion> FormulaVersions { get; set; }
+        public virtual DbSet<FormulaVersionItem> FormulaVersionItems { get; set; }
         public virtual DbSet<ManufacturingVUFormula> ManufacturingVUFormulas { get; set; }
         public virtual DbSet<FormulaMaterialSnapshot> FormulaMaterialSnapshots { get; set; }
 

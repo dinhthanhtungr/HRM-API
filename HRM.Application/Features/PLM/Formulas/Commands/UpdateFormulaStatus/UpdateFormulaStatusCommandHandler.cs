@@ -20,17 +20,20 @@ internal sealed class UpdateFormulaStatusCommandHandler
     private readonly IPLMWriteDbContext _dbContext;
     private readonly ICurrentUser _currentUser;
     private readonly FormulaWriteService _formulaWriteService;
+    private readonly FormulaVersionService _formulaVersionService;
     private readonly ISender _sender;
 
     public UpdateFormulaStatusCommandHandler(
         IPLMWriteDbContext dbContext,
         ICurrentUser currentUser,
         FormulaWriteService formulaWriteService,
+        FormulaVersionService formulaVersionService,
         ISender sender)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
         _formulaWriteService = formulaWriteService;
+        _formulaVersionService = formulaVersionService;
         _sender = sender;
     }
 
@@ -163,12 +166,23 @@ internal sealed class UpdateFormulaStatusCommandHandler
 
         try
         {
-            await _dbContext.SaveChangesAsync(cancellationToken);
+            await _formulaVersionService.SaveSnapshotAsync(
+                formula,
+                employeeId,
+                now,
+                $"Status changed to {targetStatus}",
+                force: true,
+                cancellationToken);
         }
         catch (DbUpdateException) when (targetStatus == FormulaStatus.SampleSent)
         {
             return OperationResult<FormulaWriteResultDto>.Fail(
-                "Another sample trial was created concurrently. Reload and try again.");
+                "Another sample trial or formula version was created concurrently. Reload and try again.");
+        }
+        catch (DbUpdateException)
+        {
+            return OperationResult<FormulaWriteResultDto>.Fail(
+                "Formula version was created concurrently. Reload and try again.");
         }
 
         foreach (var sampleRequest in sampleSentTargets)

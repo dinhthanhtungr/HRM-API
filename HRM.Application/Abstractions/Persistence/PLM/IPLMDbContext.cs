@@ -51,6 +51,8 @@ namespace HRM.Application.Abstractions.Persistence.PLM
         // ==================== SampleRequest ====================
         DbSet<Formula> Formulas { get; }
         DbSet<FormulaMaterial> FormulaMaterials { get; }
+        DbSet<FormulaVersion> FormulaVersions { get; }
+        DbSet<FormulaVersionItem> FormulaVersionItems { get; }
         DbSet<ManufacturingVUFormula> ManufacturingVUFormulas { get; }
         DbSet<FormulaMaterialSnapshot> FormulaMaterialSnapshots { get; }
         DbSet<ColorChipRecord> ColorChipRecords { get; }

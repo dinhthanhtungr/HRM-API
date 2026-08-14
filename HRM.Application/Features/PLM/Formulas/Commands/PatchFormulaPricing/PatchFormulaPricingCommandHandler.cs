@@ -28,17 +28,20 @@ internal sealed class PatchFormulaPricingCommandHandler
     private readonly ICurrentUser _currentUser;
     private readonly IDateTimeProvider _dateTimeProvider;
     private readonly IMaterialPriceQueryService _materialPriceQueryService;
+    private readonly FormulaVersionService _formulaVersionService;
 
     public PatchFormulaPricingCommandHandler(
         IPLMWriteDbContext dbContext,
         ICurrentUser currentUser,
         IDateTimeProvider dateTimeProvider,
-        IMaterialPriceQueryService materialPriceQueryService)
+        IMaterialPriceQueryService materialPriceQueryService,
+        FormulaVersionService formulaVersionService)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
         _dateTimeProvider = dateTimeProvider;
         _materialPriceQueryService = materialPriceQueryService;
+        _formulaVersionService = formulaVersionService;
     }
 
     public async Task<OperationResult<FormulaPricingResultDto>> Handle(
@@ -159,7 +162,21 @@ internal sealed class PatchFormulaPricingCommandHandler
         formula.UpdatedDate = now;
         formula.UpdatedBy = employeeId;
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _formulaVersionService.SaveSnapshotAsync(
+                formula,
+                employeeId,
+                now,
+                "Updated formula pricing",
+                force: false,
+                cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            return OperationResult<FormulaPricingResultDto>.Fail(
+                "Formula version was created concurrently. Reload and try again.");
+        }
 
         var pricing = realtimeMaterialCost.IsComplete &&
                       realtimeMaterialCost.MaterialCost.HasValue

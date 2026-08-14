@@ -59,6 +59,7 @@ public static class DependencyInjection
         services.AddScoped<SampleRequestRecipientResolver>();
         services.AddScoped<SampleRequestConversationSubjectService>();
         services.AddScoped<FormulaWriteService>();
+        services.AddScoped<FormulaVersionService>();
         services.AddScoped<SaleOrderLeadConversionService>();
         services.AddScoped<SaleOrderCreationService>();
         services.AddScoped<SaleOrderManufacturingService>();

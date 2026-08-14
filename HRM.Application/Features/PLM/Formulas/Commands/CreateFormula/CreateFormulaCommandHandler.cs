@@ -6,6 +6,7 @@ using HRM.Application.Features.PLM.Formulas.Services;
 using HRM.Domain.Entities.SampleRequestSchema;
 using HRM.Domain.Enums.Products;
 using MediatR;
+using Microsoft.EntityFrameworkCore;
 
 namespace HRM.Application.Features.PLM.Formulas.Commands.CreateFormula;
 
@@ -15,15 +16,18 @@ internal sealed class CreateFormulaCommandHandler
     private readonly IPLMWriteDbContext _dbContext;
     private readonly ICurrentUser _currentUser;
     private readonly FormulaWriteService _formulaWriteService;
+    private readonly FormulaVersionService _formulaVersionService;
 
     public CreateFormulaCommandHandler(
         IPLMWriteDbContext dbContext,
         ICurrentUser currentUser,
-        FormulaWriteService formulaWriteService)
+        FormulaWriteService formulaWriteService,
+        FormulaVersionService formulaVersionService)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
         _formulaWriteService = formulaWriteService;
+        _formulaVersionService = formulaVersionService;
     }
 
     public async Task<OperationResult<FormulaWriteResultDto>> Handle(
@@ -88,7 +92,13 @@ internal sealed class CreateFormulaCommandHandler
                 companyId,
                 cancellationToken);
 
-            await _dbContext.SaveChangesAsync(cancellationToken);
+            await _formulaVersionService.SaveSnapshotAsync(
+                formula,
+                employeeId,
+                now,
+                "Created formula",
+                force: true,
+                cancellationToken);
 
             return OperationResult<FormulaWriteResultDto>.Ok(
                 FormulaWriteService.ToResult(formula),
@@ -97,6 +107,11 @@ internal sealed class CreateFormulaCommandHandler
         catch (InvalidOperationException ex)
         {
             return OperationResult<FormulaWriteResultDto>.Fail(ex.Message);
+        }
+        catch (DbUpdateException)
+        {
+            return OperationResult<FormulaWriteResultDto>.Fail(
+                "Formula or formula version was changed concurrently. Reload and try again.");
         }
     }
 

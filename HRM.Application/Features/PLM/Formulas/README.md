@@ -340,3 +340,20 @@ Màn hình FE có thể chỉ có một nút `Lưu`, nhưng backend vẫn tách 
 - `PATCH /api/v1/plm/formulas/{formulaId}/pricing` chỉ lưu giá sản xuất và giá bán tiêu chuẩn. API này không nhận `materialCost`; snapshot NVL chỉ đổi khi lưu material của công thức.
 
 Vì vậy FE phải tách payload submit theo dirty state dù UI chỉ hiển thị một nút lưu.
+
+## Phiên bản công thức phát triển
+
+Mỗi phiên bản lưu snapshot header Formula, giá và toàn bộ `FormulaMaterial.IsActive = true`. `VersionNo` tăng độc lập trong từng Formula; version hiện hành có `EffectiveTo = null`, còn version trước được đóng tại thời điểm tạo version mới.
+
+Snapshot được tạo tự động khi tạo Formula, thay đổi thật sự qua PUT/PATCH pricing, hoặc thực hiện action trạng thái. PUT/PATCH không tạo version mới nếu nội dung snapshot không đổi. Action trạng thái, lưu phiên bản thủ công và khôi phục luôn tạo version vì đây là các mốc nghiệp vụ. Formula, materials và snapshot dùng chung một lần `SaveChanges`, do đó commit hoặc rollback cùng nhau. Khóa mutation theo Formula cùng unique index `(FormulaId, VersionNo)` ngăn hai request đồng thời tạo dữ liệu trùng; conflict từ database được trả về để client reload.
+
+```http
+GET  /api/v1/plm/formulas/{formulaId}/versions
+GET  /api/v1/plm/formulas/{formulaId}/versions/{versionNo}
+POST /api/v1/plm/formulas/{formulaId}/versions
+POST /api/v1/plm/formulas/{formulaId}/versions/{versionNo}/restore
+```
+
+Hai API GET yêu cầu `PLM.Formula.Detail.View` và luôn lọc `CurrentUser.CompanyId`. Header giá chỉ được trả cho `FormulaPriceViewers`; danh sách item chỉ được trả cho `FormulaMaterialViewers`, và giá từng item tiếp tục được ẩn nếu user không có quyền xem giá.
+
+POST lưu yêu cầu `PLM.Formula.Manage`; POST khôi phục yêu cầu đồng thời `PLM.Formula.Manage` và `PLM.FormulaPricing.Update` vì action này ghi lại cả giá snapshot. Current user phải có `EmployeeId`. Khôi phục không sửa version cũ: backend thay header/material active của Formula bằng snapshot đã chọn rồi tạo một version mới với `ChangeReason = Restored from version ...`. Do contract FormulaVersion không snapshot `ExternalId`, `ProductId`, `EffectiveDate`, `IsSelect` và các field audit trạng thái, thao tác restore giữ nguyên các field đó trên Formula hiện tại.

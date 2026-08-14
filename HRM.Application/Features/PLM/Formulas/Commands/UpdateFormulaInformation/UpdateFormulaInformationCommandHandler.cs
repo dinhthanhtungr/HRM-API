@@ -14,15 +14,18 @@ internal sealed class UpdateFormulaInformationCommandHandler
     private readonly IPLMWriteDbContext _dbContext;
     private readonly ICurrentUser _currentUser;
     private readonly FormulaWriteService _formulaWriteService;
+    private readonly FormulaVersionService _formulaVersionService;
 
     public UpdateFormulaInformationCommandHandler(
         IPLMWriteDbContext dbContext,
         ICurrentUser currentUser,
-        FormulaWriteService formulaWriteService)
+        FormulaWriteService formulaWriteService,
+        FormulaVersionService formulaVersionService)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
         _formulaWriteService = formulaWriteService;
+        _formulaVersionService = formulaVersionService;
     }
 
     public async Task<OperationResult<FormulaWriteResultDto>> Handle(
@@ -95,7 +98,13 @@ internal sealed class UpdateFormulaInformationCommandHandler
                 companyId,
                 cancellationToken);
 
-            await _dbContext.SaveChangesAsync(cancellationToken);
+            await _formulaVersionService.SaveSnapshotAsync(
+                formula,
+                employeeId,
+                formula.UpdatedDate!.Value,
+                "Updated formula information",
+                force: false,
+                cancellationToken);
 
             return OperationResult<FormulaWriteResultDto>.Ok(
                 FormulaWriteService.ToResult(formula),
@@ -104,6 +113,11 @@ internal sealed class UpdateFormulaInformationCommandHandler
         catch (InvalidOperationException ex)
         {
             return OperationResult<FormulaWriteResultDto>.Fail(ex.Message);
+        }
+        catch (DbUpdateException)
+        {
+            return OperationResult<FormulaWriteResultDto>.Fail(
+                "Formula version was created concurrently. Reload and try again.");
         }
     }
 

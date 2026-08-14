@@ -52,6 +52,7 @@ public partial class Formula
     public virtual Employee? CreatedByNavigation { get; set; }
 
     public virtual ICollection<FormulaMaterial> FormulaMaterials { get; set; } = new List<FormulaMaterial>();
+    public virtual ICollection<FormulaVersion> FormulaVersions { get; set; } = new List<FormulaVersion>();
     public virtual ICollection<ManufacturingFormula> ManufacturingFormulaSources { get; set; } = new List<ManufacturingFormula>();
     public virtual ICollection<MfgProductionOrder> ManufacturingProductionOrders { get; set; } = new List<MfgProductionOrder>();
 

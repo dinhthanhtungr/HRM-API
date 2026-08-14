@@ -409,7 +409,8 @@ internal sealed class FormulaWriteService
                 ? snapshot.Unit
                 : request.Unit.Trim(),
             IsActive = true,
-            LineNo = lineNo
+            LineNo = lineNo,
+            Formula = formula
         };
     }
 

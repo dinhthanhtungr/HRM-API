@@ -3,12 +3,17 @@ using HRM.Application.Features.PLM.Formulas.Commands.CreateFormula;
 using HRM.Application.Features.PLM.Formulas.Commands.DeleteFormula;
 using HRM.Application.Features.PLM.Formulas.Commands.UpdateFormulaInformation;
 using HRM.Application.Features.PLM.Formulas.Commands.UpdateFormulaStatus;
+using HRM.Application.Features.PLM.Formulas.Commands.RestoreFormulaVersion;
+using HRM.Application.Features.PLM.Formulas.Commands.SaveFormulaVersion;
 using HRM.Application.Features.PLM.Formulas.Dtos.Commons;
+using HRM.Application.Features.PLM.Formulas.Dtos.Versions;
 using HRM.Application.Features.PLM.Formulas.Queries.GetFormulaById;
 using HRM.Application.Features.PLM.Formulas.Queries.GetFormulaLookup;
 using HRM.Application.Features.PLM.Formulas.Queries.GetFormulaMaterials;
 using HRM.Application.Features.PLM.Formulas.Queries.GetFormulaRelatedAttachments;
 using HRM.Application.Features.PLM.Formulas.Queries.GetFormulas;
+using HRM.Application.Features.PLM.Formulas.Queries.GetFormulaVersionByNumber;
+using HRM.Application.Features.PLM.Formulas.Queries.GetFormulaVersions;
 using HRM.Application.Features.PLM.Materials.Queries.GetFormulaItemLookup;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -77,6 +82,75 @@ public sealed class FormulasController : ControllerBase
         }, cancellationToken);
 
         return Ok(result);
+    }
+
+    /// <summary>
+    /// Lấy lịch sử snapshot của công thức theo VersionNo giảm dần.
+    /// </summary>
+    [HttpGet("{formulaId:guid}/versions")]
+    [Authorize(Policy = PlmPolicies.ViewFormulaDetail)]
+    public async Task<IActionResult> GetVersions(
+        Guid formulaId,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(
+            new GetFormulaVersionsQuery(formulaId),
+            cancellationToken);
+
+        return result is null ? NotFound() : Ok(result);
+    }
+
+    /// <summary>
+    /// Lấy chi tiết một snapshot theo VersionNo.
+    /// </summary>
+    [HttpGet("{formulaId:guid}/versions/{versionNo:int}")]
+    [Authorize(Policy = PlmPolicies.ViewFormulaDetail)]
+    public async Task<IActionResult> GetVersionByNumber(
+        Guid formulaId,
+        int versionNo,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(
+            new GetFormulaVersionByNumberQuery(formulaId, versionNo),
+            cancellationToken);
+
+        return result is null ? NotFound() : Ok(result);
+    }
+
+    /// <summary>
+    /// Tạo snapshot nghiệp vụ ngay cả khi dữ liệu Formula không thay đổi.
+    /// </summary>
+    [HttpPost("{formulaId:guid}/versions")]
+    [Authorize(Policy = PlmPolicies.ManageFormula)]
+    public async Task<IActionResult> SaveVersion(
+        Guid formulaId,
+        [FromBody] SaveFormulaVersionRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(
+            new SaveFormulaVersionCommand(formulaId, request),
+            cancellationToken);
+
+        return result.Success ? Ok(result.Data) : BadRequest(result);
+    }
+
+    /// <summary>
+    /// Khôi phục header và active materials từ version cũ, sau đó tạo version mới.
+    /// </summary>
+    [HttpPost("{formulaId:guid}/versions/{versionNo:int}/restore")]
+    [Authorize(Policy = PlmPolicies.ManageFormula)]
+    [Authorize(Policy = PlmPolicies.UpdateFormulaPricing)]
+    public async Task<IActionResult> RestoreVersion(
+        Guid formulaId,
+        int versionNo,
+        [FromBody] RestoreFormulaVersionRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(
+            new RestoreFormulaVersionCommand(formulaId, versionNo, request),
+            cancellationToken);
+
+        return result.Success ? Ok(result.Data) : BadRequest(result);
     }
 
     [HttpGet("{formulaId:guid}/related-attachments")]
