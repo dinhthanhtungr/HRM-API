@@ -41,26 +41,31 @@ internal sealed class PatchSampleRequestSampleTrialCommandHandler
             return OperationResult<Guid>.Fail("SampleRequestId or SampleRequestSampleTrialId is invalid.");
         }
 
-        if (!_currentUser.IsInAnyRole(ApplicationRoleSets.PLM.ProductTechnicalEditors))
-        {
-            return OperationResult<Guid>.Fail("You are not allowed to update sample trials.");
-        }
-
         var employeeId = _currentUser.EmployeeId.GetValueOrDefault();
         if (employeeId == Guid.Empty)
         {
             return OperationResult<Guid>.Fail("Current employee is invalid.");
         }
 
+        var fieldsWithValues = GetFieldsWithValues(request);
         var clearFieldsResult = SampleRequestSampleTrialPatchContract.ValidateAndNormalize(
             request.ClearFields,
-            GetFieldsWithValues(request));
+            fieldsWithValues);
         if (!clearFieldsResult.Success)
         {
             return OperationResult<Guid>.Fail(clearFieldsResult.Message ?? "ClearFields is invalid.");
         }
 
         var clearFields = clearFieldsResult.Data!;
+        var authorizationError = SampleRequestSampleTrialPatchAuthorization.Validate(
+            _currentUser.IsInAnyRole(ApplicationRoleSets.PLM.ProductTechnicalEditors),
+            _currentUser.IsInAnyRole(ApplicationRoleSets.Modules.Sales),
+            fieldsWithValues.Concat(clearFields));
+        if (authorizationError is not null)
+        {
+            return OperationResult<Guid>.Fail(authorizationError);
+        }
+
         var inputError = ValidateInputValues(request);
         if (inputError is not null)
         {
@@ -261,7 +266,15 @@ internal sealed class PatchSampleRequestSampleTrialCommandHandler
                ?? SampleRequestSampleTrialMutationRules.ValidateText(
                    request.LabNote,
                    SampleRequestSampleTrialMutationRules.MaxLabNoteLength,
-                   nameof(request.LabNote));
+                   nameof(request.LabNote))
+               ?? SampleRequestSampleTrialMutationRules.ValidateText(
+                   request.CustomerReplyStatus,
+                   SampleRequestSampleTrialMutationRules.MaxCustomerReplyStatusLength,
+                   nameof(request.CustomerReplyStatus))
+               ?? SampleRequestSampleTrialMutationRules.ValidateText(
+                   request.CustomerReplyNote,
+                   SampleRequestSampleTrialMutationRules.MaxCustomerReplyNoteLength,
+                   nameof(request.CustomerReplyNote));
     }
 
     private static string? ValidateProposedValues(
@@ -371,6 +384,17 @@ internal sealed class PatchSampleRequestSampleTrialCommandHandler
                 value => trial.Status = value);
         }
 
+        changed |= ApplyString(
+            request.CustomerReplyStatus,
+            clearFields.Contains(SampleRequestSampleTrialPatchFields.CustomerReplyStatus),
+            () => trial.CustomerReplyStatus,
+            value => trial.CustomerReplyStatus = value);
+        changed |= ApplyString(
+            request.CustomerReplyNote,
+            clearFields.Contains(SampleRequestSampleTrialPatchFields.CustomerReplyNote),
+            () => trial.CustomerReplyNote,
+            value => trial.CustomerReplyNote = value);
+
         if (request.SentDate.HasValue &&
             !trial.SentByEmployeeId.HasValue &&
             !clearFields.Contains(SampleRequestSampleTrialPatchFields.SentByEmployeeId))
@@ -419,6 +443,7 @@ internal sealed class PatchSampleRequestSampleTrialCommandHandler
     {
         var fields = new List<string>();
         AddIf(fields, SampleRequestSampleTrialPatchFields.FormulaId, request.FormulaId.HasValue);
+        AddIf(fields, SampleRequestSampleTrialPatchFields.FormulaExternalId, request.FormulaExternalId is not null);
         AddIf(fields, SampleRequestSampleTrialPatchFields.BatchNo, request.BatchNo is not null);
         AddIf(fields, SampleRequestSampleTrialPatchFields.DeliveredSampleQuantityKg, request.DeliveredSampleQuantityKg.HasValue);
         AddIf(fields, SampleRequestSampleTrialPatchFields.AdditiveRate, request.AdditiveRate.HasValue);
@@ -428,6 +453,9 @@ internal sealed class PatchSampleRequestSampleTrialCommandHandler
         AddIf(fields, SampleRequestSampleTrialPatchFields.DeliveryMethod, request.DeliveryMethod is not null);
         AddIf(fields, SampleRequestSampleTrialPatchFields.LabNote, request.LabNote is not null);
         AddIf(fields, SampleRequestSampleTrialPatchFields.SentByEmployeeId, request.SentByEmployeeId.HasValue);
+        AddIf(fields, SampleRequestSampleTrialPatchFields.Status, request.Status.HasValue);
+        AddIf(fields, SampleRequestSampleTrialPatchFields.CustomerReplyStatus, request.CustomerReplyStatus is not null);
+        AddIf(fields, SampleRequestSampleTrialPatchFields.CustomerReplyNote, request.CustomerReplyNote is not null);
         return fields;
     }
 

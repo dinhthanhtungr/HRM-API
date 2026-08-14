@@ -32,5 +32,8 @@ public sealed class PatchSampleRequestSampleTrialCommand : IRequest<OperationRes
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public SampleTrialStatus? Status { get; set; }
 
+    public string? CustomerReplyStatus { get; set; }
+    public string? CustomerReplyNote { get; set; }
+
     public IReadOnlyList<string>? ClearFields { get; set; }
 }

@@ -52,4 +52,58 @@ public sealed class SampleRequestSampleTrialMutationRulesTests
 
         Assert.False(result.Success);
     }
+
+    [Fact]
+    public void PatchContract_AllowsClearingCustomerFeedbackFields()
+    {
+        var result = SampleRequestSampleTrialPatchContract.ValidateAndNormalize(
+            [
+                SampleRequestSampleTrialPatchFields.CustomerReplyStatus,
+                SampleRequestSampleTrialPatchFields.CustomerReplyNote
+            ],
+            Array.Empty<string>());
+
+        Assert.True(result.Success);
+    }
+
+    [Fact]
+    public void PatchAuthorization_AllowsSaleCustomerFeedbackOnly()
+    {
+        var result = SampleRequestSampleTrialPatchAuthorization.Validate(
+            canUpdateTechnicalFields: false,
+            canUpdateCustomerFeedback: true,
+            [
+                SampleRequestSampleTrialPatchFields.CustomerReplyStatus,
+                SampleRequestSampleTrialPatchFields.CustomerReplyNote
+            ]);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void PatchAuthorization_RejectsTechnicalFieldsForSale()
+    {
+        var result = SampleRequestSampleTrialPatchAuthorization.Validate(
+            canUpdateTechnicalFields: false,
+            canUpdateCustomerFeedback: true,
+            [
+                SampleRequestSampleTrialPatchFields.CustomerReplyNote,
+                SampleRequestSampleTrialPatchFields.Status,
+                SampleRequestSampleTrialPatchFields.FinishedDate
+            ]);
+
+        Assert.Contains("finishedDate", result);
+        Assert.Contains("status", result);
+    }
+
+    [Fact]
+    public void PatchAuthorization_KeepsExistingTechnicalEditorAccess()
+    {
+        var result = SampleRequestSampleTrialPatchAuthorization.Validate(
+            canUpdateTechnicalFields: true,
+            canUpdateCustomerFeedback: false,
+            [SampleRequestSampleTrialPatchFields.FormulaId]);
+
+        Assert.Null(result);
+    }
 }

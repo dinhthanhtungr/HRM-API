@@ -52,6 +52,24 @@ public sealed class SampleRequestSampleTrialReportRulesTests
     }
 
     [Fact]
+    public void Query_SupportsExplicitReportTypesWithoutChangingDefault()
+    {
+        Assert.Null(new GetSampleRequestSampleTrialsQuery().ReportType);
+        Assert.Equal(
+            SampleTrialReportType.CompletedSamples,
+            new GetSampleRequestSampleTrialsQuery
+            {
+                ReportType = SampleTrialReportType.CompletedSamples
+            }.ReportType);
+        Assert.Equal(
+            SampleTrialReportType.WaitingCustomerFeedback,
+            new GetSampleRequestSampleTrialsQuery
+            {
+                ReportType = SampleTrialReportType.WaitingCustomerFeedback
+            }.ReportType);
+    }
+
+    [Fact]
     public void ReportDto_SerializesStatusAsStableStringCode()
     {
         var json = JsonSerializer.Serialize(new SampleRequestSampleTrialReportDto

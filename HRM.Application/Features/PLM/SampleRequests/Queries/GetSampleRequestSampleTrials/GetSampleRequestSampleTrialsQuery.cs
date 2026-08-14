@@ -5,6 +5,12 @@ using MediatR;
 
 namespace HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestSampleTrials;
 
+public enum SampleTrialReportType
+{
+    CompletedSamples,
+    WaitingCustomerFeedback
+}
+
 /// <summary>
 /// Lấy báo cáo phân trang theo từng lần gửi/thử mẫu để FE trình bày dạng bảng.
 /// </summary>
@@ -15,6 +21,7 @@ public sealed class GetSampleRequestSampleTrialsQuery
     public Guid? CustomerId { get; init; }
     public DateTime? FromDate { get; init; }
     public DateTime? ToDate { get; init; }
+    public SampleTrialReportType? ReportType { get; init; }
     public SampleTrialStatus? Status { get; init; }
     public string? CustomerReplyStatus { get; init; }
 }

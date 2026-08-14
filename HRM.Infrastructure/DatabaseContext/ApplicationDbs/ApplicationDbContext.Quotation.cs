@@ -9,4 +9,6 @@ public partial class ApplicationDbContext
     public DbSet<QuotationLine> QuotationLines => Set<QuotationLine>();
     public DbSet<QuotationLinePriceTier> QuotationLinePriceTiers => Set<QuotationLinePriceTier>();
     public DbSet<QuotationStatusHistory> QuotationStatusHistories => Set<QuotationStatusHistory>();
+    public DbSet<ProductPricingVersion> ProductPricingVersions => Set<ProductPricingVersion>();
+    public DbSet<ProductPricingTier> ProductPricingTiers => Set<ProductPricingTier>();
 }

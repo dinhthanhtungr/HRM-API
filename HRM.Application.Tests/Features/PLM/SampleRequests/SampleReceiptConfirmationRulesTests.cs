@@ -1,3 +1,5 @@
+using HRM.Application.Abstractions.Security;
+using HRM.Application.Commons.Authorization;
 using HRM.Application.Features.PLM.SampleRequests.SampleReceiptConfirmations;
 using HRM.Domain.Enums.SampleRequests;
 
@@ -5,6 +7,20 @@ namespace HRM.Application.Tests.Features.PLM.SampleRequests;
 
 public sealed class SampleReceiptConfirmationRulesTests
 {
+    [Theory]
+    [InlineData(ApplicationRoles.Sales.SaleUser)]
+    [InlineData(ApplicationRoles.Developer)]
+    [InlineData(ApplicationRoles.President)]
+    public void CanConfirm_AllowsOnlyConfiguredRoles(string role)
+        => Assert.True(SampleReceiptConfirmationRules.CanConfirm(new CurrentUser(role)));
+
+    [Theory]
+    [InlineData(ApplicationRoles.Lab.LabUser)]
+    [InlineData(ApplicationRoles.Leader)]
+    [InlineData(ApplicationRoles.Admin)]
+    public void CanConfirm_RejectsOtherRoles(string role)
+        => Assert.False(SampleReceiptConfirmationRules.CanConfirm(new CurrentUser(role)));
+
     [Fact]
     public void ResolveReceivedDate_DefaultsToBackendNow()
     {
@@ -52,5 +68,18 @@ public sealed class SampleReceiptConfirmationRulesTests
             SampleTrialStatus.Approved,
             now,
             now));
+    }
+
+    private sealed class CurrentUser(string role) : ICurrentUser
+    {
+        public bool IsAuthenticated => true;
+        public Guid UserId { get; } = Guid.NewGuid();
+        public Guid? EmployeeId { get; } = Guid.NewGuid();
+        public Guid? CompanyId { get; } = Guid.NewGuid();
+        public string? UserName => "test";
+        public string? Email => "test@example.com";
+        public IReadOnlyCollection<string> Roles { get; } = [role];
+        public bool IsInRole(string targetRole)
+            => Roles.Contains(targetRole, StringComparer.OrdinalIgnoreCase);
     }
 }

@@ -1,7 +1,6 @@
 using System.Text.Json;
 using HRM.Application.Abstractions.Persistence.PLM;
 using HRM.Application.Abstractions.Security;
-using HRM.Application.Commons.Authorization;
 using HRM.Application.Features.CRM.CustomerCare.Visibility;
 using HRM.Application.Features.PLM.SampleRequests.Dtos.InternalMail;
 using HRM.Application.Features.PLM.SampleRequests.DataChangeRequests;
@@ -117,7 +116,7 @@ internal sealed class GetSampleRequestMessagesQueryHandler
 
         var canDecideDataChange = SampleRequestDataChangeAuthorization.CanApprove(_currentUser);
         var canDecideFormulaChange = SampleRequestFormulaChangeAuthorization.CanApproveOrReject(_currentUser);
-        var canConfirmSampleReceipt = _currentUser.IsInAnyRole(ApplicationRoleSets.PLM.FormulaSelectors);
+        var canConfirmSampleReceipt = SampleReceiptConfirmationRules.CanConfirm(_currentUser);
 
         return rows
             .Select(row => ToDto(

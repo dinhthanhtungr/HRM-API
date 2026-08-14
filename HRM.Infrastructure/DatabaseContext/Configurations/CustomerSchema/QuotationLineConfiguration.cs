@@ -41,6 +41,9 @@ namespace HRM.Infrastructure.DatabaseContext.Configurations.CustomerSchema
             entity.Property(x => x.SampleRequestId)
                 .HasColumnName("SampleRequestId");
 
+            entity.Property(x => x.ProductPricingVersionId)
+                .HasColumnName("ProductPricingVersionId");
+
             entity.Property(x => x.PriceMode)
                 .HasColumnName("PriceMode")
                 .HasConversion<int>()
@@ -53,6 +56,9 @@ namespace HRM.Infrastructure.DatabaseContext.Configurations.CustomerSchema
 
             entity.HasIndex(x => x.SampleRequestId)
                 .HasDatabaseName("IX_QuotationLines_SampleRequestId");
+
+            entity.HasIndex(x => x.ProductPricingVersionId)
+                .HasDatabaseName("IX_QuotationLines_ProductPricingVersionId");
 
             entity.HasOne(x => x.Quotation)
                 .WithMany(x => x.Lines)
@@ -69,6 +75,12 @@ namespace HRM.Infrastructure.DatabaseContext.Configurations.CustomerSchema
                 .HasForeignKey(x => x.SampleRequestId)
                 .OnDelete(DeleteBehavior.SetNull)
                 .HasConstraintName("FK_QuotationLines_SampleRequest");
+
+            entity.HasOne(x => x.ProductPricingVersion)
+                .WithMany(x => x.QuotationLines)
+                .HasForeignKey(x => x.ProductPricingVersionId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("FK_QuotationLines_ProductPricingVersion");
 
             entity.HasMany(x => x.PriceTiers)
                 .WithOne(x => x.QuotationLine)

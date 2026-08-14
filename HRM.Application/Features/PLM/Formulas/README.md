@@ -33,11 +33,11 @@ Khi `status = SampleSent`, FE gửi `sampleRequestId` để xác định đúng 
 }
 ```
 
-Backend cho phép gửi Formula đang `Approved` hoặc gửi lại Formula đang `SampleSent`. Mỗi lần gửi luôn tạo một Trial mới, lưu `DeliveredSampleQuantityKg`, tự gán `SentBy` là employee hiện tại, `SentDate` và `UpdatedDate` là thời điểm xử lý. Notification cho các participant liên quan có kèm khối lượng mẫu.
+Backend cho phép gửi Formula đang `Approved` hoặc gửi lại Formula đang `SampleSent`. Nếu Sample Request có Trial `Draft` active mới nhất chưa gắn Formula hoặc đang gắn đúng Formula được gửi, backend chuyển chính Draft đó thành lần gửi; nếu không có Draft phù hợp mới tạo Trial với `TrialNo = max + 1`. Backend snapshot `Formula.ExternalId` vào `BatchNo`, lưu `DeliveredSampleQuantityKg`, đặt `CustomerReplyStatus = WAITING`, tự gán `SentBy` là employee hiện tại, `SentDate` và `UpdatedDate` là thời điểm xử lý. Notification cho các participant liên quan có kèm khối lượng mẫu.
 Endpoint này chỉ nhận trạng thái `Approved` hoặc `SampleSent`; không nhận `Completed`.
 Formula chỉ được hoàn thành khi Sale ghi nhận Trial `Approved` qua action phản hồi khách.
-Trong một lần lưu, backend đổi `Formula.Status = SampleSent`, đổi `SampleRequest.Status = SampleSent`, tạo Trial có
-`TrialNo = max + 1` và snapshot khách hàng/sản phẩm/mã màu. `SampleRequest.FormulaId` chưa được gán ở bước này;
+Trong một lần lưu, backend đổi `Formula.Status = SampleSent`, đổi `SampleRequest.Status = SampleSent`, hoàn tất Draft phù hợp hoặc tạo Trial có
+`TrialNo = max + 1`, đồng thời snapshot Formula/khách hàng/sản phẩm/mã màu. `SampleRequest.FormulaId` chưa được gán ở bước này;
 nó chỉ được gán khi Sale ghi nhận khách đã chấp nhận một Trial. Sau khi lưu thành công, backend gửi message/notification
 trong conversation hiện có của Sample Request.
 

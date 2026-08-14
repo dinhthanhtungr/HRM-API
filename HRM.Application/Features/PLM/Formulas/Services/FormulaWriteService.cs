@@ -1,5 +1,6 @@
 using HRM.Application.Abstractions.Commons.ExternalIds;
 using HRM.Application.Abstractions.Persistence.PLM;
+using HRM.Application.Features.PLM.Formulas.Commands.UpdateFormulaStatus;
 using HRM.Application.Features.PLM.Formulas.Dtos.Commons;
 using HRM.Application.Features.PLM.SampleRequests.SampleTrials;
 using HRM.Domain.Entities.SampleRequestSchema;
@@ -209,36 +210,51 @@ internal sealed class FormulaWriteService
     public async Task<SampleRequestSampleTrial> EnsureSampleSentTrialAsync(
         SampleRequest sampleRequest,
         Guid formulaId,
+        string formulaExternalId,
         Guid companyId,
         Guid currentEmployeeId,
         DateTime now,
         decimal deliveredSampleQuantityKg,
         CancellationToken cancellationToken)
     {
-        var nextTrialNo = (await _dbContext.SampleRequestSampleTrials
-            .Where(x => x.SampleRequestId == sampleRequest.SampleRequestId)
-            .Select(x => (int?)x.TrialNo)
-            .MaxAsync(cancellationToken) ?? 0) + 1;
+        var trial = await _dbContext.SampleRequestSampleTrials
+            .Where(x =>
+                x.SampleRequestId == sampleRequest.SampleRequestId &&
+                x.IsActive &&
+                x.Status == SampleTrialStatus.Draft &&
+                (!x.FormulaId.HasValue || x.FormulaId == formulaId))
+            .OrderByDescending(x => x.TrialNo)
+            .FirstOrDefaultAsync(cancellationToken);
 
-        var trial = new SampleRequestSampleTrial
+        if (trial is null)
         {
-            SampleRequestSampleTrialId = Guid.CreateVersion7(),
-            SampleRequestId = sampleRequest.SampleRequestId,
-            FormulaId = formulaId,
-            TrialNo = nextTrialNo,
-            Status = SampleTrialStatus.SampleSent,
-            DeliveredSampleQuantityKg = deliveredSampleQuantityKg,
-            SentDate = now,
-            SentByEmployeeId = currentEmployeeId,
-            CreatedBy = currentEmployeeId,
-            CreatedDate = now,
-            UpdatedBy = currentEmployeeId,
-            UpdatedDate = now,
-            IsActive = true
-        };
+            var nextTrialNo = (await _dbContext.SampleRequestSampleTrials
+                .Where(x => x.SampleRequestId == sampleRequest.SampleRequestId)
+                .Select(x => (int?)x.TrialNo)
+                .MaxAsync(cancellationToken) ?? 0) + 1;
+
+            trial = new SampleRequestSampleTrial
+            {
+                SampleRequestSampleTrialId = Guid.CreateVersion7(),
+                SampleRequestId = sampleRequest.SampleRequestId,
+                TrialNo = nextTrialNo,
+                CreatedBy = currentEmployeeId,
+                CreatedDate = now,
+                IsActive = true
+            };
+
+            await _dbContext.SampleRequestSampleTrials.AddAsync(trial, cancellationToken);
+        }
+
+        FormulaSampleSentRules.PrepareTrialForDelivery(
+            trial,
+            formulaId,
+            formulaExternalId,
+            currentEmployeeId,
+            now,
+            deliveredSampleQuantityKg);
 
         SampleRequestSampleTrialMutationRules.PopulateSnapshots(trial, sampleRequest);
-        await _dbContext.SampleRequestSampleTrials.AddAsync(trial, cancellationToken);
         return trial;
     }
 

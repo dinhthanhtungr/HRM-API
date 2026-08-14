@@ -26,6 +26,8 @@ public interface ICRMReadDbContext
     DbSet<QuotationLine> QuotationLines { get; }
     DbSet<QuotationLinePriceTier> QuotationLinePriceTiers { get; }
     DbSet<QuotationStatusHistory> QuotationStatusHistories { get; }
+    DbSet<ProductPricingVersion> ProductPricingVersions { get; }
+    DbSet<ProductPricingTier> ProductPricingTiers { get; }
     DbSet<Product> Products { get; }
     DbSet<SampleRequest> SampleRequests { get; }
     DbSet<SampleRequestSampleTrial> SampleRequestSampleTrials { get; }

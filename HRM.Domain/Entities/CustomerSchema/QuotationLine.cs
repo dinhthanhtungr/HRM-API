@@ -10,6 +10,7 @@ namespace HRM.Domain.Entities.CustomerSchema
         public Guid QuotationLineId { get; set; }
         public Guid QuotationId { get; set; }
         public Guid? SampleRequestId { get; set; }
+        public Guid? ProductPricingVersionId { get; set; }
 
         public Guid ProductId { get; set; }
         public string ProductExternalIdSnapshot { get; set; } = string.Empty;
@@ -29,6 +30,7 @@ namespace HRM.Domain.Entities.CustomerSchema
 
         public virtual Product ProductNavigation { get; set; } = null!;
         public virtual SampleRequest? SampleRequest { get; set; }
+        public virtual ProductPricingVersion? ProductPricingVersion { get; set; }
         public virtual Quotation Quotation { get; set; } = null!;
         public virtual ICollection<QuotationLinePriceTier> PriceTiers { get; set; } = [];
     }

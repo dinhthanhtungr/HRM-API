@@ -1,4 +1,6 @@
 using HRM.Application.Abstractions.Persistence.PLM;
+using HRM.Application.Abstractions.Security;
+using HRM.Application.Commons.Authorization;
 using HRM.Application.Commons.Authorization.PLM;
 using HRM.Application.Commons.Pagination;
 using HRM.Application.Features.CRM.CustomerCare.Visibility;
@@ -18,15 +20,18 @@ internal sealed class GetSampleRequestSampleTrialsQueryHandler
     private readonly IPLMReadDbContext _dbContext;
     private readonly ICustomerVisibilityService _visibilityService;
     private readonly IPLMFieldVisibilityService _fieldVisibility;
+    private readonly ICurrentUser _currentUser;
 
     public GetSampleRequestSampleTrialsQueryHandler(
         IPLMReadDbContext dbContext,
         ICustomerVisibilityService visibilityService,
-        IPLMFieldVisibilityService fieldVisibility)
+        IPLMFieldVisibilityService fieldVisibility,
+        ICurrentUser currentUser)
     {
         _dbContext = dbContext;
         _visibilityService = visibilityService;
         _fieldVisibility = fieldVisibility;
+        _currentUser = currentUser;
     }
 
     public async Task<PagedResult<SampleRequestSampleTrialReportDto>> Handle(
@@ -67,22 +72,63 @@ internal sealed class GetSampleRequestSampleTrialsQueryHandler
                 Trial = trial
             };
 
-        if (request.FromDate.HasValue)
+        if (request.ReportType == SampleTrialReportType.CompletedSamples)
         {
-            var fromDate = request.FromDate.Value.Date;
-            query = query.Where(x =>
-                (x.Trial != null
-                    ? x.Trial.FinishedDate ?? x.Trial.SentDate ?? x.Trial.RequestReceivedDate ?? x.Trial.CreatedDate
-                    : x.SampleRequest.CreatedDate) >= fromDate);
-        }
+            query = query.Where(x => x.Trial != null && x.Trial.FinishedDate.HasValue);
 
-        if (request.ToDate.HasValue)
+            if (request.FromDate.HasValue)
+            {
+                var fromDate = request.FromDate.Value.Date;
+                query = query.Where(x => x.Trial!.FinishedDate >= fromDate);
+            }
+
+            if (request.ToDate.HasValue)
+            {
+                var toDateExclusive = request.ToDate.Value.Date.AddDays(1);
+                query = query.Where(x => x.Trial!.FinishedDate < toDateExclusive);
+            }
+        }
+        else if (request.ReportType == SampleTrialReportType.WaitingCustomerFeedback)
         {
-            var toDateExclusive = request.ToDate.Value.Date.AddDays(1);
             query = query.Where(x =>
-                (x.Trial != null
-                    ? x.Trial.FinishedDate ?? x.Trial.SentDate ?? x.Trial.RequestReceivedDate ?? x.Trial.CreatedDate
-                    : x.SampleRequest.CreatedDate) < toDateExclusive);
+                x.Trial != null &&
+                x.Trial.RequestReceivedDate.HasValue &&
+                x.Trial.Status == SampleTrialStatus.WaitingCustomerFeedback &&
+                (x.Trial.CustomerReplyStatus == null ||
+                 x.Trial.CustomerReplyStatus == string.Empty ||
+                 x.Trial.CustomerReplyStatus == "WAITING"));
+
+            if (request.FromDate.HasValue)
+            {
+                var fromDate = request.FromDate.Value.Date;
+                query = query.Where(x => x.Trial!.RequestReceivedDate >= fromDate);
+            }
+
+            if (request.ToDate.HasValue)
+            {
+                var toDateExclusive = request.ToDate.Value.Date.AddDays(1);
+                query = query.Where(x => x.Trial!.RequestReceivedDate < toDateExclusive);
+            }
+        }
+        else
+        {
+            if (request.FromDate.HasValue)
+            {
+                var fromDate = request.FromDate.Value.Date;
+                query = query.Where(x =>
+                    (x.Trial != null
+                        ? x.Trial.FinishedDate ?? x.Trial.SentDate ?? x.Trial.RequestReceivedDate ?? x.Trial.CreatedDate
+                        : x.SampleRequest.CreatedDate) >= fromDate);
+            }
+
+            if (request.ToDate.HasValue)
+            {
+                var toDateExclusive = request.ToDate.Value.Date.AddDays(1);
+                query = query.Where(x =>
+                    (x.Trial != null
+                        ? x.Trial.FinishedDate ?? x.Trial.SentDate ?? x.Trial.RequestReceivedDate ?? x.Trial.CreatedDate
+                        : x.SampleRequest.CreatedDate) < toDateExclusive);
+            }
         }
 
         if (request.Status.HasValue)
@@ -112,6 +158,9 @@ internal sealed class GetSampleRequestSampleTrialsQueryHandler
         query = ApplySorting(query, request);
         var totalCount = await query.CountAsync(cancellationToken);
         var canViewTechnicalFields = _fieldVisibility.CanViewProductTechnicalInfo();
+        var canUpdateCustomerFeedback =
+            canViewTechnicalFields ||
+            _currentUser.IsInAnyRole(ApplicationRoleSets.Modules.Sales);
 
         var items = await query
             .Skip((request.NormalizedPageNumber - 1) * request.NormalizedPageSize)
@@ -125,6 +174,7 @@ internal sealed class GetSampleRequestSampleTrialsQueryHandler
                 HasTrial = x.Trial != null,
                 CanCreateTrial = canViewTechnicalFields,
                 CanUpdateTrial = canViewTechnicalFields && x.Trial != null,
+                CanUpdateCustomerFeedback = canUpdateCustomerFeedback && x.Trial != null,
 
                 SampleRequestStatus = x.SampleRequest.Status,
                 CustomerName = x.SampleRequest.Customer.CustomerName,

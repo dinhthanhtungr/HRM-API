@@ -529,7 +529,22 @@ wwwroot/images/Iso/QR.png
 `FormCode` và `EffectiveDate` phải được cấu hình đúng form ISO của báo giá,
 không dùng lại mã form Delivery Order.
 
-## 6. Quy tắc giá theo khối lượng của dòng sản phẩm
+## 6. Bảng giá sản phẩm nội bộ
+
+Giá nội bộ được tách khỏi công thức kỹ thuật và snapshot gửi khách:
+
+- `ProductPricingVersion` lưu một phiên bản giá của `Product + Currency`, có trạng thái
+  `Draft`, `Approved`, `Superseded` hoặc `Cancelled`.
+- Nguồn kỹ thuật `SourceFormulaId`, `SourceSampleTrialId` và `SourceManufacturingVUFormulaId`
+  đều nullable. Các trường snapshot giữ mã công thức, batch và chi phí NVL tại thời điểm tính giá.
+- `ProductPricingTier` lưu các bậc số lượng và đơn giá thuộc một phiên bản giá.
+- `QuotationLine.ProductPricingVersionId` chỉ dùng để truy vết nguồn giá. Giá thực sự gửi khách
+  vẫn phải được sao chép vào `QuotationLinePriceTiers` để báo giá cũ không đổi khi bảng giá nội bộ thay đổi.
+
+Model này mới là nền entity/configuration. Chưa có API tạo, duyệt hoặc áp dụng bảng giá và chưa thay đổi
+logic resolve giá hiện tại. Cần tạo và áp dụng migration riêng trước khi code sử dụng các bảng/cột mới trên database.
+
+## 7. Quy tắc giá theo khối lượng của dòng sản phẩm
 
 Contract ghi mới hiện chỉ chấp nhận `Tiered`. `Fixed` được giữ trong enum/database để đọc dữ liệu lịch sử và
 chuyển đổi các draft cũ, nhưng create/replace/refresh line sẽ từ chối `Fixed`. Create/replace cho phép line nháp

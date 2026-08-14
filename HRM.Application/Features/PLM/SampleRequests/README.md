@@ -456,8 +456,9 @@ Payload gửi mẫu:
 ```
 
 Khi `status = SampleSent`, backend validate formula cùng product với Sample Request, yêu cầu khối lượng lớn hơn hoặc bằng 0,
-chuyển `SampleRequest.Status = SampleSent`, ghi `SendBy/SendDate`, tạo Trial mới có `TrialNo = max + 1` và lưu
-`DeliveredSampleQuantityKg`. Backend không gán `SampleRequest.FormulaId` ở bước này. Sau khi lưu thành công, backend tạo
+chuyển `SampleRequest.Status = SampleSent`, ghi `SendBy/SendDate`, hoàn tất Trial `Draft` phù hợp hoặc tạo Trial mới có
+`TrialNo = max + 1`. Trial lưu `DeliveredSampleQuantityKg`, snapshot `Formula.ExternalId` vào `BatchNo` và đặt
+`CustomerReplyStatus = WAITING`. Backend không gán `SampleRequest.FormulaId` ở bước này. Sau khi lưu thành công, backend tạo
 message InternalMail topic `SampleRequestSampleSent` với nội dung có giờ gửi, khối lượng mẫu và nhắc Sale ghi nhận.
 
 Payload xác nhận công thức hoàn thành:

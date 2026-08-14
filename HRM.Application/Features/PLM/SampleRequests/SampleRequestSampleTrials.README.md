@@ -5,7 +5,7 @@
 Trial là bản ghi lịch sử của một lần giao mẫu thực tế, không phải bản ghi nháp Formula.
 
 1. Lab làm Formula `Draft`/`Approved`, Sample Request ở `New` hoặc `InProgress`: chưa có Trial.
-2. Lab chuyển Formula `Approved -> SampleSent`, hoặc gửi lại Formula đang `SampleSent`, qua endpoint Formula status. Request bắt buộc có `sampleRequestId` và `deliveredSampleQuantityKg >= 0`. Mỗi lần gọi thành công, backend tạo một Trial `SampleSent` mới với `TrialNo = max + 1` và lưu khối lượng gửi. Cùng transaction này, Sample Request chuyển sang `SampleSent`, rồi mới gửi message có kèm khối lượng cho Sale trong cùng conversation.
+2. Lab chuyển Formula `Approved -> SampleSent`, hoặc gửi lại Formula đang `SampleSent`, qua endpoint Formula status. Request bắt buộc có `sampleRequestId` và `deliveredSampleQuantityKg >= 0`. Backend ưu tiên chuyển Trial `Draft` active mới nhất chưa gắn Formula hoặc đang gắn đúng Formula thành `SampleSent`; chỉ khi không có Draft phù hợp mới tạo Trial với `TrialNo = max + 1`. Trial snapshot `Formula.ExternalId` vào `BatchNo`, lưu khối lượng và đặt `CustomerReplyStatus = WAITING`. Cùng transaction này, Sample Request chuyển sang `SampleSent`, rồi mới gửi message có kèm khối lượng cho Sale trong cùng conversation.
 3. Sale xác nhận đã nhận mẫu ngay trên message Lab gửi; backend cập nhật `RequestReceivedDate`, chuyển Trial sang `WaitingCustomerFeedback` và ghi audit `UpdatedBy/UpdatedDate`.
 4. Sale ghi nhận phản hồi khách qua action `customer-feedback`:
    - `Approved`: Trial `Approved`, Formula của Trial `Completed`, Formula đó được chọn, Sample Request `Completed`.
@@ -146,6 +146,8 @@ Response cũng trả quyền hành động:
 
 - `canCreateTrial`: user hiện tại được phép tạo trial mới, kể cả khi Sample Request đã có trial trước đó.
 - `canUpdateTrial`: user hiện tại được phép cập nhật trial của dòng hiện tại.
+- `canUpdateCustomerFeedback`: user hiện tại được phép cập nhật riêng `customerReplyStatus` và
+  `customerReplyNote`; cờ chỉ true khi dòng đã có Trial. Sale dùng cờ này thay vì `canUpdateTrial`.
 
 Các query parameter:
 
@@ -153,9 +155,17 @@ Các query parameter:
 pageNumber, pageSize, keyword
 sampleRequestId, customerId
 fromDate, toDate
+reportType (`CompletedSamples`, `WaitingCustomerFeedback`)
 status, customerReplyStatus
 sortBy, sortDirection
 ```
+
+Khi không gửi `reportType`, `fromDate`/`toDate` giữ semantics tương thích cũ và lọc theo ngày fallback
+`FinishedDate -> SentDate -> RequestReceivedDate -> CreatedDate`. Hai loại báo cáo chuyên biệt dùng ngày và điều kiện cố định:
+
+- `CompletedSamples`: chỉ lấy Trial có `FinishedDate`, khoảng ngày áp dụng trực tiếp lên `FinishedDate`.
+- `WaitingCustomerFeedback`: chỉ lấy Trial có `RequestReceivedDate`, trạng thái `WaitingCustomerFeedback` và
+  `CustomerReplyStatus` đang rỗng hoặc `WAITING`; khoảng ngày áp dụng trực tiếp lên `RequestReceivedDate`.
 
 `fromDate` và `toDate` lọc theo ngày báo cáo ưu tiên lần lượt `finishedDate`, `sentDate`, `requestReceivedDate`, rồi `createdDate`. `toDate` bao gồm trọn ngày được truyền vào.
 
@@ -220,6 +230,30 @@ PATCH sử dụng semantics:
 - `status` không nullable và không nằm trong `clearFields`.
 - `expectedUpdatedDate` là concurrency token tùy chọn; nếu record đã đổi, backend yêu cầu FE reload.
 
+Technical editor giữ quyền PATCH các field hiện có. Sale thuộc `ApplicationRoleSets.Modules.Sales` chỉ được gửi
+`customerReplyStatus`, `customerReplyNote`, hoặc clear đúng hai field này qua `clearFields`. Nếu payload Sale có bất kỳ
+field nghiệp vụ nào khác, backend từ chối toàn bộ request bằng business error và không cập nhật một phần. Company/customer
+visibility và `expectedUpdatedDate` vẫn được kiểm tra như cũ.
+
+Ví dụ Sale cập nhật phản hồi:
+
+```json
+{
+  "expectedUpdatedDate": "2026-06-26T09:00:00",
+  "customerReplyStatus": "APPROVED",
+  "customerReplyNote": "Khách đã duyệt mẫu."
+}
+```
+
+Ví dụ Sale clear phản hồi:
+
+```json
+{
+  "expectedUpdatedDate": "2026-06-26T09:00:00",
+  "clearFields": ["customerReplyStatus", "customerReplyNote"]
+}
+```
+
 Ví dụ cập nhật value:
 
 ```json
@@ -263,6 +297,8 @@ sentDate
 deliveryMethod
 labNote
 sentByEmployeeId
+customerReplyStatus
+customerReplyNote
 ```
 
 Backend từ chối số lượng/tỷ lệ âm, ngày hoàn thành trước ngày nhận, ngày gửi trước ngày hoàn thành, string trắng và string vượt độ dài cấu hình.

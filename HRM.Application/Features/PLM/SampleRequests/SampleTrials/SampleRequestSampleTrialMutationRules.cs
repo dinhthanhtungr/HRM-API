@@ -7,6 +7,8 @@ internal static class SampleRequestSampleTrialMutationRules
     public const int MaxBatchNoLength = 100;
     public const int MaxDeliveryMethodLength = 100;
     public const int MaxLabNoteLength = 5000;
+    public const int MaxCustomerReplyStatusLength = 50;
+    public const int MaxCustomerReplyNoteLength = 5000;
 
     public static string? Validate(
         decimal? deliveredSampleQuantityKg,

@@ -143,6 +143,7 @@ internal sealed class UpdateFormulaStatusCommandHandler
                 var sampleTrial = await _formulaWriteService.EnsureSampleSentTrialAsync(
                     target,
                     formula.FormulaId,
+                    formula.ExternalId,
                     companyId,
                     employeeId,
                     now,

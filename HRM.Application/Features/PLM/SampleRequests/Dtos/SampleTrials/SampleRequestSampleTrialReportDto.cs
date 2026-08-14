@@ -15,6 +15,7 @@ public sealed class SampleRequestSampleTrialReportDto
     public bool HasTrial { get; set; }
     public bool CanCreateTrial { get; set; }
     public bool CanUpdateTrial { get; set; }
+    public bool CanUpdateCustomerFeedback { get; set; }
     public string SampleRequestStatus { get; set; } = string.Empty;
 
     public string CustomerName { get; set; } = string.Empty;

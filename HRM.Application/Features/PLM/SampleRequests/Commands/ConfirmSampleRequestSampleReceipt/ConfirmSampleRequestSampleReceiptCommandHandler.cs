@@ -2,7 +2,6 @@ using System.Text.Json;
 using HRM.Application.Abstractions.Commons.Time;
 using HRM.Application.Abstractions.Persistence.PLM;
 using HRM.Application.Abstractions.Security;
-using HRM.Application.Commons.Authorization;
 using HRM.Application.Commons.Models;
 using HRM.Application.Features.CRM.CustomerCare.Visibility;
 using HRM.Application.Features.PLM.SampleRequests.Dtos.InternalMail;
@@ -53,7 +52,7 @@ internal sealed class ConfirmSampleRequestSampleReceiptCommandHandler
                 "SampleRequestId, SampleRequestSampleTrialId or MessageId is invalid.");
         }
 
-        if (!_currentUser.IsInAnyRole(ApplicationRoleSets.PLM.FormulaSelectors))
+        if (!SampleReceiptConfirmationRules.CanConfirm(_currentUser))
         {
             return OperationResult<SampleReceiptConfirmationDto>.Fail(
                 "You are not allowed to confirm sample receipt.");
