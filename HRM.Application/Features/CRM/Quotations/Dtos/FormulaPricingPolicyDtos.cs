@@ -19,7 +19,7 @@ public sealed class CreateFormulaPricingPolicyRequest
 {
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public FormulaPricingProfile Profile { get; init; }
-    public string Currency { get; init; } = "VND";
+    public string Currency { get; init; } = string.Empty;
     public string Name { get; init; } = string.Empty;
     public decimal DefaultManufacturingCost { get; init; }
     public decimal DefaultProfitMarginRate { get; init; }

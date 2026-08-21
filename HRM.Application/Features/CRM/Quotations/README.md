@@ -336,18 +336,13 @@ Nếu công thức rỗng hoặc thiếu giá:
 - `realtimeMaterialCost = null`.
 - `pricing = null`; backend không fallback về `materialCost` snapshot.
 - `manufacturingCost` vẫn luôn được trả cho role có quyền xem chi phí.
-- `standardSellingPrice` vẫn trả `Formula.PresidentPrice` nếu DB đã có giá.
-- Nếu DB chưa có giá bán tiêu chuẩn thì `standardSellingPrice` và
-  `profitMarginRate` trả `null` do không đủ cost base realtime.
+- `standardSellingPrice`, `profitMarginRate` và tiers trả `null` nếu không thể tính từ
+  policy Published và material cost realtime.
 
-Contract giá của mỗi Formula:
-
-- `manufacturingCost`: chi phí sản xuất hiệu lực. Dùng `Formula.ProductionPrice`
-  nếu lớn hơn 0; nếu không dùng mặc định `10.000` cho Powder hoặc `20.000` cho Compound.
-- `standardSellingPrice`: dùng `Formula.PresidentPrice` nếu DB có giá; nếu chưa có
-  thì mặc định bằng `realtimeMaterialCost + manufacturingCost`.
-- `profitMarginRate`:
-  `(standardSellingPrice - costBase) / costBase * 100`.
+Contract giá của mỗi Formula lấy từ `FormulaPricingEngine`: manufacturing cost mặc định,
+profit margin, rounding và tiers đều thuộc policy DB. `Formula.ProductionPrice` và
+`Formula.PresidentPrice` chỉ còn là field legacy read-only để hiển thị lịch sử, không là
+nguồn giá chính và không được dùng làm fallback.
 
 `pricing` gồm:
 
@@ -558,10 +553,10 @@ Header trả `quotationId`, `quotationExternalId`, khách hàng, Sale phụ trá
 - `currentMaterialCost` là tổng NVL theo giá nguồn mới nhất; không lấy `Formula.TotalPrice`.
 - `storedMaterialCostSnapshot` và `storedPricingUpdatedDate` là dữ liệu của Draft/Approved gần nhất để FE hiển thị
   nhỏ bên dưới giá hiện tại.
-- `effectivePricing` chứa chi phí sản xuất hiệu lực, giá bán tiêu chuẩn, tỷ lệ lợi nhuận và rule tier do backend tính.
-  Nếu chi phí sản xuất chưa được lưu, rule hiện tại dùng `10.000` cho Powder và `20.000` cho Compound.
+- `effectivePricing` chứa chi phí sản xuất hiệu lực, giá bán tiêu chuẩn, tỷ lệ lợi nhuận và rule tier do engine tính
+  từ policy Published của đúng company/profile/currency.
 - `displayPriceTiers` dùng tier đã lưu khi version gần nhất có `ProductPricingTiers`; nếu chưa có thì trả tier gợi ý
-  từ `FormulaPriceCalculator`. `priceTiersAreStored` và `displayPriceTiers[].isStored` giúp FE phân biệt hai trường hợp.
+  từ engine/policy. `priceTiersAreStored` và `displayPriceTiers[].isStored` giúp FE phân biệt hai trường hợp.
 
 Thứ tự ưu tiên state là `Applied` -> `ApprovedAvailable` -> `Draft` -> `WaitingForPricing` -> `NoEligibleSource`.
 Endpoint chỉ đọc, không tự áp dụng giá vào quotation. Sau khi President approve, Sale vẫn gọi
@@ -920,15 +915,16 @@ template tier ngoài policy.
 ## 7. Quy tắc giá theo khối lượng của dòng sản phẩm
 
 Contract ghi mới hiện chỉ chấp nhận `Tiered`. `Fixed` được giữ để đọc dữ liệu lịch sử. Create/replace cho phép
-line nháp chưa có giá khi không gửi `productPricingVersionId`; trường hợp này không được gửi `unitPrice` hoặc tiers.
+line nháp chưa áp dụng giá khi không gửi `productPricingVersionId`; trường hợp này không được gửi `unitPrice` hoặc tiers.
 Khi có `productPricingVersionId`, backend kiểm tra version phải `Approved`, đúng company, product và currency rồi
 tự sao chép toàn bộ `ProductPricingTiers` vào snapshot `QuotationLinePriceTiers`; không tin giá do FE gửi.
 
 Refresh price nhận `quotationLineId + productPricingVersionId`, sau đó cũng sao chép snapshot từ backend.
 Đổi currency bị từ chối khi báo giá đã có snapshot để tránh trộn hai loại tiền tệ.
 
-`mark-sent` từ chối báo giá có line Fixed, thiếu tiers, tier không dương hoặc không tham chiếu version đang
-`Approved` của đúng company/product/currency. PDF chỉ đọc snapshot; line draft chưa có giá hiển thị trạng thái
+`mark-sent` từ chối báo giá có line Fixed, thiếu tiers, tier âm hoặc thiếu provenance
+`ProductPricingVersionId`. Trạng thái hiện tại của version nguồn không được resolve lại vì snapshot đã được
+kiểm tra lúc apply. PDF chỉ đọc snapshot; line draft chưa có giá hiển thị trạng thái
 `Chờ duyệt giá / Pending pricing` và không tự tính lại từ Formula.
 
 ### Fixed
@@ -1311,7 +1307,25 @@ Visibility giữ nguyên theo role:
 - President/Developer nhận thêm material completeness, cost, margin, material/supplier details và history.
 - Quotation detail và PDF tiếp tục đọc snapshot, không tính realtime.
 
-## 15. Giới hạn hiện tại
+## 15. Snapshot bất biến và loại bỏ pricing legacy
+
+- Create/replace/refresh chỉ áp dụng `ProductPricingVersion` active, `Approved`, đúng
+  company/product/currency và luôn clone toàn bộ tiers vào `QuotationLinePriceTiers`.
+- Quotation detail, nội dung `mark-sent` và PDF chỉ đọc header/line/tier snapshot. Các flow
+  này không gọi Formula, material price service hoặc pricing engine để cập nhật giá cũ.
+- Publish policy hoặc approve ProductPricingVersion mới không cập nhật Quotation đã có
+  snapshot. Muốn đổi giá phải refresh rõ ràng khi Quotation còn `Draft`.
+- `FormulaPricingEngine` là nơi duy nhất tính giá; calculator thuần chỉ nhận policy definition
+  lấy từ DB. Workbench, workspace, resolver và options không giữ luật tính riêng.
+- Currency là input bắt buộc của policy, pricing version và API realtime; backend không tự
+  chọn một currency mặc định cho flow pricing.
+- `PATCH /api/v1/plm/formulas/{formulaId}/pricing` đã deprecated và trả `410 Gone` với mã
+  `PatchFormulaPricingDeprecated`. Flow ghi chính là ProductPricingVersion.
+- `Formula.TotalPrice`, `Formula.ProductionPrice`, `Formula.PresidentPrice` và các field legacy
+  vẫn được giữ để đọc dữ liệu lịch sử; không bị xóa và không còn là nguồn/fallback cho giá mới.
+- Repo không thêm migration trong phase này.
+
+## 16. Giới hạn hiện tại
 
 Chưa có:
 

@@ -149,27 +149,24 @@ internal sealed class QuotationLineBuilder
                     $"lines[{index}] cannot contain prices without an approved ProductPricingVersionId.");
             }
 
-            var priceTierRequests = approvedPricing?.PriceTiers
-                .OrderBy(x => x.SortOrder)
-                .Select(x => new QuotationLinePriceTierRequest
-                {
-                    QuantityRangeLabel = x.QuantityRangeLabel,
-                    MinQuantity = x.MinQuantity,
-                    MaxQuantity = x.MaxQuantity,
-                    MinInclusive = x.MinInclusive,
-                    MaxInclusive = x.MaxInclusive,
-                    UnitPrice = x.UnitPrice,
-                    SortOrder = x.SortOrder
-                })
-                .ToArray() ?? [];
-            var pricingResult = QuotationPriceTierBuilder.Build(
-                quotationLineId,
-                request.PriceMode,
-                request.Quantity,
-                request.UnitPrice,
-                priceTierRequests,
-                $"lines[{index}]",
-                allowMissingPrice: true);
+            var pricingResult = approvedPricing is null
+                ? QuotationPriceTierBuilder.Build(
+                    quotationLineId,
+                    request.PriceMode,
+                    request.Quantity,
+                    fixedUnitPrice: 0m,
+                    requests: [],
+                    $"lines[{index}]",
+                    allowMissingPrice: true)
+                : QuotationPricingSnapshotFactory.Create(
+                    quotationLineId,
+                    companyId,
+                    request.ProductId,
+                    currency,
+                    request.Quantity,
+                    request.PriceMode,
+                    approvedPricing,
+                    $"lines[{index}]");
             if (!pricingResult.Success || pricingResult.Data is null)
             {
                 return OperationResult<IReadOnlyList<QuotationLine>>.Fail(pricingResult.Message!);

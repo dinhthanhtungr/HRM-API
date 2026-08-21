@@ -221,33 +221,23 @@ không lấy từ snapshot `Formula.TotalPrice`.
 `GET /api/v1/plm/formulas` cũng áp dụng `ApplicationRoleSets.PLM.FormulaPriceViewers`: user không thuộc nhóm này sẽ nhận
 `price = null` trong các nhóm formula select/development/standard.
 
-## Giá bán tiêu chuẩn và tỷ lệ lợi nhuận
+## Giá bán tiêu chuẩn và dữ liệu Formula legacy
 
-API tra cứu và response PATCH chỉ trả hai field giá bán:
+API Formula detail/preview lấy kết quả realtime từ `FormulaPricingEngine`, với policy Published
+đúng company/profile/currency. Manufacturing cost mặc định, profit margin, rounding và tiers đều
+đến từ policy DB; không suy profile từ product code/Additive và không fallback khi thiếu policy.
 
-- `standardSellingPrice`: dùng `Formula.PresidentPrice` nếu DB có giá; nếu chưa có
-  thì mặc định bằng `realtimeMaterialCost + manufacturingCost`.
-- `profitMarginRate`:
-  `(standardSellingPrice - costBase) / costBase * 100`.
+`Formula.TotalPrice`, `Formula.ProductionPrice`, `Formula.PresidentPrice` và
+`Formula.ProfitMarginPrice` được giữ nguyên để đọc dữ liệu lịch sử. Chúng không còn là nguồn giá
+chính, không tham gia fallback và không bị flow pricing mới ghi đè.
 
-`manufacturingCost` dùng `Formula.ProductionPrice` nếu lớn hơn 0; nếu không dùng
-mặc định `10.000` cho Powder hoặc `20.000` cho Compound. Field này vẫn có giá trị
-khi công thức thiếu giá NVL realtime.
-
-`Formula.ProfitMarginPrice` là field cũ và không còn tham gia contract hoặc rule tính giá này.
-
-`pricingUpdatedDate` là thời điểm snapshot pricing trên Formula được cập nhật gần nhất. FE gửi lại giá trị này qua
-`expectedUpdatedDate` khi PATCH để tránh ghi đè thay đổi mới hơn của người khác.
-Backend chuẩn hóa hai timestamp về precision microsecond của PostgreSQL trước khi lưu, trả response và so sánh.
-Việc này giữ kiểm tra concurrent update nhưng tránh conflict giả do .NET có precision tick cao hơn database.
-
-## PATCH giá snapshot
+## PATCH giá snapshot (deprecated)
 
 ```http
 PATCH /api/v1/plm/formulas/{formulaId}/pricing
 ```
 
-Request chỉ cần gửi các field thay đổi:
+Endpoint được giữ để client cũ nhận lỗi có kiểm soát, nhưng không còn ghi Formula:
 
 ```json
 {
@@ -257,47 +247,14 @@ Request chỉ cần gửi các field thay đổi:
 }
 ```
 
-Mapping lưu trữ:
-
-- `materialCost` -> `Formula.TotalPrice`, chỉ là snapshot đối chiếu.
-- `manufacturingCost` -> `Formula.ProductionPrice`.
-- `standardSellingPrice` -> `Formula.PresidentPrice`.
-- `profitMarginRate` không có cột riêng. Backend dùng tỷ lệ này để tính
-  `standardSellingPrice` rồi lưu vào `Formula.PresidentPrice`.
-
-Mỗi giá FE gửi được làm tròn 2 chữ số thập phân, không được âm và phải nằm trong precision `decimal(16,2)`.
-`profitMarginRate` được làm tròn 4 chữ số và phải nằm trong `0..100`.
-Field không gửi hoặc `null` được hiểu là bỏ qua; endpoint hiện không dùng `null` để xóa giá nullable.
-Nếu `expectedUpdatedDate` khác `Formula.UpdatedDate`, API từ chối và FE phải tải lại dữ liệu.
-Với dữ liệu legacy có `Formula.UpdatedDate = null`, backend bỏ qua concurrency check cho lần ghi đó và set lại
-`UpdatedDate` sau khi lưu thành công; từ lần lưu sau concurrency check chạy bình thường.
-Không gửi đồng thời `standardSellingPrice` và `profitMarginRate`.
-
-PATCH xử lý:
-
-- Sửa `standardSellingPrice`: lưu giá vào `Formula.PresidentPrice`, response tự tính lại tỷ lệ.
-- Sửa `profitMarginRate`: tính
-  `standardSellingPrice = costBase * (1 + profitMarginRate / 100)` rồi lưu vào `Formula.PresidentPrice`.
-- Sửa `manufacturingCost`: lưu `Formula.ProductionPrice`; response tự tính lại tỷ lệ.
-- Sửa `materialCost`: chỉ ghi snapshot `Formula.TotalPrice`.
-
-PATCH tải lại toàn bộ giá item của Formula trước khi tính. Nếu Formula rỗng hoặc
-có ít nhất một item thiếu giá mới nhất:
-
-- PATCH `standardSellingPrice`, `manufacturingCost` và `materialCost` vẫn được phép lưu.
-- PATCH `profitMarginRate` bị từ chối vì không có cost base realtime để tính giá bán.
-- `manufacturingCost` trong response vẫn dùng giá DB hoặc mặc định theo profile.
-- `profitMarginRate` và `pricing` trả `null`; backend không dùng `materialCost`
-  snapshot để tạo kết quả tính tạm.
-
-Endpoint yêu cầu policy `PLM.FormulaPricing.Update`, dành cho `Admin`, `Developer` và `President`.
-Handler lọc Formula và Product active theo company hiện tại, đồng thời cập nhật `UpdatedDate` và `UpdatedBy`.
-PATCH không thay đổi chi phí realtime, NVL, giá nhà cung cấp hoặc báo giá đã snapshot.
+Response là HTTP `410 Gone`, operation failure có mã
+`PatchFormulaPricingDeprecated`. Client phải chuyển sang API ProductPricingVersion để create/update
+Draft và approve. Endpoint cũ không gọi material price service, calculator hoặc save DB.
 
 ## Response giá chuẩn từ backend
 
-`PATCH /api/v1/plm/formulas/{formulaId}/pricing` trả `200 OK` với các giá snapshot vừa lưu và field
-`pricing`. FE dùng trực tiếp response này để thay block giá của Formula, không cần gọi lại GET.
+GET Formula trả pricing canonical từ engine. Khi thiếu policy trả `pricing = null` cùng
+`PricingPolicyMissing`; khi thiếu giá NVL trả `pricing = null` cùng `MaterialPriceMissing`.
 `GET /api/v1/crm/quotations/product-pricing-options` cũng trả cùng cấu trúc `pricing` trong từng Formula,
 do đó màn hình tra cứu và màn hình chỉnh sửa dùng chung một kết quả tính.
 

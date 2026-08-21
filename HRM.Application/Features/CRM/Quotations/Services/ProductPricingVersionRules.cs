@@ -1,5 +1,4 @@
 using HRM.Application.Commons.Models;
-using HRM.Application.Commons.Pricing.Helpers;
 using HRM.Application.Features.CRM.Quotations.Dtos;
 using HRM.Domain.Entities.CustomerSchema;
 using HRM.Domain.Enums.CustomerEnum;
@@ -8,8 +7,6 @@ namespace HRM.Application.Features.CRM.Quotations.Services;
 
 internal static class ProductPricingVersionRules
 {
-    private const int PercentScale = 4;
-
     public static string? ValidatePricingValues(
         decimal? materialCost,
         decimal? manufacturingCost,
@@ -24,138 +21,6 @@ internal static class ProductPricingVersionRules
         return profitMarginRate is < 0m or > 100m
             ? "ProfitMarginRate must be between 0 and 100."
             : null;
-    }
-
-    public static OperationResult<NormalizedProductPricingValues> NormalizePricingValues(
-        decimal? materialCost,
-        decimal? manufacturingCost,
-        decimal? standardSellingPrice,
-        decimal? profitMarginRate,
-        ProductPricingChangedField? changedField)
-    {
-        if (changedField.HasValue && !Enum.IsDefined(changedField.Value))
-        {
-            return OperationResult<NormalizedProductPricingValues>.Fail(
-                "ChangedField is invalid.");
-        }
-
-        var pricingError = ValidatePricingValues(
-            materialCost,
-            manufacturingCost,
-            standardSellingPrice,
-            profitMarginRate);
-        if (pricingError is not null)
-        {
-            return OperationResult<NormalizedProductPricingValues>.Fail(pricingError);
-        }
-
-        decimal? normalizedMaterialCost = materialCost.HasValue
-            ? PricingRoundingRules.RoundCalculatedPrice(materialCost.Value)
-            : null;
-        var normalizedManufacturingCost = RoundStoredInputIfProvided(manufacturingCost);
-        var normalizedStandardSellingPrice = RoundStoredInputIfProvided(standardSellingPrice);
-        var normalizedProfitMarginRate = RoundPercentIfProvided(profitMarginRate);
-
-        if (!normalizedMaterialCost.HasValue || !normalizedManufacturingCost.HasValue)
-        {
-            if (changedField.HasValue)
-            {
-                return OperationResult<NormalizedProductPricingValues>.Fail(
-                    "Realtime material cost and manufacturing cost are required to recalculate product pricing.");
-            }
-
-            return OperationResult<NormalizedProductPricingValues>.Ok(
-                new NormalizedProductPricingValues(
-                    normalizedMaterialCost,
-                    normalizedManufacturingCost,
-                    normalizedStandardSellingPrice,
-                    normalizedProfitMarginRate));
-        }
-
-        var costBase = PricingRoundingRules.RoundCalculatedPrice(
-            normalizedMaterialCost.GetValueOrDefault() +
-            normalizedManufacturingCost.GetValueOrDefault());
-        if (costBase <= 0m &&
-            (changedField.HasValue ||
-             normalizedStandardSellingPrice is > 0m ||
-             normalizedProfitMarginRate is > 0m))
-        {
-            return OperationResult<NormalizedProductPricingValues>.Fail(
-                "A positive material and manufacturing cost base is required to recalculate product pricing.");
-        }
-
-        switch (changedField)
-        {
-            case ProductPricingChangedField.ManufacturingCost:
-                normalizedProfitMarginRate ??= 0m;
-                normalizedStandardSellingPrice = CalculateStandardSellingPrice(
-                    costBase,
-                    normalizedProfitMarginRate.Value);
-                break;
-
-            case ProductPricingChangedField.StandardSellingPrice:
-                if (!normalizedStandardSellingPrice.HasValue)
-                {
-                    return OperationResult<NormalizedProductPricingValues>.Fail(
-                        "StandardSellingPrice is required when ChangedField is StandardSellingPrice.");
-                }
-
-                normalizedProfitMarginRate = CalculateProfitMarginRate(
-                    normalizedStandardSellingPrice.Value,
-                    costBase);
-                break;
-
-            case ProductPricingChangedField.ProfitMarginRate:
-                if (!normalizedProfitMarginRate.HasValue)
-                {
-                    return OperationResult<NormalizedProductPricingValues>.Fail(
-                        "ProfitMarginRate is required when ChangedField is ProfitMarginRate.");
-                }
-
-                normalizedStandardSellingPrice = CalculateStandardSellingPrice(
-                    costBase,
-                    normalizedProfitMarginRate.Value);
-                break;
-
-            default:
-                if (normalizedStandardSellingPrice.HasValue)
-                {
-                    normalizedProfitMarginRate = CalculateProfitMarginRate(
-                        normalizedStandardSellingPrice.Value,
-                        costBase);
-                }
-                else if (normalizedProfitMarginRate.HasValue)
-                {
-                    normalizedStandardSellingPrice = CalculateStandardSellingPrice(
-                        costBase,
-                        normalizedProfitMarginRate.Value);
-                }
-                else
-                {
-                    normalizedStandardSellingPrice =
-                        PricingRoundingRules.RoundCalculatedPrice(costBase);
-                    normalizedProfitMarginRate = 0m;
-                }
-
-                break;
-        }
-
-        pricingError = ValidatePricingValues(
-            normalizedMaterialCost,
-            normalizedManufacturingCost,
-            normalizedStandardSellingPrice,
-            normalizedProfitMarginRate);
-        if (pricingError is not null)
-        {
-            return OperationResult<NormalizedProductPricingValues>.Fail(pricingError);
-        }
-
-        return OperationResult<NormalizedProductPricingValues>.Ok(
-            new NormalizedProductPricingValues(
-                normalizedMaterialCost,
-                normalizedManufacturingCost,
-                normalizedStandardSellingPrice,
-                normalizedProfitMarginRate));
     }
 
     public static OperationResult<IReadOnlyList<ProductPricingTier>> BuildTiers(
@@ -296,40 +161,6 @@ internal static class ProductPricingVersionRules
             (right.MinQuantity == left.MaxQuantity && left.MaxInclusive && right.MinInclusive);
     }
 
-    private static decimal CalculateStandardSellingPrice(
-        decimal costBase,
-        decimal profitMarginRate)
-        => PricingRoundingRules.RoundCalculatedPrice(
-            costBase * (1m + profitMarginRate / 100m));
-
-    private static decimal CalculateProfitMarginRate(
-        decimal standardSellingPrice,
-        decimal costBase)
-    {
-        if (costBase <= 0m)
-        {
-            return 0m;
-        }
-
-        return decimal.Round(
-            (standardSellingPrice - costBase) / costBase * 100m,
-            PercentScale,
-            MidpointRounding.AwayFromZero);
-    }
-
-    private static decimal? RoundStoredInputIfProvided(decimal? value)
-        => value.HasValue
-            ? PricingRoundingRules.RoundStoredInput(value.Value)
-            : null;
-
-    private static decimal? RoundPercentIfProvided(decimal? value)
-        => value.HasValue
-            ? decimal.Round(
-                value.Value,
-                PercentScale,
-                MidpointRounding.AwayFromZero)
-            : null;
-
     private sealed record NormalizedTier(
         string QuantityRangeLabel,
         decimal? MinQuantity,
@@ -339,9 +170,3 @@ internal static class ProductPricingVersionRules
         decimal UnitPrice,
         int SortOrder);
 }
-
-internal sealed record NormalizedProductPricingValues(
-    decimal? MaterialCostSnapshot,
-    decimal? ManufacturingCost,
-    decimal? StandardSellingPrice,
-    decimal? ProfitMarginRate);

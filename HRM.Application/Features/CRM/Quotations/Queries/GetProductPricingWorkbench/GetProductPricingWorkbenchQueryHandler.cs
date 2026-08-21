@@ -382,9 +382,9 @@ internal sealed class GetProductPricingWorkbenchQueryHandler
             return "Current company context is required.";
         }
 
-        if (currency.Length > QuotationRules.MaximumCurrencyLength)
+        if (currency.Length is 0 or > QuotationRules.MaximumCurrencyLength)
         {
-            return $"Currency cannot exceed {QuotationRules.MaximumCurrencyLength} characters.";
+            return $"Currency is required and cannot exceed {QuotationRules.MaximumCurrencyLength} characters.";
         }
 
         return Enum.IsDefined(view) ? null : "View is invalid.";

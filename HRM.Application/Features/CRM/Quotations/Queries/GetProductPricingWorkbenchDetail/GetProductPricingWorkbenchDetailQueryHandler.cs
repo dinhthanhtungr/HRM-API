@@ -53,10 +53,10 @@ internal sealed class GetProductPricingWorkbenchDetailQueryHandler
                 "ProductId and current company context are required.");
         }
 
-        if (request.NormalizedCurrency.Length > QuotationRules.MaximumCurrencyLength)
+        if (request.NormalizedCurrency.Length is 0 or > QuotationRules.MaximumCurrencyLength)
         {
             return OperationResult<ProductPricingWorkbenchDetailDto>.Fail(
-                $"Currency cannot exceed {QuotationRules.MaximumCurrencyLength} characters.");
+                $"Currency is required and cannot exceed {QuotationRules.MaximumCurrencyLength} characters.");
         }
 
         if (request.SourceType.HasValue != request.SourceId.HasValue ||

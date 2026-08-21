@@ -13,9 +13,9 @@ internal static class QuotationSentContentBuilder
     {
         var sentDate = quotation.SentDate ?? throw new InvalidOperationException(
             "SentDate is required to build the quotation sent content.");
-        var currency = string.IsNullOrWhiteSpace(quotation.Currency)
-            ? "VND"
-            : quotation.Currency.Trim().ToUpperInvariant();
+        var currency = QuotationRules.TrimToNull(quotation.Currency)?.ToUpperInvariant()
+            ?? throw new InvalidOperationException(
+                "Quotation currency snapshot is required to build sent content.");
         var content = new StringBuilder();
 
         content.AppendLine($"Báo giá: {quotation.ExternalId}");

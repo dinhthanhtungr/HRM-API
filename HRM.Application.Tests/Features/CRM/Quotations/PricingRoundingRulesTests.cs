@@ -86,31 +86,6 @@ public sealed class PricingRoundingRulesTests
             [new("All", null, null, true, true, 0m, 0)]);
 
     [Fact]
-    public void NormalizePricing_PreservesUserInputAndRoundsRuleCalculatedSellingPrice()
-    {
-        var userPrice = ProductPricingVersionRules.NormalizePricingValues(
-            materialCost: 100.6m,
-            manufacturingCost: 10.25m,
-            standardSellingPrice: 123.456789m,
-            profitMarginRate: null,
-            ProductPricingChangedField.StandardSellingPrice);
-        var calculatedPrice = ProductPricingVersionRules.NormalizePricingValues(
-            materialCost: 100.6m,
-            manufacturingCost: 10.25m,
-            standardSellingPrice: null,
-            profitMarginRate: 10m,
-            ProductPricingChangedField.ProfitMarginRate);
-
-        Assert.True(userPrice.Success);
-        Assert.Equal(101m, userPrice.Data!.MaterialCostSnapshot);
-        Assert.Equal(10.25m, userPrice.Data.ManufacturingCost);
-        Assert.Equal(123.456789m, userPrice.Data.StandardSellingPrice);
-
-        Assert.True(calculatedPrice.Success);
-        Assert.Equal(122m, calculatedPrice.Data!.StandardSellingPrice);
-    }
-
-    [Fact]
     public void ProductPricingTier_PreservesUserEnteredDecimals()
     {
         var result = ProductPricingVersionRules.BuildTiers(

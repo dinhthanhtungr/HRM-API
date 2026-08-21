@@ -9,7 +9,7 @@ public sealed class CreateQuotationRequest
     public Guid CustomerId { get; init; }
     public Guid? ContactId { get; init; }
     public string? ContactName { get; init; }
-    public string Currency { get; init; } = "VND";
+    public string Currency { get; init; } = string.Empty;
     public decimal ExchangeRate { get; init; } = 1m;
     public decimal TaxPercent { get; init; }
     public DateTime? QuotationDate { get; init; }

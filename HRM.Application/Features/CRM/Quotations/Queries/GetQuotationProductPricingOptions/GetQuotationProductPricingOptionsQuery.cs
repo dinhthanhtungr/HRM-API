@@ -15,7 +15,7 @@ public sealed class GetQuotationProductPricingOptionsQuery
     public SampleRequestStatus? Status { get; set; }
     public Guid? QuotationId { get; init; }
     public QuotationStatus? QuotationStatus { get; init; }
-    public string? Currency { get; init; } = "VND";
+    public string? Currency { get; init; }
 
     [JsonIgnore]
     public string? NormalizedRequestType => string.IsNullOrWhiteSpace(RequestType)
@@ -23,8 +23,6 @@ public sealed class GetQuotationProductPricingOptionsQuery
         : RequestType.Trim();
 
     [JsonIgnore]
-    public string NormalizedCurrency => string.IsNullOrWhiteSpace(Currency)
-        ? "VND"
-        : Currency.Trim().ToUpperInvariant();
+    public string NormalizedCurrency => Currency?.Trim().ToUpperInvariant() ?? string.Empty;
 
 }

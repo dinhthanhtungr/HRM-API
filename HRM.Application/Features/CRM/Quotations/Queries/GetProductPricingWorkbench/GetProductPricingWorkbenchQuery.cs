@@ -11,14 +11,12 @@ public sealed class GetProductPricingWorkbenchQuery
     : PaginationQuery,
         IRequest<OperationResult<PagedResult<ProductPricingWorkbenchItemDto>>>
 {
-    public string? Currency { get; init; } = "VND";
+    public string? Currency { get; init; }
 
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public ProductPricingWorkbenchView View { get; init; } =
         ProductPricingWorkbenchView.All;
 
     [JsonIgnore]
-    public string NormalizedCurrency => string.IsNullOrWhiteSpace(Currency)
-        ? "VND"
-        : Currency.Trim().ToUpperInvariant();
+    public string NormalizedCurrency => Currency?.Trim().ToUpperInvariant() ?? string.Empty;
 }

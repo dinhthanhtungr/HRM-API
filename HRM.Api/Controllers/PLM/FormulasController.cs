@@ -239,6 +239,7 @@ public sealed class FormulasController : ControllerBase
 
     [HttpPatch("{formulaId:guid}/pricing")]
     [Authorize(Policy = PlmPolicies.UpdateFormulaPricing)]
+    [Obsolete("Formula pricing is read-only. Use ProductPricingVersion pricing APIs.")]
     public async Task<IActionResult> PatchPricing(
         Guid formulaId,
         [FromBody] PatchFormulaPricingRequest request,
@@ -248,6 +249,8 @@ public sealed class FormulasController : ControllerBase
             new PatchFormulaPricingCommand(formulaId, request),
             cancellationToken);
 
-        return result.Success ? Ok(result.Data) : BadRequest(result);
+        return result.Success
+            ? Ok(result.Data)
+            : StatusCode(StatusCodes.Status410Gone, result);
     }
 }

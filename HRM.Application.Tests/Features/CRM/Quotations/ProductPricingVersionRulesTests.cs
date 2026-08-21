@@ -21,18 +21,15 @@ public sealed class ProductPricingVersionRulesTests
     {
         var result = ProductPricingVersionRules.BuildTiers(
             Guid.NewGuid(),
-            [
-                new ProductPricingTierRequest
-                {
-                    QuantityRangeLabel = "Contact for price",
-                    UnitPrice = 0m,
-                    SortOrder = 0
-                }
-            ]);
+            [new ProductPricingTierRequest
+            {
+                QuantityRangeLabel = "Contact for price",
+                UnitPrice = 0m,
+                SortOrder = 0
+            }]);
 
         Assert.True(result.Success);
-        Assert.NotNull(result.Data);
-        Assert.Equal(0m, result.Data.Single().UnitPrice);
+        Assert.Equal(0m, result.Data!.Single().UnitPrice);
     }
 
     [Fact]
@@ -60,9 +57,8 @@ public sealed class ProductPricingVersionRulesTests
         ]);
 
         Assert.True(result.Success);
-        Assert.NotNull(result.Data);
-        Assert.Equal([0, 1], result.Data.Select(x => x.SortOrder));
-        Assert.All(result.Data, x => Assert.Equal(versionId, x.ProductPricingVersionId));
+        Assert.Equal([0, 1], result.Data!.Select(x => x.SortOrder));
+        Assert.All(result.Data!, x => Assert.Equal(versionId, x.ProductPricingVersionId));
     }
 
     [Fact]
@@ -95,93 +91,9 @@ public sealed class ProductPricingVersionRulesTests
     [Fact]
     public void ValidatePricingValues_RejectsMarginAboveOneHundredPercent()
     {
-        var error = ProductPricingVersionRules.ValidatePricingValues(
-            materialCost: 10m,
-            manufacturingCost: 5m,
-            standardSellingPrice: 20m,
-            profitMarginRate: 101m);
+        var error = ProductPricingVersionRules.ValidatePricingValues(10m, 5m, 20m, 101m);
 
         Assert.NotNull(error);
-    }
-
-    [Fact]
-    public void NormalizePricingValues_ManufacturingCostChange_PreservesMarginAndRecalculatesPrice()
-    {
-        var result = ProductPricingVersionRules.NormalizePricingValues(
-            materialCost: 100m,
-            manufacturingCost: 20m,
-            standardSellingPrice: 999m,
-            profitMarginRate: 25m,
-            ProductPricingChangedField.ManufacturingCost);
-
-        Assert.True(result.Success);
-        Assert.NotNull(result.Data);
-        Assert.Equal(100m, result.Data.MaterialCostSnapshot);
-        Assert.Equal(20m, result.Data.ManufacturingCost);
-        Assert.Equal(150m, result.Data.StandardSellingPrice);
-        Assert.Equal(25m, result.Data.ProfitMarginRate);
-    }
-
-    [Fact]
-    public void NormalizePricingValues_StandardSellingPriceChange_RecalculatesMargin()
-    {
-        var result = ProductPricingVersionRules.NormalizePricingValues(
-            materialCost: 100m,
-            manufacturingCost: 20m,
-            standardSellingPrice: 150m,
-            profitMarginRate: 99m,
-            ProductPricingChangedField.StandardSellingPrice);
-
-        Assert.True(result.Success);
-        Assert.NotNull(result.Data);
-        Assert.Equal(150m, result.Data.StandardSellingPrice);
-        Assert.Equal(25m, result.Data.ProfitMarginRate);
-    }
-
-    [Fact]
-    public void NormalizePricingValues_ProfitMarginRateChange_RecalculatesPrice()
-    {
-        var result = ProductPricingVersionRules.NormalizePricingValues(
-            materialCost: 100m,
-            manufacturingCost: 20m,
-            standardSellingPrice: 999m,
-            profitMarginRate: 25m,
-            ProductPricingChangedField.ProfitMarginRate);
-
-        Assert.True(result.Success);
-        Assert.NotNull(result.Data);
-        Assert.Equal(150m, result.Data.StandardSellingPrice);
-        Assert.Equal(25m, result.Data.ProfitMarginRate);
-    }
-
-    [Fact]
-    public void NormalizePricingValues_NoInputPrice_DefaultsToCostBase()
-    {
-        var result = ProductPricingVersionRules.NormalizePricingValues(
-            materialCost: 100m,
-            manufacturingCost: 20m,
-            standardSellingPrice: null,
-            profitMarginRate: null,
-            changedField: null);
-
-        Assert.True(result.Success);
-        Assert.NotNull(result.Data);
-        Assert.Equal(120m, result.Data.StandardSellingPrice);
-        Assert.Equal(0m, result.Data.ProfitMarginRate);
-    }
-
-    [Fact]
-    public void NormalizePricingValues_ExplicitChangeWithoutRealtimeMaterialCost_Fails()
-    {
-        var result = ProductPricingVersionRules.NormalizePricingValues(
-            materialCost: null,
-            manufacturingCost: 20m,
-            standardSellingPrice: 150m,
-            profitMarginRate: null,
-            ProductPricingChangedField.StandardSellingPrice);
-
-        Assert.False(result.Success);
-        Assert.Contains("Realtime material cost", result.Message);
     }
 
     [Fact]
@@ -189,12 +101,12 @@ public sealed class ProductPricingVersionRulesTests
     {
         var result = ProductPricingVersionRules.ResolveChangedField(
             ProductPricingChangedField.ProfitMarginRate,
-            currentManufacturingCost: 10m,
-            currentStandardSellingPrice: 100m,
-            currentProfitMarginRate: 10m,
-            requestedManufacturingCost: 20m,
-            requestedStandardSellingPrice: 200m,
-            requestedProfitMarginRate: 20m);
+            10m,
+            100m,
+            10m,
+            20m,
+            200m,
+            20m);
 
         Assert.Equal(ProductPricingChangedField.ProfitMarginRate, result);
     }

@@ -14,7 +14,5 @@ public sealed record GetProductPricingWorkbenchDetailQuery(
     : IRequest<OperationResult<ProductPricingWorkbenchDetailDto>>
 {
     [JsonIgnore]
-    public string NormalizedCurrency => string.IsNullOrWhiteSpace(Currency)
-        ? "VND"
-        : Currency.Trim().ToUpperInvariant();
+    public string NormalizedCurrency => Currency?.Trim().ToUpperInvariant() ?? string.Empty;
 }

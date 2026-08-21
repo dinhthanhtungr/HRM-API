@@ -144,25 +144,14 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.RefreshQuotationPrice
                 var request = requestedLines[index];
                 var line = lineLookup[request.QuotationLineId];
                 var pricingVersion = pricingVersions[request.ProductPricingVersionId];
-                var tierRequests = pricingVersion.PriceTiers
-                    .OrderBy(x => x.SortOrder)
-                    .Select(x => new QuotationLinePriceTierRequest
-                    {
-                        QuantityRangeLabel = x.QuantityRangeLabel,
-                        MinQuantity = x.MinQuantity,
-                        MaxQuantity = x.MaxQuantity,
-                        MinInclusive = x.MinInclusive,
-                        MaxInclusive = x.MaxInclusive,
-                        UnitPrice = x.UnitPrice,
-                        SortOrder = x.SortOrder
-                    })
-                    .ToArray();
-                var pricingResult = QuotationPriceTierBuilder.Build(
+                var pricingResult = QuotationPricingSnapshotFactory.Create(
                     line.QuotationLineId,
-                    line.PriceMode,
+                    scope.CompanyId,
+                    line.ProductId,
+                    quotation.Currency,
                     line.Quantity,
-                    0m,
-                    tierRequests,
+                    line.PriceMode,
+                    pricingVersion,
                     $"lines[{index}]");
                 if (!pricingResult.Success || pricingResult.Data is null)
                 {

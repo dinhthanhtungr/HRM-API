@@ -14,7 +14,7 @@ public sealed class QuotationPdfDocumentDto
     public string ExternalId { get; init; } = string.Empty;
     public DateTime QuotationDate { get; init; }
     public DateTime? ValidUntil { get; init; }
-    public string Currency { get; init; } = "VND";
+    public string Currency { get; init; } = string.Empty;
 
     public string CompanyName { get; init; } = string.Empty;
     public string? CompanyAddress { get; init; }

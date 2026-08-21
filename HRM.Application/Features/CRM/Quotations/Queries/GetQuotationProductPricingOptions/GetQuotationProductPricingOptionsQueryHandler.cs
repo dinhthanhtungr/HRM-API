@@ -79,10 +79,10 @@ internal sealed class GetQuotationProductPricingOptionsQueryHandler
                 "QuotationId is invalid.");
         }
 
-        if (request.NormalizedCurrency.Length > QuotationRules.MaximumCurrencyLength)
+        if (request.NormalizedCurrency.Length is 0 or > QuotationRules.MaximumCurrencyLength)
         {
             return OperationResult<PagedResult<QuotationProductPricingOptionDto>>.Fail(
-                $"Currency cannot exceed {QuotationRules.MaximumCurrencyLength} characters.");
+                $"Currency is required and cannot exceed {QuotationRules.MaximumCurrencyLength} characters.");
         }
 
         var requestType = request.NormalizedRequestType;

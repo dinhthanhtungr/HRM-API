@@ -85,8 +85,6 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.MarkQuotationSent
                 .Include(x => x.Customer)
                 .Include(x => x.Lines)
                     .ThenInclude(x => x.PriceTiers)
-                .Include(x => x.Lines)
-                    .ThenInclude(x => x.ProductPricingVersion)
                 .FirstOrDefaultAsync(
                     x =>
                         x.QuotationId == command.QuotationId &&
@@ -133,17 +131,13 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.MarkQuotationSent
 
             if (quotation.Lines.Any(line =>
                     line.ProductPricingVersionId is null ||
-                    line.ProductPricingVersion is null ||
-                    line.ProductPricingVersion.Status != ProductPricingStatus.Approved ||
-                    line.ProductPricingVersion.CompanyId != quotation.CompanyId ||
-                    line.ProductPricingVersion.ProductId != line.ProductId ||
-                    line.ProductPricingVersion.Currency != quotation.Currency ||
                     line.PriceMode != QuotationLinePriceMode.Tiered ||
                     line.PriceTiers.Count == 0 ||
                     line.PriceTiers.Any(tier => tier.UnitPrice < 0m)))
             {
                 return OperationResult.Fail(
-                    "Every quotation line must use an approved pricing version for the same company/product/currency and have a complete non-negative tiered snapshot before it can be sent.");
+                    "Every quotation line must have pricing-version provenance and a complete " +
+                    "non-negative tiered snapshot before it can be sent.");
             }
 
             var recipientEmployeeIds = await ResolveManagementRecipientsAsync(
