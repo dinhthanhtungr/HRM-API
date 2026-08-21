@@ -57,7 +57,20 @@ public static class FormulaPriceCalculator
         decimal materialCost,
         decimal? manufacturingCost,
         decimal? standardSellingPrice)
+        => Calculate(policy, materialCost, manufacturingCost, standardSellingPrice, null, null);
+
+    public static FormulaPriceCalculationDto Calculate(
+        FormulaPricingPolicyDefinition policy,
+        decimal materialCost,
+        decimal? manufacturingCost,
+        decimal? standardSellingPrice,
+        decimal? profitMarginRate,
+        HRM.Domain.Enums.CustomerEnum.ProductPricingChangedField? changedField)
     {
+        if (materialCost < 0m || manufacturingCost < 0m || standardSellingPrice < 0m ||
+            profitMarginRate is < 0m or > 100m ||
+            (changedField.HasValue && !Enum.IsDefined(changedField.Value)))
+            throw new ArgumentOutOfRangeException(nameof(materialCost));
         var roundedMaterialCost = PricingRoundingRules.RoundCalculatedPrice(
             materialCost, policy.RoundingRule, policy.RoundingIncrement);
         var usedDefaultManufacturingCost = manufacturingCost is null or <= 0m;
@@ -68,12 +81,21 @@ public static class FormulaPriceCalculator
             roundedMaterialCost + effectiveManufacturingCost,
             policy.RoundingRule,
             policy.RoundingIncrement);
-        var resolvedStandardSellingPrice = standardSellingPrice.HasValue
-            ? PricingRoundingRules.RoundStoredInput(standardSellingPrice.Value)
-            : PricingRoundingRules.RoundCalculatedPrice(
-                costBase * (1m + policy.DefaultProfitMarginRate / 100m),
-                policy.RoundingRule,
-                policy.RoundingIncrement);
+        var marginToApply = profitMarginRate ?? policy.DefaultProfitMarginRate;
+        var resolvedStandardSellingPrice = changedField switch
+        {
+            HRM.Domain.Enums.CustomerEnum.ProductPricingChangedField.StandardSellingPrice
+                when !standardSellingPrice.HasValue => throw new ArgumentOutOfRangeException(nameof(standardSellingPrice)),
+            HRM.Domain.Enums.CustomerEnum.ProductPricingChangedField.ProfitMarginRate
+                when !profitMarginRate.HasValue => throw new ArgumentOutOfRangeException(nameof(profitMarginRate)),
+            HRM.Domain.Enums.CustomerEnum.ProductPricingChangedField.ProfitMarginRate or
+            HRM.Domain.Enums.CustomerEnum.ProductPricingChangedField.ManufacturingCost =>
+                PricingRoundingRules.RoundCalculatedPrice(
+                    costBase * (1m + marginToApply / 100m), policy.RoundingRule, policy.RoundingIncrement),
+            _ when standardSellingPrice.HasValue => PricingRoundingRules.RoundStoredInput(standardSellingPrice.Value),
+            _ => PricingRoundingRules.RoundCalculatedPrice(
+                costBase * (1m + marginToApply / 100m), policy.RoundingRule, policy.RoundingIncrement)
+        };
         return new FormulaPriceCalculationDto
         {
             Profile = policy.Profile,

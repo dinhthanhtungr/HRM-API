@@ -394,6 +394,21 @@ policy thông qua `ProductPricingVersionId`; không lưu thêm policy trên head
 
 Endpoint yêu cầu user đã đăng nhập và tự giới hạn dữ liệu theo company hiện tại.
 
+### Pricing Engine dùng chung
+
+`HRM.Application/Commons/Pricing/Services/FormulaPricingEngine` là boundary dùng chung
+cho các phase chuyển đổi tiếp theo; Phase 2 chưa đổi public API hiện hữu sang engine này.
+Engine nhận company, product/source reference, profile đã cấu hình tường minh, currency,
+material cost hoặc danh sách material realtime, manufacturing override, selling price,
+profit margin và `changedField`.
+
+Engine batch-resolve policy bằng key `companyId + profile + currency`, chỉ nhận Published
+policy còn active và đã hiệu lực. Result luôn mang `formulaPricingPolicyId` và version,
+profile/source, trạng thái đầy đủ giá nguyên vật liệu, cost base, margin, giá chuẩn và tiers
+gợi ý. `PricingPolicyMissing` là lỗi ổn định khi không resolve được policy; thiếu giá material
+không fallback mà trả `isMaterialCostComplete = false` cùng `missingMaterialPriceCount`.
+Mọi làm tròn và tier manual (`priceOffset = null`) lấy từ policy definition.
+
 Quyền xem dữ liệu được áp dụng tại backend:
 
 - `President` và `Developer` nhận đầy đủ chi phí, lợi nhuận, kết quả tính giá, nguyên vật liệu, giá gần nhất và nhà cung cấp.

@@ -1,4 +1,6 @@
 using HRM.Application.Commons.Concurrency;
+using HRM.Application.Commons.Pricing.Services;
+using HRM.Application.Abstractions.Commons.Pricing;
 using HRM.Application.Features.CRM.CustomerCare.Visibility;
 using HRM.Application.Features.CRM.CustomerCare.Services;
 using HRM.Application.Features.CRM.CustomerCare.Commands.CustomerFollowUpTasks;
@@ -52,6 +54,9 @@ public static class DependencyInjection
         services.AddScoped<ProductPricingApprovalNotificationService>();
         services.AddScoped<ProductPricingSourceValidator>();
         services.AddScoped<FormulaPricingPolicyProvider>();
+        services.AddScoped<IFormulaPricingPolicyResolver>(provider =>
+            provider.GetRequiredService<FormulaPricingPolicyProvider>());
+        services.AddScoped<FormulaPricingEngine>();
         services.AddScoped<QuotationTierPriceReferenceService>();
         services.AddScoped<QuotationConversationSubjectService>();
         services.AddScoped<DraftQuotationProductSnapshotSyncService>();
