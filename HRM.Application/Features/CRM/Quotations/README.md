@@ -1325,6 +1325,33 @@ Visibility giữ nguyên theo role:
   vẫn được giữ để đọc dữ liệu lịch sử; không bị xóa và không còn là nguồn/fallback cho giá mới.
 - Repo không thêm migration trong phase này.
 
+### Tổ chức source pricing
+
+Pricing Policy tuân theo một use case mỗi folder và một type chính mỗi file:
+
+```text
+Commands/
+  CreateFormulaPricingPolicy/
+    CreateFormulaPricingPolicyCommand.cs
+    CreateFormulaPricingPolicyCommandHandler.cs
+  UpdateFormulaPricingPolicy/
+    UpdateFormulaPricingPolicyCommand.cs
+    UpdateFormulaPricingPolicyCommandHandler.cs
+  PublishFormulaPricingPolicy/
+    PublishFormulaPricingPolicyCommand.cs
+    PublishFormulaPricingPolicyCommandHandler.cs
+Queries/
+  GetFormulaPricingPolicies/
+    GetFormulaPricingPoliciesQuery.cs
+    GetFormulaPricingPoliciesQueryHandler.cs
+  PreviewFormulaPricingPolicy/
+    PreviewFormulaPricingPolicyQuery.cs
+    PreviewFormulaPricingPolicyQueryHandler.cs
+```
+
+Các request/response của Pricing Policy và ProductPricingVersion cũng được tách thành file
+theo đúng tên type trong `Dtos/`; không gom command, handler hoặc nhiều DTO pricing vào một file chung.
+
 ## 16. Giới hạn hiện tại
 
 Chưa có:
