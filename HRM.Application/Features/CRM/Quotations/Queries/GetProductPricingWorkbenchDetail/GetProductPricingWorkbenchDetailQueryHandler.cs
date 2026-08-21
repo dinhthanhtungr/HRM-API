@@ -230,6 +230,7 @@ internal sealed class GetProductPricingWorkbenchDetailQueryHandler
             .Include(x => x.Product)
             .Include(x => x.SourceFormula)
             .Include(x => x.SourceManufacturingFormula)
+            .Include(x => x.FormulaPricingPolicy)
             .Include(x => x.PriceTiers);
 
     private static Task<ProductPricingVersion?> LoadLatestVersionAsync(

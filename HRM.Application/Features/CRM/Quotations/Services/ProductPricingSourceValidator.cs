@@ -46,7 +46,13 @@ internal sealed class ProductPricingSourceValidator
                 source.SourceId,
                 source.ExternalId,
                 source.Name,
-                source.MaterialCostSnapshot));
+                source.FormulaPricingPolicyId,
+                source.FormulaPricingPolicyVersion,
+                source.PricingProfile,
+                source.CurrentMaterialCost,
+                source.IsCurrentMaterialCostComplete,
+                source.MissingMaterialPriceCount,
+                source.PricingStatus));
     }
 }
 
@@ -55,7 +61,13 @@ internal sealed record ProductPricingSourceSnapshot(
     Guid SourceId,
     string ExternalId,
     string Name,
-    decimal? MaterialCostSnapshot)
+    Guid? FormulaPricingPolicyId,
+    int? FormulaPricingPolicyVersion,
+    HRM.Domain.Enums.Formulas.FormulaPricingProfile? PricingProfile,
+    decimal? MaterialCostSnapshot,
+    bool IsMaterialCostComplete,
+    int MissingMaterialPriceCount,
+    string PricingStatus)
 {
     public Guid? FormulaId => SourceType == ProductPricingSourceType.Formula
         ? SourceId

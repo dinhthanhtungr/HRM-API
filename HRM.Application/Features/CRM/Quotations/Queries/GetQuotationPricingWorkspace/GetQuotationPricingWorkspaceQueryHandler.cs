@@ -135,6 +135,7 @@ internal sealed class GetQuotationPricingWorkspaceQueryHandler
             .AsNoTracking()
             .Include(x => x.Product)
             .Include(x => x.PriceTiers)
+            .Include(x => x.FormulaPricingPolicy)
             .Include(x => x.SourceFormula)
             .Include(x => x.SourceManufacturingFormula)
             .Where(x =>

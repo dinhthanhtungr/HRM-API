@@ -59,6 +59,8 @@ internal sealed class ApproveProductPricingVersionCommandHandler
             .Include(x => x.SourceFormula)
             .Include(x => x.SourceManufacturingFormula)
             .Include(x => x.SourceManufacturingVUFormula)
+            .Include(x => x.FormulaPricingPolicy)
+                .ThenInclude(x => x!.Tiers)
             .FirstAsync(x => x.ProductPricingVersionId == command.ProductPricingVersionId, cancellationToken);
         if (entity.Status != ProductPricingStatus.Draft)
             return OperationResult<ProductPricingVersionDto>.Fail("Only a draft product pricing version can be approved.");
@@ -67,6 +69,11 @@ internal sealed class ApproveProductPricingVersionCommandHandler
             command.Request.ExpectedUpdatedDate, entity.UpdatedDate, "Product pricing version");
         if (concurrencyError is not null)
             return OperationResult<ProductPricingVersionDto>.Fail(concurrencyError);
+
+        var now = _dateTimeProvider.Now;
+        var policyResult = ProductPricingVersionPolicyRules.ResolveAttachedPolicy(entity, now);
+        if (!policyResult.Success || policyResult.Data is null)
+            return OperationResult<ProductPricingVersionDto>.Fail(policyResult.Message!);
 
         var sourceType = entity.SourceManufacturingFormulaId.HasValue
             ? ProductPricingSourceType.ManufacturingFormula
@@ -86,8 +93,19 @@ internal sealed class ApproveProductPricingVersionCommandHandler
         {
             return OperationResult<ProductPricingVersionDto>.Fail(sourceResult.Message!);
         }
+        if (sourceResult.Data.FormulaPricingPolicyId != entity.FormulaPricingPolicyId)
+        {
+            return OperationResult<ProductPricingVersionDto>.Fail(
+                ProductPricingVersionPolicyRules.RebaseConflict(
+                    "The source now resolves to a different pricing policy"));
+        }
+        if (!sourceResult.Data.IsMaterialCostComplete)
+        {
+            return OperationResult<ProductPricingVersionDto>.Fail("MaterialPriceMissing");
+        }
 
-        var pricingResult = ProductPricingVersionRules.NormalizePricingValues(
+        var pricingResult = ProductPricingVersionPolicyRules.Calculate(
+            policyResult.Data.Definition,
             sourceResult.Data.MaterialCostSnapshot,
             entity.ManufacturingCost,
             entity.StandardSellingPrice,
@@ -98,11 +116,7 @@ internal sealed class ApproveProductPricingVersionCommandHandler
             return OperationResult<ProductPricingVersionDto>.Fail(pricingResult.Message!);
         }
 
-        if (!pricingResult.Data.MaterialCostSnapshot.HasValue ||
-            !pricingResult.Data.ManufacturingCost.HasValue ||
-            !pricingResult.Data.StandardSellingPrice.HasValue ||
-            pricingResult.Data.StandardSellingPrice <= 0m ||
-            !pricingResult.Data.ProfitMarginRate.HasValue ||
+        if (pricingResult.Data.StandardSellingPrice <= 0m ||
             entity.PriceTiers.Count == 0 ||
             entity.PriceTiers.Any(x => x.UnitPrice < 0m))
         {
@@ -110,7 +124,20 @@ internal sealed class ApproveProductPricingVersionCommandHandler
                 "Material cost, manufacturing cost, standard selling price, profit margin and non-negative price tiers are required before approval.");
         }
 
-        var now = _dateTimeProvider.Now;
+        if (!entity.HasManualTierAdjustment)
+        {
+            var tiersResult = ProductPricingVersionPolicyRules.BuildPolicyTiers(
+                entity.ProductPricingVersionId,
+                pricingResult.Data.SuggestedPriceTiers,
+                []);
+            if (!tiersResult.Success || tiersResult.Data is null)
+                return OperationResult<ProductPricingVersionDto>.Fail(tiersResult.Message!);
+
+            _dbContext.ProductPricingTiers.RemoveRange(entity.PriceTiers);
+            entity.PriceTiers.Clear();
+            foreach (var tier in tiersResult.Data.Tiers) entity.PriceTiers.Add(tier);
+        }
+
         var previousApproved = await _dbContext.ProductPricingVersions.AsTracking()
             .Where(x => x.ProductPricingVersionId != entity.ProductPricingVersionId &&
                 x.CompanyId == companyId && x.ProductId == entity.ProductId &&
@@ -123,7 +150,7 @@ internal sealed class ApproveProductPricingVersionCommandHandler
             previous.UpdatedDate = now;
         }
 
-        entity.MaterialCostSnapshot = pricingResult.Data.MaterialCostSnapshot;
+        entity.MaterialCostSnapshot = pricingResult.Data.MaterialCost;
         entity.ManufacturingCost = pricingResult.Data.ManufacturingCost;
         entity.StandardSellingPrice = pricingResult.Data.StandardSellingPrice;
         entity.ProfitMarginRate = pricingResult.Data.ProfitMarginRate;

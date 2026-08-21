@@ -387,9 +387,10 @@ không được chồng lấn. `roundingRule` (`Nearest`, `Up`, `Down`) cùng
 Thay đổi policy không cập nhật ngược `ProductPricingTier` hoặc
 `QuotationLinePriceTier` đã lưu. Các bảng này tiếp tục là snapshot lịch sử.
 
-Mỗi `ProductPricingVersion` mới lưu `FormulaPricingPolicyId` của policy đã resolve để truy vết
-policy đã dùng sinh giá. `HasManualTierAdjustment = true` cho biết President hoặc
-Developer đã chỉnh tiers sau khi hệ thống tính từ policy. `QuotationLine` truy vết
+Mỗi `ProductPricingVersion` mới lưu `FormulaPricingPolicyId`; response trả thêm
+`formulaPricingPolicyVersion` từ policy được gắn để truy vết chính xác luật đã dùng sinh giá.
+`HasManualTierAdjustment = true` khi ít nhất một giá tier khác giá policy gợi ý hoặc policy có tier
+`priceOffset = null` cần nhập thủ công. `QuotationLine` truy vết
 policy thông qua `ProductPricingVersionId`; không lưu thêm policy trên header báo giá.
 
 Endpoint yêu cầu user đã đăng nhập và tự giới hạn dữ liệu theo company hiện tại.
@@ -397,7 +398,7 @@ Endpoint yêu cầu user đã đăng nhập và tự giới hạn dữ liệu th
 ### Pricing Engine dùng chung
 
 `HRM.Application/Commons/Pricing/Services/FormulaPricingEngine` là boundary dùng chung
-cho các phase chuyển đổi tiếp theo; Phase 2 chưa đổi public API hiện hữu sang engine này.
+cho cả API đọc và luồng ghi/duyệt giá.
 Engine nhận company, product/source reference, profile đã cấu hình tường minh, currency,
 material cost hoặc danh sách material realtime, manufacturing override, selling price,
 profit margin và `changedField`.
@@ -682,14 +683,21 @@ API quản lý bảng giá:
   Mỗi phần tử `selectedSource.materials[]` trả thêm `categoryId` snapshot từ dòng Formula/MFG Formula để FE
   có thể phân nhóm hoặc mở lookup theo đúng category đã dùng trong công thức.
 - `GET /api/v1/crm/quotations/product-pricing-versions?productId={id}&currency=VND`: xem lịch sử version.
-- `GET /api/v1/crm/quotations/products/{productId}/pricing-sources`: lấy Formula/MFG Formula đủ điều kiện;
+- `GET /api/v1/crm/quotations/products/{productId}/pricing-sources?currency=VND`: lấy Formula/MFG Formula đủ điều kiện;
   chỉ President/Developer được gọi.
-- `POST /api/v1/crm/quotations/product-pricing-versions`: tạo version `Draft` theo mặc định. Màn President gửi
-  `approveImmediately=true` để tạo và duyệt version trong cùng một lần ghi.
+- `POST /api/v1/crm/quotations/product-pricing-versions`: nguồn phải hợp lệ và có policy `Published` đúng
+  company/profile/currency. Backend tự tải material cost realtime, bỏ qua `materialCostSnapshot` và
+  `calculatedAt` từ request, rồi tạo toàn bộ tier theo policy. Màn President gửi `approveImmediately=true`
+  để tạo và duyệt version trong cùng một lần ghi.
 - `PUT /api/v1/crm/quotations/product-pricing-versions/{id}`: sửa giá và tiers của một version `Draft`;
-  không được đổi nguồn công thức.
+  không được đổi nguồn hoặc policy. Backend luôn dùng đúng policy FK của Draft, không tự chuyển sang policy mới.
 - `POST /api/v1/crm/quotations/product-pricing-versions/{id}/approve`: duyệt version và chuyển version `Approved`
-  trước đó của cùng `Product + Currency` sang `Superseded`.
+  trước đó của cùng `Product + Currency` sang `Superseded`. Backend tải lại material cost realtime và tính lần
+  cuối bằng policy FK trước khi lưu snapshot/tiers và phát notification.
+
+Draft có `FormulaPricingPolicyId = null`, policy đã `Superseded`, inactive, chưa hiệu lực hoặc không còn khớp
+company/profile/currency là read-only. PUT/approve trả HTTP `409 Conflict` với yêu cầu tạo/rebase thành version
+mới. Publish policy mới không sửa bất kỳ snapshot hoặc version `Approved` cũ nào.
 
 Chỉ `President` và `Developer` được xem lịch sử đầy đủ, tạo, sửa hoặc duyệt bảng giá. Endpoint
 `GET /products/{productId}/pricing?currency=VND` vẫn cho Sale lấy giá bán đã duyệt nhưng chỉ trả cost/margin
@@ -704,14 +712,58 @@ Ví dụ tạo Draft mới từ Formula:
   "sourceId": "00000000-0000-0000-0000-000000000000",
   "currency": "VND",
   "approveImmediately": true,
-  "materialCostSnapshot": 90000,
   "manufacturingCost": 20000,
   "standardSellingPrice": 140000,
   "profitMarginRate": 27.2727,
   "changedField": "StandardSellingPrice",
-  "priceTiers": []
+  "priceTiers": [
+    {
+      "quantityRangeLabel": "> 5 tấn",
+      "minQuantity": 5000,
+      "maxQuantity": null,
+      "minInclusive": false,
+      "maxInclusive": true,
+      "unitPrice": 135000,
+      "sortOrder": 5
+    }
+  ]
 }
 ```
+
+`priceTiers` chỉ cần chứa tier President chỉnh hoặc tier policy yêu cầu nhập thủ công. Label, range,
+inclusive flags và sort order phải đúng policy; backend tự bổ sung các tier hệ thống còn lại. Gửi tier ngoài
+policy hoặc sửa khoảng khối lượng bị từ chối. `priceTiers = []` chỉ hợp lệ khi policy không có tier manual.
+
+Response ghi thành công trả snapshot đã persist, ví dụ rút gọn:
+
+```json
+{
+  "productPricingVersionId": "00000000-0000-0000-0000-000000000000",
+  "formulaPricingPolicyId": "00000000-0000-0000-0000-000000000000",
+  "formulaPricingPolicyVersion": 3,
+  "hasManualTierAdjustment": true,
+  "sourceFormulaId": "00000000-0000-0000-0000-000000000000",
+  "formulaExternalIdSnapshot": "VU260800001",
+  "materialCostSnapshot": 90000,
+  "manufacturingCost": 20000,
+  "standardSellingPrice": 140000,
+  "profitMarginRate": 27.2727,
+  "calculatedAt": "2026-08-21T10:00:00+07:00",
+  "status": "Approved",
+  "priceTiers": [
+    {
+      "quantityRangeLabel": "> 5 tấn",
+      "minQuantity": 5000,
+      "maxQuantity": null,
+      "unitPrice": 135000,
+      "sortOrder": 5
+    }
+  ]
+}
+```
+
+`materialCostSnapshot` và `calculatedAt` trong response là dữ liệu server vừa tính/lưu, không phải giá request
+được echo lại. Version được approve luôn trả toàn bộ tier policy đã persist.
 
 Chọn một nguồn khác phải gọi `POST` để tạo version mới. Luồng President chuẩn dùng một nút `Lưu giá` và gửi
 `approveImmediately=true`: backend kiểm tra nguồn/tiers, tạo version `Approved`, chuyển Approved cũ thành
@@ -789,7 +841,7 @@ Ví dụ rút gọn khi Product chưa từng có `ProductPricingVersion`, nhưng
 | `isCurrentMaterialCostComplete`/`missingMaterialPriceCount` | Cho biết mọi NVL đã có đơn giá hay chưa. Khi thiếu giá, cost/pricing/tier tính toán có thể là `null`; không thay `null` bằng `0`. |
 | `storedMaterialCostSnapshot` | Chi phí NVL đã lưu trong Draft/Approved gần nhất. `null` nghĩa là chưa có version để so sánh. |
 | `materialCostDifference*` | Chỉ có khi đồng thời có current cost và stored snapshot; dùng so sánh biến động giá NVL, không phải lợi nhuận. |
-| `manufacturingCost` | Chi phí sản xuất hiệu lực. `usedDefaultManufacturingCost` cho biết đang dùng mức mặc định theo profile hay giá có sẵn từ nguồn/version. |
+| `manufacturingCost` | Chi phí sản xuất hiệu lực. `usedDefaultManufacturingCost` cho biết đang dùng mức mặc định của policy hay override đã lưu. |
 | `standardSellingPrice` | Giá bán hiệu lực do backend tính từ realtime cost và version đang có. Trong ví dụ: `260000 + 10000 = 270000`. |
 | `profitMarginRate` | `(standardSellingPrice - costBase) / costBase * 100`, với `costBase = currentMaterialCost + manufacturingCost`. |
 | Ba field giá ở top-level | Là giá canonical để FE bind vào ba input trong drawer; chúng phải giống giá hiệu lực trong `summary`. Không bind từ `draftPricing`/`approvedPricing` vì hai object có thể `null`. |
@@ -837,8 +889,8 @@ Backend là nguồn tính giá chính thức. `MaterialCostSnapshot` và `Calcul
 thích client cũ nhưng không được tin khi ghi: backend lấy chi phí NVL realtime từ `sourceType + sourceId` và dùng
 thời gian server. Quy tắc chuẩn hóa:
 
-- Giá do hệ thống tính (`currentMaterialCost`, thành tiền NVL, cost base, standard selling price và tier gợi ý)
-  được làm tròn về số nguyên bằng `MidpointRounding.AwayFromZero`.
+- Material cost, cost base, standard selling price và tier hệ thống được làm tròn theo
+  `roundingRule + roundingIncrement` của policy đã gắn.
 - Giá do người dùng nhập và lưu được giữ phần thập phân tối đa theo precision hiện có; backend không ép về số nguyên.
 - `ProductPricingTier.UnitPrice` và `QuotationLinePriceTier.UnitPrice` cho phép bằng `0`, chỉ giá âm bị từ chối.
 
@@ -862,8 +914,8 @@ thay state đang hiển thị bằng response đó.
 
 Khi approve, backend lấy lại material cost realtime lần cuối, giữ nguyên `StandardSellingPrice` President đã chốt,
 tính lại `ProfitMarginRate`, ghi `MaterialCostSnapshot`/`CalculatedAt` rồi mới chuyển version sang `Approved`.
-Template tier có thể nằm ở FE để khởi tạo, nhưng sau lần lưu đầu tiên phải gửi toàn bộ tiers qua `PUT` và những lần
-mở lại phải đọc tiers đã lưu trong DB.
+Tier hệ thống được dựng từ policy; tier thủ công đã lưu được giữ nguyên. FE không phải và không được tự tạo
+template tier ngoài policy.
 
 ## 7. Quy tắc giá theo khối lượng của dòng sản phẩm
 

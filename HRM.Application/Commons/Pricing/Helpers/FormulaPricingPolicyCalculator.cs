@@ -62,6 +62,11 @@ public static class FormulaPriceCalculator
             _ when standardSellingPrice.HasValue => PricingRoundingRules.RoundStoredInput(standardSellingPrice.Value),
             _ => Round(policy, costBase * (1m + marginToApply / 100m))
         };
+        var resolvedProfitMarginRate = CalculateProfitMarginRate(
+            resolvedStandardSellingPrice,
+            costBase);
+        if (resolvedProfitMarginRate is < 0m or > 100m)
+            throw new ArgumentOutOfRangeException(nameof(standardSellingPrice));
 
         return new FormulaPriceCalculationDto
         {
@@ -71,7 +76,7 @@ public static class FormulaPriceCalculator
             UsedDefaultManufacturingCost = usedDefaultManufacturingCost,
             CostBase = costBase,
             StandardSellingPrice = resolvedStandardSellingPrice,
-            ProfitMarginRate = CalculateProfitMarginRate(resolvedStandardSellingPrice, costBase),
+            ProfitMarginRate = resolvedProfitMarginRate,
             SuggestedPriceTiers = resolvedStandardSellingPrice > 0m
                 ? policy.Tiers.OrderBy(x => x.SortOrder).Select(x => MapTier(
                     policy, x, resolvedStandardSellingPrice, materialCost, costBase)).ToArray()

@@ -15,6 +15,9 @@ internal static class ProductPricingVersionMapper
             FormulaPricingPolicyId = includeSensitivePricing
                 ? entity.FormulaPricingPolicyId
                 : null,
+            FormulaPricingPolicyVersion = includeSensitivePricing
+                ? entity.FormulaPricingPolicy?.Version
+                : null,
             HasManualTierAdjustment = includeSensitivePricing
                 ? entity.HasManualTierAdjustment
                 : null,

@@ -43,6 +43,7 @@ internal sealed class GetProductPricingVersionsQueryHandler
         var query = _dbContext.ProductPricingVersions.AsNoTracking()
             .Include(x => x.Product)
             .Include(x => x.PriceTiers)
+            .Include(x => x.FormulaPricingPolicy)
             .Include(x => x.SourceFormula)
             .Include(x => x.SourceManufacturingFormula)
             .Where(x => x.CompanyId == companyId && x.ProductId == request.ProductId && x.IsActive);

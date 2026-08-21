@@ -50,6 +50,8 @@ internal sealed class UpdateProductPricingVersionCommandHandler
             .Include(x => x.SourceFormula)
             .Include(x => x.SourceManufacturingFormula)
             .Include(x => x.SourceManufacturingVUFormula)
+            .Include(x => x.FormulaPricingPolicy)
+                .ThenInclude(x => x!.Tiers)
             .FirstOrDefaultAsync(x => x.ProductPricingVersionId == command.ProductPricingVersionId &&
                 x.CompanyId == companyId && x.IsActive, cancellationToken);
         if (entity is null)
@@ -61,6 +63,11 @@ internal sealed class UpdateProductPricingVersionCommandHandler
             command.Request.ExpectedUpdatedDate, entity.UpdatedDate, "Product pricing version");
         if (concurrencyError is not null)
             return OperationResult<ProductPricingVersionDto>.Fail(concurrencyError);
+
+        var now = _dateTimeProvider.Now;
+        var policyResult = ProductPricingVersionPolicyRules.ResolveAttachedPolicy(entity, now);
+        if (!policyResult.Success || policyResult.Data is null)
+            return OperationResult<ProductPricingVersionDto>.Fail(policyResult.Message!);
 
         var sourceType = entity.SourceManufacturingFormulaId.HasValue
             ? ProductPricingSourceType.ManufacturingFormula
@@ -78,6 +85,12 @@ internal sealed class UpdateProductPricingVersionCommandHandler
             cancellationToken);
         if (!sourceResult.Success || sourceResult.Data is null)
             return OperationResult<ProductPricingVersionDto>.Fail(sourceResult.Message!);
+        if (sourceResult.Data.FormulaPricingPolicyId != entity.FormulaPricingPolicyId)
+            return OperationResult<ProductPricingVersionDto>.Fail(
+                ProductPricingVersionPolicyRules.RebaseConflict(
+                    "The source now resolves to a different pricing policy"));
+        if (!sourceResult.Data.IsMaterialCostComplete)
+            return OperationResult<ProductPricingVersionDto>.Fail("MaterialPriceMissing");
 
         var changedField = ProductPricingVersionRules.ResolveChangedField(
             command.Request.ChangedField,
@@ -90,7 +103,8 @@ internal sealed class UpdateProductPricingVersionCommandHandler
         var requestedProfitMarginRate = changedField == ProductPricingChangedField.ManufacturingCost
             ? command.Request.ProfitMarginRate ?? entity.ProfitMarginRate ?? 0m
             : command.Request.ProfitMarginRate;
-        var pricingResult = ProductPricingVersionRules.NormalizePricingValues(
+        var pricingResult = ProductPricingVersionPolicyRules.Calculate(
+            policyResult.Data.Definition,
             sourceResult.Data.MaterialCostSnapshot,
             command.Request.ManufacturingCost,
             command.Request.StandardSellingPrice,
@@ -99,17 +113,19 @@ internal sealed class UpdateProductPricingVersionCommandHandler
         if (!pricingResult.Success || pricingResult.Data is null)
             return OperationResult<ProductPricingVersionDto>.Fail(pricingResult.Message!);
 
-        var tiersResult = ProductPricingVersionRules.BuildTiers(entity.ProductPricingVersionId, command.Request.PriceTiers);
+        var tiersResult = ProductPricingVersionPolicyRules.BuildPolicyTiers(
+            entity.ProductPricingVersionId,
+            pricingResult.Data.SuggestedPriceTiers,
+            command.Request.PriceTiers);
         if (!tiersResult.Success || tiersResult.Data is null)
             return OperationResult<ProductPricingVersionDto>.Fail(tiersResult.Message!);
 
         _dbContext.ProductPricingTiers.RemoveRange(entity.PriceTiers);
-        entity.HasManualTierAdjustment = true;
+        entity.HasManualTierAdjustment = tiersResult.Data.HasManualTierAdjustment;
         entity.PriceTiers.Clear();
-        foreach (var tier in tiersResult.Data) entity.PriceTiers.Add(tier);
+        foreach (var tier in tiersResult.Data.Tiers) entity.PriceTiers.Add(tier);
 
-        var now = _dateTimeProvider.Now;
-        entity.MaterialCostSnapshot = pricingResult.Data.MaterialCostSnapshot;
+        entity.MaterialCostSnapshot = pricingResult.Data.MaterialCost;
         entity.ManufacturingCost = pricingResult.Data.ManufacturingCost;
         entity.StandardSellingPrice = pricingResult.Data.StandardSellingPrice;
         entity.ProfitMarginRate = pricingResult.Data.ProfitMarginRate;

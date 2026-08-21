@@ -99,7 +99,40 @@ internal sealed class CreateProductPricingVersionCommandHandler
             return OperationResult<ProductPricingVersionDto>.Fail(sourceResult.Message!);
         }
 
-        var pricingResult = ProductPricingVersionRules.NormalizePricingValues(
+        if (sourceResult.Data.PricingStatus == FormulaPricingPolicyRules.PricingPolicyMissing ||
+            !sourceResult.Data.FormulaPricingPolicyId.HasValue)
+        {
+            return OperationResult<ProductPricingVersionDto>.Fail(
+                FormulaPricingPolicyRules.PricingPolicyMissing);
+        }
+
+        if (!sourceResult.Data.IsMaterialCostComplete ||
+            !sourceResult.Data.MaterialCostSnapshot.HasValue)
+        {
+            return OperationResult<ProductPricingVersionDto>.Fail("MaterialPriceMissing");
+        }
+
+        if (productInfo.FormulaPricingProfile is not { } pricingProfile ||
+            !Enum.IsDefined(pricingProfile))
+        {
+            return OperationResult<ProductPricingVersionDto>.Fail(
+                "Pricing profile is not configured for this product.");
+        }
+
+        var pricingPolicy = await _pricingPolicyProvider.GetPublishedPolicyAsync(
+            companyId,
+            pricingProfile,
+            currency,
+            cancellationToken);
+        if (pricingPolicy is null ||
+            pricingPolicy.FormulaPricingPolicyId != sourceResult.Data.FormulaPricingPolicyId)
+        {
+            return OperationResult<ProductPricingVersionDto>.Fail(
+                FormulaPricingPolicyRules.PricingPolicyMissing);
+        }
+
+        var pricingResult = ProductPricingVersionPolicyRules.Calculate(
+            pricingPolicy.Definition,
             sourceResult.Data.MaterialCostSnapshot,
             command.Request.ManufacturingCost,
             command.Request.StandardSellingPrice,
@@ -111,19 +144,18 @@ internal sealed class CreateProductPricingVersionCommandHandler
         }
 
         var id = Guid.CreateVersion7();
-        var tiersResult = ProductPricingVersionRules.BuildTiers(id, command.Request.PriceTiers);
+        var tiersResult = ProductPricingVersionPolicyRules.BuildPolicyTiers(
+            id,
+            pricingResult.Data.SuggestedPriceTiers,
+            command.Request.PriceTiers);
         if (!tiersResult.Success || tiersResult.Data is null)
         {
             return OperationResult<ProductPricingVersionDto>.Fail(tiersResult.Message!);
         }
 
         if (command.Request.ApproveImmediately &&
-            (!pricingResult.Data.MaterialCostSnapshot.HasValue ||
-             !pricingResult.Data.ManufacturingCost.HasValue ||
-             !pricingResult.Data.StandardSellingPrice.HasValue ||
-             pricingResult.Data.StandardSellingPrice <= 0m ||
-             !pricingResult.Data.ProfitMarginRate.HasValue ||
-             tiersResult.Data.Count == 0))
+            (pricingResult.Data.StandardSellingPrice <= 0m ||
+             tiersResult.Data.Tiers.Count == 0))
         {
             return OperationResult<ProductPricingVersionDto>.Fail(
                 "Material cost, manufacturing cost, standard selling price, profit margin and non-negative price tiers are required before approval.");
@@ -140,48 +172,6 @@ internal sealed class CreateProductPricingVersionCommandHandler
                 x.Currency == currency)
             .MaxAsync(x => (int?)x.Version, cancellationToken) ?? 0;
         var now = _dateTimeProvider.Now;
-        if (productInfo.FormulaPricingProfile is not { } pricingProfile ||
-            !Enum.IsDefined(pricingProfile))
-        {
-            return OperationResult<ProductPricingVersionDto>.Fail(
-                "Pricing profile is not configured for this product.");
-        }
-        var pricingPolicy = await _pricingPolicyProvider.GetPublishedPolicyAsync(
-            companyId,
-            pricingProfile,
-            currency,
-            cancellationToken);
-        if (pricingPolicy is null)
-        {
-            return OperationResult<ProductPricingVersionDto>.Fail(
-                FormulaPricingPolicyRules.PricingPolicyMissing);
-        }
-
-        var hasManualTierAdjustment = false;
-        if (
-            pricingResult.Data.MaterialCostSnapshot.HasValue &&
-            pricingResult.Data.StandardSellingPrice.HasValue)
-        {
-            var suggestedTiers = FormulaPriceCalculator.Calculate(
-                    pricingPolicy.Definition,
-                    pricingResult.Data.MaterialCostSnapshot.Value,
-                    pricingResult.Data.ManufacturingCost,
-                    pricingResult.Data.StandardSellingPrice)
-                .SuggestedPriceTiers
-                .Where(x => x.UnitPrice.HasValue)
-                .OrderBy(x => x.SortOrder)
-                .ToArray();
-            var savedTiers = tiersResult.Data.OrderBy(x => x.SortOrder).ToArray();
-            hasManualTierAdjustment = suggestedTiers.Length != savedTiers.Length ||
-                suggestedTiers.Zip(savedTiers).Any(pair =>
-                    pair.First.QuantityRangeLabel != pair.Second.QuantityRangeLabel ||
-                    pair.First.MinQuantity != pair.Second.MinQuantity ||
-                    pair.First.MaxQuantity != pair.Second.MaxQuantity ||
-                    pair.First.MinInclusive != pair.Second.MinInclusive ||
-                    pair.First.MaxInclusive != pair.Second.MaxInclusive ||
-                    pair.First.UnitPrice != pair.Second.UnitPrice ||
-                    pair.First.SortOrder != pair.Second.SortOrder);
-        }
         if (command.Request.ApproveImmediately)
         {
             var previousCurrentVersions = await _writeDbContext.ProductPricingVersions
@@ -209,13 +199,13 @@ internal sealed class CreateProductPricingVersionCommandHandler
             ProductPricingVersionId = id,
             CompanyId = companyId,
             ProductId = command.Request.ProductId,
-            FormulaPricingPolicyId = pricingPolicy?.FormulaPricingPolicyId,
-            HasManualTierAdjustment = hasManualTierAdjustment,
+            FormulaPricingPolicyId = pricingPolicy.FormulaPricingPolicyId,
+            HasManualTierAdjustment = tiersResult.Data.HasManualTierAdjustment,
             SourceFormulaId = sourceResult.Data.FormulaId,
             SourceManufacturingFormulaId = sourceResult.Data.ManufacturingFormulaId,
             FormulaExternalIdSnapshot = sourceResult.Data.ExternalId,
             Currency = currency,
-            MaterialCostSnapshot = pricingResult.Data.MaterialCostSnapshot,
+            MaterialCostSnapshot = pricingResult.Data.MaterialCost,
             ManufacturingCost = pricingResult.Data.ManufacturingCost,
             StandardSellingPrice = pricingResult.Data.StandardSellingPrice,
             ProfitMarginRate = pricingResult.Data.ProfitMarginRate,
@@ -231,7 +221,7 @@ internal sealed class CreateProductPricingVersionCommandHandler
             UpdatedDate = now,
             ApprovedBy = command.Request.ApproveImmediately ? employeeId : null,
             ApprovedAt = command.Request.ApproveImmediately ? now : null,
-            PriceTiers = tiersResult.Data.ToList()
+            PriceTiers = tiersResult.Data.Tiers.ToList()
         };
 
         await _writeDbContext.ProductPricingVersions.AddAsync(entity, cancellationToken);
@@ -256,6 +246,7 @@ internal sealed class CreateProductPricingVersionCommandHandler
             .AsNoTracking()
             .Include(x => x.Product)
             .Include(x => x.PriceTiers)
+            .Include(x => x.FormulaPricingPolicy)
             .Include(x => x.SourceFormula)
             .Include(x => x.SourceManufacturingFormula)
             .FirstAsync(x => x.ProductPricingVersionId == id, cancellationToken);
