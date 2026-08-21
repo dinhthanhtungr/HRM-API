@@ -62,13 +62,16 @@ Patch a sample request:
 PATCH /api/v1/plm/sample-requests/{sampleRequestId}
 ```
 
-Luồng đề xuất thay đổi dữ liệu chờ Lab duyệt hiện chỉ giữ dạng legacy/backward-compatible. FE mới không dùng luồng này khi nghiệp vụ chỉ cần lưu thẳng và báo Lab:
+Đa số field trên màn hình dùng PATCH trực tiếp rồi báo Lab. Riêng ba tiêu chuẩn `product.food_safety`,
+`product.rohs_standard`, `product.reach_standard` do Sale/Leader đề xuất bắt buộc đi qua luồng Lab
+duyệt; PATCH trực tiếp (kể cả `clearFields`) bị từ chối. Người thuộc
+`ApplicationRoleSets.PLM.ProductTechnicalEditors` vẫn có thể sửa trực tiếp:
 
 ```http
 POST /api/v1/plm/sample-requests/{sampleRequestId}/data-change-requests
 ```
 
-Lab duyệt hoặc từ chối một phần/toàn bộ đề xuất ngay trong Notification Hub nếu flow legacy này được bật lại:
+Lab duyệt hoặc từ chối một phần/toàn bộ đề xuất ngay trong Notification Hub:
 
 ```http
 POST /api/v1/plm/sample-requests/{sampleRequestId}/data-change-requests/{messageId}/decision
@@ -146,7 +149,7 @@ After FE directly patches `sample_request.*` or whitelisted `product.*` fields t
 POST /api/v1/plm/sample-requests/{sampleRequestId}/direct-patch-notifications
 ```
 
-This endpoint does not update business data. It only creates an InternalMail message in the active SampleRequest conversation and publishes a notification after the PATCH has already succeeded. The request must include `idempotencyKey`, `message`, optional `recipientEmployeeIds`, and `changes[]`. `changes[].fieldCode` only accepts direct-notify field codes from the whitelist. The current primary FE flow is direct PATCH plus this notification endpoint; `data-change-requests` is legacy until the Lab approval flow is intentionally enabled again.
+This endpoint does not update business data. It only creates an InternalMail message in the active SampleRequest conversation and publishes a notification after the PATCH has already succeeded. The request must include `idempotencyKey`, `message`, optional `recipientEmployeeIds`, and `changes[]`. `changes[].fieldCode` only accepts direct-notify field codes from the whitelist; it explicitly excludes `product.food_safety`, `product.rohs_standard`, and `product.reach_standard` because those fields use the Lab approval flow.
 
 ```json
 {
@@ -209,9 +212,6 @@ product.product_usage
 product.polymer_matched_in
 product.code
 product.end_user
-product.food_safety
-product.rohs_standard
-product.reach_standard
 product.max_temp
 product.weather_resistance
 product.light_condition
@@ -513,9 +513,9 @@ AttachmentFileHelper.IsImageFile(...)
 AttachmentFileHelper.BuildUrl(...)
 ```
 
-## Legacy Data Change Field Contract
+## Data Change Field Contract
 
-`POST /api/v1/plm/sample-requests/{sampleRequestId}/data-change-requests` supports stable field codes from `SampleRequestDataChangeFieldCatalog`, but this approval flow is not the primary FE flow while Sample Request changes only need Lab notification. Prefer `PATCH` plus `direct-patch-notifications` for new screens unless the business explicitly enables Lab approval again.
+`POST /api/v1/plm/sample-requests/{sampleRequestId}/data-change-requests` supports stable field codes from `SampleRequestDataChangeFieldCatalog`. FE bắt buộc dùng flow này khi Sale/Leader đổi `product.food_safety`, `product.rohs_standard` hoặc `product.reach_standard`; các field khác chỉ dùng khi nghiệp vụ yêu cầu approval. Với thay đổi chỉ cần báo Lab, dùng `PATCH` rồi `direct-patch-notifications`.
 
 Sample request fields currently supported:
 

@@ -10,6 +10,11 @@
 
 Không dùng `null` trong direct patch để xóa number/date/bool nullable, vì model binder không phân biệt được field bị bỏ qua và field được gửi `null`. Luồng duyệt yêu cầu thay đổi dữ liệu vẫn có nhánh riêng `IsDataChangeApproval` để áp dụng các field được catalog chỉ định.
 
+Riêng Sale/Leader không được PATCH trực tiếp ba field tiêu chuẩn kỹ thuật sau, kể cả khi muốn
+xóa bằng `clearFields`: `product.food_safety`, `product.rohs_standard`, `product.reach_standard`.
+FE phải gửi chúng qua `POST .../data-change-requests`; chỉ khi Lab duyệt thì backend mới patch
+Product. Người thuộc `ApplicationRoleSets.PLM.ProductTechnicalEditors` vẫn có thể cập nhật trực tiếp.
+
 Muốn xóa field rõ ràng, FE gửi `clearFields` với fieldCode nằm trong whitelist của handler:
 
 ```json

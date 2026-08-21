@@ -149,6 +149,14 @@ internal sealed class PatchSampleRequestCommandHandler
             return OperationResult<Guid>.Fail("You are not allowed to update product information directly for this sample request.");
         }
 
+        if (!request.IsDataChangeApproval &&
+            SampleRequestLabApprovalRules.RequiresLabApproval(request) &&
+            !_currentUser.IsInAnyRole(ApplicationRoleSets.PLM.ProductTechnicalEditors))
+        {
+            return OperationResult<Guid>.Fail(
+                "Food safety, RoHS and REACH changes must be submitted for Lab approval.");
+        }
+
         var acceptsSentSampleByFormulaSelection =
             request.FormulaId is { } requestedFormulaId &&
             requestedFormulaId != Guid.Empty &&

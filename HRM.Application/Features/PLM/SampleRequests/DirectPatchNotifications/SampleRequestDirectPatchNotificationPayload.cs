@@ -1,4 +1,5 @@
 using System.Text.Json;
+using HRM.Application.Features.PLM.SampleRequests.Rules;
 
 namespace HRM.Application.Features.PLM.SampleRequests.DirectPatchNotifications;
 
@@ -69,9 +70,6 @@ internal static class SampleRequestDirectPatchFieldCatalog
         "product.polymer_matched_in",
         "product.code",
         "product.end_user",
-        "product.food_safety",
-        "product.rohs_standard",
-        "product.reach_standard",
         "product.max_temp",
         "product.weather_resistance",
         "product.light_condition",
@@ -85,5 +83,6 @@ internal static class SampleRequestDirectPatchFieldCatalog
 
     public static bool IsSupported(string? fieldCode)
         => !string.IsNullOrWhiteSpace(fieldCode) &&
+            !SampleRequestLabApprovalRules.IsRequiredApprovalField(fieldCode) &&
             DirectNotifyFieldCodes.Contains(fieldCode.Trim());
 }
