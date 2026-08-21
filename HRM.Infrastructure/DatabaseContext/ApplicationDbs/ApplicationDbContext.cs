@@ -340,6 +340,8 @@ namespace HRM.Infrastructure.DatabaseContext.ApplicationDbs
                 entity.Property(e => e.Name).HasColumnName("Name").HasColumnType("citext");
                 entity.Property(e => e.ColourName).HasColumnName("ColourName");
                 entity.Property(e => e.Additive).HasColumnName("Additive");
+                entity.Property(e => e.FormulaPricingProfile).HasColumnName("FormulaPricingProfile")
+                    .HasConversion<int>();
                 entity.Property(e => e.UsageRate).HasColumnName("UsageRate");
                 entity.Property(e => e.DeltaE).HasColumnName("DeltaE");
                 entity.Property(e => e.Requirement).HasColumnName("Requirement");

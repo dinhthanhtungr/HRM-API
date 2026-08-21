@@ -78,8 +78,7 @@ internal sealed class CreateProductPricingVersionCommandHandler
                 x.IsActive)
             .Select(x => new
             {
-                ProductCode = x.ColourCode ?? x.Code ?? string.Empty,
-                ProductAdditive = x.Additive
+                x.FormulaPricingProfile
             })
             .FirstOrDefaultAsync(cancellationToken);
         if (productInfo is null)
@@ -140,16 +139,25 @@ internal sealed class CreateProductPricingVersionCommandHandler
                 x.Currency == currency)
             .MaxAsync(x => (int?)x.Version, cancellationToken) ?? 0;
         var now = _dateTimeProvider.Now;
-        var pricingProfile = FormulaPriceCalculator.ResolveProfile(
-            productInfo.ProductCode,
-            productInfo.ProductAdditive);
+        if (productInfo.FormulaPricingProfile is not { } pricingProfile ||
+            !Enum.IsDefined(pricingProfile))
+        {
+            return OperationResult<ProductPricingVersionDto>.Fail(
+                "Pricing profile is not configured for this product.");
+        }
         var pricingPolicy = await _pricingPolicyProvider.GetPublishedPolicyAsync(
             companyId,
             pricingProfile,
             currency,
             cancellationToken);
+        if (pricingPolicy is null)
+        {
+            return OperationResult<ProductPricingVersionDto>.Fail(
+                FormulaPricingPolicyRules.PricingPolicyMissing);
+        }
+
         var hasManualTierAdjustment = false;
-        if (pricingPolicy is not null &&
+        if (
             pricingResult.Data.MaterialCostSnapshot.HasValue &&
             pricingResult.Data.StandardSellingPrice.HasValue)
         {

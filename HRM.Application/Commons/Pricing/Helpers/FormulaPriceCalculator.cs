@@ -36,21 +36,6 @@ public static class FormulaPriceCalculator
         new("> 5 tấn", 5_000m, null, false, true, null)
     ];
 
-    public static FormulaPricingPolicyDefinition GetDefaultPolicy(FormulaPricingProfile profile)
-        => new(
-            profile,
-            profile == FormulaPricingProfile.Compound
-                ? DefaultCompoundManufacturingCost
-                : DefaultPowderManufacturingCost,
-            GetRules(profile).Select((rule, index) => new FormulaPricingPolicyTierDefinition(
-                rule.QuantityRangeLabel,
-                rule.MinQuantity,
-                rule.MaxQuantity,
-                rule.MinInclusive,
-                rule.MaxInclusive,
-                rule.Offset,
-                index)).ToArray());
-
     public static IReadOnlyList<FormulaSuggestedPriceTierDto> BuildPriceTierTemplates(
         FormulaPricingPolicyDefinition policy)
         => policy.Tiers.OrderBy(x => x.SortOrder).Select(x => new FormulaSuggestedPriceTierDto
@@ -73,16 +58,22 @@ public static class FormulaPriceCalculator
         decimal? manufacturingCost,
         decimal? standardSellingPrice)
     {
-        var roundedMaterialCost = PricingRoundingRules.RoundCalculatedPrice(materialCost);
+        var roundedMaterialCost = PricingRoundingRules.RoundCalculatedPrice(
+            materialCost, policy.RoundingRule, policy.RoundingIncrement);
         var usedDefaultManufacturingCost = manufacturingCost is null or <= 0m;
         var effectiveManufacturingCost = manufacturingCost is > 0m
             ? manufacturingCost.Value
             : policy.DefaultManufacturingCost;
         var costBase = PricingRoundingRules.RoundCalculatedPrice(
-            roundedMaterialCost + effectiveManufacturingCost);
+            roundedMaterialCost + effectiveManufacturingCost,
+            policy.RoundingRule,
+            policy.RoundingIncrement);
         var resolvedStandardSellingPrice = standardSellingPrice.HasValue
             ? PricingRoundingRules.RoundStoredInput(standardSellingPrice.Value)
-            : costBase;
+            : PricingRoundingRules.RoundCalculatedPrice(
+                costBase * (1m + policy.DefaultProfitMarginRate / 100m),
+                policy.RoundingRule,
+                policy.RoundingIncrement);
         return new FormulaPriceCalculationDto
         {
             Profile = policy.Profile,
@@ -96,7 +87,10 @@ public static class FormulaPriceCalculator
                 ? policy.Tiers.OrderBy(x => x.SortOrder).Select(x =>
                 {
                     var unitPrice = x.PriceOffset.HasValue
-                        ? PricingRoundingRules.RoundCalculatedPrice(Math.Max(0m, resolvedStandardSellingPrice + x.PriceOffset.Value))
+                        ? PricingRoundingRules.RoundCalculatedPrice(
+                            Math.Max(0m, resolvedStandardSellingPrice + x.PriceOffset.Value),
+                            policy.RoundingRule,
+                            policy.RoundingIncrement)
                         : (decimal?)null;
                     return new FormulaSuggestedPriceTierDto
                     {

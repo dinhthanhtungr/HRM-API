@@ -1,3 +1,4 @@
+using HRM.Application.Abstractions.Commons.Time;
 using HRM.Application.Abstractions.Persistence.CRM.CustomerCare;
 using HRM.Application.Commons.Pricing.Models;
 using HRM.Domain.Enums.CustomerEnum;
@@ -6,7 +7,9 @@ using Microsoft.EntityFrameworkCore;
 
 namespace HRM.Application.Features.CRM.Quotations.Services;
 
-internal sealed class FormulaPricingPolicyProvider(ICRMReadDbContext dbContext)
+internal sealed class FormulaPricingPolicyProvider(
+    ICRMReadDbContext dbContext,
+    IDateTimeProvider dateTimeProvider)
 {
     public sealed record ResolvedPolicy(
         Guid FormulaPricingPolicyId,
@@ -22,10 +25,13 @@ internal sealed class FormulaPricingPolicyProvider(ICRMReadDbContext dbContext)
         Guid companyId, FormulaPricingProfile profile, string currency,
         CancellationToken cancellationToken)
     {
+        var now = dateTimeProvider.Now;
+        var normalizedCurrency = currency.Trim().ToUpperInvariant();
         var policy = await dbContext.FormulaPricingPolicies.AsNoTracking()
             .Include(x => x.Tiers)
             .Where(x => x.CompanyId == companyId && x.Profile == profile &&
-                x.Currency == currency && x.Status == FormulaPricingPolicyStatus.Published && x.IsActive)
+                x.Currency == normalizedCurrency && x.Status == FormulaPricingPolicyStatus.Published &&
+                x.IsActive && x.EffectiveFrom.HasValue && x.EffectiveFrom <= now)
             .OrderByDescending(x => x.Version)
             .FirstOrDefaultAsync(cancellationToken);
         return policy is null

@@ -2,11 +2,59 @@ using HRM.Application.Commons.Models;
 using HRM.Application.Commons.Pricing.Models;
 using HRM.Application.Features.CRM.Quotations.Dtos;
 using HRM.Domain.Entities.CustomerSchema;
+using HRM.Domain.Enums.CustomerEnum;
 
 namespace HRM.Application.Features.CRM.Quotations.Services;
 
 internal static class FormulaPricingPolicyRules
 {
+    public const string PricingPolicyMissing = "PricingPolicyMissing";
+
+    public static string? ValidatePolicyConfiguration(
+        string? name,
+        string? currency,
+        decimal defaultManufacturingCost,
+        decimal defaultProfitMarginRate,
+        FormulaPricingRoundingRule roundingRule,
+        decimal roundingIncrement,
+        DateTime effectiveFrom)
+    {
+        if (string.IsNullOrWhiteSpace(name) || name.Trim().Length > 150)
+            return "Policy name is required and is limited to 150 characters.";
+        if (!IsValidCurrency(currency))
+            return "Currency must be a three-letter ISO currency code.";
+        if (defaultManufacturingCost < 0m)
+            return "Default manufacturing cost cannot be negative.";
+        if (defaultProfitMarginRate is < 0m or > 100m)
+            return "Default profit margin rate must be between 0 and 100.";
+        if (!Enum.IsDefined(roundingRule) || roundingIncrement <= 0m)
+            return "A valid rounding rule and positive rounding increment are required.";
+        return effectiveFrom == default
+            ? "EffectiveFrom is required."
+            : null;
+    }
+
+    public static bool IsValidCurrency(string? currency)
+        => currency is { Length: 3 } && currency.All(char.IsAsciiLetter);
+
+    public static int GetNextVersion(int latestVersion)
+        => latestVersion < 0
+            ? throw new ArgumentOutOfRangeException(nameof(latestVersion))
+            : checked(latestVersion + 1);
+
+    public static string? ValidatePublish(
+        FormulaPricingPolicyStatus status,
+        int version,
+        DateTime? effectiveFrom,
+        int tierCount)
+    {
+        if (status != FormulaPricingPolicyStatus.Draft || version <= 0 || tierCount == 0)
+            return "Only a complete draft pricing policy can be published.";
+        return effectiveFrom.HasValue && effectiveFrom.Value != default
+            ? null
+            : "EffectiveFrom is required before publishing a pricing policy.";
+    }
+
     public static OperationResult<IReadOnlyList<FormulaPricingPolicyTier>> BuildTiers(
         Guid policyId,
         IReadOnlyList<FormulaPricingPolicyTierRequest> requests)
@@ -56,6 +104,9 @@ internal static class FormulaPricingPolicyRules
     public static FormulaPricingPolicyDefinition ToDefinition(FormulaPricingPolicy policy) => new(
         policy.Profile,
         policy.DefaultManufacturingCost,
+        policy.DefaultProfitMarginRate,
+        policy.RoundingRule,
+        policy.RoundingIncrement,
         policy.Tiers.OrderBy(x => x.SortOrder).Select(x => new FormulaPricingPolicyTierDefinition(
             x.QuantityRangeLabel, x.MinQuantity, x.MaxQuantity, x.MinInclusive,
             x.MaxInclusive, x.PriceOffset, x.SortOrder)).ToArray());
@@ -68,6 +119,9 @@ internal static class FormulaPricingPolicyRules
         Name = policy.Name,
         Version = policy.Version,
         DefaultManufacturingCost = policy.DefaultManufacturingCost,
+        DefaultProfitMarginRate = policy.DefaultProfitMarginRate,
+        RoundingRule = policy.RoundingRule,
+        RoundingIncrement = policy.RoundingIncrement,
         Status = policy.Status,
         EffectiveFrom = policy.EffectiveFrom,
         PublishedAt = policy.PublishedAt,

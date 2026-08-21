@@ -18,6 +18,9 @@ public sealed class FormulaPricingPolicyConfiguration : IEntityTypeConfiguration
             .HasDefaultValue("VND").IsRequired();
         entity.Property(x => x.Name).HasColumnType("citext").HasMaxLength(150).IsRequired();
         entity.Property(x => x.DefaultManufacturingCost).HasPrecision(22, 6);
+        entity.Property(x => x.DefaultProfitMarginRate).HasPrecision(9, 4);
+        entity.Property(x => x.RoundingRule).HasConversion<int>();
+        entity.Property(x => x.RoundingIncrement).HasPrecision(22, 6);
         entity.Property(x => x.Status).HasConversion<int>()
             .HasDefaultValue(FormulaPricingPolicyStatus.Draft);
         entity.Property(x => x.Version).HasDefaultValue(1);

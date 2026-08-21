@@ -364,19 +364,30 @@ backend vẫn lưu giá được chọn thành snapshot trên Quotation.
 ### Bộ luật tính giá theo công ty
 
 `President` và `Developer` có thể tạo một policy `Draft` cho từng tổ hợp
-`company + profile + currency`, chỉnh chi phí sản xuất mặc định và các khoảng giá,
-sau đó publish. Khi publish, policy đang dùng trước đó chuyển thành `Superseded`.
-Policy đã publish không sửa trực tiếp; cần tạo version Draft mới.
+`company + profile + currency`. Request tạo/sửa phải luôn có `name`, currency ISO 3 ký tự,
+`defaultManufacturingCost`, `defaultProfitMarginRate`, `roundingRule`,
+`roundingIncrement`, `effectiveFrom` và tiers. Mỗi bản nháp nhận `version` kế tiếp trong
+tổ hợp đó. Policy đã publish không sửa trực tiếp; cần tạo version Draft mới.
+
+Provider chỉ resolve policy `Published`, `isActive = true`, đúng company/profile/currency
+và có `effectiveFrom <= thời điểm hiện tại`. Khi publish, policy Published cũ trong cùng tổ
+hợp chuyển thành `Superseded`. Không có policy phù hợp thì flow tạo Product Pricing Version
+trả error code `PricingPolicyMissing`, không dùng giá/tier mặc định từ calculator.
+
+`Product.FormulaPricingProfile` là profile được cấu hình tường minh cho sản phẩm; flow mới
+không suy profile từ product code hoặc `Additive`. Product chưa cấu hình profile sẽ bị từ chối
+trước khi resolve policy.
 
 `priceOffset` được cộng vào `standardSellingPrice`; số âm là giảm giá và `null`
 nghĩa là tier phải nhập giá thủ công. Các khoảng được phép có khoảng trống nhưng
-không được chồng lấn. Nếu công ty chưa publish policy, calculator tiếp tục dùng
-luật Powder/Compound mặc định để giữ tương thích.
+không được chồng lấn. `roundingRule` (`Nearest`, `Up`, `Down`) cùng
+`roundingIncrement` quyết định cách làm tròn cost, standard price và tier price;
+`defaultProfitMarginRate` chỉ dùng khi preview/tạo đề xuất chưa có giá bán tiêu chuẩn.
 
 Thay đổi policy không cập nhật ngược `ProductPricingTier` hoặc
 `QuotationLinePriceTier` đã lưu. Các bảng này tiếp tục là snapshot lịch sử.
 
-Mỗi `ProductPricingVersion` mới lưu nullable `FormulaPricingPolicyId` để truy vết
+Mỗi `ProductPricingVersion` mới lưu `FormulaPricingPolicyId` của policy đã resolve để truy vết
 policy đã dùng sinh giá. `HasManualTierAdjustment = true` cho biết President hoặc
 Developer đã chỉnh tiers sau khi hệ thống tính từ policy. `QuotationLine` truy vết
 policy thông qua `ProductPricingVersionId`; không lưu thêm policy trên header báo giá.

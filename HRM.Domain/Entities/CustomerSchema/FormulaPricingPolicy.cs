@@ -14,6 +14,9 @@ public sealed class FormulaPricingPolicy
     public string Name { get; set; } = string.Empty;
     public int Version { get; set; } = 1;
     public decimal DefaultManufacturingCost { get; set; }
+    public decimal DefaultProfitMarginRate { get; set; }
+    public FormulaPricingRoundingRule RoundingRule { get; set; }
+    public decimal RoundingIncrement { get; set; } = 1m;
     public FormulaPricingPolicyStatus Status { get; set; } = FormulaPricingPolicyStatus.Draft;
     public DateTime? EffectiveFrom { get; set; }
     public Guid? PublishedBy { get; set; }

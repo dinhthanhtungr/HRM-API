@@ -20,15 +20,25 @@ public sealed class CreateFormulaPricingPolicyRequest
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public FormulaPricingProfile Profile { get; init; }
     public string Currency { get; init; } = "VND";
-    public string? Name { get; init; }
-    public decimal? DefaultManufacturingCost { get; init; }
-    public IReadOnlyList<FormulaPricingPolicyTierRequest>? Tiers { get; init; }
+    public string Name { get; init; } = string.Empty;
+    public decimal DefaultManufacturingCost { get; init; }
+    public decimal DefaultProfitMarginRate { get; init; }
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public FormulaPricingRoundingRule RoundingRule { get; init; }
+    public decimal RoundingIncrement { get; init; }
+    public DateTime EffectiveFrom { get; init; }
+    public IReadOnlyList<FormulaPricingPolicyTierRequest> Tiers { get; init; } = [];
 }
 
 public sealed class UpdateFormulaPricingPolicyRequest
 {
     public string Name { get; init; } = string.Empty;
     public decimal DefaultManufacturingCost { get; init; }
+    public decimal DefaultProfitMarginRate { get; init; }
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public FormulaPricingRoundingRule RoundingRule { get; init; }
+    public decimal RoundingIncrement { get; init; }
+    public DateTime EffectiveFrom { get; init; }
     public IReadOnlyList<FormulaPricingPolicyTierRequest> Tiers { get; init; } = [];
     public DateTime? ExpectedUpdatedDate { get; init; }
 }
@@ -54,6 +64,10 @@ public sealed class FormulaPricingPolicyDto
     public string Name { get; init; } = string.Empty;
     public int Version { get; init; }
     public decimal DefaultManufacturingCost { get; init; }
+    public decimal DefaultProfitMarginRate { get; init; }
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public FormulaPricingRoundingRule RoundingRule { get; init; }
+    public decimal RoundingIncrement { get; init; }
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public FormulaPricingPolicyStatus Status { get; init; }
     public DateTime? EffectiveFrom { get; init; }
