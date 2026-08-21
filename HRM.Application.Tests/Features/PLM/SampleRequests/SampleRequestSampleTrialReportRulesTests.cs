@@ -9,6 +9,62 @@ namespace HRM.Application.Tests.Features.PLM.SampleRequests;
 public sealed class SampleRequestSampleTrialReportRulesTests
 {
     [Fact]
+    public void ResolveCreatedToExclusive_ReturnsStartOfNextDay()
+    {
+        var result = SampleRequestSampleTrialReportRules.ResolveCreatedToExclusive(
+            new DateOnly(2026, 7, 31));
+
+        Assert.Equal(new DateTime(2026, 8, 1), result);
+    }
+
+    [Fact]
+    public void ResolveCreatedToExclusive_ReturnsNullWhenCutoffIsMissing()
+    {
+        Assert.Null(SampleRequestSampleTrialReportRules.ResolveCreatedToExclusive(null));
+    }
+
+    [Fact]
+    public void ResolveCreatedToExclusive_DoesNotOverflowAtMaximumDate()
+    {
+        Assert.Equal(
+            DateTime.MaxValue,
+            SampleRequestSampleTrialReportRules.ResolveCreatedToExclusive(DateOnly.MaxValue));
+    }
+
+    [Fact]
+    public void ResolveCreatedRange_IncludesPreviousMonthsWhenFlagIsTrue()
+    {
+        var result = SampleRequestSampleTrialReportRules.ResolveCreatedRange(
+            new DateOnly(2026, 7, 31),
+            includePreviousUnfinished: true);
+
+        Assert.Null(result.FromInclusive);
+        Assert.Equal(new DateTime(2026, 8, 1), result.ToExclusive);
+    }
+
+    [Fact]
+    public void ResolveCreatedRange_UsesCutoffMonthWhenFlagIsFalse()
+    {
+        var result = SampleRequestSampleTrialReportRules.ResolveCreatedRange(
+            new DateOnly(2026, 7, 31),
+            includePreviousUnfinished: false);
+
+        Assert.Equal(new DateTime(2026, 7, 1), result.FromInclusive);
+        Assert.Equal(new DateTime(2026, 8, 1), result.ToExclusive);
+    }
+
+    [Fact]
+    public void ResolveCreatedRange_DoesNotFilterWithoutCutoff()
+    {
+        var result = SampleRequestSampleTrialReportRules.ResolveCreatedRange(
+            null,
+            includePreviousUnfinished: false);
+
+        Assert.Null(result.FromInclusive);
+        Assert.Null(result.ToExclusive);
+    }
+
+    [Fact]
     public void CalculateTurnaroundDays_UsesCalendarDates()
     {
         var received = new DateTime(2026, 6, 1, 23, 30, 0);
@@ -32,8 +88,8 @@ public sealed class SampleRequestSampleTrialReportRulesTests
     [Fact]
     public void CalculateTurnaroundDays_ReturnsNullWhenDateIsMissing()
     {
-        Assert.Null(SampleRequestSampleTrialReportRules.CalculateTurnaroundDays(null, DateTime.UtcNow));
-        Assert.Null(SampleRequestSampleTrialReportRules.CalculateTurnaroundDays(DateTime.UtcNow, null));
+        Assert.Null(SampleRequestSampleTrialReportRules.CalculateTurnaroundDays(null, DateTime.Now));
+        Assert.Null(SampleRequestSampleTrialReportRules.CalculateTurnaroundDays(DateTime.Now, null));
     }
 
     [Fact]
@@ -67,6 +123,35 @@ public sealed class SampleRequestSampleTrialReportRulesTests
             {
                 ReportType = SampleTrialReportType.WaitingCustomerFeedback
             }.ReportType);
+    }
+
+    [Fact]
+    public void Query_SupportsIndependentSampleRequestCreatedDateCutoff()
+    {
+        var cutoff = new DateOnly(2026, 7, 31);
+
+        var query = new GetSampleRequestSampleTrialsQuery
+        {
+            ReportType = SampleTrialReportType.WaitingCustomerFeedback,
+            SampleRequestCreatedToDate = cutoff
+        };
+
+        Assert.Equal(cutoff, query.SampleRequestCreatedToDate);
+        Assert.True(query.IncludePreviousUnfinished);
+        Assert.Null(query.FromDate);
+        Assert.Null(query.ToDate);
+    }
+
+    [Fact]
+    public void Query_AllowsPreviousUnfinishedSamplesToBeExcludedExplicitly()
+    {
+        var query = new GetSampleRequestSampleTrialsQuery
+        {
+            SampleRequestCreatedToDate = new DateOnly(2026, 7, 31),
+            IncludePreviousUnfinished = false
+        };
+
+        Assert.False(query.IncludePreviousUnfinished);
     }
 
     [Fact]

@@ -46,6 +46,7 @@ public sealed class QuotationLineRequest
 {
     public Guid ProductId { get; init; }
     public Guid? SampleRequestId { get; init; }
+    public Guid? ProductPricingVersionId { get; init; }
     public decimal Quantity { get; init; }
     public string? Unit { get; init; }
     public QuotationLinePriceMode PriceMode { get; init; } = QuotationLinePriceMode.Tiered;
@@ -76,8 +77,7 @@ public sealed class RefreshQuotationPricesRequest
 public sealed class QuotationPriceRequest
 {
     public Guid QuotationLineId { get; init; }
-    public decimal UnitPrice { get; init; }
-    public IReadOnlyList<QuotationLinePriceTierRequest> PriceTiers { get; init; } = [];
+    public Guid ProductPricingVersionId { get; init; }
 }
 
 public sealed class MarkQuotationSentRequest
@@ -165,6 +165,15 @@ public sealed class QuotationLineDto
     public Guid QuotationLineId { get; init; }
     public Guid ProductId { get; init; }
     public Guid? SampleRequestId { get; init; }
+    public Guid? ProductPricingVersionId { get; init; }
+    public int? ProductPricingVersion { get; init; }
+
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public ProductPricingStatus? ProductPricingStatus { get; init; }
+
+    public bool HasApprovedPricingAvailable { get; init; }
+    public bool HasNewerPricingVersion { get; init; }
+
     public string ProductExternalId { get; init; } = string.Empty;
     public string ProductName { get; init; } = string.Empty;
     public decimal Quantity { get; init; }
@@ -187,6 +196,10 @@ public sealed class QuotationLinePriceTierDto
     public bool MinInclusive { get; init; }
     public bool MaxInclusive { get; init; }
     public decimal UnitPrice { get; init; }
+    public decimal? StandardUnitPrice { get; set; }
+    public DateTime? StandardPriceUpdatedDate { get; set; }
+    public decimal? LatestQuotedUnitPrice { get; set; }
+    public DateTime? LatestQuotedDate { get; set; }
     public int SortOrder { get; init; }
 }
 

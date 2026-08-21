@@ -57,10 +57,11 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.RefreshQuotationPrice
             }
 
             if (requestedLines.Any(x => x.QuotationLineId == Guid.Empty) ||
+                requestedLines.Any(x => x.ProductPricingVersionId == Guid.Empty) ||
                 requestedLines.Select(x => x.QuotationLineId).Distinct().Count() != requestedLines.Count)
             {
                 return OperationResult<QuotationTotalsDto>.Fail(
-                    "Price lines must have unique valid QuotationLineId values.");
+                    "Price lines must have unique valid QuotationLineId and ProductPricingVersionId values.");
             }
 
             using var mutationLease = await _mutationLock.AcquireAsync(
@@ -115,17 +116,53 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.RefreshQuotationPrice
                     "One or more quotation lines do not belong to this quotation.");
             }
 
+            var pricingVersionIds = requestedLines
+                .Select(x => x.ProductPricingVersionId)
+                .Distinct()
+                .ToArray();
+            var pricingVersions = await _readDbContext.ProductPricingVersions
+                .AsNoTracking()
+                .Include(x => x.PriceTiers)
+                .Where(x =>
+                    pricingVersionIds.Contains(x.ProductPricingVersionId) &&
+                    x.CompanyId == scope.CompanyId &&
+                    x.Currency == quotation.Currency &&
+                    x.Status == ProductPricingStatus.Approved &&
+                    x.IsActive)
+                .ToDictionaryAsync(x => x.ProductPricingVersionId, cancellationToken);
+            if (pricingVersions.Count != pricingVersionIds.Length || requestedLines.Any(request =>
+                    !pricingVersions.TryGetValue(request.ProductPricingVersionId, out var pricingVersion) ||
+                    pricingVersion.ProductId != lineLookup[request.QuotationLineId].ProductId))
+            {
+                return OperationResult<QuotationTotalsDto>.Fail(
+                    "One or more product pricing versions were not found, not approved, outside the current company/currency, or belong to another product.");
+            }
+
             var pricingByLineId = new Dictionary<Guid, QuotationLinePricing>(requestedLines.Count);
             for (var index = 0; index < requestedLines.Count; index++)
             {
                 var request = requestedLines[index];
                 var line = lineLookup[request.QuotationLineId];
+                var pricingVersion = pricingVersions[request.ProductPricingVersionId];
+                var tierRequests = pricingVersion.PriceTiers
+                    .OrderBy(x => x.SortOrder)
+                    .Select(x => new QuotationLinePriceTierRequest
+                    {
+                        QuantityRangeLabel = x.QuantityRangeLabel,
+                        MinQuantity = x.MinQuantity,
+                        MaxQuantity = x.MaxQuantity,
+                        MinInclusive = x.MinInclusive,
+                        MaxInclusive = x.MaxInclusive,
+                        UnitPrice = x.UnitPrice,
+                        SortOrder = x.SortOrder
+                    })
+                    .ToArray();
                 var pricingResult = QuotationPriceTierBuilder.Build(
                     line.QuotationLineId,
                     line.PriceMode,
                     line.Quantity,
-                    request.UnitPrice,
-                    request.PriceTiers,
+                    0m,
+                    tierRequests,
                     $"lines[{index}]");
                 if (!pricingResult.Success || pricingResult.Data is null)
                 {
@@ -150,6 +187,7 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.RefreshQuotationPrice
                 _writeDbContext.QuotationLinePriceTiers.AddRange(pricing.PriceTiers);
 
                 line.UnitPrice = pricing.EffectiveUnitPrice;
+                line.ProductPricingVersionId = request.ProductPricingVersionId;
                 line.LineTotal = QuotationRules.CalculateLineTotal(
                     line.Quantity,
                     line.UnitPrice,

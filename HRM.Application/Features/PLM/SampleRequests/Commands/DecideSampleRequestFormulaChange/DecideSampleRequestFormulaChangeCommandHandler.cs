@@ -6,6 +6,7 @@ using HRM.Application.Features.InternalMail.Dtos;
 using HRM.Application.Features.PLM.SampleRequests.Commands.SendSampleRequestMessage;
 using HRM.Application.Features.PLM.SampleRequests.Dtos.InternalMail;
 using HRM.Application.Features.PLM.SampleRequests.FormulaChangeRequests;
+using HRM.Application.Features.PLM.SampleRequests.Rules;
 using HRM.Domain.Enums.InternalMailEnums;
 using HRM.Domain.Enums.Notifications;
 using HRM.Domain.Enums.Products;
@@ -153,7 +154,7 @@ internal sealed class DecideSampleRequestFormulaChangeCommandHandler
             }
 
             sampleRequest.FormulaId = formulaChange.RequestedFormulaId;
-            sampleRequest.Status = SampleRequestStatus.Completed.ToString();
+            SampleRequestStatusTransitionRules.MarkFormulaUpdateDecided(sampleRequest);
 
             foreach (var formula in formulas)
             {
@@ -164,7 +165,7 @@ internal sealed class DecideSampleRequestFormulaChangeCommandHandler
         }
         else
         {
-            sampleRequest.Status = SampleRequestStatus.Completed.ToString();
+            SampleRequestStatusTransitionRules.MarkFormulaUpdateDecided(sampleRequest);
             requestedFormula.Status = cancelled
                 ? FormulaStatus.Cancelled.ToString()
                 : FormulaStatus.Rejected.ToString();

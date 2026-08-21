@@ -26,6 +26,9 @@ public interface ICRMWriteDbContext
     DbSet<QuotationStatusHistory> QuotationStatusHistories { get; }
     DbSet<ProductPricingVersion> ProductPricingVersions { get; }
     DbSet<ProductPricingTier> ProductPricingTiers { get; }
+    DbSet<FormulaPricingPolicy> FormulaPricingPolicies { get; }
+    DbSet<FormulaPricingPolicyTier> FormulaPricingPolicyTiers { get; }
+    DbSet<Formula> Formulas { get; }
     DbSet<SampleRequest> SampleRequests { get; }
     DbSet<SampleRequestSampleTrial> SampleRequestSampleTrials { get; }
 

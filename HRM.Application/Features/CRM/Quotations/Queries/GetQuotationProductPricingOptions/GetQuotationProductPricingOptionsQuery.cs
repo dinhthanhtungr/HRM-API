@@ -11,16 +11,20 @@ namespace HRM.Application.Features.CRM.Quotations.Queries.GetQuotationProductPri
 public sealed class GetQuotationProductPricingOptionsQuery
     : PaginationQuery, IRequest<OperationResult<PagedResult<QuotationProductPricingOptionDto>>>
 {
-    public const string DefaultRequestType = "New";
-
-    public string? RequestType { get; init; } = DefaultRequestType;
+    public string? RequestType { get; init; }
     public SampleRequestStatus? Status { get; set; }
     public Guid? QuotationId { get; init; }
     public QuotationStatus? QuotationStatus { get; init; }
+    public string? Currency { get; init; } = "VND";
 
     [JsonIgnore]
-    public string NormalizedRequestType => string.IsNullOrWhiteSpace(RequestType)
-        ? DefaultRequestType
+    public string? NormalizedRequestType => string.IsNullOrWhiteSpace(RequestType)
+        ? null
         : RequestType.Trim();
+
+    [JsonIgnore]
+    public string NormalizedCurrency => string.IsNullOrWhiteSpace(Currency)
+        ? "VND"
+        : Currency.Trim().ToUpperInvariant();
 
 }

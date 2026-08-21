@@ -33,6 +33,8 @@ Thu muc nay chua cac query phuc vu man hinh PLM Dashboard.
 - `pageSize`
 - `keyword`
 
+Với drilldown Sample Request, `keyword` hỗ trợ mã TP, tên/mã màu Product và mã VU Formula liên quan.
+
 Vi du:
 
 ```http

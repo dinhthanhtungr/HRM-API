@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using HRM.Domain.Entities.AttachmentSchema;
+using HRM.Domain.Entities.BomSchema;
 using HRM.Domain.Entities.CompanySchema;
 using HRM.Domain.Entities.DevandqaSchema;
 using HRM.Domain.Entities.HrSchema;
@@ -56,6 +57,7 @@ public partial class Material
     public virtual Employee? CreatedByNavigation { get; set; }
     public virtual Employee? UpdatedByNavigation { get; set; }
     public virtual ICollection<FormulaMaterial> FormulaMaterials { get; set; } = new List<FormulaMaterial>();
+    public virtual ICollection<BomVersionItem> BomVersionItems { get; set; } = new List<BomVersionItem>();
     public virtual ICollection<MaterialGroupName> MaterialGroupNames { get; set; } = new List<MaterialGroupName>();
 
     public virtual ICollection<ManufacturingFormulaMaterial> ManufacturingFormulaMaterials { get; set; } = new List<ManufacturingFormulaMaterial>();

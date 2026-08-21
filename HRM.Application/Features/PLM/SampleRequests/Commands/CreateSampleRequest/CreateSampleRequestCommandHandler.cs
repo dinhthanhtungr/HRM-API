@@ -3,6 +3,7 @@ using HRM.Application.Abstractions.Persistence.PLM;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Models;
 using HRM.Application.Features.PLM.SampleRequests.Commands.SendSampleRequestMessage;
+using HRM.Application.Features.PLM.SampleRequests.Rules;
 using HRM.Domain.Entities.AttachmentSchema;
 using HRM.Domain.Entities.SampleRequestSchema;
 using HRM.Domain.Enums.Category;
@@ -39,17 +40,14 @@ internal sealed class CreateSampleRequestCommandHandler
         CreateSampleRequestCommand request,
         CancellationToken cancellationToken)
     {
-        if (request.CompanyId == Guid.Empty)
-        {
-            return OperationResult<Guid>.Fail("CompanyId is invalid.");
-        }
-
         if (request.CustomerId == Guid.Empty)
         {
             return OperationResult<Guid>.Fail("CustomerId is invalid.");
         }
 
         var currentUserId = _currentUser.EmployeeId.GetValueOrDefault();
+        var currentCompanyId = _currentUser.CompanyId.GetValueOrDefault();
+        
         if (currentUserId == Guid.Empty)
         {
             return OperationResult<Guid>.Fail("Current employee is invalid.");
@@ -65,7 +63,7 @@ internal sealed class CreateSampleRequestCommandHandler
             .AsNoTracking()
             .AnyAsync(x =>
                 x.CustomerId == request.CustomerId &&
-                x.CompanyId == request.CompanyId &&
+                x.CompanyId == currentCompanyId &&
                 x.IsActive == true,
                 cancellationToken);
 
@@ -76,7 +74,7 @@ internal sealed class CreateSampleRequestCommandHandler
 
         var managerByResult = await ResolveManagerByAsync(
             request.CustomerId,
-            request.CompanyId,
+            currentCompanyId,
             currentUserId,
             cancellationToken);
 
@@ -87,6 +85,7 @@ internal sealed class CreateSampleRequestCommandHandler
 
         var productResult = await ResolveProductIdAsync(
             request,
+            currentCompanyId,
             cancellationToken);
 
         if (!productResult.Success)
@@ -95,14 +94,14 @@ internal sealed class CreateSampleRequestCommandHandler
         }
 
         var externalId = await _externalIdService.GenerateGlobalCodeAsync(
-            request.CompanyId,
+            currentCompanyId,
             DocumentPrefix.TP.ToString(),
             cancellationToken);
 
         var exists = await _dbContext.SampleRequests
             .AsNoTracking()
             .AnyAsync(x =>
-                x.CompanyId == request.CompanyId &&
+                x.CompanyId == currentCompanyId &&
                 x.ExternalId == externalId &&
                 x.IsActive,
                 cancellationToken);
@@ -113,6 +112,10 @@ internal sealed class CreateSampleRequestCommandHandler
         }
 
         var productId = productResult.Data;
+        var initialStatus = await ResolveInitialStatusAsync(
+            productId,
+            currentCompanyId,
+            cancellationToken);
 
         if (request.FormulaId.HasValue)
         {
@@ -148,8 +151,8 @@ internal sealed class CreateSampleRequestCommandHandler
             AttachmentCollectionId = attachmentCollectionId,
             FormulaId = request.FormulaId,
             BranchId = request.BranchId,
-            CompanyId = request.CompanyId,
-            Status = SampleRequestStatus.New.ToString(),
+            CompanyId = currentCompanyId,
+            Status = initialStatus,
             RequestType = request.RequestType.Trim(),
             ExpectedQuantity = request.ExpectedQuantity,
             ExpectedPrice = request.ExpectedPrice,
@@ -320,6 +323,7 @@ internal sealed class CreateSampleRequestCommandHandler
     /// <returns></returns>
     private async Task<OperationResult<Guid>> ResolveProductIdAsync(
         CreateSampleRequestCommand request,
+        Guid companyId,
         CancellationToken cancellationToken)
     {
         if (request.ProductId is { } productId && productId != Guid.Empty)
@@ -341,7 +345,7 @@ internal sealed class CreateSampleRequestCommandHandler
         var newProduct = new Product
         {
             ProductId = Guid.CreateVersion7(),
-            CompanyId = request.CompanyId,
+            CompanyId = companyId,
             IsActive = true
         };
 
@@ -388,6 +392,24 @@ internal sealed class CreateSampleRequestCommandHandler
         await _dbContext.Products.AddAsync(newProduct, cancellationToken);
 
         return OperationResult<Guid>.Ok(newProduct.ProductId);
+    }
+
+    private async Task<string> ResolveInitialStatusAsync(
+        Guid productId,
+        Guid companyId,
+        CancellationToken cancellationToken)
+    {
+        var product = _dbContext.Products.Local
+            .FirstOrDefault(x => x.ProductId == productId && x.CompanyId == companyId && x.IsActive)
+            ?? await _dbContext.Products
+                .AsNoTracking()
+                .FirstOrDefaultAsync(x =>
+                    x.ProductId == productId &&
+                    x.CompanyId == companyId &&
+                    x.IsActive,
+                    cancellationToken);
+
+        return SampleRequestStatusTransitionRules.ResolveInitialStatus(product);
     }
 
 

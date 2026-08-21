@@ -8,6 +8,9 @@ Endpoint tráº£ danh sÃ¡ch phÃ¢n trang dÃ¹ng khi thÃªm dÃ²ng vÃ o 
 `keyword`, `itemType` (`Material`, `Product`, `MaterialFailure`, `ProductFailure`) vÃ  `categoryId`.
 `MaterialFailure` Ä‘Æ°á»£c tra nhÆ° `Material`, `ProductFailure` Ä‘Æ°á»£c tra nhÆ° `Product`.
 
+Khi tra Product, `keyword` hỗ trợ tên, mã màu/mã Product, `SampleRequest.ExternalId` active và
+`Formula.ExternalId` active cùng company.
+
 NVL pháº£i active vÃ  thuá»™c `CurrentUser.CompanyId`. Product pháº£i active, thuá»™c cÃ¹ng cÃ´ng ty, cÃ³ tÃªn/mÃ£ mÃ u
 vÃ  cÃ³ Ã­t nháº¥t má»™t Sample Request active á»Ÿ tráº¡ng thÃ¡i `SampleSent` hoáº·c `Completed`. MÃ£ `externalId` cá»§a
 Product láº¥y tá»« Sample Request há»£p lá»‡ má»›i nháº¥t; `categoryCode` cá»§a Product tráº£ `KH` Ä‘á»ƒ giá»¯ contract nghiá»‡p vá»¥ cÅ©.

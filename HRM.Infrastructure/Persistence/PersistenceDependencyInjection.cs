@@ -48,6 +48,7 @@ internal static class PersistenceDependencyInjection
         services.AddSingleton<IQuotationPdfRenderer, QuotationPdfRenderer>();
         services.AddSingleton<IManufacturingVUFormulaPdfRenderer, ManufacturingVUFormulaPdfRenderer>();
         services.AddSingleton<IComplaintReportPdfRenderer, ComplaintReportPdfRenderer>();
+        services.AddSingleton<IProductInspectionPdfRenderer, ProductInspectionPdfRenderer>();
 
         services.AddDbContext<ApplicationDbContext>(options =>
         {

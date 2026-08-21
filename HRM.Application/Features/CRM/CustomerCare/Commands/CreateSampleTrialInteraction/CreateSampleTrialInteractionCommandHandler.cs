@@ -4,10 +4,17 @@ using HRM.Application.Commons.Authorization;
 using HRM.Application.Commons.Models;
 using HRM.Application.Features.CRM.CustomerCare.Dtos;
 using HRM.Application.Features.CRM.CustomerCare.Services;
+using HRM.Application.Features.InternalMail.Dtos;
+using HRM.Application.Features.PLM.SampleRequests.Commands.SendSampleRequestMessage;
+using HRM.Application.Features.PLM.SampleRequests.Rules;
+using HRM.Application.Features.PLM.SampleRequests.SampleTrials;
 using HRM.Domain.Entities.CustomerSchema;
 using HRM.Domain.Entities.SampleRequestSchema;
+using HRM.Domain.Enums.Products;
+using HRM.Domain.Enums.SampleRequests;
 using HRM.Domain.Entities.WorkTaskSchema;
 using HRM.Domain.Enums.CustomerEnum;
+using HRM.Domain.Enums.Notifications;
 using HRM.Domain.Enums.WorkTaskEnums;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -17,25 +24,34 @@ namespace HRM.Application.Features.CRM.CustomerCare.Commands.CreateSampleTrialIn
 internal sealed class CreateSampleTrialInteractionCommandHandler
     : IRequestHandler<CreateSampleTrialInteractionCommand, OperationResult<Guid>>
 {
-    private const string DefaultSubject = "Sample trial update";
+    private const string DefaultSubject = "Cập nhật phản hồi mẫu";
     private const string DefaultFollowUpTitle = "Sample trial follow-up";
     private const int MaxCustomerReplyStatusLength = 50;
     private const int MaxCustomerReplyNoteLength = 5000;
+    private const int MaxMessageDetailLength = 1000;
+    private const string ApprovedReplyStatus = "APPROVED";
+    private const string FailedReplyStatus = "FAIL";
+    private const string CancelledReplyStatus = "CANCEL";
+    private const string WaitingReplyStatus = "WAITING";
+    private const string PriceQuoteReplyStatus = "BÁO GIÁ";
     private readonly ICRMReadDbContext _readDbContext;
     private readonly ICRMWriteDbContext _writeDbContext;
     private readonly CustomerCrmAccessService _accessService;
     private readonly IDateTimeProvider _dateTimeProvider;
+    private readonly ISender _sender;
 
     public CreateSampleTrialInteractionCommandHandler(
         ICRMReadDbContext readDbContext,
         ICRMWriteDbContext writeDbContext,
         CustomerCrmAccessService accessService,
-        IDateTimeProvider dateTimeProvider)
+        IDateTimeProvider dateTimeProvider,
+        ISender sender)
     {
         _readDbContext = readDbContext;
         _writeDbContext = writeDbContext;
         _accessService = accessService;
         _dateTimeProvider = dateTimeProvider;
+        _sender = sender;
     }
 
     public async Task<OperationResult<Guid>> Handle(
@@ -131,6 +147,11 @@ internal sealed class CreateSampleTrialInteractionCommandHandler
             }
         }
 
+        request.ExpectedTrialUpdatedDate = NormalizeDatabaseTimestamp(request.ExpectedTrialUpdatedDate);
+        request.CustomerReplyDate = NormalizeDatabaseTimestamp(request.CustomerReplyDate);
+        request.OrderDate = NormalizeDatabaseTimestamp(request.OrderDate);
+        request.NextFollowUpDate = NormalizeDatabaseTimestamp(request.NextFollowUpDate);
+
         if (request.ExpectedTrialUpdatedDate.HasValue &&
             trial.UpdatedDate != request.ExpectedTrialUpdatedDate.Value)
         {
@@ -138,8 +159,21 @@ internal sealed class CreateSampleTrialInteractionCommandHandler
                 "Sample trial was changed by another user. Reload before saving feedback.");
         }
 
-        var now = _dateTimeProvider.Now;
-        var interactionAt = request.InteractionAt == default ? now : request.InteractionAt;
+        var now = NormalizeDatabaseTimestamp(_dateTimeProvider.Now);
+        var lifecycleValidationError = await ApplyCustomerFeedbackLifecycleAsync(
+            trial,
+            replyStatus!,
+            scope.EmployeeId,
+            now,
+            cancellationToken);
+        if (lifecycleValidationError is not null)
+        {
+            return OperationResult<Guid>.Fail(lifecycleValidationError);
+        }
+
+        var interactionAt = request.InteractionAt == default
+            ? now
+            : NormalizeDatabaseTimestamp(request.InteractionAt);
         if (request.IdempotencyKey.HasValue &&
             (interactionAt > now.AddMinutes(5) || request.CustomerReplyDate > now.AddMinutes(5)))
         {
@@ -219,23 +253,41 @@ internal sealed class CreateSampleTrialInteractionCommandHandler
         try
         {
             await _writeDbContext.SaveChangesAsync(cancellationToken);
+
+            var messageResult = await SendCustomerFeedbackMessageAsync(
+                trial,
+                replyStatus!,
+                replyNote,
+                request.Content,
+                cancellationToken);
+            if (!messageResult.Success)
+            {
+                return OperationResult<Guid>.Ok(
+                    interactionId,
+                    $"Recorded customer feedback successfully, but could not send notification: {messageResult.Message}");
+            }
+
             return OperationResult<Guid>.Ok(interactionId);
         }
-        catch (DbUpdateException) when (request.IdempotencyKey.HasValue)
+        catch (DbUpdateException ex) when (request.IdempotencyKey.HasValue)
         {
             _writeDbContext.ClearTrackedChanges();
+
             var replayResult = await ResolveIdempotentReplayAsync(
                 interactionId,
                 request.CustomerId,
                 request.SampleRequestSampleTrialId,
                 scope.CompanyId,
                 cancellationToken);
+
             if (replayResult is not null)
             {
                 return replayResult;
             }
 
-            throw;
+            throw new InvalidOperationException(
+                $"Could not save customer feedback: {ex.InnerException?.Message ?? ex.Message}",
+                ex);
         }
     }
 
@@ -298,6 +350,7 @@ internal sealed class CreateSampleTrialInteractionCommandHandler
             .AsTracking()
             .Include(x => x.SampleRequest)
             .ThenInclude(x => x.Product)
+            .Include(x => x.Formula)
             .FirstOrDefaultAsync(x =>
                 x.SampleRequestSampleTrialId == sampleTrialId &&
                 x.IsActive &&
@@ -305,6 +358,128 @@ internal sealed class CreateSampleTrialInteractionCommandHandler
                 x.SampleRequest.CompanyId == companyId &&
                 x.SampleRequest.IsActive,
                 cancellationToken);
+
+    private async Task<string?> ApplyCustomerFeedbackLifecycleAsync(
+        SampleRequestSampleTrial trial,
+        string replyStatus,
+        Guid employeeId,
+        DateTime now,
+        CancellationToken cancellationToken)
+    {
+        var normalizedStatus = replyStatus.Trim().ToUpperInvariant();
+        if (normalizedStatus == ApprovedReplyStatus)
+        {
+            var approvalValidationError = SampleRequestSampleTrialApprovalRules.Validate(
+                trial,
+                trial.FormulaId ?? Guid.Empty);
+            if (approvalValidationError is not null)
+            {
+                return approvalValidationError;
+            }
+
+            var productFormulas = await _writeDbContext.Formulas
+                .Where(x =>
+                    x.ProductId == trial.SampleRequest.ProductId &&
+                    x.CompanyId == trial.SampleRequest.CompanyId &&
+                    x.IsActive)
+                .ToListAsync(cancellationToken);
+
+            SampleRequestSampleTrialApprovalRules.ApplyApproved(
+                trial.SampleRequest,
+                trial,
+                productFormulas,
+                employeeId,
+                now,
+                ApprovedReplyStatus);
+            return null;
+        }
+
+        if (normalizedStatus == FailedReplyStatus)
+        {
+            if (trial.Formula is null)
+            {
+                return "Sample trial does not have a formula to mark as failed.";
+            }
+
+            trial.Status = SampleTrialStatus.Failed;
+            trial.Formula.Status = FormulaStatus.Rejected.ToString();
+            trial.Formula.UpdatedBy = employeeId;
+            trial.Formula.UpdatedDate = now;
+            SampleRequestStatusTransitionRules.MarkCustomerFailed(trial.SampleRequest);
+            trial.SampleRequest.UpdatedBy = employeeId;
+            trial.SampleRequest.UpdatedDate = now;
+            return null;
+        }
+
+        if (normalizedStatus == CancelledReplyStatus)
+        {
+            trial.Status = SampleTrialStatus.Cancelled;
+            if (trial.Formula is not null)
+            {
+                trial.Formula.Status = FormulaStatus.Cancelled.ToString();
+                trial.Formula.UpdatedBy = employeeId;
+                trial.Formula.UpdatedDate = now;
+            }
+
+            SampleRequestStatusTransitionRules.MarkCustomerCancelled(trial.SampleRequest);
+            trial.SampleRequest.UpdatedBy = employeeId;
+            trial.SampleRequest.UpdatedDate = now;
+            return null;
+        }
+
+        if (normalizedStatus == WaitingReplyStatus)
+        {
+            trial.Status = SampleTrialStatus.WaitingCustomerFeedback;
+            return null;
+        }
+
+        if (string.Equals(replyStatus.Trim(), PriceQuoteReplyStatus, StringComparison.OrdinalIgnoreCase))
+        {
+            trial.Status = SampleTrialStatus.PriceQuote;
+        }
+
+        return null;
+    }
+
+    private Task<OperationResult<SendInternalMessageResultDto>> SendCustomerFeedbackMessageAsync(
+        SampleRequestSampleTrial trial,
+        string customerReplyStatus,
+        string? customerReplyNote,
+        string interactionContent,
+        CancellationToken cancellationToken)
+    {
+        var sampleRequestExternalId = trial.SampleRequestExternalIdSnapshot ?? trial.SampleRequest.ExternalId;
+        var formulaExternalId = trial.Formula?.ExternalId ?? trial.BatchNo ?? "--";
+        var outcome = trial.Status switch
+        {
+            SampleTrialStatus.Approved => "Khách hàng đã chấp nhận mẫu. Công thức đã hoàn thành.",
+            SampleTrialStatus.Failed => "Khách hàng chưa đạt mẫu. Lab vui lòng phát triển và gửi lại mẫu.",
+            SampleTrialStatus.Cancelled => "Khách hàng đã dừng hoặc từ chối yêu cầu mẫu.",
+            SampleTrialStatus.PriceQuote => "Sale đã ghi nhận khách hàng yêu cầu báo giá.",
+            SampleTrialStatus.WaitingCustomerFeedback => "Sale đã ghi nhận mẫu đang chờ phản hồi khách hàng.",
+            _ => "Sale đã cập nhật phản hồi khách hàng."
+        };
+        var detail = TruncateMessageDetail(customerReplyNote ?? interactionContent);
+
+        return _sender.Send(new SendSampleRequestMessageCommand
+        {
+            SampleRequestId = trial.SampleRequestId,
+            Type = SampleRequestNotificationType.GeneralMessage,
+            Message = $"Phản hồi khách hàng cho yêu cầu phối mẫu {sampleRequestExternalId}, lần thử {trial.TrialNo}. " +
+                      $"Công thức: {formulaExternalId}. Trạng thái: {customerReplyStatus}. {outcome}" +
+                      (string.IsNullOrWhiteSpace(detail) ? string.Empty : $" Ghi chú: {detail}"),
+            TopicOverride = TopicNotifications.SampleRequestCustomerFeedbackRecorded,
+            TitleOverride = "Phản hồi khách hàng về mẫu đã gửi"
+        }, cancellationToken);
+    }
+
+    private static string? TruncateMessageDetail(string? value)
+    {
+        var normalized = Normalize(value);
+        return normalized is null || normalized.Length <= MaxMessageDetailLength
+            ? normalized
+            : $"{normalized[..(MaxMessageDetailLength - 3)]}...";
+    }
 
     private async Task CreateLinkedTaskAsync(
         Customer customer,
@@ -410,4 +585,12 @@ internal sealed class CreateSampleTrialInteractionCommandHandler
 
     private static string? Normalize(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static DateTime NormalizeDatabaseTimestamp(DateTime value)
+        => value.Kind == DateTimeKind.Unspecified
+            ? value
+            : DateTime.SpecifyKind(value, DateTimeKind.Unspecified);
+
+    private static DateTime? NormalizeDatabaseTimestamp(DateTime? value)
+        => value.HasValue ? NormalizeDatabaseTimestamp(value.Value) : null;
 }

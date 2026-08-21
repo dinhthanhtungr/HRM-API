@@ -14,6 +14,7 @@ namespace HRM.Application.Features.CRM.Quotations.Queries.GetQuotationProductPri
         public Guid FormulaId { get; init; }
         public string FormulaExternalId { get; init; } = string.Empty;
         public string FormulaName { get; init; } = string.Empty;
+        public string Status { get; init; } = string.Empty;
         public decimal MaterialCost { get; init; }
         public decimal? ManufacturingCost { get; init; }
         public decimal? StandardSellingPrice { get; init; }

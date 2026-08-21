@@ -10,6 +10,9 @@ Ngày Sale nhận mẫu được lưu vào `Trial.RequestReceivedDate` đã có 
 
 `GET /api/v1/plm/sample-requests/sample-trials` trả danh sách phân trang để FE dựng bảng theo dõi Lab giống báo cáo Excel. Query dùng Sample Request visible làm nguồn và left join trial: hồ sơ chưa có trial vẫn xuất hiện một dòng với `hasTrial = false`; hồ sơ có nhiều trial trả mỗi trial một dòng. Endpoint hỗ trợ keyword, khoảng ngày, Sample Request, customer, trial status, customer reply status và sorting. Dữ liệu luôn đi qua company/customer visibility; `additiveRate` và `labNote` trả `null` nếu current user không có quyền xem thông tin kỹ thuật PLM.
 
+Các query keyword Sample Request hỗ trợ mã TP của chính yêu cầu, tên/mã màu Product và mã VU Formula liên quan.
+Riêng danh sách trial còn tìm theo VU gắn trên Trial.
+
 Contract chi tiết, mapping dữ liệu và script tạo bảng nằm trong `SampleRequestSampleTrials.README.md`.
 
 Trial được tạo bằng `POST /api/v1/plm/sample-requests/{sampleRequestId}/sample-trials` và cập nhật bằng `PATCH /api/v1/plm/sample-requests/{sampleRequestId}/sample-trials/{trialId}`. PATCH dùng `clearFields` whitelist để xóa field nullable; backend không dùng upsert và không tự đoán create/update.
@@ -461,6 +464,13 @@ chuyển `SampleRequest.Status = SampleSent`, ghi `SendBy/SendDate`, hoàn tất
 `CustomerReplyStatus = WAITING`. Backend không gán `SampleRequest.FormulaId` ở bước này. Sau khi lưu thành công, backend tạo
 message InternalMail topic `SampleRequestSampleSent` với nội dung có giờ gửi, khối lượng mẫu và nhắc Sale ghi nhận.
 
+Khi Sample Request đang `SampleSent`, PATCH Sample Request có thể gửi `formulaId` để xác nhận khách đã chấp nhận
+công thức của Trial pending mới nhất. Shortcut này chỉ dành cho `ApplicationRoleSets.PLM.FormulaSelectors`, vẫn kiểm tra
+company/customer scope và `expectedUpdatedDate`. Formula phải thuộc đúng product, đang active, có status `SampleSent`
+và phải khớp Trial `SampleSent`/`WaitingCustomerFeedback` mới nhất. Backend mặc định
+`CustomerReplyStatus = APPROVED`, cập nhật Trial `Approved`, Formula `Completed`, chọn Formula cho product và chuyển
+Sample Request sang `Completed` trong cùng `SaveChanges`. FE nên mở dialog xác nhận rõ side effect trước khi gửi PATCH.
+
 Payload xác nhận công thức hoàn thành:
 
 ```json
@@ -638,6 +648,12 @@ PatchSampleRequestCommandHandler: Lab lưu product/colour code bằng PATCH Samp
 ## Lab Start Processing Notification
 
 Khi Lab lưu thông tin làm Sample Request chuyển trạng thái từ `New` sang `InProgress`, BE tự gửi một message công khai vào thread Sample Request.
+
+Khi **tạo mới** Sample Request, backend cũng dùng cùng rule: nếu Product đã có đủ `Name` và `ColourCode` sau khi resolve/tự sinh mã, Sample Request được tạo thẳng ở `InProgress`; nếu thiếu một trong hai thì vẫn là `New`. Rule này áp dụng cho cả Product có sẵn và Product được tạo cùng request.
+
+## Quy tắc chuyển trạng thái
+
+`Rules/SampleRequestStatusTransitionRules.cs` là nơi duy nhất gán trạng thái Sample Request cho các sự kiện lifecycle: tạo mới, đủ định danh Product, gửi mẫu, khách chấp nhận/không đạt/hủy và yêu cầu/ra quyết định cập nhật Formula. Handler vẫn chịu trách nhiệm phân quyền, tải dữ liệu, audit, `UpdatedBy/UpdatedDate`, lưu transaction và message/notification; rule không có side effect.
 
 Điều kiện gửi:
 

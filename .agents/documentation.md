@@ -36,6 +36,27 @@ Cập nhật README khi:
 
 Không bắt buộc cập nhật README cho format, rename biến private, refactor nội bộ giữ nguyên contract, typo, hoặc test bổ sung cho hành vi đã mô tả đúng.
 
+## Tài Liệu Response Contract
+
+Khi thêm/sửa API, DTO public hoặc khi response có nhiều nguồn dữ liệu và trạng thái dễ hiểu sai,
+README gần feature phải giải thích contract theo **ý nghĩa nghiệp vụ**, không chỉ liệt kê tên property.
+
+Tối thiểu phải ghi:
+
+- Endpoint và một response mẫu rút gọn nhưng đại diện được các nhánh quan trọng.
+- Ý nghĩa từng nhóm field mà FE cần dùng; field trùng tên ở các cấp khác nhau phải nói rõ field nào là canonical.
+- Nguồn của dữ liệu: cột DB, snapshot đã lưu, dữ liệu realtime, kết quả tính toán, fallback hay dữ liệu bị che theo role.
+- Semantics của `null`, `0`, chuỗi rỗng, danh sách rỗng và các cờ boolean/status liên quan.
+- Cách phân biệt dữ liệu đã persist với dữ liệu hệ thống chỉ preview/tính tạm; nêu field id/status/flag dùng để nhận biết.
+- Ý nghĩa của các mốc thời gian: ngày của entity nguồn, ngày tính, ngày lưu, ngày duyệt hay ngày phát sinh nghiệp vụ.
+- Công thức tính, thứ tự fallback và rule làm tròn nếu response có giá, cost, margin, phần trăm hoặc số liệu tổng hợp.
+- Visibility theo role đối với field nhạy cảm; field bị `null`, bị omit hay bị thay bằng DTO rút gọn phải ghi nhất quán.
+- Với collection lồng nhau, giải thích mỗi phần tử đại diện cho gì và cờ như `isStored`, `isCalculated`, `isComplete`
+  ảnh hưởng cách FE hiển thị/lưu ra sao.
+
+Không coi một JSON dump hoặc danh sách tên property là tài liệu đủ. Sau khi đổi mapper/calculator/visibility,
+agent phải đối chiếu README với code đang chạy để tránh mô tả contract cũ.
+
 ## CHANGELOG
 
 Nếu cần lịch sử thay đổi, dùng `CHANGELOG.md` gần feature. Mỗi entry ngắn, có ngày `YYYY-MM-DD`, loại thay đổi và tác động.

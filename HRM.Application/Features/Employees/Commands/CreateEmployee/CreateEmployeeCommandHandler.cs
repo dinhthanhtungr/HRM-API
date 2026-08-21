@@ -219,7 +219,7 @@ namespace HRM.Application.Features.Employees.Commands.CreateEmployee
                 EndDate = request.EndDate,
                 IsActive = true,
                 CreatedBy = currentEmployeeId,
-                CreatedDate = DateTime.UtcNow
+                CreatedDate = DateTime.Now
             };
 
             AddProfile(employee, request.Profile);

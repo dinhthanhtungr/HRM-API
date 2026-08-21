@@ -4,6 +4,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using HRM.Domain.Entities.BomSchema;
 using HRM.Domain.Entities.CompanySchema;
 using HRM.Domain.Entities.HrSchema;
 using HRM.Domain.Entities.SampleRequestSchema;
@@ -25,6 +26,7 @@ namespace HRM.Domain.Entities.ManufacturingSchema
         public Guid? SourceManufacturingFormulaId { get; set; }
         public string? SourceManufacturingExternalIdSnapshot { get; set; }
         public Guid? SourceVUFormulaId { get; set; }
+        public Guid? SourceBomVersionId { get; set; }
         public string? SourceVUExternalIdSnapshot { get; set; }
         public FormulaSource SourceType { get; set; } // FromVA / FromVU (không nullable)
 
@@ -45,6 +47,7 @@ namespace HRM.Domain.Entities.ManufacturingSchema
       
         public virtual ManufacturingFormula? SourceManufacturingFormula { get; set; }
         public virtual Formula? SourceVUFormula { get; set; }
+        public virtual BomVersion? SourceBomVersion { get; set; }
         public virtual Employee? CreatedByNavigation { get; set; }
         public virtual Employee? UpdatedByNavigation { get; set; }
         public virtual Company? Company { get; set; }

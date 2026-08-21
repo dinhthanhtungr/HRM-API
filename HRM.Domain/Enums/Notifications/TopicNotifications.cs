@@ -74,6 +74,7 @@ namespace HRM.Domain.Enums.Notifications
         CustomerAiSummaryAutomationStatus = 44,
         ComplaintInitialDecision = 45,
         ComplaintFinalDecision = 46,
-        SampleRequestCustomerFeedbackRecorded = 47
+        SampleRequestCustomerFeedbackRecorded = 47,
+        QuotationPricingApproved = 48
     }
 }

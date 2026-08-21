@@ -10,6 +10,7 @@ using HRM.Domain.Entities.InternalMailSchema;
 using HRM.Domain.Entities.ManufacturingSchema;
 using HRM.Domain.Entities.MaterialSchema;
 using HRM.Domain.Entities.OrderSchema;
+using HRM.Domain.Entities.PrintectSchema;
 using HRM.Domain.Entities.SampleRequestSchema;
 using Microsoft.EntityFrameworkCore;
 
@@ -47,6 +48,7 @@ namespace HRM.Application.Abstractions.Persistence.PLM
         DbSet<QcPassHistory> QcPassHistories { get; }
         DbSet<ProductInspection> ProductInspections { get; }
         DbSet<QCInputByQC> QCInputByQCs { get; }
+        DbSet<HistoryPrintLabelForAll> HistoryPrintLabelForAlls { get; }
 
         // ==================== SampleRequest ====================
         DbSet<Formula> Formulas { get; }

@@ -189,7 +189,34 @@ namespace HRM.Domain.Security.Rules.Attachment
                     },
                     MaxBytes = 50 * MB
                 },
+
+                // Tài liệu nguyên vật liệu: TDS, MSDS/SDS, COA, chứng nhận và
+                // tài liệu khác. Mỗi NVL có thể có nhiều phiên bản/tệp.
+                [AttachmentSlot.MaterialTds] = CreateMaterialDocumentRule(),
+                [AttachmentSlot.MaterialMsds] = CreateMaterialDocumentRule(),
+                [AttachmentSlot.MaterialCoa] = CreateMaterialDocumentRule(),
+                [AttachmentSlot.MaterialCertificate] = CreateMaterialDocumentRule(),
+                [AttachmentSlot.MaterialOther] = CreateMaterialDocumentRule(),
             };
+
+        private static SlotRule CreateMaterialDocumentRule()
+        {
+            return new SlotRule
+            {
+                AllowMultiple = true,
+                AllowedMimePrefixes = new[]
+                {
+                    "application/pdf",
+                    "image/",
+                    "text/",
+                    "application/msword",
+                    "application/vnd.ms-excel",
+                    "application/vnd.openxmlformats-officedocument",
+                    "application/vnd.oasis.opendocument"
+                },
+                MaxBytes = 50 * MB
+            };
+        }
     }
 
 }

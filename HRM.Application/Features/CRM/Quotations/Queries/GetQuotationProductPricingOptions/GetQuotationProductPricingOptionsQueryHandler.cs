@@ -1,13 +1,15 @@
 using HRM.Application.Abstractions.Commons.Pricing;
 using HRM.Application.Abstractions.Persistence.PLM;
+using HRM.Application.Abstractions.Persistence.CRM.CustomerCare;
 using HRM.Application.Abstractions.Security;
-using HRM.Application.Commons.Authorization;
 using HRM.Application.Commons.Models;
 using HRM.Application.Commons.Pagination;
 using HRM.Application.Commons.Pricing.Dtos;
 using HRM.Application.Commons.Pricing.Helpers;
 using HRM.Application.Commons.Pricing.Models;
+using HRM.Application.Features.PLM.Formulas.Helpers;
 using HRM.Application.Features.CRM.Quotations.Dtos;
+using HRM.Application.Features.CRM.Quotations.Services;
 using HRM.Application.Features.CRM.Quotations.Queries.GetQuotationProductPricingOptions.Models;
 using HRM.Domain.Entities.SampleRequestSchema;
 using HRM.Domain.Enums.Category;
@@ -30,17 +32,23 @@ internal sealed class GetQuotationProductPricingOptionsQueryHandler
     private const int MaxRequestTypeLength = 100;
 
     private readonly IPLMReadDbContext _dbContext;
+    private readonly ICRMReadDbContext _crmDbContext;
     private readonly ICurrentUser _currentUser;
     private readonly IMaterialPriceQueryService _materialPriceQueryService;
+    private readonly ProductPricingSourceQueryService _sourceQueryService;
 
     public GetQuotationProductPricingOptionsQueryHandler(
         IPLMReadDbContext dbContext,
+        ICRMReadDbContext crmDbContext,
         ICurrentUser currentUser,
-        IMaterialPriceQueryService materialPriceQueryService)
+        IMaterialPriceQueryService materialPriceQueryService,
+        ProductPricingSourceQueryService sourceQueryService)
     {
         _dbContext = dbContext;
+        _crmDbContext = crmDbContext;
         _currentUser = currentUser;
         _materialPriceQueryService = materialPriceQueryService;
+        _sourceQueryService = sourceQueryService;
     }
 
     public async Task<OperationResult<PagedResult<QuotationProductPricingOptionDto>>> Handle(
@@ -53,7 +61,7 @@ internal sealed class GetQuotationProductPricingOptionsQueryHandler
                 "Current user does not have a company context.");
         }
 
-        if (request.NormalizedRequestType.Length > MaxRequestTypeLength)
+        if (request.NormalizedRequestType is { Length: > MaxRequestTypeLength })
         {
             return OperationResult<PagedResult<QuotationProductPricingOptionDto>>.Fail(
                 $"RequestType cannot exceed {MaxRequestTypeLength} characters.");
@@ -71,40 +79,50 @@ internal sealed class GetQuotationProductPricingOptionsQueryHandler
                 "QuotationId is invalid.");
         }
 
-        var sampleRequestStatus =
-            (request.Status ?? SampleRequestStatus.Completed).ToString();
+        if (request.NormalizedCurrency.Length > QuotationRules.MaximumCurrencyLength)
+        {
+            return OperationResult<PagedResult<QuotationProductPricingOptionDto>>.Fail(
+                $"Currency cannot exceed {QuotationRules.MaximumCurrencyLength} characters.");
+        }
 
         var requestType = request.NormalizedRequestType;
-        var canViewSensitivePricing =
-            _currentUser.IsInRole(ApplicationRoles.President) ||
-            _currentUser.IsInRole(ApplicationRoles.Developer);
+        var canViewSensitivePricing = ProductPricingAccessRules.CanManage(_currentUser);
 
         var eligibleRequests = _dbContext.SampleRequests
             .AsNoTracking()
             .Where(x =>
                 x.IsActive &&
                 x.CompanyId == companyId &&
-                x.Status == sampleRequestStatus &&
-                x.RequestType == requestType &&
                 x.Product.IsActive &&
                 x.Product.CompanyId == companyId);
 
-        var eligibleProductIds = eligibleRequests
-            .Select(x => x.ProductId)
-            .Distinct();
+        if (request.Status is { } sampleRequestStatus)
+        {
+            eligibleRequests = eligibleRequests.Where(x =>
+                x.Status == sampleRequestStatus.ToString());
+        }
 
-        var latestRequestQuery = eligibleProductIds
-            .SelectMany(productId => eligibleRequests
-                .Where(x => x.ProductId == productId)
-                .OrderByDescending(x => x.UpdatedDate ?? x.CreatedDate)
-                .ThenByDescending(x => x.SampleRequestId)
-                .Take(1));
+        if (requestType is not null)
+        {
+            eligibleRequests = eligibleRequests.Where(x => x.RequestType == requestType);
+        }
+
+        var productQuery = _dbContext.Products
+            .AsNoTracking()
+            .Where(x => x.IsActive && x.CompanyId == companyId);
+
+        if (request.Status.HasValue || requestType is not null)
+        {
+            productQuery = productQuery.Where(product =>
+                eligibleRequests.Any(sampleRequest =>
+                    sampleRequest.ProductId == product.ProductId));
+        }
 
         if (request.QuotationStatus is { } quotationStatus)
         {
-            latestRequestQuery = latestRequestQuery.Where(x =>
+            productQuery = productQuery.Where(product =>
                 _dbContext.QuotationLines.Any(line =>
-                    line.ProductId == x.ProductId &&
+                    line.ProductId == product.ProductId &&
                     line.Quotation.IsActive &&
                     line.Quotation.CompanyId == companyId &&
                     line.Quotation.Status == quotationStatus));
@@ -112,10 +130,10 @@ internal sealed class GetQuotationProductPricingOptionsQueryHandler
 
         if (request.QuotationId is { } quotationId)
         {
-            latestRequestQuery = latestRequestQuery.Where(x =>
+            productQuery = productQuery.Where(product =>
                 _dbContext.QuotationLines.Any(line =>
                     line.QuotationId == quotationId &&
-                    line.ProductId == x.ProductId &&
+                    line.ProductId == product.ProductId &&
                     line.Quotation.IsActive &&
                     line.Quotation.CompanyId == companyId));
         }
@@ -124,61 +142,54 @@ internal sealed class GetQuotationProductPricingOptionsQueryHandler
         {
             if (IsQuotationExternalIdKeyword(keyword))
             {
-                latestRequestQuery = latestRequestQuery.Where(x =>
+                productQuery = productQuery.Where(product =>
                     _dbContext.QuotationLines.Any(line =>
-                        line.ProductId == x.ProductId &&
+                        line.ProductId == product.ProductId &&
                         line.Quotation.IsActive &&
                         line.Quotation.CompanyId == companyId &&
                         line.Quotation.ExternalId.StartsWith(keyword)));
             }
             else if (IsSampleRequestExternalIdKeyword(keyword))
             {
-                latestRequestQuery = latestRequestQuery.Where(x =>
+                productQuery = productQuery.Where(product =>
                     eligibleRequests.Any(sampleRequest =>
-                        sampleRequest.ProductId == x.ProductId &&
+                        sampleRequest.ProductId == product.ProductId &&
                         sampleRequest.ExternalId.StartsWith(keyword)));
             }
             else if (IsFormulaExternalIdKeyword(keyword))
             {
-                latestRequestQuery = latestRequestQuery.Where(x =>
+                productQuery = productQuery.Where(product =>
                     _dbContext.Formulas.Any(formula =>
                         formula.IsActive &&
                         formula.CompanyId == companyId &&
-                        formula.ProductId == x.ProductId &&
-                        formula.ExternalId.StartsWith(keyword)));
+                        formula.ProductId == product.ProductId &&
+                        EF.Functions.ILike(formula.ExternalId, $"{keyword}%")));
             }
             else
             {
-                latestRequestQuery = latestRequestQuery.Where(x =>
-                    (x.Product.ColourCode ?? string.Empty).Contains(keyword) ||
-                    (x.Product.Name ?? string.Empty).Contains(keyword) ||
+                productQuery = productQuery.Where(product =>
+                    (product.ColourCode ?? string.Empty).Contains(keyword) ||
+                    (product.Name ?? string.Empty).Contains(keyword) ||
                     eligibleRequests.Any(sampleRequest =>
-                        sampleRequest.ProductId == x.ProductId &&
+                        sampleRequest.ProductId == product.ProductId &&
                         sampleRequest.ExternalId.Contains(keyword)) ||
                     _dbContext.Formulas.Any(formula =>
                         formula.IsActive &&
                         formula.CompanyId == companyId &&
-                        formula.ProductId == x.ProductId &&
-                        (formula.ExternalId.Contains(keyword) || formula.Name.Contains(keyword))));
+                        formula.ProductId == product.ProductId &&
+                        (EF.Functions.ILike(formula.ExternalId, $"%{keyword}%") || formula.Name.Contains(keyword))));
             }
         }
 
-        var totalCount = await latestRequestQuery.CountAsync(cancellationToken);
-        latestRequestQuery = ApplySorting(latestRequestQuery, request);
+        var totalCount = await productQuery.CountAsync(cancellationToken);
+        productQuery = ApplySorting(productQuery, eligibleRequests, request);
 
-        var productCandidates = await latestRequestQuery
+        var productCandidates = await productQuery
             .Select(x => new PricingProductCandidate
             {
-                SampleRequestId = x.SampleRequestId,
-                SampleRequestExternalId = x.ExternalId,
-                CompletedDate = x.UpdatedDate ?? x.CreatedDate,
                 ProductId = x.ProductId,
-                ProductCode = x.Product.ColourCode ?? string.Empty,
-                ProductName = x.Product.Name ?? string.Empty,
-
-                CustomerId = x.Customer.CustomerId,
-                CustomerExternalId =x.Customer.ExternalId ?? string.Empty,
-                CustomerName = x.Customer.CustomerName ?? string.Empty,
+                ProductCode = x.ColourCode ?? x.Code ?? string.Empty,
+                ProductName = x.Name ?? string.Empty
             })
             .Skip((request.NormalizedPageNumber - 1) * request.NormalizedPageSize)
             .Take(request.NormalizedPageSize)
@@ -198,12 +209,76 @@ internal sealed class GetQuotationProductPricingOptionsQueryHandler
             .Select(x => x.ProductId)
             .ToList();
 
+        var latestSampleRequestRows = await eligibleRequests
+            .Where(x => productIds.Contains(x.ProductId))
+            .OrderByDescending(x => x.UpdatedDate ?? x.CreatedDate)
+            .ThenByDescending(x => x.SampleRequestId)
+            .Select(x => new PricingSampleRequestCandidate
+            {
+                ProductId = x.ProductId,
+                SampleRequestId = x.SampleRequestId,
+                SampleRequestExternalId = x.ExternalId,
+                CompletedDate = x.UpdatedDate ?? x.CreatedDate,
+                CustomerId = x.Customer.CustomerId,
+                CustomerExternalId = x.Customer.ExternalId ?? string.Empty,
+                CustomerName = x.Customer.CustomerName ?? string.Empty
+            })
+            .ToListAsync(cancellationToken);
+
+        var latestSampleRequestByProduct = latestSampleRequestRows
+            .GroupBy(x => x.ProductId)
+            .ToDictionary(x => x.Key, x => x.First());
+
+        foreach (var product in productCandidates)
+        {
+            if (!latestSampleRequestByProduct.TryGetValue(product.ProductId, out var sampleRequest))
+            {
+                continue;
+            }
+
+            product.SampleRequestId = sampleRequest.SampleRequestId;
+            product.SampleRequestExternalId = sampleRequest.SampleRequestExternalId;
+            product.CompletedDate = sampleRequest.CompletedDate;
+            product.CustomerId = sampleRequest.CustomerId;
+            product.CustomerExternalId = sampleRequest.CustomerExternalId;
+            product.CustomerName = sampleRequest.CustomerName;
+        }
+
+        var pricingVersionRows = await _crmDbContext.ProductPricingVersions
+            .AsNoTracking()
+            .Include(x => x.Product)
+            .Include(x => x.PriceTiers)
+            .Include(x => x.SourceFormula)
+            .Include(x => x.SourceManufacturingFormula)
+            .Where(x =>
+                x.IsActive &&
+                x.CompanyId == companyId &&
+                productIds.Contains(x.ProductId) &&
+                x.Currency == request.NormalizedCurrency &&
+                (x.Status == ProductPricingStatus.Draft ||
+                 x.Status == ProductPricingStatus.Approved))
+            .OrderByDescending(x => x.Version)
+            .ToListAsync(cancellationToken);
+
+        var pricingVersionsByProduct = pricingVersionRows
+            .GroupBy(x => x.ProductId)
+            .ToDictionary(x => x.Key, x => x.ToArray());
+        var productsWithoutPricingVersion = productIds
+            .Where(productId => !pricingVersionsByProduct.ContainsKey(productId))
+            .ToArray();
+        var pricingSourcesByProduct = await _sourceQueryService.LoadAsync(
+            productsWithoutPricingVersion,
+            companyId,
+            canViewSensitivePricing,
+            cancellationToken);
+
         var formulaRows = await _dbContext.Formulas
             .AsNoTracking()
             .Where(x =>
                 x.IsActive &&
                 x.CompanyId == companyId &&
-                productIds.Contains(x.ProductId))
+                productsWithoutPricingVersion.Contains(x.ProductId) &&
+                ProductPricingSourceRules.EligibleFormulaStatuses.Contains(x.Status))
             .Select(x => new PricingFormula
             {
                 ProductId = x.ProductId,
@@ -212,6 +287,7 @@ internal sealed class GetQuotationProductPricingOptionsQueryHandler
                 FormulaId = x.FormulaId,
                 FormulaExternalId = x.ExternalId,
                 FormulaName = x.Name,
+                Status = x.Status,
                 MaterialCost = x.TotalPrice,
                 ManufacturingCost = x.ProductionPrice,
                 StandardSellingPrice = x.PresidentPrice,
@@ -243,20 +319,8 @@ internal sealed class GetQuotationProductPricingOptionsQueryHandler
                         ? x.ProductId
                         : null,
                 ItemType = x.itemType,
-                ItemCode = x.itemType == ItemType.Material || x.itemType == ItemType.MaterialFailure
-                    ? x.Material != null
-                        ? x.Material.ExternalId ?? x.MaterialExternalIdSnapshot ?? string.Empty
-                        : x.MaterialExternalIdSnapshot ?? string.Empty
-                    : x.Product != null
-                        ? x.Product.ColourCode ?? x.MaterialExternalIdSnapshot ?? string.Empty
-                        : "-",
-                ItemName = x.itemType == ItemType.Material || x.itemType == ItemType.MaterialFailure
-                    ? x.Material != null
-                        ? x.Material.Name ?? x.MaterialNameSnapshot ?? string.Empty
-                        : x.MaterialNameSnapshot ?? string.Empty
-                    : x.Product != null
-                        ? x.Product.Name ?? x.MaterialNameSnapshot ?? string.Empty
-                        : "-",
+                ItemCode = x.MaterialExternalIdSnapshot ?? string.Empty,
+                ItemName = x.MaterialNameSnapshot ?? string.Empty,
                 Quantity = x.Quantity,
                 Unit = x.Unit ?? string.Empty,
                 LineNo = x.LineNo
@@ -264,6 +328,31 @@ internal sealed class GetQuotationProductPricingOptionsQueryHandler
             .OrderBy(x => x.FormulaId)
             .ThenBy(x => x.LineNo)
             .ToListAsync(cancellationToken);
+
+        var currentItemData = await FormulaItemDisplayResolver.LoadCurrentDataAsync(
+            _dbContext,
+            companyId,
+            materialRows
+                .Where(material => material.ItemId.HasValue)
+                .Select(material => new FormulaItemDisplaySource(
+                    material.ItemId!.Value,
+                    material.ItemType,
+                    material.ItemName,
+                    material.ItemCode)),
+            cancellationToken);
+
+        foreach (var material in materialRows.Where(material => material.ItemId.HasValue))
+        {
+            var display = FormulaItemDisplayResolver.Resolve(
+                new FormulaItemDisplaySource(
+                    material.ItemId!.Value,
+                    material.ItemType,
+                    material.ItemName,
+                    material.ItemCode),
+                currentItemData);
+            material.ItemName = display.Name ?? string.Empty;
+            material.ItemCode = display.ExternalId ?? string.Empty;
+        }
 
         var priceRequests = materialRows
             .Where(x => x.ItemId.HasValue && x.ItemId.Value != Guid.Empty)
@@ -374,19 +463,51 @@ internal sealed class GetQuotationProductPricingOptionsQueryHandler
                     .ToList());
 
         var items = productCandidates
-            .Select(product => new QuotationProductPricingOptionDto
+            .Select(product =>
             {
-                SampleRequestId = product.SampleRequestId,
-                SampleRequestExternalId = product.SampleRequestExternalId,
-                CompletedDate = product.CompletedDate,
-                ProductId = product.ProductId,
-                ProductCode = product.ProductCode,
-                ProductName = product.ProductName,
+                var formulas = formulasByProduct.GetValueOrDefault(product.ProductId) ?? [];
+                var sources = pricingSourcesByProduct.GetValueOrDefault(product.ProductId) ?? [];
+                var versions = pricingVersionsByProduct.GetValueOrDefault(product.ProductId) ?? [];
+                var currentPricing = canViewSensitivePricing
+                    ? versions.OrderByDescending(x => x.Version).FirstOrDefault()
+                    : versions
+                        .Where(x => x.Status == ProductPricingStatus.Approved)
+                        .OrderByDescending(x => x.Version)
+                        .FirstOrDefault();
 
-                CustomerId = product.CustomerId,
-                CustomerExternalId = product.CustomerExternalId,
-                CustomerName = product.CustomerName,
-                Formulas = formulasByProduct.GetValueOrDefault(product.ProductId) ?? []
+                return new QuotationProductPricingOptionDto
+                {
+                    SampleRequestId = product.SampleRequestId,
+                    SampleRequestExternalId = product.SampleRequestExternalId,
+                    CompletedDate = product.CompletedDate,
+                    HasSampleRequest = product.SampleRequestId.HasValue,
+                    ProductId = product.ProductId,
+                    ProductCode = product.ProductCode,
+                    ProductName = product.ProductName,
+                    Currency = request.NormalizedCurrency,
+                    PricingStatus = ResolvePricingStatus(
+                        versions.Length > 0,
+                        currentPricing?.Status,
+                        sources.Count > 0),
+                    HasPricingVersion = versions.Length > 0,
+                    CurrentPricing = currentPricing is null
+                        ? null
+                        : ProductPricingVersionMapper.ToDto(
+                            currentPricing,
+                            canViewSensitivePricing),
+
+                    CustomerId = product.CustomerId,
+                    CustomerExternalId = product.CustomerExternalId,
+                    CustomerName = product.CustomerName,
+                    HasFormula = versions.Any(x =>
+                        x.SourceFormulaId.HasValue ||
+                        x.SourceManufacturingFormulaId.HasValue ||
+                        x.SourceManufacturingVUFormulaId.HasValue) ||
+                        sources.Count > 0,
+                    HasEligiblePricingSource = sources.Count > 0,
+                    PricingSources = sources,
+                    Formulas = formulas
+                };
             })
             .ToList();
 
@@ -398,65 +519,109 @@ internal sealed class GetQuotationProductPricingOptionsQueryHandler
                 request.NormalizedPageSize));
     }
 
-    private static IQueryable<SampleRequest> ApplySorting(
-        IQueryable<SampleRequest> query,
+    private static ProductPricingLookupStatus ResolvePricingStatus(
+        bool hasPricingVersion,
+        ProductPricingStatus? visibleStatus,
+        bool hasEligibleSource)
+    {
+        if (visibleStatus == ProductPricingStatus.Approved)
+        {
+            return ProductPricingLookupStatus.Approved;
+        }
+
+        if (visibleStatus == ProductPricingStatus.Draft)
+        {
+            return ProductPricingLookupStatus.Draft;
+        }
+
+        if (hasPricingVersion)
+        {
+            return ProductPricingLookupStatus.WaitingForApproval;
+        }
+
+        return hasEligibleSource
+            ? ProductPricingLookupStatus.WaitingForPricing
+            : ProductPricingLookupStatus.NoEligibleSource;
+    }
+
+    private static IQueryable<Product> ApplySorting(
+        IQueryable<Product> query,
+        IQueryable<SampleRequest> eligibleRequests,
         GetQuotationProductPricingOptionsQuery request)
     {
         return request.NormalizedSortBy?.ToLowerInvariant() switch
         {
             QuotationProductPricingSortFields.ExternalId => request.SortDescending
                 ? query
-                    .OrderByDescending(x => x.ExternalId)
+                    .OrderByDescending(product => eligibleRequests
+                        .Where(x => x.ProductId == product.ProductId)
+                        .OrderByDescending(x => x.UpdatedDate ?? x.CreatedDate)
+                        .ThenByDescending(x => x.SampleRequestId)
+                        .Select(x => x.ExternalId)
+                        .FirstOrDefault())
                     .ThenByDescending(x => x.CreatedDate)
-                    .ThenByDescending(x => x.SampleRequestId)
+                    .ThenByDescending(x => x.ProductId)
                 : query
-                    .OrderBy(x => x.ExternalId)
+                    .OrderBy(product => eligibleRequests
+                        .Where(x => x.ProductId == product.ProductId)
+                        .OrderByDescending(x => x.UpdatedDate ?? x.CreatedDate)
+                        .ThenByDescending(x => x.SampleRequestId)
+                        .Select(x => x.ExternalId)
+                        .FirstOrDefault())
                     .ThenByDescending(x => x.CreatedDate)
-                    .ThenByDescending(x => x.SampleRequestId),
+                    .ThenByDescending(x => x.ProductId),
 
             QuotationProductPricingSortFields.ColourCode => request.SortDescending
                 ? query
-                    .OrderByDescending(x => x.Product.ColourCode)
+                    .OrderByDescending(x => x.ColourCode)
                     .ThenByDescending(x => x.CreatedDate)
-                    .ThenByDescending(x => x.SampleRequestId)
+                    .ThenByDescending(x => x.ProductId)
                 : query
-                    .OrderBy(x => x.Product.ColourCode)
+                    .OrderBy(x => x.ColourCode)
                     .ThenByDescending(x => x.CreatedDate)
-                    .ThenByDescending(x => x.SampleRequestId),
+                    .ThenByDescending(x => x.ProductId),
 
             QuotationProductPricingSortFields.ProductName => request.SortDescending
                 ? query
-                    .OrderByDescending(x => x.Product.Name)
+                    .OrderByDescending(x => x.Name)
                     .ThenByDescending(x => x.CreatedDate)
-                    .ThenByDescending(x => x.SampleRequestId)
+                    .ThenByDescending(x => x.ProductId)
                 : query
-                    .OrderBy(x => x.Product.Name)
+                    .OrderBy(x => x.Name)
                     .ThenByDescending(x => x.CreatedDate)
-                    .ThenByDescending(x => x.SampleRequestId),
+                    .ThenByDescending(x => x.ProductId),
 
             QuotationProductPricingSortFields.UpdatedDate => request.SortDescending
                 ? query
-                    .OrderByDescending(x => x.UpdatedDate)
+                    .OrderByDescending(product => eligibleRequests
+                        .Where(x => x.ProductId == product.ProductId)
+                        .Max(x => (DateTime?)(x.UpdatedDate ?? x.CreatedDate)))
                     .ThenByDescending(x => x.CreatedDate)
-                    .ThenByDescending(x => x.SampleRequestId)
+                    .ThenByDescending(x => x.ProductId)
                 : query
-                    .OrderBy(x => x.UpdatedDate)
+                    .OrderBy(product => eligibleRequests
+                        .Where(x => x.ProductId == product.ProductId)
+                        .Max(x => (DateTime?)(x.UpdatedDate ?? x.CreatedDate)))
                     .ThenByDescending(x => x.CreatedDate)
-                    .ThenByDescending(x => x.SampleRequestId),
+                    .ThenByDescending(x => x.ProductId),
 
             QuotationProductPricingSortFields.CreatedDate => request.SortDescending
                 ? query
-                    .OrderByDescending(x => x.CreatedDate)
-                    .ThenByDescending(x => x.UpdatedDate)
-                    .ThenByDescending(x => x.SampleRequestId)
+                    .OrderByDescending(product => eligibleRequests
+                        .Where(x => x.ProductId == product.ProductId)
+                        .Max(x => (DateTime?)x.CreatedDate))
+                    .ThenByDescending(x => x.CreatedDate)
+                    .ThenByDescending(x => x.ProductId)
                 : query
-                    .OrderBy(x => x.CreatedDate)
-                    .ThenByDescending(x => x.UpdatedDate)
-                    .ThenByDescending(x => x.SampleRequestId),
+                    .OrderBy(product => eligibleRequests
+                        .Where(x => x.ProductId == product.ProductId)
+                        .Max(x => (DateTime?)x.CreatedDate))
+                    .ThenByDescending(x => x.CreatedDate)
+                    .ThenByDescending(x => x.ProductId),
 
             _ => query
                 .OrderByDescending(x => x.CreatedDate)
-                .ThenByDescending(x => x.SampleRequestId)
+                .ThenByDescending(x => x.ProductId)
         };
     }
 
@@ -484,7 +649,10 @@ internal sealed class GetQuotationProductPricingOptionsQueryHandler
             Unit = material.Unit,
             HasLatestPrice = hasPrice,
             LatestUnitPrice = hasPrice ? latestPrice!.CurrentPrice : null,
-            LatestTotalPrice = hasPrice ? material.Quantity * latestPrice!.CurrentPrice : null,
+            LatestTotalPrice = hasPrice
+                ? PricingRoundingRules.RoundCalculatedPrice(
+                    material.Quantity * latestPrice!.CurrentPrice)
+                : null,
             LatestPriceDate = hasPrice ? latestPrice!.PriceDate : null,
             LatestPriceSource = hasPrice
                 ? latestPrice!.PriceSource
@@ -526,6 +694,7 @@ internal sealed class GetQuotationProductPricingOptionsQueryHandler
                 FormulaId = formula.FormulaId,
                 FormulaExternalId = formula.FormulaExternalId,
                 FormulaName = formula.FormulaName,
+                Status = formula.Status,
                 IsCustomerSelected = formula.IsSelected,
                 StandardSellingPrice = standardSellingPrice
             };
@@ -536,6 +705,7 @@ internal sealed class GetQuotationProductPricingOptionsQueryHandler
             FormulaId = formula.FormulaId,
             FormulaExternalId = formula.FormulaExternalId,
             FormulaName = formula.FormulaName,
+            Status = formula.Status,
             IsCustomerSelected = formula.IsSelected,
             MaterialCost = formula.MaterialCost,
             RealtimeMaterialCost = realtimeMaterialCost.MaterialCost,

@@ -22,6 +22,7 @@ internal sealed class QuotationLineBuilder
         Guid quotationId,
         Guid companyId,
         Guid customerId,
+        string currency,
         IReadOnlyList<QuotationLineRequest> requests,
         CancellationToken cancellationToken)
     {
@@ -35,7 +36,7 @@ internal sealed class QuotationLineBuilder
         {
             var request = requests[index];
             if (request.ProductId == Guid.Empty || request.Quantity <= 0m ||
-                request.SampleRequestId == Guid.Empty)
+                request.SampleRequestId == Guid.Empty || request.ProductPricingVersionId == Guid.Empty)
             {
                 return OperationResult<IReadOnlyList<QuotationLine>>.Fail(
                     $"Quotation line at index {index} is invalid.");
@@ -76,6 +77,31 @@ internal sealed class QuotationLineBuilder
                 "One or more products were not found, inactive, or outside the current company.");
         }
 
+        var pricingVersionIds = requests
+            .Where(x => x.ProductPricingVersionId.HasValue)
+            .Select(x => x.ProductPricingVersionId!.Value)
+            .Distinct()
+            .ToArray();
+        var pricingVersions = await _dbContext.ProductPricingVersions
+            .AsNoTracking()
+            .Include(x => x.PriceTiers)
+            .Where(x =>
+                pricingVersionIds.Contains(x.ProductPricingVersionId) &&
+                x.CompanyId == companyId &&
+                x.Currency == currency &&
+                x.Status == HRM.Domain.Enums.CustomerEnum.ProductPricingStatus.Approved &&
+                x.IsActive)
+            .ToDictionaryAsync(x => x.ProductPricingVersionId, cancellationToken);
+
+        if (pricingVersions.Count != pricingVersionIds.Length || requests.Any(request =>
+                request.ProductPricingVersionId.HasValue &&
+                (!pricingVersions.TryGetValue(request.ProductPricingVersionId.Value, out var pricingVersion) ||
+                 pricingVersion.ProductId != request.ProductId)))
+        {
+            return OperationResult<IReadOnlyList<QuotationLine>>.Fail(
+                "One or more product pricing versions were not found, not approved, outside the current company/currency, or belong to another product.");
+        }
+
         var sampleRequestIds = requests
             .Where(x => x.SampleRequestId.HasValue)
             .Select(x => x.SampleRequestId!.Value)
@@ -113,12 +139,35 @@ internal sealed class QuotationLineBuilder
             var productName = QuotationRules.TrimToNull(product.Name);
             var unit = QuotationRules.TrimToNull(request.Unit) ?? QuotationRules.TrimToNull(product.Unit);
             var quotationLineId = Guid.CreateVersion7();
+            var approvedPricing = request.ProductPricingVersionId.HasValue
+                ? pricingVersions[request.ProductPricingVersionId.Value]
+                : null;
+            if (approvedPricing is null &&
+                (request.PriceTiers.Count > 0 || request.UnitPrice > 0m))
+            {
+                return OperationResult<IReadOnlyList<QuotationLine>>.Fail(
+                    $"lines[{index}] cannot contain prices without an approved ProductPricingVersionId.");
+            }
+
+            var priceTierRequests = approvedPricing?.PriceTiers
+                .OrderBy(x => x.SortOrder)
+                .Select(x => new QuotationLinePriceTierRequest
+                {
+                    QuantityRangeLabel = x.QuantityRangeLabel,
+                    MinQuantity = x.MinQuantity,
+                    MaxQuantity = x.MaxQuantity,
+                    MinInclusive = x.MinInclusive,
+                    MaxInclusive = x.MaxInclusive,
+                    UnitPrice = x.UnitPrice,
+                    SortOrder = x.SortOrder
+                })
+                .ToArray() ?? [];
             var pricingResult = QuotationPriceTierBuilder.Build(
                 quotationLineId,
                 request.PriceMode,
                 request.Quantity,
                 request.UnitPrice,
-                request.PriceTiers,
+                priceTierRequests,
                 $"lines[{index}]",
                 allowMissingPrice: true);
             if (!pricingResult.Success || pricingResult.Data is null)
@@ -144,6 +193,7 @@ internal sealed class QuotationLineBuilder
                 QuotationId = quotationId,
                 ProductId = request.ProductId,
                 SampleRequestId = request.SampleRequestId,
+                ProductPricingVersionId = request.ProductPricingVersionId,
                 ProductExternalIdSnapshot = productCode,
                 ProductNameSnapshot = productName,
                 Quantity = request.Quantity,

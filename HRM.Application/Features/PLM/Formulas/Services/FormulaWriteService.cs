@@ -2,6 +2,7 @@ using HRM.Application.Abstractions.Commons.ExternalIds;
 using HRM.Application.Abstractions.Persistence.PLM;
 using HRM.Application.Features.PLM.Formulas.Commands.UpdateFormulaStatus;
 using HRM.Application.Features.PLM.Formulas.Dtos.Commons;
+using HRM.Application.Features.PLM.SampleRequests.Rules;
 using HRM.Application.Features.PLM.SampleRequests.SampleTrials;
 using HRM.Domain.Entities.SampleRequestSchema;
 using HRM.Domain.Enums.Category;
@@ -195,7 +196,7 @@ internal sealed class FormulaWriteService
 
         foreach (var sampleRequest in sampleRequests)
         {
-            sampleRequest.Status = SampleRequestStatus.SampleSent.ToString();
+            SampleRequestStatusTransitionRules.MarkSampleSent(sampleRequest);
             sampleRequest.SendBy = sentByEmployeeId;
             sampleRequest.SendDate = sentDate;
             sampleRequest.UpdatedBy = employeeId;
@@ -285,7 +286,7 @@ internal sealed class FormulaWriteService
         foreach (var sampleRequest in sampleRequests)
         {
             sampleRequest.FormulaId = formulaId;
-            sampleRequest.Status = SampleRequestStatus.Completed.ToString();
+            SampleRequestStatusTransitionRules.MarkCustomerApproved(sampleRequest);
             sampleRequest.UpdatedBy = employeeId;
             sampleRequest.UpdatedDate = now;
         }
@@ -376,6 +377,7 @@ internal sealed class FormulaWriteService
         ValidateMaterialRequest(request);
 
         var lineNo = request.LineNo > 0 ? request.LineNo : fallbackLineNo;
+
         var unitPrice = RoundPrice(request.UnitPrice ?? 0m);
         var quantity = RoundQuantity(request.Quantity);
         var totalPrice = RoundPrice(quantity * unitPrice);
@@ -394,20 +396,15 @@ internal sealed class FormulaWriteService
             FormulaId = formula.FormulaId,
             MaterialId = materialId,
             ProductId = productId,
-            CategoryId = request.CategoryId ?? snapshot.CategoryId,
+            CategoryId = snapshot.CategoryId,
             Quantity = quantity,
             UnitPrice = unitPrice,
             TotalPrice = totalPrice,
             itemType = request.ItemType,
-            MaterialNameSnapshot = string.IsNullOrWhiteSpace(request.MaterialNameSnapshot)
-                ? snapshot.Name
-                : request.MaterialNameSnapshot.Trim(),
-            MaterialExternalIdSnapshot = string.IsNullOrWhiteSpace(request.MaterialExternalIdSnapshot)
-                ? snapshot.ExternalId
-                : request.MaterialExternalIdSnapshot.Trim(),
-            Unit = string.IsNullOrWhiteSpace(request.Unit)
-                ? snapshot.Unit
-                : request.Unit.Trim(),
+
+            MaterialNameSnapshot = snapshot.Name,
+            MaterialExternalIdSnapshot = snapshot.ExternalId,
+            Unit = snapshot.Unit,
             IsActive = true,
             LineNo = lineNo,
             Formula = formula

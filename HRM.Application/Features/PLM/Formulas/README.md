@@ -11,6 +11,20 @@ PATCH  /api/v1/plm/formulas/{formulaId}/status
 DELETE /api/v1/plm/formulas/{formulaId}
 ```
 
+## Danh sách công thức khi lên đơn hàng
+
+```http
+GET /api/v1/plm/formulas?productId={productId}&isMerchadiseOrder=true
+```
+
+Khi `isMerchadiseOrder=true`, backend chỉ trả `formulaDevs`: các Formula active của Product đã được
+khách hàng chốt trong một Sample Request active có `Status = Completed` và `SampleRequest.FormulaId`
+trỏ tới Formula đó. `formulaSelects` và `formulaStandard` trả danh sách rỗng vì đây là Manufacturing Formula,
+không phải loại Formula được lưu vào dòng Merchandise Order.
+
+Khi cờ không gửi hoặc bằng `false`, API giữ nguyên hành vi cũ và trả cả ba nhóm Formula. Tên query hiện tại
+giữ nguyên `isMerchadiseOrder` để tương thích client đang dùng.
+
 ## Gửi mẫu và tạo Trial
 
 Message `SampleRequestSampleSent` kèm `sampleReceiptAction` chứa Trial id để Sale xác nhận đã nhận mẫu ngay trong Notification Hub. Action xác nhận thuộc API Sample Request/Trial, chỉ cập nhật dữ liệu nhận mẫu và audit trên Trial; không thay đổi trạng thái Formula và không dùng ngày phản hồi khách hàng.
@@ -333,6 +347,19 @@ Các dòng `materials[]` của API chi tiết công thức trả thêm `hasLates
 không nhận các giá nhạy cảm; các field tổng giá/pricing trả `null` và `supplierPrices` rỗng.
 
 ## Ghi chú riêng cho luồng lưu
+
+### Snapshot nhận diện item
+
+Khi PUT/create Formula, backend xác thực `itemId` theo `itemType` và `CompanyId`, rồi tự lấy
+`CategoryId`, tên, mã và đơn vị từ bản ghi Material/Product. FE có thể vẫn gửi các field
+`categoryId`, `materialNameSnapshot`, `materialExternalIdSnapshot`, `unit` để tương thích contract cũ,
+nhưng backend không dùng các giá trị đó để ghi đè snapshot. Với Product, mã snapshot là
+`ColourCode`, fallback `Code`. Các API GET Formula dùng `FormulaItemDisplayResolver` để tải theo batch
+dữ liệu Material/Product hiện tại, không tạo N+1 query. Material hiển thị tên/mã hiện tại; Product hiển thị
+tên `[ColourCode] Name` và mã là `ExternalId` của Sample Request active mới nhất thuộc Product. Snapshot
+chỉ là fallback cho dữ liệu cũ không còn quan hệ nguồn. Rule này cũng áp dụng cho API tra cứu giá Formula
+trong CRM. Không dùng resolver cho FormulaVersion, `FormulaMaterialSnapshots`, export/PDF và chứng từ lịch sử,
+vì các API đó phải hiển thị đúng snapshot tại thời điểm nghiệp vụ.
 
 Màn hình FE có thể chỉ có một nút `Lưu`, nhưng backend vẫn tách contract lưu thành hai API:
 

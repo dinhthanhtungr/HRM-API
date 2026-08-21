@@ -31,7 +31,7 @@ internal sealed class GetSampleRequestSummaryQueryHandler
 
     public async Task<PagedResult<SampleRequestSummaryDto>> Handle(
         GetSampleRequestSummaryQuery request,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken)    
     {
         var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
 
@@ -94,7 +94,8 @@ internal sealed class GetSampleRequestSummaryQueryHandler
                 x.CreatedByNavigation != null && (x.CreatedByNavigation.FullName ?? string.Empty).Contains(keyword) ||
                 x.Product.CreatedByNavigation != null && (x.Product.CreatedByNavigation.FullName ?? string.Empty).Contains(keyword) ||
                 (x.Product.Name ?? string.Empty).Contains(keyword) ||
-                ((x.Product.ColourCode ?? string.Empty).Contains(keyword)));
+                ((x.Product.ColourCode ?? string.Empty).Contains(keyword)) ||
+                (x.Formula != null && EF.Functions.ILike(x.Formula.ExternalId, $"%{keyword}%")));
         }
 
         var sortedQuery = ApplySorting(sampleRequestQuery, request);

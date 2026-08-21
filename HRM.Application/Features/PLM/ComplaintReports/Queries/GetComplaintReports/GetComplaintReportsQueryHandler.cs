@@ -100,7 +100,7 @@ internal sealed class GetComplaintReportsQueryHandler
                     line.IsActive &&
                     (line.ProductExternalIdSnapshot.Contains(keyword) ||
                      line.ProductNameSnapshot.Contains(keyword) ||
-                     line.FormulaExternalIdSnapshot.Contains(keyword))));
+                     EF.Functions.ILike(line.FormulaExternalIdSnapshot, $"%{keyword}%"))));
         }
 
         var totalCount = await query.CountAsync(cancellationToken);

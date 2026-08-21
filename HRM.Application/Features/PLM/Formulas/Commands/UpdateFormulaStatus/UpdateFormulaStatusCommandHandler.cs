@@ -306,7 +306,7 @@ internal sealed class UpdateFormulaStatusCommandHandler
         {
             SampleRequestId = sampleRequestId,
             Type = SampleRequestNotificationType.GeneralMessage,
-            Message = $"Công thức {formulaExternalId} của yêu cầu phối mẫu {sampleRequestExternalId} đã hoàn thành, sẵn sàng cho báo giá.",
+            Message = $"Công thức {formulaExternalId} của yêu cầu phối mẫu {sampleRequestExternalId} đã hoàn thành, sẵn sàng cho lên đơn hàng.",
             TopicOverride = TopicNotifications.SampleRequestFormulaCompleted,
             TitleOverride = "Công thức hoàn thành, sẵn sàng cho báo giá"
         }, cancellationToken);

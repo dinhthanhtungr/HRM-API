@@ -89,7 +89,15 @@ internal sealed class GetFormulaItemLookupQueryHandler
             products = products.Where(x =>
                 (x.ColourCode ?? string.Empty).Contains(keyword) ||
                 (x.Name ?? string.Empty).Contains(keyword) ||
-                (x.Code ?? string.Empty).Contains(keyword));
+                (x.Code ?? string.Empty).Contains(keyword) ||
+                x.SampleRequests.Any(sampleRequest =>
+                    sampleRequest.IsActive &&
+                    sampleRequest.CompanyId == companyId &&
+                    sampleRequest.ExternalId.Contains(keyword)) ||
+                x.Formulas.Any(formula =>
+                    formula.IsActive &&
+                    formula.CompanyId == companyId &&
+                    EF.Functions.ILike(formula.ExternalId, $"%{keyword}%")));
         }
 
         var materialRows = materials.Select(x => new FormulaItemLookupRow

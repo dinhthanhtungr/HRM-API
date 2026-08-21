@@ -127,6 +127,7 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.CreateQuotation
                 quotationId,
                 scope.CompanyId,
                 request.CustomerId,
+                currency.ToUpperInvariant(),
                 request.Lines,
                 cancellationToken);
             if (!lineResult.Success || lineResult.Data is null)

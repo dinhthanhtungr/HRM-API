@@ -1,9 +1,12 @@
 using HRM.Application.Abstractions.Security;
+using HRM.Application.Abstractions.Persistence.CRM.CustomerCare;
 using HRM.Application.Commons.Authorization;
 using HRM.Application.Commons.Models;
 using HRM.Application.Features.CRM.Quotations.Dtos;
 using HRM.Application.Features.CRM.Quotations.Services;
 using MediatR;
+using HRM.Domain.Enums.CustomerEnum;
+using Microsoft.EntityFrameworkCore;
 
 namespace HRM.Application.Features.CRM.Quotations.Queries.GetQuotationProductPricing;
 
@@ -15,13 +18,16 @@ internal sealed class GetQuotationProductPricingQueryHandler
         OperationResult<QuotationResolvedProductPricingDto>>
 {
     private readonly ICurrentUser _currentUser;
+    private readonly ICRMReadDbContext _dbContext;
     private readonly QuotationCurrentPricingResolver _pricingResolver;
 
     public GetQuotationProductPricingQueryHandler(
         ICurrentUser currentUser,
+        ICRMReadDbContext dbContext,
         QuotationCurrentPricingResolver pricingResolver)
     {
         _currentUser = currentUser;
+        _dbContext = dbContext;
         _pricingResolver = pricingResolver;
     }
 
@@ -41,6 +47,28 @@ internal sealed class GetQuotationProductPricingQueryHandler
                 "Current user does not have a company context.");
         }
 
+        var currency = QuotationRules.TrimToNull(request.Currency)?.ToUpperInvariant() ?? "VND";
+        if (currency.Length > QuotationRules.MaximumCurrencyLength)
+        {
+            return OperationResult<QuotationResolvedProductPricingDto>.Fail(
+                $"Currency cannot exceed {QuotationRules.MaximumCurrencyLength} characters.");
+        }
+
+        var approved = await _dbContext.ProductPricingVersions
+            .AsNoTracking()
+            .Include(x => x.Product)
+            .Include(x => x.SourceFormula)
+            .Include(x => x.SourceManufacturingFormula)
+            .Include(x => x.PriceTiers)
+            .Where(x =>
+                x.CompanyId == companyId &&
+                x.ProductId == request.ProductId &&
+                x.Currency == currency &&
+                x.Status == ProductPricingStatus.Approved &&
+                x.IsActive)
+            .OrderByDescending(x => x.Version)
+            .FirstOrDefaultAsync(cancellationToken);
+
         var resolvedByProductId = await _pricingResolver.ResolveAsync(
             [request.ProductId],
             companyId,
@@ -49,13 +77,6 @@ internal sealed class GetQuotationProductPricingQueryHandler
         {
             return OperationResult<QuotationResolvedProductPricingDto>.Fail(
                 "Product was not found in the current company.");
-        }
-
-        if (!current.FormulaId.HasValue ||
-            !current.FormulaSelectionSource.HasValue)
-        {
-            return OperationResult<QuotationResolvedProductPricingDto>.Fail(
-                "No selected formula or formula from a sent sample request was found for this product.");
         }
 
         var canViewSensitivePricing =
@@ -68,10 +89,38 @@ internal sealed class GetQuotationProductPricingQueryHandler
                 ProductId = current.ProductId,
                 ProductCode = current.ProductCode,
                 ProductName = current.ProductName,
-                FormulaId = current.FormulaId.Value,
-                FormulaExternalId = current.FormulaExternalId ?? string.Empty,
-                FormulaName = current.FormulaName ?? string.Empty,
-                FormulaSelectionSource = current.FormulaSelectionSource.Value,
+                ProductPricingVersionId = approved?.ProductPricingVersionId,
+                ProductPricingVersion = approved?.Version,
+                Currency = currency,
+                ProductPricingStatus = approved?.Status,
+                CanApplyToQuotation = approved is not null && approved.PriceTiers.Count > 0,
+                ApprovedPriceTiers = approved?.PriceTiers
+                    .OrderBy(x => x.SortOrder)
+                    .Select(x => new ProductPricingTierDto
+                    {
+                        ProductPricingTierId = x.ProductPricingTierId,
+                        QuantityRangeLabel = x.QuantityRangeLabel,
+                        MinQuantity = x.MinQuantity,
+                        MaxQuantity = x.MaxQuantity,
+                        MinInclusive = x.MinInclusive,
+                        MaxInclusive = x.MaxInclusive,
+                        UnitPrice = x.UnitPrice,
+                        SortOrder = x.SortOrder
+                    }).ToArray() ?? [],
+                PricingSourceType = approved is null
+                    ? null
+                    : approved.SourceManufacturingFormulaId.HasValue
+                        ? ProductPricingSourceType.ManufacturingFormula
+                        : ProductPricingSourceType.Formula,
+                PricingSourceId = approved?.SourceManufacturingFormulaId ??
+                    approved?.SourceFormulaId,
+                FormulaId = approved?.SourceFormulaId ?? current.FormulaId,
+                FormulaExternalId = approved?.FormulaExternalIdSnapshot ?? current.FormulaExternalId ?? string.Empty,
+                FormulaName = approved?.SourceManufacturingFormula?.Name ??
+                    approved?.SourceFormula?.Name ??
+                    current.FormulaName ??
+                    string.Empty,
+                FormulaSelectionSource = current.FormulaSelectionSource,
                 RealtimeMaterialCost = canViewSensitivePricing
                     ? current.RealtimeMaterialCost.MaterialCost
                     : null,
@@ -82,14 +131,14 @@ internal sealed class GetQuotationProductPricingQueryHandler
                     ? current.RealtimeMaterialCost.MissingPriceCount
                     : null,
                 ManufacturingCost = canViewSensitivePricing
-                    ? current.ManufacturingCost
+                    ? approved?.ManufacturingCost ?? current.ManufacturingCost
                     : null,
-                StandardSellingPrice = current.StandardSellingPrice,
+                StandardSellingPrice = approved?.StandardSellingPrice,
                 ProfitMarginRate = canViewSensitivePricing
-                    ? current.Pricing?.ProfitMarginRate
+                    ? approved?.ProfitMarginRate
                     : null,
                 PricingUpdatedDate = canViewSensitivePricing
-                    ? current.PricingUpdatedDate
+                    ? approved?.UpdatedDate ?? approved?.CreatedDate ?? current.PricingUpdatedDate
                     : null,
                 Pricing = canViewSensitivePricing ? current.Pricing : null
             });

@@ -1,4 +1,5 @@
 using HRM.Application.Commons.Pricing.Dtos;
+using HRM.Application.Commons.Pricing.Models;
 using HRM.Domain.Enums.Formulas;
 
 namespace HRM.Application.Commons.Pricing.Helpers;
@@ -11,7 +12,6 @@ public static class FormulaPriceCalculator
 {
     private const decimal DefaultPowderManufacturingCost = 10_000m;
     private const decimal DefaultCompoundManufacturingCost = 20_000m;
-    private const int MoneyScale = 6;
     private const int PercentScale = 4;
 
     private static readonly PriceTierRule[] CompoundRules =
@@ -36,6 +36,86 @@ public static class FormulaPriceCalculator
         new("> 5 tấn", 5_000m, null, false, true, null)
     ];
 
+    public static FormulaPricingPolicyDefinition GetDefaultPolicy(FormulaPricingProfile profile)
+        => new(
+            profile,
+            profile == FormulaPricingProfile.Compound
+                ? DefaultCompoundManufacturingCost
+                : DefaultPowderManufacturingCost,
+            GetRules(profile).Select((rule, index) => new FormulaPricingPolicyTierDefinition(
+                rule.QuantityRangeLabel,
+                rule.MinQuantity,
+                rule.MaxQuantity,
+                rule.MinInclusive,
+                rule.MaxInclusive,
+                rule.Offset,
+                index)).ToArray());
+
+    public static IReadOnlyList<FormulaSuggestedPriceTierDto> BuildPriceTierTemplates(
+        FormulaPricingPolicyDefinition policy)
+        => policy.Tiers.OrderBy(x => x.SortOrder).Select(x => new FormulaSuggestedPriceTierDto
+        {
+            QuantityRangeLabel = x.QuantityRangeLabel,
+            MinQuantity = x.MinQuantity,
+            MaxQuantity = x.MaxQuantity,
+            MinInclusive = x.MinInclusive,
+            MaxInclusive = x.MaxInclusive,
+            UnitPrice = null,
+            MarginVsMaterialPercent = null,
+            MarginVsCostPercent = null,
+            RequiresManualPrice = !x.PriceOffset.HasValue,
+            SortOrder = x.SortOrder
+        }).ToArray();
+
+    public static FormulaPriceCalculationDto Calculate(
+        FormulaPricingPolicyDefinition policy,
+        decimal materialCost,
+        decimal? manufacturingCost,
+        decimal? standardSellingPrice)
+    {
+        var roundedMaterialCost = PricingRoundingRules.RoundCalculatedPrice(materialCost);
+        var usedDefaultManufacturingCost = manufacturingCost is null or <= 0m;
+        var effectiveManufacturingCost = manufacturingCost is > 0m
+            ? manufacturingCost.Value
+            : policy.DefaultManufacturingCost;
+        var costBase = PricingRoundingRules.RoundCalculatedPrice(
+            roundedMaterialCost + effectiveManufacturingCost);
+        var resolvedStandardSellingPrice = standardSellingPrice.HasValue
+            ? PricingRoundingRules.RoundStoredInput(standardSellingPrice.Value)
+            : costBase;
+        return new FormulaPriceCalculationDto
+        {
+            Profile = policy.Profile,
+            MaterialCost = roundedMaterialCost,
+            ManufacturingCost = effectiveManufacturingCost,
+            UsedDefaultManufacturingCost = usedDefaultManufacturingCost,
+            CostBase = costBase,
+            StandardSellingPrice = resolvedStandardSellingPrice,
+            ProfitMarginRate = CalculateProfitMarginRate(resolvedStandardSellingPrice, costBase),
+            SuggestedPriceTiers = resolvedStandardSellingPrice > 0m
+                ? policy.Tiers.OrderBy(x => x.SortOrder).Select(x =>
+                {
+                    var unitPrice = x.PriceOffset.HasValue
+                        ? PricingRoundingRules.RoundCalculatedPrice(Math.Max(0m, resolvedStandardSellingPrice + x.PriceOffset.Value))
+                        : (decimal?)null;
+                    return new FormulaSuggestedPriceTierDto
+                    {
+                        QuantityRangeLabel = x.QuantityRangeLabel,
+                        MinQuantity = x.MinQuantity,
+                        MaxQuantity = x.MaxQuantity,
+                        MinInclusive = x.MinInclusive,
+                        MaxInclusive = x.MaxInclusive,
+                        UnitPrice = unitPrice,
+                        MarginVsMaterialPercent = CalculateMarginPercent(unitPrice, materialCost),
+                        MarginVsCostPercent = CalculateMarginPercent(unitPrice, costBase),
+                        RequiresManualPrice = !unitPrice.HasValue,
+                        SortOrder = x.SortOrder
+                    };
+                }).ToArray()
+                : []
+        };
+    }
+
     public static FormulaPriceCalculationDto Calculate(
         string? productCode,
         string? productAdditive,
@@ -44,13 +124,28 @@ public static class FormulaPriceCalculator
         decimal? standardSellingPrice)
     {
         var profile = ResolveProfile(productCode, productAdditive);
+        return Calculate(
+            profile,
+            materialCost,
+            manufacturingCost,
+            standardSellingPrice);
+    }
+
+    public static FormulaPriceCalculationDto Calculate(
+        FormulaPricingProfile profile,
+        decimal materialCost,
+        decimal? manufacturingCost,
+        decimal? standardSellingPrice)
+    {
+        var roundedMaterialCost = PricingRoundingRules.RoundCalculatedPrice(materialCost);
         var usedDefaultManufacturingCost = manufacturingCost is null or <= 0m;
         var effectiveManufacturingCost = ResolveManufacturingCost(
             profile,
             manufacturingCost);
-        var costBase = RoundMoney(materialCost + effectiveManufacturingCost);
+        var costBase = PricingRoundingRules.RoundCalculatedPrice(
+            roundedMaterialCost + effectiveManufacturingCost);
         var resolvedStandardSellingPrice = standardSellingPrice.HasValue
-            ? RoundMoney(standardSellingPrice.Value)
+            ? PricingRoundingRules.RoundStoredInput(standardSellingPrice.Value)
             : costBase;
         var profitMarginRate = CalculateProfitMarginRate(
             resolvedStandardSellingPrice,
@@ -59,7 +154,7 @@ public static class FormulaPriceCalculator
         return new FormulaPriceCalculationDto
         {
             Profile = profile,
-            MaterialCost = materialCost,
+            MaterialCost = roundedMaterialCost,
             ManufacturingCost = effectiveManufacturingCost,
             UsedDefaultManufacturingCost = usedDefaultManufacturingCost,
             CostBase = costBase,
@@ -86,9 +181,12 @@ public static class FormulaPriceCalculator
             productCode,
             productAdditive,
             manufacturingCost);
-        var costBase = RoundMoney(materialCost + effectiveManufacturingCost);
+        var costBase = PricingRoundingRules.RoundCalculatedPrice(
+            PricingRoundingRules.RoundCalculatedPrice(materialCost) +
+            effectiveManufacturingCost);
 
-        return RoundMoney(costBase * (1m + profitMarginRate / 100m));
+        return PricingRoundingRules.RoundCalculatedPrice(
+            costBase * (1m + profitMarginRate / 100m));
     }
 
     public static decimal ResolveManufacturingCost(
@@ -101,7 +199,7 @@ public static class FormulaPriceCalculator
             manufacturingCost);
     }
 
-    private static FormulaPricingProfile ResolveProfile(
+    public static FormulaPricingProfile ResolveProfile(
         string? productCode,
         string? productAdditive)
     {
@@ -115,21 +213,36 @@ public static class FormulaPriceCalculator
             : FormulaPricingProfile.Powder;
     }
 
+    public static IReadOnlyList<FormulaSuggestedPriceTierDto> BuildPriceTierTemplates(
+        FormulaPricingProfile profile)
+        => GetRules(profile)
+            .Select((rule, index) => new FormulaSuggestedPriceTierDto
+            {
+                QuantityRangeLabel = rule.QuantityRangeLabel,
+                MinQuantity = rule.MinQuantity,
+                MaxQuantity = rule.MaxQuantity,
+                MinInclusive = rule.MinInclusive,
+                MaxInclusive = rule.MaxInclusive,
+                UnitPrice = null,
+                MarginVsMaterialPercent = null,
+                MarginVsCostPercent = null,
+                RequiresManualPrice = !rule.Offset.HasValue,
+                SortOrder = index
+            })
+            .ToArray();
+
     private static IReadOnlyList<FormulaSuggestedPriceTierDto> BuildPriceTiers(
         FormulaPricingProfile profile,
         decimal effectiveSellingPrice,
         decimal materialCost,
         decimal costBase)
     {
-        var rules = profile == FormulaPricingProfile.Compound
-            ? CompoundRules
-            : PowderRules;
-
-        return rules
+        return GetRules(profile)
             .Select((rule, index) =>
             {
                 var unitPrice = rule.Offset.HasValue
-                    ? RoundMoney(Math.Max(0m, effectiveSellingPrice + rule.Offset.Value))
+                    ? PricingRoundingRules.RoundCalculatedPrice(
+                        Math.Max(0m, effectiveSellingPrice + rule.Offset.Value))
                     : (decimal?)null;
 
                 return new FormulaSuggestedPriceTierDto
@@ -148,6 +261,11 @@ public static class FormulaPriceCalculator
             })
             .ToList();
     }
+
+    private static IReadOnlyList<PriceTierRule> GetRules(FormulaPricingProfile profile)
+        => profile == FormulaPricingProfile.Compound
+            ? CompoundRules
+            : PowderRules;
 
     private static decimal? CalculateMarginPercent(decimal? price, decimal comparisonBase)
     {
@@ -187,9 +305,6 @@ public static class FormulaPriceCalculator
                 ? DefaultCompoundManufacturingCost
                 : DefaultPowderManufacturingCost;
     }
-
-    private static decimal RoundMoney(decimal value)
-        => decimal.Round(value, MoneyScale, MidpointRounding.AwayFromZero);
 
     private sealed record PriceTierRule(
         string QuantityRangeLabel,

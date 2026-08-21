@@ -40,7 +40,7 @@ public sealed class QuotationPriceTierBuilderTests
     }
 
     [Fact]
-    public void Build_StillRejectsPartiallyEnteredTierWithoutPositivePrice()
+    public void Build_AllowsZeroTierPrice()
     {
         var result = QuotationPriceTierBuilder.Build(
             Guid.NewGuid(),
@@ -61,7 +61,34 @@ public sealed class QuotationPriceTierBuilderTests
             fieldPath: "lines[0]",
             allowMissingPrice: true);
 
+        Assert.True(result.Success);
+        Assert.NotNull(result.Data);
+        Assert.Equal(0m, result.Data.EffectiveUnitPrice);
+    }
+
+    [Fact]
+    public void Build_RejectsNegativeTierPrice()
+    {
+        var result = QuotationPriceTierBuilder.Build(
+            Guid.NewGuid(),
+            QuotationLinePriceMode.Tiered,
+            quantity: 1m,
+            fixedUnitPrice: 0m,
+            requests:
+            [
+                new QuotationLinePriceTierRequest
+                {
+                    QuantityRangeLabel = "< 50 kg",
+                    MaxQuantity = 50m,
+                    MaxInclusive = false,
+                    UnitPrice = -1m,
+                    SortOrder = 0
+                }
+            ],
+            fieldPath: "lines[0]",
+            allowMissingPrice: true);
+
         Assert.False(result.Success);
-        Assert.Contains("positive unitPrice", result.Message);
+        Assert.Contains("non-negative unitPrice", result.Message);
     }
 }

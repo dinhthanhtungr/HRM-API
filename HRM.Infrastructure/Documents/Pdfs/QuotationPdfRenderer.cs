@@ -92,7 +92,14 @@ internal sealed class QuotationPdfRenderer : IQuotationPdfRenderer
             .Italic().FontSize(PdfTypography.SmallSize);
 
         var tieredLines = quotation.Lines
-            .Where(line => line.PriceMode == QuotationLinePriceMode.Tiered)
+            .Where(line =>
+                line.PriceMode == QuotationLinePriceMode.Tiered &&
+                line.PriceTiers.Count > 0)
+            .ToList();
+        var unpricedLines = quotation.Lines
+            .Where(line =>
+                line.PriceMode == QuotationLinePriceMode.Tiered &&
+                line.PriceTiers.Count == 0)
             .ToList();
         var fixedLines = quotation.Lines
             .Where(line => line.PriceMode == QuotationLinePriceMode.Fixed)
@@ -112,6 +119,11 @@ internal sealed class QuotationPdfRenderer : IQuotationPdfRenderer
                 container,
                 fixedLines,
                 quotation.Currency));
+        }
+
+        if (unpricedLines.Count > 0)
+        {
+            column.Item().Element(container => ComposeUnpricedLines(container, unpricedLines));
         }
 
         if (quotation.Lines.Count == 0)
@@ -276,6 +288,35 @@ internal sealed class QuotationPdfRenderer : IQuotationPdfRenderer
                 BodyCell(table.Cell(), FormatMoney(line.UnitPrice, currency));
                 BodyCell(table.Cell(), FormatNumber(line.DiscountPercent));
                 BodyCell(table.Cell(), FormatMoney(line.LineTotal, currency));
+            }
+        });
+    }
+
+    private static void ComposeUnpricedLines(
+        IContainer container,
+        IReadOnlyList<QuotationPdfLineDto> lines)
+    {
+        container.Table(table =>
+        {
+            table.ColumnsDefinition(columns =>
+            {
+                columns.ConstantColumn(58);
+                columns.RelativeColumn(2.3f);
+                columns.RelativeColumn();
+            });
+
+            table.Header(header =>
+            {
+                HeaderCell(header.Cell(), "Mã số/Code");
+                HeaderCell(header.Cell(), "Tên hàng/Name");
+                HeaderCell(header.Cell(), "Trạng thái/Status");
+            });
+
+            foreach (var line in lines)
+            {
+                BodyCell(table.Cell(), line.ProductCode);
+                BodyCell(table.Cell(), line.ProductName);
+                BodyCell(table.Cell(), "Chờ duyệt giá / Pending pricing");
             }
         });
     }

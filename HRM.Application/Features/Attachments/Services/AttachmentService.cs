@@ -68,7 +68,8 @@ internal sealed class AttachmentService : IAttachmentService
                     StoragePath = storagePath,
                     CreateDate = DateTime.Now,
                     CreateBy = createdBy,
-                    IsActive = true
+                    IsActive = true,
+                    ContentHash = NormalizeContentHash(file.ContentHash)
                 });
             }
 
@@ -199,7 +200,25 @@ internal sealed class AttachmentService : IAttachmentService
             {
                 throw new InvalidOperationException($"File {file.FileName} has an unsupported content type.");
             }
+
+            _ = NormalizeContentHash(file.ContentHash);
         }
+    }
+
+    private static string? NormalizeContentHash(string? contentHash)
+    {
+        if (string.IsNullOrWhiteSpace(contentHash))
+        {
+            return null;
+        }
+
+        var normalized = contentHash.Trim().ToUpperInvariant();
+        if (normalized.Length != 64 || normalized.Any(character => !Uri.IsHexDigit(character)))
+        {
+            throw new InvalidOperationException("Attachment content hash must be a SHA-256 hex value.");
+        }
+
+        return normalized;
     }
 
     private static SlotRule GetRule(AttachmentSlot slot)

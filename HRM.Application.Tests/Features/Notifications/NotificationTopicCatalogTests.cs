@@ -20,6 +20,7 @@ public sealed class NotificationTopicCatalogTests
     [InlineData(TopicNotifications.MerchandiseOrderDeliveryPaused, "sales_order", "delivery")]
     [InlineData(TopicNotifications.ComplaintInitialDecision, "sales_order", "complaint")]
     [InlineData(TopicNotifications.MfgProductionOrderUpdated, "production", "change")]
+    [InlineData(TopicNotifications.QuotationPricingApproved, "quotation", "pricing")]
     public void Definition_SeparatesBusinessCategoryFromEventGroup(
         TopicNotifications topic,
         string expectedCategory,

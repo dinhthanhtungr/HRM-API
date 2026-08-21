@@ -164,6 +164,22 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.UpdateQuotation
                     "ValidUntil cannot be earlier than QuotationDate.");
             }
 
+            var targetCurrency = QuotationRules.TrimToNull(request.Currency)?.ToUpperInvariant();
+            if (targetCurrency is not null && targetCurrency != quotation.Currency)
+            {
+                var hasPricedLines = await _readDbContext.QuotationLines
+                    .AsNoTracking()
+                    .AnyAsync(x =>
+                        x.QuotationId == quotation.QuotationId &&
+                        (x.ProductPricingVersionId.HasValue || x.PriceTiers.Any()),
+                        cancellationToken);
+                if (hasPricedLines)
+                {
+                    return OperationResult<QuotationTotalsDto>.Fail(
+                        "Currency cannot be changed while quotation lines contain pricing snapshots. Create or revise the quotation in the target currency instead.");
+                }
+            }
+
             var changed = false;
             changed |= PatchHelper.SetGuidIfValid(
                 request.CustomerId,

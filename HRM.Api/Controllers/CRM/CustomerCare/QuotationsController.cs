@@ -1,17 +1,31 @@
 using HRM.Application.Commons.Concurrency;
 using HRM.Application.Features.CRM.Quotations.Commands.CreateQuotation;
+using HRM.Application.Features.CRM.Quotations.Commands.CreateProductPricingVersion;
+using HRM.Application.Features.CRM.Quotations.Commands.UpdateProductPricingVersion;
+using HRM.Application.Features.CRM.Quotations.Commands.ApproveProductPricingVersion;
 using HRM.Application.Features.CRM.Quotations.Commands.MarkQuotationSent;
 using HRM.Application.Features.CRM.Quotations.Commands.RefreshQuotationPrices;
 using HRM.Application.Features.CRM.Quotations.Commands.ReplaceQuotationLines;
 using HRM.Application.Features.CRM.Quotations.Commands.RequestQuotation;
 using HRM.Application.Features.CRM.Quotations.Commands.UpdateQuotation;
+using HRM.Application.Features.CRM.Quotations.Commands.ManageFormulaPricingPolicy;
 using HRM.Application.Features.CRM.Quotations.Dtos;
 using HRM.Application.Features.CRM.Quotations.Queries.ExportQuotationPdf;
 using HRM.Application.Features.CRM.Quotations.Queries.GetQuotationById;
 using HRM.Application.Features.CRM.Quotations.Queries.GetQuotationPricingComparison;
+using HRM.Application.Features.CRM.Quotations.Queries.GetQuotationPricingWorkspace;
+using HRM.Application.Features.CRM.Quotations.Queries.GetQuotationPricingQueue;
 using HRM.Application.Features.CRM.Quotations.Queries.GetQuotationProductPricing;
 using HRM.Application.Features.CRM.Quotations.Queries.GetQuotationProductPricingOptions;
+using HRM.Application.Features.CRM.Quotations.Queries.GetProductPricingWorkbench;
+using HRM.Application.Features.CRM.Quotations.Queries.GetProductPricingWorkbenchDetail;
 using HRM.Application.Features.CRM.Quotations.Queries.GetQuotations;
+using HRM.Application.Features.CRM.Quotations.Queries.GetProductPricingVersions;
+using HRM.Application.Features.CRM.Quotations.Queries.GetProductPricingSources;
+using HRM.Application.Features.CRM.Quotations.Queries.GetFormulaPricingPolicies;
+using HRM.Application.Features.CRM.Quotations.Queries.PreviewFormulaPricingPolicy;
+using HRM.Domain.Enums.CustomerEnum;
+using HRM.Domain.Enums.Formulas;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -125,14 +139,155 @@ public sealed class QuotationsController : ControllerBase
         return result.Success ? Ok(result.Data) : BadRequest(result);
     }
 
+    [HttpGet("product-pricing-workbench")]
+    public async Task<IActionResult> GetProductPricingWorkbench(
+        [FromQuery] GetProductPricingWorkbenchQuery query,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(query, cancellationToken);
+        return result.Success ? Ok(result.Data) : BadRequest(result);
+    }
+
+    [HttpGet("products/{productId:guid}/pricing-workbench")]
+    public async Task<IActionResult> GetProductPricingWorkbenchDetail(
+        Guid productId,
+        [FromQuery] string? currency,
+        [FromQuery] ProductPricingSourceType? sourceType,
+        [FromQuery] Guid? sourceId,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(
+            new GetProductPricingWorkbenchDetailQuery(
+                productId,
+                currency,
+                sourceType,
+                sourceId),
+            cancellationToken);
+        return result.Success ? Ok(result.Data) : BadRequest(result);
+    }
+
+    [HttpGet("pricing-queue")]
+    public async Task<IActionResult> GetQuotationPricingQueue(
+        [FromQuery] GetQuotationPricingQueueQuery query,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(query, cancellationToken);
+        return result.Success ? Ok(result.Data) : BadRequest(result);
+    }
+
     [HttpGet("products/{productId:guid}/pricing")]
     public async Task<IActionResult> GetProductPricing(
+        Guid productId,
+        [FromQuery] string? currency,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(
+            new GetQuotationProductPricingQuery(productId, currency),
+            cancellationToken);
+        return result.Success ? Ok(result.Data) : BadRequest(result);
+    }
+
+    [HttpGet("product-pricing-versions")]
+    public async Task<IActionResult> GetProductPricingVersions(
+        [FromQuery] Guid productId,
+        [FromQuery] string? currency,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(
+            new GetProductPricingVersionsQuery(productId, currency), cancellationToken);
+        return result.Success ? Ok(result.Data) : BadRequest(result);
+    }
+
+    [HttpGet("products/{productId:guid}/pricing-sources")]
+    public async Task<IActionResult> GetProductPricingSources(
         Guid productId,
         CancellationToken cancellationToken)
     {
         var result = await _sender.Send(
-            new GetQuotationProductPricingQuery(productId),
+            new GetProductPricingSourcesQuery(productId), cancellationToken);
+        return result.Success ? Ok(result.Data) : BadRequest(result);
+    }
+
+    [HttpPost("product-pricing-versions")]
+    public async Task<IActionResult> CreateProductPricingVersion(
+        [FromBody] CreateProductPricingVersionRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(
+            new CreateProductPricingVersionCommand(request), cancellationToken);
+        return result.Success ? Ok(result.Data) : BadRequest(result);
+    }
+
+    [HttpPut("product-pricing-versions/{productPricingVersionId:guid}")]
+    public async Task<IActionResult> UpdateProductPricingVersion(
+        Guid productPricingVersionId,
+        [FromBody] UpdateProductPricingVersionRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(
+            new UpdateProductPricingVersionCommand(productPricingVersionId, request), cancellationToken);
+        return result.Success ? Ok(result.Data) : MutationFailure(result);
+    }
+
+    [HttpPost("product-pricing-versions/{productPricingVersionId:guid}/approve")]
+    public async Task<IActionResult> ApproveProductPricingVersion(
+        Guid productPricingVersionId,
+        [FromBody] ApproveProductPricingVersionRequest? request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(
+            new ApproveProductPricingVersionCommand(
+                productPricingVersionId,
+                request ?? new ApproveProductPricingVersionRequest()),
             cancellationToken);
+        return result.Success ? Ok(result.Data) : MutationFailure(result);
+    }
+
+    [HttpGet("pricing-policies")]
+    public async Task<IActionResult> GetPricingPolicies(
+        [FromQuery] FormulaPricingProfile? profile,
+        [FromQuery] string? currency,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new GetFormulaPricingPoliciesQuery(profile, currency), cancellationToken);
+        return result.Success ? Ok(result.Data) : BadRequest(result);
+    }
+
+    [HttpPost("pricing-policies")]
+    public async Task<IActionResult> CreatePricingPolicy(
+        [FromBody] CreateFormulaPricingPolicyRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new CreateFormulaPricingPolicyCommand(request), cancellationToken);
+        return result.Success ? Ok(result.Data) : BadRequest(result);
+    }
+
+    [HttpPut("pricing-policies/{policyId:guid}")]
+    public async Task<IActionResult> UpdatePricingPolicy(
+        Guid policyId, [FromBody] UpdateFormulaPricingPolicyRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new UpdateFormulaPricingPolicyCommand(policyId, request), cancellationToken);
+        return result.Success ? Ok(result.Data) : MutationFailure(result);
+    }
+
+    [HttpPost("pricing-policies/{policyId:guid}/publish")]
+    public async Task<IActionResult> PublishPricingPolicy(
+        Guid policyId, [FromBody] PublishFormulaPricingPolicyRequest? request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new PublishFormulaPricingPolicyCommand(
+            policyId, request ?? new PublishFormulaPricingPolicyRequest()), cancellationToken);
+        return result.Success ? Ok(result.Data) : MutationFailure(result);
+    }
+
+    [HttpPost("pricing-policies/{policyId:guid}/preview")]
+    public async Task<IActionResult> PreviewPricingPolicy(
+        Guid policyId, [FromBody] PreviewFormulaPricingPolicyRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(
+            new PreviewFormulaPricingPolicyQuery(policyId, request), cancellationToken);
         return result.Success ? Ok(result.Data) : BadRequest(result);
     }
 
@@ -143,6 +298,17 @@ public sealed class QuotationsController : ControllerBase
     {
         var result = await _sender.Send(
             new GetQuotationPricingComparisonQuery(quotationId),
+            cancellationToken);
+        return result.Success ? Ok(result.Data) : BadRequest(result);
+    }
+
+    [HttpGet("{quotationId:guid}/pricing-workspace")]
+    public async Task<IActionResult> GetQuotationPricingWorkspace(
+        Guid quotationId,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(
+            new GetQuotationPricingWorkspaceQuery(quotationId),
             cancellationToken);
         return result.Success ? Ok(result.Data) : BadRequest(result);
     }

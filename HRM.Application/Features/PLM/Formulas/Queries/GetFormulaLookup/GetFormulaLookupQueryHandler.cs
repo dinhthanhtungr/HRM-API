@@ -55,35 +55,39 @@ internal sealed class GetFormulaLookupQueryHandler
                 x.IsActive &&
                 x.CompanyId == companyId);
 
-        //if (productId is { } scopedProductId && scopedProductId != Guid.Empty)
-        //{
-        //    vuFormulas = vuFormulas.Where(x => x.ProductId == scopedProductId);
-        //    vaFormulas = vaFormulas.Where(x =>
-        //        (x.SourceVUFormula != null && x.SourceVUFormula.ProductId == scopedProductId) ||
-        //        x.ProductStandardFormulas.Any(s => s.ProductId == scopedProductId) ||
-        //        x.ProductionSelectVersions.Any(s =>
-        //            s.MfgProductionOrder.ProductId == scopedProductId &&
-        //            s.ManufacturingFormulaId.HasValue));
-        //}
-
-        if (!string.IsNullOrWhiteSpace(request.Status))
+        if (request.ProductId is { } scopedProductId && scopedProductId != Guid.Empty)
         {
-            var status = request.Status.Trim();
-            vuFormulas = vuFormulas.Where(x => x.Status == status);
-            vaFormulas = vaFormulas.Where(x => x.Status == status);
+            vuFormulas = vuFormulas.Where(x => x.ProductId == scopedProductId);
+            vaFormulas = vaFormulas.Where(x =>
+                (x.SourceVUFormula != null && x.SourceVUFormula.ProductId == scopedProductId) ||
+                x.ProductStandardFormulas.Any(s => s.ProductId == scopedProductId) ||
+                x.ProductionSelectVersions.Any(s =>
+                    s.MfgProductionOrder.ProductId == scopedProductId &&
+                    s.ManufacturingFormulaId.HasValue));
+        }
+
+        var statuses = NormalizeStatuses(request);
+        if (statuses.Length > 0)
+        {
+            vuFormulas = vuFormulas.Where(x => statuses.Contains(x.Status));
+            vaFormulas = vaFormulas.Where(x => statuses.Contains(x.Status));
         }
 
         if (request.NormalizedKeyword is { } keyword)
         {
             vuFormulas = vuFormulas.Where(x =>
-                x.ExternalId.Contains(keyword) ||
+                EF.Functions.ILike(x.ExternalId, $"%{keyword}%") ||
                 x.Name.Contains(keyword) ||
                 (x.Product.Name ?? string.Empty).Contains(keyword) ||
                 (x.Product.ColourCode ?? string.Empty).Contains(keyword) ||
+                x.Product.SampleRequests.Any(sampleRequest =>
+                    sampleRequest.IsActive &&
+                    sampleRequest.CompanyId == companyId &&
+                    sampleRequest.ExternalId.Contains(keyword)) ||
                 (x.Note ?? string.Empty).Contains(keyword));
 
             vaFormulas = vaFormulas.Where(x =>
-                x.ExternalId.Contains(keyword) ||
+                EF.Functions.ILike(x.ExternalId, $"%{keyword}%") ||
                 x.Name.Contains(keyword) ||
                 x.ProductionSelectVersions.Any(version =>
                     version.MfgProductionOrder != null &&
@@ -91,7 +95,15 @@ internal sealed class GetFormulaLookupQueryHandler
                     (
                         (version.MfgProductionOrder.Product.Name ?? string.Empty).Contains(keyword) ||
                         (version.MfgProductionOrder.Product.ColourCode ?? string.Empty).Contains(keyword) ||
-                        (version.MfgProductionOrder.ColorName ?? string.Empty).Contains(keyword)
+                        (version.MfgProductionOrder.ColorName ?? string.Empty).Contains(keyword) ||
+                        version.MfgProductionOrder.Product.SampleRequests.Any(sampleRequest =>
+                            sampleRequest.IsActive &&
+                            sampleRequest.CompanyId == companyId &&
+                            sampleRequest.ExternalId.Contains(keyword)) ||
+                        version.MfgProductionOrder.Product.Formulas.Any(formula =>
+                            formula.IsActive &&
+                            formula.CompanyId == companyId &&
+                            EF.Functions.ILike(formula.ExternalId, $"%{keyword}%"))
                     )) ||
                 (x.Note ?? string.Empty).Contains(keyword));
         }
@@ -181,6 +193,17 @@ internal sealed class GetFormulaLookupQueryHandler
             0,
             request.NormalizedPageNumber,
             request.NormalizedPageSize);
+    }
+
+    private static string[] NormalizeStatuses(GetFormulaLookupQuery request)
+    {
+        var values = request.Statuses ?? [];
+        return values
+            .Append(request.Status)
+            .Where(status => !string.IsNullOrWhiteSpace(status))
+            .Select(status => status!.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
     }
 
 

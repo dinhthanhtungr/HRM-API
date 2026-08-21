@@ -9,6 +9,9 @@
 - Khi resolve formula theo product/sample request, phải check active và company scope nếu entity có `CompanyId`.
 - Lookup/form-options nên rõ contract và không phình DTO của endpoint khác nếu mục đích khác nhau.
 - Tôn trọng rule trong PLMCustomerRules.cs để nhận biết việc tính toán đối với kahcsh hàng đặt biệt (đây còn gọi là khách nội bộ), mọi luật nếu dùng chung cho nhiều nơi nên để ở đây.
+- Mọi API GET đang hiển thị item của Formula/ManufacturingFormula theo dữ liệu hiện tại phải dùng `FormulaItemDisplayResolver`, không tự ghép `MaterialNameSnapshot`/`MaterialExternalIdSnapshot` hoặc tự query Product/SampleRequest từng nơi. Resolver tải theo batch, Material hiển thị tên/mã hiện tại; Product hiển thị `[ColourCode] Name` và `ExternalId` của Sample Request active mới nhất. Snapshot chỉ là fallback khi mất quan hệ nguồn. Không áp dụng rule này cho FormulaVersion, `FormulaMaterialSnapshots`, export/PDF hoặc chứng từ lịch sử vì các endpoint đó phải giữ snapshot tại thời điểm nghiệp vụ.
+- Với API keyword đang tìm bằng `Product.ColourCode`, phải đồng thời hỗ trợ mã `SampleRequest.ExternalId` active cùng company và `Formula.ExternalId` liên quan trong cùng scope. Dùng `Any`/`EXISTS` hoặc điều kiện navigation được EF translate; không join làm nhân bản dòng và không bỏ company/visibility scope. Nếu endpoint vốn là Sample Request thì mã Sample Request của chính bản ghi đã có sẵn, chỉ cần bổ sung Formula liên quan.
+- Mọi filter EF theo `Formula.ExternalId` (kể cả navigation hoặc snapshot `FormulaExternalId`) phải dùng `EF.Functions.ILike` với pattern phù hợp (`%keyword%` hoặc `keyword%`); không dùng `Contains`/`StartsWith` vì collation có thể phân biệt hoa thường. Nếu handler đã materialize dữ liệu trước khi lọc, phải đưa filter này xuống `IQueryable` trước `ToListAsync`.
 
 ## Sample Request
 

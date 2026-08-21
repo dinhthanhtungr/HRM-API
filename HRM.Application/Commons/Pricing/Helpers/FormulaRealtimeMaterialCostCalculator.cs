@@ -6,8 +6,6 @@ namespace HRM.Application.Commons.Pricing.Helpers;
 
 public static class FormulaRealtimeMaterialCostCalculator
 {
-    private const int MoneyScale = 6;
-
     public static FormulaRealtimeMaterialCostResult Calculate(
         IEnumerable<FormulaMaterialCostItem> items,
         IReadOnlyDictionary<PriceItemKey, LatestItemPriceDto> latestPriceByItem)
@@ -41,7 +39,7 @@ public static class FormulaRealtimeMaterialCostCalculator
 
         return missingPriceCount == 0
             ? new FormulaRealtimeMaterialCostResult(
-                decimal.Round(total, MoneyScale, MidpointRounding.AwayFromZero),
+                PricingRoundingRules.RoundCalculatedPrice(total),
                 true,
                 0)
             : new FormulaRealtimeMaterialCostResult(null, false, missingPriceCount);

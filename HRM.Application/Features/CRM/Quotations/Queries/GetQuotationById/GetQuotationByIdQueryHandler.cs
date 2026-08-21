@@ -2,6 +2,7 @@
 using HRM.Application.Commons.Models;
 using HRM.Application.Features.CRM.CustomerCare.Visibility;
 using HRM.Application.Features.CRM.Quotations.Dtos;
+using HRM.Application.Features.CRM.Quotations.Services;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using System;
@@ -17,13 +18,16 @@ namespace HRM.Application.Features.CRM.Quotations.Queries.GetQuotationById
     {
         private readonly ICRMReadDbContext _dbContext;
         private readonly ICustomerVisibilityService _visibilityService;
+        private readonly QuotationTierPriceReferenceService _tierPriceReferenceService;
 
         public GetQuotationByIdQueryHandler(
             ICRMReadDbContext dbContext,
-            ICustomerVisibilityService visibilityService)
+            ICustomerVisibilityService visibilityService,
+            QuotationTierPriceReferenceService tierPriceReferenceService)
         {
             _dbContext = dbContext;
             _visibilityService = visibilityService;
+            _tierPriceReferenceService = tierPriceReferenceService;
         }
 
         public async Task<OperationResult<QuotationDetailDto>> Handle(
@@ -78,6 +82,27 @@ namespace HRM.Application.Features.CRM.Quotations.Queries.GetQuotationById
                             QuotationLineId = line.QuotationLineId,
                             ProductId = line.ProductId,
                             SampleRequestId = line.SampleRequestId,
+                            ProductPricingVersionId = line.ProductPricingVersionId,
+                            ProductPricingVersion = line.ProductPricingVersion != null
+                                ? line.ProductPricingVersion.Version
+                                : null,
+                            ProductPricingStatus = line.ProductPricingVersion != null
+                                ? line.ProductPricingVersion.Status
+                                : null,
+                            HasApprovedPricingAvailable = _dbContext.ProductPricingVersions.Any(pricing =>
+                                pricing.CompanyId == x.CompanyId &&
+                                pricing.ProductId == line.ProductId &&
+                                pricing.Currency == x.Currency &&
+                                pricing.Status == HRM.Domain.Enums.CustomerEnum.ProductPricingStatus.Approved &&
+                                pricing.IsActive),
+                            HasNewerPricingVersion = line.ProductPricingVersion != null &&
+                                _dbContext.ProductPricingVersions.Any(pricing =>
+                                    pricing.CompanyId == x.CompanyId &&
+                                    pricing.ProductId == line.ProductId &&
+                                    pricing.Currency == x.Currency &&
+                                    pricing.Status == HRM.Domain.Enums.CustomerEnum.ProductPricingStatus.Approved &&
+                                    pricing.IsActive &&
+                                    pricing.Version > line.ProductPricingVersion.Version),
                             ProductExternalId = line.ProductExternalIdSnapshot,
                             ProductName = line.ProductNameSnapshot,
                             Quantity = line.Quantity,
@@ -121,10 +146,23 @@ namespace HRM.Application.Features.CRM.Quotations.Queries.GetQuotationById
                 })
                 .FirstOrDefaultAsync(cancellationToken);
 
-            return detail is null
-                ? OperationResult<QuotationDetailDto>.Fail(
-                    "Quotation was not found or is outside your visibility scope.")
-                : OperationResult<QuotationDetailDto>.Ok(detail);
+            if (detail is null)
+            {
+                return OperationResult<QuotationDetailDto>.Fail(
+                    "Quotation was not found or is outside your visibility scope.");
+            }
+
+            var visibleQuotations = _visibilityService.ApplyQuotationVisibility(
+                _dbContext.Quotations.AsNoTracking(),
+                _dbContext.Customers.AsNoTracking(),
+                scope);
+            await _tierPriceReferenceService.EnrichAsync(
+                detail,
+                scope.CompanyId,
+                visibleQuotations,
+                cancellationToken);
+
+            return OperationResult<QuotationDetailDto>.Ok(detail);
         }
     }
 

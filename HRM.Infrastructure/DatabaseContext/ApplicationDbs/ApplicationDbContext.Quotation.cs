@@ -11,4 +11,6 @@ public partial class ApplicationDbContext
     public DbSet<QuotationStatusHistory> QuotationStatusHistories => Set<QuotationStatusHistory>();
     public DbSet<ProductPricingVersion> ProductPricingVersions => Set<ProductPricingVersion>();
     public DbSet<ProductPricingTier> ProductPricingTiers => Set<ProductPricingTier>();
+    public DbSet<FormulaPricingPolicy> FormulaPricingPolicies => Set<FormulaPricingPolicy>();
+    public DbSet<FormulaPricingPolicyTier> FormulaPricingPolicyTiers => Set<FormulaPricingPolicyTier>();
 }

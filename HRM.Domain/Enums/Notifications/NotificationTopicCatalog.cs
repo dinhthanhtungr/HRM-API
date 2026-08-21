@@ -77,6 +77,7 @@ public static class NotificationTopicCatalog
             TopicNotifications.ComplaintInitialDecision => SalesOrder("plm.complaint.initial_decision", "complaint", "ComplaintReport"),
             TopicNotifications.ComplaintFinalDecision => SalesOrder("plm.complaint.final_decision", "complaint", "ComplaintReport"),
             TopicNotifications.SampleRequestCustomerFeedbackRecorded => SampleRequest("plm.sample_request.customer_feedback.recorded", "sample"),
+            TopicNotifications.QuotationPricingApproved => Quotation("crm.quotation.pricing.approved", "pricing"),
 
             _ => System($"{UnknownCodePrefix}{(int)topic}", "unknown", null)
         };

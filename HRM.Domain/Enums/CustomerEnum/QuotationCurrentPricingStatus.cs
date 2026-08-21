@@ -7,5 +7,6 @@ public enum QuotationCurrentPricingStatus
     FormulaNotFound = 20,
     FormulaMaterialsMissing = 30,
     MaterialPriceMissing = 40,
-    ManualTierPriceRequired = 50
+    ManualTierPriceRequired = 50,
+    ApprovedPricingNotFound = 60
 }

@@ -1,5 +1,8 @@
 using HRM.Application.Features.PLM.Materials.Queries.GetMaterialAttachmentContent;
 using HRM.Application.Features.PLM.Materials.Queries.GetMaterialPreview;
+using HRM.Application.Features.PLM.Materials.DocumentImport.Preview;
+using HRM.Application.Features.PLM.Materials.DocumentImport.Jobs;
+using HRM.Domain.Security.Rules.Roles;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -16,6 +19,80 @@ public sealed class MaterialsController : ControllerBase
     public MaterialsController(ISender sender)
     {
         _sender = sender;
+    }
+
+    /// <summary>
+    /// Quét thử thư mục TDS/MSDS được cấu hình và đối chiếu mã file với NVL
+    /// active trong công ty hiện tại. API chỉ đọc metadata, không import file.
+    /// </summary>
+    [HttpGet("document-import/preview")]
+    [Authorize(Roles = RoleSets.Admins)]
+    public async Task<IActionResult> PreviewDocumentImport(
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(
+            new PreviewMaterialDocumentImportQuery(),
+            cancellationToken);
+
+        return result is null ? Forbid() : Ok(result);
+    }
+
+    /// <summary>
+    /// Tạo background job tự động import mọi file có đúng một mã NVL khớp
+    /// duy nhất trong công ty hiện tại. File không khớp được đưa vào exceptions.
+    /// </summary>
+    [HttpPost("document-import/jobs")]
+    [Authorize(Roles = RoleSets.Admins)]
+    public async Task<IActionResult> StartDocumentImportJob(
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(
+            new StartMaterialDocumentImportJobCommand(),
+            cancellationToken);
+        if (result is null)
+        {
+            return Forbid();
+        }
+
+        if (!result.Accepted)
+        {
+            return Conflict(result.Job);
+        }
+
+        return AcceptedAtAction(
+            nameof(GetDocumentImportJob),
+            new { jobId = result.Job.JobId },
+            result.Job);
+    }
+
+    /// <summary>
+    /// Lấy tiến độ và tổng hợp kết quả của background job import tài liệu NVL.
+    /// </summary>
+    [HttpGet("document-import/jobs/{jobId:guid}")]
+    [Authorize(Roles = RoleSets.Admins)]
+    public async Task<IActionResult> GetDocumentImportJob(
+        Guid jobId,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(
+            new GetMaterialDocumentImportJobQuery(jobId),
+            cancellationToken);
+        return result is null ? NotFound() : Ok(result);
+    }
+
+    /// <summary>
+    /// Lấy các file cần kiểm tra tay hoặc bị lỗi trong một job import.
+    /// </summary>
+    [HttpGet("document-import/jobs/{jobId:guid}/exceptions")]
+    [Authorize(Roles = RoleSets.Admins)]
+    public async Task<IActionResult> GetDocumentImportJobExceptions(
+        Guid jobId,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(
+            new GetMaterialDocumentImportJobExceptionsQuery(jobId),
+            cancellationToken);
+        return result is null ? NotFound() : Ok(result);
     }
 
     /// <summary>

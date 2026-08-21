@@ -94,7 +94,7 @@ internal sealed class GetComplaintSourceLinesQueryHandler
                 x.MerchandiseOrderExternalId.Contains(keyword) ||
                 x.ProductExternalId.Contains(keyword) ||
                 x.ProductName.Contains(keyword) ||
-                x.FormulaExternalId.Contains(keyword));
+                EF.Functions.ILike(x.FormulaExternalId, $"%{keyword}%"));
         }
 
         var sourceRows = await baseQuery

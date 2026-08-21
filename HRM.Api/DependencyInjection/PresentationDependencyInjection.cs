@@ -32,6 +32,7 @@ internal static class PresentationDependencyInjection
         services.Configure<CustomerInteractionAiSummaryAutomationOptions>(
             configuration.GetSection("Gemini:Automation"));
         services.AddHostedService<CustomerInteractionAiSummaryAutomationWorker>();
+        services.AddHostedService<MaterialDocumentImportWorker>();
 
         services.AddSwaggerGen(options =>
         {

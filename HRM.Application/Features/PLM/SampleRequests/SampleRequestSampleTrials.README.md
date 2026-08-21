@@ -11,6 +11,10 @@ Trial là bản ghi lịch sử của một lần giao mẫu thực tế, không
    - `Approved`: Trial `Approved`, Formula của Trial `Completed`, Formula đó được chọn, Sample Request `Completed`.
    - `Failed`: Trial `Failed`, Sample Request trở về `InProgress`; Lab tạo/clone Formula mới và gửi mẫu lại để tạo Trial kế tiếp.
    - `Cancelled`: Trial `Cancelled`, Sample Request `Cancelled`.
+   - Shortcut trên màn Sample Request: khi hồ sơ đang `SampleSent`, role thuộc `FormulaSelectors` có thể PATCH chọn
+     `formulaId` của đúng Trial pending mới nhất. Backend hiểu thao tác đã xác nhận là khách chấp nhận mẫu, tự đặt
+     `CustomerReplyStatus = APPROVED`, duyệt Trial và hoàn thành Formula/Sample Request trong cùng transaction.
+     Nếu Formula không khớp Trial pending mới nhất, ngoài customer scope hoặc user không có quyền thì toàn bộ PATCH bị từ chối.
 5. Khi Sample Request đã `Completed`, Lab dùng luồng `formula-change-requests` hiện có để đề xuất Formula cải tiến; không gửi lại SampleSent cho hồ sơ đã hoàn tất.
 
 Mọi chuyển trạng thái trên được lưu trước; message/notification chỉ được gửi sau khi lưu thành công. Message dùng lại conversation của Sample Request và vẫn no-op cho VU nội bộ/private theo `SampleRequestMessageRules`.
@@ -69,12 +73,19 @@ Endpoint này phục vụ dialog **Phản hồi khách hàng/Ghi chú phản h�
 Trong đúng một `SaveChangesAsync`/transaction, backend:
 
 - cập nhật `CustomerReplyStatus`, `CustomerReplyDate`, `CustomerReplyByEmployeeId`, `CustomerReplyNote`, `OrderDate` và audit của Trial;
+- nếu `customerReplyStatus = APPROVED`: Trial `Approved`, Formula `Completed`/được chọn và Sample Request `Completed`;
+- nếu `customerReplyStatus = FAIL`: Trial `Failed`, Formula `Rejected` (nghĩa là mẫu không đạt) và Sample Request trở về `InProgress`;
+- nếu `customerReplyStatus = CANCEL`: Trial, Formula và Sample Request chuyển `Cancelled`;
+- nếu `customerReplyStatus = WAITING` hoặc `BÁO GIÁ`: Trial lần lượt chuyển `WaitingCustomerFeedback` hoặc `PriceQuote`, không đổi Sample Request/Formula. Cả hai vẫn là trạng thái đang mở, nên Sale có thể ghi tiếp kết quả cuối `APPROVED`/`FAIL`/`CANCEL`;
 - tạo `CustomerInteraction` với `InteractionType` do Sale chọn;
 - tạo reference primary có `ReferenceType = SampleTrial`, `ReferenceId = trialId`;
 - cập nhật `Customer.LastContactDate/CurrentSaleId`;
 - tạo follow-up `WorkTask` nếu có `nextFollowUpDate`.
 
+Sau khi transaction lưu thành công, backend tạo một message tiếng Việt trong **chính conversation của Sample Request** và publish topic `SampleRequestCustomerFeedbackRecorded` (`plm.sample_request.customer_feedback.recorded`). Nội dung có mã yêu cầu, lần thử, công thức, trạng thái phản hồi và ghi chú. Người nhận dùng resolver Sample Request hiện có: các role bắt buộc (President/LabAdmin), manager, participant đang có và người gửi. Leader Lab theo nhóm sản phẩm chỉ được thêm khi đã là participant hoặc được chọn ở luồng tạo message; không tự động được thêm bởi notification này. VU `private` hoặc khách `KH_VIETAUS` vẫn no-op theo `SampleRequestMessageRules`, nên không tạo conversation/notification. Retry idempotency trả interaction đã có trước khi vào bước gửi, vì vậy không tạo message trùng.
+
 Chỉ role thuộc `ApplicationRoleSets.Modules.Sales` được gọi route PLM này. Backend tiếp tục kiểm tra company, customer visibility, contact/employee scope và Trial thuộc đúng Sample Request/customer. `customerReplyStatus` và `content` bắt buộc; `expectedTrialUpdatedDate` là concurrency token tùy chọn.
+Các DateTime FE gửi ở route này có thể là ISO UTC (`Z`); backend chuẩn hóa về timestamp không timezone trước khi lưu để tương thích schema PostgreSQL hiện tại.
 
 Endpoint cũ `POST /api/v1/plm/sample-requests/{sampleRequestId}/customer-feedback` vẫn là action lifecycle (`Approved/Failed/Cancelled`) và không tạo CRM interaction; FE dialog tương tác mới phải gọi route có `trialId` ở trên.
 
@@ -155,6 +166,8 @@ Các query parameter:
 pageNumber, pageSize, keyword
 sampleRequestId, customerId
 fromDate, toDate
+sampleRequestCreatedToDate (`yyyy-MM-dd`, inclusive)
+includePreviousUnfinished (`true` mặc định)
 reportType (`CompletedSamples`, `WaitingCustomerFeedback`)
 status, customerReplyStatus
 sortBy, sortDirection
@@ -166,6 +179,24 @@ Khi không gửi `reportType`, `fromDate`/`toDate` giữ semantics tương thíc
 - `CompletedSamples`: chỉ lấy Trial có `FinishedDate`, khoảng ngày áp dụng trực tiếp lên `FinishedDate`.
 - `WaitingCustomerFeedback`: chỉ lấy Trial có `RequestReceivedDate`, trạng thái `WaitingCustomerFeedback` và
   `CustomerReplyStatus` đang rỗng hoặc `WAITING`; khoảng ngày áp dụng trực tiếp lên `RequestReceivedDate`.
+
+`sampleRequestCreatedToDate` là bộ lọc bổ sung, độc lập với `reportType` và không thay đổi ý nghĩa của `fromDate`/`toDate`.
+Tham số này lọc theo `SampleRequest.CreatedDate` với semantics "tạo đến hết ngày": ví dụ
+`sampleRequestCreatedToDate=2026-07-31` dùng điều kiện `SampleRequest.CreatedDate < 2026-08-01 00:00:00`, nên các hồ sơ
+tạo từ tháng trước nhưng hiện vẫn chờ phản hồi tiếp tục xuất hiện. Không truyền tham số thì không giới hạn ngày tạo.
+Đây là trạng thái tồn đọng hiện tại theo ngày tạo hồ sơ, không phải snapshot trạng thái tại cuối ngày/tháng đã chọn.
+
+`includePreviousUnfinished` mặc định là `true` để giữ tương thích. Khi có `sampleRequestCreatedToDate`:
+
+- `true`: không có cận dưới ngày tạo, nên giữ các mẫu tồn từ tháng trước.
+- `false`: backend thêm cận dưới là ngày đầu tháng của `sampleRequestCreatedToDate`, nên chỉ trả Sample Request tạo trong
+  chính tháng được chọn. Ví dụ cutoff `2026-07-31` dùng khoảng `2026-07-01 <= CreatedDate < 2026-08-01`.
+
+Nếu không truyền `sampleRequestCreatedToDate`, `includePreviousUnfinished` không áp dụng bộ lọc ngày vì không có tháng làm mốc.
+
+Màn hình tồn đọng nên chủ động gửi `reportType=WaitingCustomerFeedback`; backend vẫn giữ hành vi cũ khi không truyền
+`reportType` để tương thích với client hiện có. Nếu truyền đồng thời `sampleRequestCreatedToDate` và `fromDate`/`toDate`,
+các điều kiện được kết hợp bằng `AND`.
 
 `fromDate` và `toDate` lọc theo ngày báo cáo ưu tiên lần lượt `finishedDate`, `sentDate`, `requestReceivedDate`, rồi `createdDate`. `toDate` bao gồm trọn ngày được truyền vào.
 

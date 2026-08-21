@@ -3,12 +3,15 @@ using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Models;
 using HRM.Application.Commons.Patching;
 using HRM.Application.Commons.Authorization;
+using HRM.Application.Features.CRM.CustomerCare.Visibility;
 using HRM.Application.Features.InternalMail.Dtos;
 using HRM.Application.Features.CRM.Quotations.Services;
 using HRM.Application.Features.PLM.SampleRequests.Commands;
 using HRM.Application.Features.PLM.SampleRequests.Commands.SendSampleRequestMessage;
 using HRM.Application.Features.PLM.SampleRequests.DataChangeRequests;
+using HRM.Application.Features.PLM.SampleRequests.Rules;
 using HRM.Application.Features.PLM.SampleRequests.Services;
+using HRM.Application.Features.PLM.SampleRequests.SampleTrials;
 using HRM.Domain.Enums.Notifications;
 using HRM.Domain.Entities.SampleRequestSchema;
 using HRM.Domain.Enums.Products;
@@ -82,6 +85,7 @@ internal sealed class PatchSampleRequestCommandHandler
 
     private readonly IPLMWriteDbContext _dbContext;
     private readonly ICurrentUser _currentUser;
+    private readonly ICustomerVisibilityService _visibilityService;
     private readonly SampleRequestConversationSubjectService _conversationSubjectService;
     private readonly DraftQuotationProductSnapshotSyncService _draftQuotationProductSnapshotSyncService;
     private readonly ISender _sender;
@@ -89,12 +93,14 @@ internal sealed class PatchSampleRequestCommandHandler
     public PatchSampleRequestCommandHandler(
         IPLMWriteDbContext dbContext,
         ICurrentUser currentUser,
+        ICustomerVisibilityService visibilityService,
         SampleRequestConversationSubjectService conversationSubjectService,
         DraftQuotationProductSnapshotSyncService draftQuotationProductSnapshotSyncService,
         ISender sender)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
+        _visibilityService = visibilityService;
         _conversationSubjectService = conversationSubjectService;
         _draftQuotationProductSnapshotSyncService = draftQuotationProductSnapshotSyncService;
         _sender = sender;
@@ -143,11 +149,25 @@ internal sealed class PatchSampleRequestCommandHandler
             return OperationResult<Guid>.Fail("You are not allowed to update product information directly for this sample request.");
         }
 
+        var acceptsSentSampleByFormulaSelection =
+            request.FormulaId is { } requestedFormulaId &&
+            requestedFormulaId != Guid.Empty &&
+            IsStatus(sampleRequest.Status, SampleRequestStatus.SampleSent);
+
         if (IsStatus(request.Status, SampleRequestStatus.SampleSent) ||
-            IsStatus(request.Status, SampleRequestStatus.Completed))
+            (IsStatus(request.Status, SampleRequestStatus.Completed) &&
+             !acceptsSentSampleByFormulaSelection))
         {
             return OperationResult<Guid>.Fail(
                 "Use the Formula send-sample action or sample-trial customer feedback action for this lifecycle status.");
+        }
+
+        if (acceptsSentSampleByFormulaSelection &&
+            request.Status is not null &&
+            !IsStatus(request.Status, SampleRequestStatus.Completed))
+        {
+            return OperationResult<Guid>.Fail(
+                "Selecting a formula for a SampleSent request can only complete the customer-acceptance lifecycle.");
         }
 
         var originalStatus = sampleRequest.Status;
@@ -193,14 +213,11 @@ internal sealed class PatchSampleRequestCommandHandler
             sampleRequest.ProductId = productId;
         }
 
+        SampleRequestSampleTrial? acceptedSampleTrial = null;
+        List<Formula>? acceptanceProductFormulas = null;
+
         if (request.FormulaId is { } formulaId && formulaId != Guid.Empty)
         {
-            if (IsStatus(sampleRequest.Status, SampleRequestStatus.SampleSent))
-            {
-                return OperationResult<Guid>.Fail(
-                    "Use sample-trial customer feedback to complete a SampleSent request. Formula cannot be selected directly.");
-            }
-
             var formula = await _dbContext.Formulas
                 .AsNoTracking()
                 .Where(x =>
@@ -218,6 +235,59 @@ internal sealed class PatchSampleRequestCommandHandler
             if (formula.ProductId != sampleRequest.ProductId)
             {
                 return OperationResult<Guid>.Fail("Formula does not belong to this sample request product.");
+            }
+
+            if (acceptsSentSampleByFormulaSelection)
+            {
+                if (!_currentUser.IsInAnyRole(ApplicationRoleSets.PLM.FormulaSelectors))
+                {
+                    return OperationResult<Guid>.Fail(
+                        "You are not allowed to accept a sent sample by selecting its formula.");
+                }
+
+                if (_currentUser.EmployeeId is not { } employeeId || employeeId == Guid.Empty)
+                {
+                    return OperationResult<Guid>.Fail("Current employee is invalid.");
+                }
+
+                var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+                var canAccessSampleRequest = await _visibilityService.ApplySampleRequestVisibility(
+                        _dbContext.SampleRequests.AsNoTracking(),
+                        _dbContext.Customers.AsNoTracking(),
+                        scope)
+                    .AnyAsync(
+                        x => x.SampleRequestId == sampleRequest.SampleRequestId,
+                        cancellationToken);
+                if (!canAccessSampleRequest)
+                {
+                    return OperationResult<Guid>.Fail(
+                        "Sample request was not found or is outside your customer scope.");
+                }
+
+                acceptedSampleTrial = await _dbContext.SampleRequestSampleTrials
+                    .Include(x => x.Formula)
+                    .Where(x =>
+                        x.SampleRequestId == sampleRequest.SampleRequestId &&
+                        x.IsActive &&
+                        (x.Status == SampleTrialStatus.SampleSent ||
+                         x.Status == SampleTrialStatus.WaitingCustomerFeedback))
+                    .OrderByDescending(x => x.TrialNo)
+                    .FirstOrDefaultAsync(cancellationToken);
+
+                var approvalValidationError = SampleRequestSampleTrialApprovalRules.Validate(
+                    acceptedSampleTrial,
+                    formulaId);
+                if (approvalValidationError is not null)
+                {
+                    return OperationResult<Guid>.Fail(approvalValidationError);
+                }
+
+                acceptanceProductFormulas = await _dbContext.Formulas
+                    .Where(x =>
+                        x.ProductId == sampleRequest.ProductId &&
+                        x.CompanyId == companyId.Value &&
+                        x.IsActive)
+                    .ToListAsync(cancellationToken);
             }
 
             sampleRequest.FormulaId = formula.FormulaId;
@@ -349,9 +419,23 @@ internal sealed class PatchSampleRequestCommandHandler
             }
         }
 
-        var wasNew = IsStatus(sampleRequest.Status, SampleRequestStatus.New);
+        var startedProcessing = false;
 
-        ApplyStatusRules(sampleRequest, patchedProduct, request);
+        if (acceptedSampleTrial is not null)
+        {
+            SampleRequestSampleTrialApprovalRules.ApplyApproved(
+                sampleRequest,
+                acceptedSampleTrial,
+                acceptanceProductFormulas!,
+                _currentUser.EmployeeId!.Value,
+                auditChangedAt,
+                SampleRequestSampleTrialApprovalRules.ApprovedCustomerReplyStatus,
+                customerReplyNote: acceptedSampleTrial.CustomerReplyNote);
+        }
+        else
+        {
+            startedProcessing = ApplyStatusRules(sampleRequest, patchedProduct, request);
+        }
 
         var completedByFormulaSelection =
             request.FormulaId is { } completedFormulaId &&
@@ -362,11 +446,6 @@ internal sealed class PatchSampleRequestCommandHandler
         var cancelledByPatch =
             !IsStatus(originalStatus, SampleRequestStatus.Cancelled) &&
             IsStatus(sampleRequest.Status, SampleRequestStatus.Cancelled);
-
-        var startedProcessing = wasNew &&
-            IsStatus(sampleRequest.Status, SampleRequestStatus.InProgress) &&
-            patchedProduct is not null &&
-            HasProductIdentity(patchedProduct);
 
         if (!request.IsDataChangeApproval)
         {
@@ -384,11 +463,14 @@ internal sealed class PatchSampleRequestCommandHandler
         sampleRequest.UpdatedBy = _currentUser.EmployeeId;
         sampleRequest.UpdatedDate = DateTime.Now;
 
-        if (request.FormulaId is { } selectedFormulaId && selectedFormulaId != Guid.Empty)
+        if (acceptedSampleTrial is null &&
+            request.FormulaId is { } selectedFormulaId &&
+            selectedFormulaId != Guid.Empty)
         {
             await UpdateSelectedFormulaAsync(
                 sampleRequest.ProductId,
                 selectedFormulaId,
+                companyId.Value,
                 completeSelectedFormula: completedByFormulaSelection,
                 cancellationToken);
         }
@@ -489,7 +571,7 @@ internal sealed class PatchSampleRequestCommandHandler
         SampleRequest sampleRequest,
         PatchSampleRequestCommand request)
     {
-        PatchTrimmedIfPresent(request.Status, () => sampleRequest.Status, value => sampleRequest.Status = value ?? string.Empty);
+        PatchTrimmedIfPresent(request.Status, () => sampleRequest.Status, value => SampleRequestStatusTransitionRules.ApplyDirectPatchStatus(sampleRequest, value));
         PatchTrimmedIfPresent(request.RequestType, () => sampleRequest.RequestType, value => sampleRequest.RequestType = value ?? string.Empty);
         PatchNullableIfHasValue(request.ExpectedQuantity, () => sampleRequest.ExpectedQuantity, value => sampleRequest.ExpectedQuantity = value);
         PatchNullableIfHasValue(request.ExpectedPrice, () => sampleRequest.ExpectedPrice, value => sampleRequest.ExpectedPrice = value);
@@ -675,11 +757,15 @@ internal sealed class PatchSampleRequestCommandHandler
     private async Task UpdateSelectedFormulaAsync(
         Guid productId,
         Guid formulaId,
+        Guid companyId,
         bool completeSelectedFormula,
         CancellationToken cancellationToken)
     {
         var formulas = await _dbContext.Formulas
-            .Where(x => x.ProductId == productId && x.IsActive)
+            .Where(x =>
+                x.ProductId == productId &&
+                x.CompanyId == companyId &&
+                x.IsActive)
             .ToListAsync(cancellationToken);
 
         var now = DateTime.Now;
@@ -700,36 +786,24 @@ internal sealed class PatchSampleRequestCommandHandler
 
     // ================================================= Helper ======================================================
 
-    private static void ApplyStatusRules(
+    private static bool ApplyStatusRules(
     SampleRequest sampleRequest,
     Product? patchedProduct,
     PatchSampleRequestCommand request)
     {
-        if (patchedProduct is not null &&
-            IsStatus(sampleRequest.Status, SampleRequestStatus.New) &&
-            HasProductIdentity(patchedProduct))
+        if (SampleRequestStatusTransitionRules.TryStartProcessing(sampleRequest, patchedProduct))
         {
-            sampleRequest.Status = SampleRequestStatus.InProgress.ToString();
-            return;
+            return true;
         }
 
         if (request.FormulaId is { } formulaId &&
             formulaId != Guid.Empty &&
-            IsStatus(sampleRequest.Status, SampleRequestStatus.SampleSent))
+            SampleRequestStatusTransitionRules.IsStatus(sampleRequest.Status, SampleRequestStatus.SampleSent))
         {
-            sampleRequest.Status = SampleRequestStatus.Completed.ToString();
+            SampleRequestStatusTransitionRules.MarkCustomerApproved(sampleRequest);
         }
-    }
 
-    /// <summary>
-    /// Xác định lab thao tác trên product có đủ thông tin để xác định danh tính sản phẩm hay không.
-    /// </summary>
-    /// <param name="product"></param>
-    /// <returns></returns>
-    private static bool HasProductIdentity(Product product)
-    {
-        return !string.IsNullOrWhiteSpace(product.Name) &&
-            !string.IsNullOrWhiteSpace(product.ColourCode);
+        return false;
     }
 
     private Task<OperationResult<SendInternalMessageResultDto>> SendStartedProcessingMessageAsync(
@@ -780,7 +854,7 @@ internal sealed class PatchSampleRequestCommandHandler
         {
             SampleRequestId = sampleRequestId,
             Type = SampleRequestNotificationType.GeneralMessage,
-            Message = $"Công thức {formulaCode} của yêu cầu phối mẫu {sampleRequestExternalId} đã hoàn thành, sẵn sàng cho báo giá.",
+            Message = $"Công thức {formulaCode} của yêu cầu phối mẫu {sampleRequestExternalId} đã hoàn thành, sẵn sàng lên đơn hàng.",
             TopicOverride = TopicNotifications.SampleRequestFormulaCompleted,
             TitleOverride = "Công thức hoàn thành, sẵn sàng cho báo giá"
         }, cancellationToken);
@@ -809,10 +883,7 @@ internal sealed class PatchSampleRequestCommandHandler
     /// <returns></returns>
     private static bool IsStatus(string? currentStatus, SampleRequestStatus expectedStatus)
     {
-        return string.Equals(
-            currentStatus?.Trim(),
-            expectedStatus.ToString(),
-            StringComparison.OrdinalIgnoreCase);
+        return SampleRequestStatusTransitionRules.IsStatus(currentStatus, expectedStatus);
     }
 
     private static bool PatchNullableIfHasValue<T>(

@@ -46,9 +46,17 @@ public static class DependencyInjection
         services.AddScoped<ISaleGroupRecipientResolver, SaleGroupRecipientResolver>();
         services.AddScoped<QuotationLineBuilder>();
         services.AddScoped<QuotationCurrentPricingResolver>();
+        services.AddScoped<ProductPricingRealtimeSourceQueryService>();
+        services.AddScoped<ProductPricingSourceQueryService>();
+        services.AddScoped<ProductPricingRequestQueryService>();
+        services.AddScoped<ProductPricingApprovalNotificationService>();
+        services.AddScoped<ProductPricingSourceValidator>();
+        services.AddScoped<FormulaPricingPolicyProvider>();
+        services.AddScoped<QuotationTierPriceReferenceService>();
         services.AddScoped<QuotationConversationSubjectService>();
         services.AddScoped<DraftQuotationProductSnapshotSyncService>();
         services.AddSingleton<KeyedMutationLock<Guid>>();
+        services.AddSingleton<KeyedMutationLock<string>>();
         services.AddScoped<ICustomerCrmWorkService, CustomerCrmWorkService>();
         services.AddScoped<ICustomerCrmAnalyticsService, CustomerCrmAnalyticsService>();
         services.AddScoped<ICustomerFollowUpTaskDueReminderProcessor, CustomerFollowUpTaskDueReminderProcessor>();

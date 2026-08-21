@@ -53,7 +53,7 @@ internal sealed class SetEmployeeStatusCommandHandler
         {
             employee.IsActive = request.IsActive;
             employee.UpdatedBy = _currentUser.EmployeeId;
-            employee.UpdatedDate = DateTime.UtcNow;
+            employee.UpdatedDate = DateTime.Now;
             await _dbContext.SaveChangesAsync(cancellationToken);
         }
 

@@ -1,4 +1,5 @@
 using HRM.Domain.Entities.AuditSchema;
+using HRM.Domain.Entities.BomSchema;
 using HRM.Domain.Entities.CustomerSchema;
 using HRM.Domain.Entities.HrSchema;
 using HRM.Domain.Entities.InternalMailSchema;
@@ -66,6 +67,10 @@ public partial class Company
     public virtual ICollection<MfgProductionOrder> MfgProductionOrders { get; set; } = new List<MfgProductionOrder>();
 
     public virtual ICollection<ManufacturingFormula> ManufacturingFormulas { get; set; } = new List<ManufacturingFormula>();
+    public virtual ICollection<BomDefinition> BomDefinitions { get; set; } = new List<BomDefinition>();
+    public virtual ICollection<ManufacturingLossType> ManufacturingLossTypes { get; set; } = new List<ManufacturingLossType>();
+    public virtual ICollection<ProductStandardBomVersion> ProductStandardBomVersions { get; set; } = new List<ProductStandardBomVersion>();
+    public virtual ICollection<MfgProductionOrderLoss> MfgProductionOrderLosses { get; set; } = new List<MfgProductionOrderLoss>();
 
     public virtual ICollection<MerchandiseOrder> MerchandiseOrders { get; set; } = new List<MerchandiseOrder>();
 

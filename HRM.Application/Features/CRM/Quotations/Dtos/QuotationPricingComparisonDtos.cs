@@ -23,6 +23,10 @@ public sealed class QuotationLinePricingComparisonDto
     public decimal SavedUnitPrice { get; init; }
     public IReadOnlyList<QuotationLinePriceTierDto> SavedPriceTiers { get; init; } = [];
 
+    public Guid? CurrentProductPricingVersionId { get; init; }
+    public int? CurrentProductPricingVersion { get; init; }
+    public bool IsUsingLatestApprovedPricing { get; init; }
+
     public Guid? FormulaId { get; init; }
     public string? FormulaExternalId { get; init; }
     public string? FormulaName { get; init; }

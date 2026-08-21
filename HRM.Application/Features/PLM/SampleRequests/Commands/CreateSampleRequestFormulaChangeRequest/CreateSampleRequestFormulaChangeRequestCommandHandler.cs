@@ -6,6 +6,7 @@ using HRM.Application.Features.InternalMail.Dtos;
 using HRM.Application.Features.PLM.SampleRequests.Commands.SendSampleRequestMessage;
 using HRM.Application.Features.PLM.SampleRequests.Dtos.InternalMail;
 using HRM.Application.Features.PLM.SampleRequests.FormulaChangeRequests;
+using HRM.Application.Features.PLM.SampleRequests.Rules;
 using HRM.Domain.Enums.InternalMailEnums;
 using HRM.Domain.Enums.Notifications;
 using HRM.Domain.Enums.Products;
@@ -114,7 +115,7 @@ internal sealed class CreateSampleRequestFormulaChangeRequestCommandHandler
         }
 
         var now = DateTime.Now;
-        sampleRequest.Status = SampleRequestStatus.FormulaUpdateRequested.ToString();
+        SampleRequestStatusTransitionRules.MarkFormulaUpdateRequested(sampleRequest);
         sampleRequest.UpdatedBy = employeeId.Value;
         sampleRequest.UpdatedDate = now;
 

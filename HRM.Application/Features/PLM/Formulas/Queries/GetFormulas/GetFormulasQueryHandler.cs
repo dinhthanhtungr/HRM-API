@@ -1,6 +1,7 @@
 using HRM.Application.Abstractions.Persistence.PLM;
 using HRM.Application.Commons.Authorization.PLM;
 using HRM.Application.Features.PLM.Formulas.Dtos.GetFormulas;
+using HRM.Domain.Enums.SampleRequests;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -32,19 +33,24 @@ namespace HRM.Application.Features.PLM.Formulas.Queries.GetFormulas
 
             var canViewFormulaPrices = _fieldVisibility.CanViewFormulaPrices();
 
+            if (request.IsMerchadiseOrder)
+            {
+                return new FormulaList
+                {
+                    FormulaDevs = await GetFormulaDevsAsync(
+                        request,
+                        productId,
+                        canViewFormulaPrices,
+                        cancellationToken)
+                };
+            }
+
             var result = new FormulaList
             {
                 FormulaSelects = await GetFormulaSelectsAsync(request, productId, canViewFormulaPrices, cancellationToken),
                 FormulaDevs = await GetFormulaDevsAsync(request, productId, canViewFormulaPrices, cancellationToken),
                 FormulaStandard = await GetFormulaStandardAsync(request, productId, canViewFormulaPrices, cancellationToken)
             };
-
-            if (!string.IsNullOrWhiteSpace(request.NormalizedKeyword))
-            {
-                result.FormulaSelects = ApplyKeyword(result.FormulaSelects, request.NormalizedKeyword);
-                result.FormulaDevs = ApplyKeyword(result.FormulaDevs, request.NormalizedKeyword);
-                result.FormulaStandard = ApplyKeyword(result.FormulaStandard, request.NormalizedKeyword);
-            }
 
             return result;
         }
@@ -100,6 +106,14 @@ namespace HRM.Application.Features.PLM.Formulas.Queries.GetFormulas
                 query = query.Where(x => x.ManufacturingFormulaId == formulaId);
             }
 
+            if (request.NormalizedKeyword is { } keyword)
+            {
+                var pattern = $"%{keyword}%";
+                query = query.Where(x =>
+                    EF.Functions.ILike(x.ManufacturingFormula!.ExternalId, pattern) ||
+                    EF.Functions.ILike(x.ManufacturingFormula.Note ?? string.Empty, pattern));
+            }
+
             var rows = await query
                 .Select(x => new
                 {
@@ -142,6 +156,15 @@ namespace HRM.Application.Features.PLM.Formulas.Queries.GetFormulas
                 .AsNoTracking()
                 .Where(x => x.IsActive && x.ProductId == productId);
 
+            if (request.IsMerchadiseOrder)
+            {
+                query = query.Where(x => x.SampleRequests.Any(sampleRequest =>
+                    sampleRequest.IsActive &&
+                    sampleRequest.ProductId == productId &&
+                    sampleRequest.FormulaId == x.FormulaId &&
+                    sampleRequest.Status == SampleRequestStatus.Completed.ToString()));
+            }
+
             if (request.CompanyId is { } companyId && companyId != Guid.Empty)
             {
                 query = query.Where(x => x.CompanyId == companyId);
@@ -155,6 +178,14 @@ namespace HRM.Application.Features.PLM.Formulas.Queries.GetFormulas
             if (request.FormulaId is { } formulaId && formulaId != Guid.Empty)
             {
                 query = query.Where(x => x.FormulaId == formulaId);
+            }
+
+            if (request.NormalizedKeyword is { } keyword)
+            {
+                var pattern = $"%{keyword}%";
+                query = query.Where(x =>
+                    EF.Functions.ILike(x.ExternalId, pattern) ||
+                    EF.Functions.ILike(x.Note ?? string.Empty, pattern));
             }
 
             return await query
@@ -202,6 +233,14 @@ namespace HRM.Application.Features.PLM.Formulas.Queries.GetFormulas
                 query = query.Where(x => x.ManufacturingFormulaId == formulaId);
             }
 
+            if (request.NormalizedKeyword is { } keyword)
+            {
+                var pattern = $"%{keyword}%";
+                query = query.Where(x =>
+                    EF.Functions.ILike(x.ManufacturingFormula!.ExternalId, pattern) ||
+                    EF.Functions.ILike(x.ManufacturingFormula.Note ?? string.Empty, pattern));
+            }
+
             var rows = await query
                 .Select(x => new
                 {
@@ -235,15 +274,5 @@ namespace HRM.Application.Features.PLM.Formulas.Queries.GetFormulas
                 .ToList();
         }
 
-        private static IReadOnlyList<FormulaId> ApplyKeyword(
-            IReadOnlyList<FormulaId> formulas,
-            string keyword)
-        {
-            return formulas
-                .Where(x =>
-                    x.ExternalId.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
-                    x.Note.Contains(keyword, StringComparison.OrdinalIgnoreCase))
-                .ToList();
-        }
     }
 }

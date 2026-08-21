@@ -6,8 +6,9 @@ using HRM.Application.Commons.Models;
 using HRM.Application.Features.CRM.CustomerCare.Visibility;
 using HRM.Application.Features.InternalMail.Dtos;
 using HRM.Application.Features.PLM.SampleRequests.Commands.SendSampleRequestMessage;
+using HRM.Application.Features.PLM.SampleRequests.Rules;
+using HRM.Application.Features.PLM.SampleRequests.SampleTrials;
 using HRM.Domain.Enums.Notifications;
-using HRM.Domain.Enums.Products;
 using HRM.Domain.Enums.SampleRequests;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -101,7 +102,8 @@ internal sealed class RecordSampleRequestSampleTrialCustomerFeedbackCommandHandl
                 x.SampleRequestId == sampleRequest.SampleRequestId &&
                 x.IsActive &&
                 (x.Status == SampleTrialStatus.SampleSent ||
-                 x.Status == SampleTrialStatus.WaitingCustomerFeedback))
+                 x.Status == SampleTrialStatus.WaitingCustomerFeedback ||
+                 x.Status == SampleTrialStatus.PriceQuote))
             .OrderByDescending(x => x.TrialNo)
             .FirstOrDefaultAsync(cancellationToken);
         if (trial is null)
@@ -119,6 +121,17 @@ internal sealed class RecordSampleRequestSampleTrialCustomerFeedbackCommandHandl
             return OperationResult<Guid>.Fail("Customer feedback can only be recorded for a sample that is awaiting customer feedback.");
         }
 
+        if (request.Status == SampleTrialStatus.Approved)
+        {
+            var approvalValidationError = SampleRequestSampleTrialApprovalRules.Validate(
+                trial,
+                trial.FormulaId ?? Guid.Empty);
+            if (approvalValidationError is not null)
+            {
+                return OperationResult<Guid>.Fail(approvalValidationError);
+            }
+        }
+
         var now = _dateTimeProvider.Now;
         var replyDate = request.CustomerReplyDate ?? now;
         trial.Status = request.Status;
@@ -132,16 +145,6 @@ internal sealed class RecordSampleRequestSampleTrialCustomerFeedbackCommandHandl
         var formulaExternalId = trial.Formula?.ExternalId ?? string.Empty;
         if (request.Status == SampleTrialStatus.Approved)
         {
-            if (trial.FormulaId is not { } formulaId || formulaId == Guid.Empty || trial.Formula is null)
-            {
-                return OperationResult<Guid>.Fail("Sample trial does not have a formula to complete.");
-            }
-
-            if (!string.Equals(trial.Formula.Status, FormulaStatus.SampleSent.ToString(), StringComparison.OrdinalIgnoreCase))
-            {
-                return OperationResult<Guid>.Fail("Only a SampleSent formula can be completed from customer feedback.");
-            }
-
             var productFormulas = await _dbContext.Formulas
                 .Where(x =>
                     x.ProductId == sampleRequest.ProductId &&
@@ -149,24 +152,23 @@ internal sealed class RecordSampleRequestSampleTrialCustomerFeedbackCommandHandl
                     x.IsActive)
                 .ToListAsync(cancellationToken);
 
-            foreach (var formula in productFormulas)
-            {
-                formula.IsSelect = formula.FormulaId == formulaId;
-            }
-
-            trial.Formula.Status = FormulaStatus.Completed.ToString();
-            trial.Formula.UpdatedBy = employeeId;
-            trial.Formula.UpdatedDate = now;
-            sampleRequest.FormulaId = formulaId;
-            sampleRequest.Status = SampleRequestStatus.Completed.ToString();
+            SampleRequestSampleTrialApprovalRules.ApplyApproved(
+                sampleRequest,
+                trial,
+                productFormulas,
+                employeeId,
+                now,
+                replyStatus!,
+                replyNote,
+                replyDate);
         }
         else if (request.Status == SampleTrialStatus.Failed)
         {
-            sampleRequest.Status = SampleRequestStatus.InProgress.ToString();
+            SampleRequestStatusTransitionRules.MarkCustomerFailed(sampleRequest);
         }
         else if (request.Status == SampleTrialStatus.Cancelled)
         {
-            sampleRequest.Status = SampleRequestStatus.Cancelled.ToString();
+            SampleRequestStatusTransitionRules.MarkCustomerCancelled(sampleRequest);
         }
 
         sampleRequest.UpdatedBy = employeeId;
@@ -229,7 +231,7 @@ internal sealed class RecordSampleRequestSampleTrialCustomerFeedbackCommandHandl
 
     private static bool CanRecordFromCurrentStatus(SampleTrialStatus currentStatus, SampleTrialStatus requestedStatus)
     {
-        if (currentStatus == SampleTrialStatus.SampleSent)
+        if (currentStatus is SampleTrialStatus.SampleSent or SampleTrialStatus.PriceQuote)
         {
             return true;
         }

@@ -67,6 +67,20 @@ public sealed class GetStockAvailableQueryHandler
                       && product.ColourCode != string.Empty
                 select product.ColourCode;
 
+            var formulaProductColourCodes =
+                from sampleRequest in _dbContext.SampleRequests.AsNoTracking()
+                join product in _dbContext.Products.AsNoTracking()
+                    on sampleRequest.ProductId equals product.ProductId
+                where sampleRequest.CompanyId == companyId
+                      && sampleRequest.IsActive
+                      && sampleRequest.Formula != null
+                      && sampleRequest.Formula.IsActive
+                      && EF.Functions.ILike(sampleRequest.Formula.ExternalId, $"%{keyword}%")
+                      && product.CompanyId == companyId
+                      && product.ColourCode != null
+                      && product.ColourCode != string.Empty
+                select product.ColourCode;
+
             shelfQuery =
                 from stock in shelfQuery
                 join material in _dbContext.Materials.AsNoTracking().Where(x => x.CompanyId == companyId)
@@ -81,6 +95,7 @@ public sealed class GetStockAvailableQueryHandler
                       || (material.Name ?? string.Empty).Contains(keyword)
                       || (product.Name ?? string.Empty).Contains(keyword)
                       || sampleProductColourCodes.Contains(stock.Code)
+                      || formulaProductColourCodes.Contains(stock.Code)
                 select stock;
         }
 

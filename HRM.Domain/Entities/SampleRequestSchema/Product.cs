@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using HRM.Domain.Entities.BomSchema;
 using HRM.Domain.Entities.CompanySchema;
 using HRM.Domain.Entities.DeliverySchema;
 using HRM.Domain.Entities.DevandqaSchema;
@@ -105,6 +106,9 @@ public partial class Product
     public virtual ICollection<SchedualMfg> SchedualMfgs { get; set; } = new List<SchedualMfg>();
     public virtual ICollection<ProductStandardFormula> ProductStandardFormulas { get; set; } = new List<ProductStandardFormula>();
     public virtual ICollection<ProductStandard> ProductStandards { get; set; } = new List<ProductStandard>();
+    public virtual ICollection<BomDefinition> BomDefinitions { get; set; } = new List<BomDefinition>();
+    public virtual ICollection<BomVersionItem> ComponentBomVersionItems { get; set; } = new List<BomVersionItem>();
+    public virtual ICollection<ProductStandardBomVersion> StandardBomVersions { get; set; } = new List<ProductStandardBomVersion>();
     public virtual ICollection<SampleRequest> SampleRequests { get; set; } = new List<SampleRequest>();
     public virtual Employee? UpdatedByNavigation { get; set; }
 }

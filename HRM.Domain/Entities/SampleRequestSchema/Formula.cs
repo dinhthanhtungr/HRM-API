@@ -4,6 +4,7 @@ using HRM.Domain.Entities.CompanySchema;
 using HRM.Domain.Entities.HrSchema;
 using HRM.Domain.Entities.ManufacturingSchema;
 using HRM.Domain.Entities.OrderSchema;
+using HRM.Domain.Enums.Manufacturings;
 
 namespace HRM.Domain.Entities.SampleRequestSchema;
 
@@ -16,6 +17,7 @@ public partial class Formula
 
     public Guid ProductId { get; set; }
     public string Status { get; set; } = "Draft";
+    public StepOfProduct? StepOfProduct { get; set; }
 
     public Guid? CheckBy { get; set; }          // UNIQUEIDENTIFIER
     public DateTime? CheckDate { get; set; }       // DATETIME

@@ -1,5 +1,6 @@
 using HRM.Domain.Entities.CompanySchema;
 using HRM.Domain.Entities.HrSchema;
+using HRM.Domain.Entities.ManufacturingSchema;
 using HRM.Domain.Entities.SampleRequestSchema;
 using HRM.Domain.Enums.CustomerEnum;
 
@@ -10,8 +11,11 @@ public sealed class ProductPricingVersion
     public Guid ProductPricingVersionId { get; set; }
     public Guid CompanyId { get; set; }
     public Guid ProductId { get; set; }
+    public Guid? FormulaPricingPolicyId { get; set; }
+    public bool HasManualTierAdjustment { get; set; }
 
     public Guid? SourceFormulaId { get; set; }
+    public Guid? SourceManufacturingFormulaId { get; set; }
     public Guid? SourceSampleTrialId { get; set; }
     public Guid? SourceManufacturingVUFormulaId { get; set; }
 
@@ -39,7 +43,9 @@ public sealed class ProductPricingVersion
 
     public Company Company { get; set; } = null!;
     public Product Product { get; set; } = null!;
+    public FormulaPricingPolicy? FormulaPricingPolicy { get; set; }
     public Formula? SourceFormula { get; set; }
+    public ManufacturingFormula? SourceManufacturingFormula { get; set; }
     public SampleRequestSampleTrial? SourceSampleTrial { get; set; }
     public ManufacturingVUFormula? SourceManufacturingVUFormula { get; set; }
     public Employee CreatedByNavigation { get; set; } = null!;

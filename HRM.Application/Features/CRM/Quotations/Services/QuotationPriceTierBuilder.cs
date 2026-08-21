@@ -56,11 +56,11 @@ internal static class QuotationPriceTierBuilder
                     $"{QuotationRules.MaximumQuantityRangeLabelLength} characters.");
             }
 
-            if (request.UnitPrice <= 0m || request.SortOrder < 0 ||
+            if (request.UnitPrice < 0m || request.SortOrder < 0 ||
                 request.MinQuantity is < 0m || request.MaxQuantity is < 0m)
             {
                 return OperationResult<QuotationLinePricing>.Fail(
-                    $"{fieldPath}.priceTiers[{index}] must have a positive unitPrice and no negative values.");
+                    $"{fieldPath}.priceTiers[{index}] must have a non-negative unitPrice and no negative values.");
             }
 
             if (request.MinQuantity.HasValue && request.MaxQuantity.HasValue &&

@@ -42,6 +42,7 @@ public sealed class ProductPricingVersionConfiguration
 
         entity.Property(x => x.Version).HasDefaultValue(1);
         entity.Property(x => x.IsActive).HasDefaultValue(true);
+        entity.Property(x => x.HasManualTierAdjustment).HasDefaultValue(false);
 
         entity.HasIndex(x => new { x.CompanyId, x.ProductId, x.Currency, x.Version })
             .IsUnique()
@@ -52,6 +53,12 @@ public sealed class ProductPricingVersionConfiguration
 
         entity.HasIndex(x => x.SourceFormulaId)
             .HasDatabaseName("IX_ProductPricingVersions_SourceFormulaId");
+
+        entity.HasIndex(x => x.FormulaPricingPolicyId)
+            .HasDatabaseName("IX_ProductPricingVersions_FormulaPricingPolicyId");
+
+        entity.HasIndex(x => x.SourceManufacturingFormulaId)
+            .HasDatabaseName("IX_ProductPricingVersions_SourceManufacturingFormulaId");
 
         entity.HasIndex(x => x.SourceSampleTrialId)
             .HasDatabaseName("IX_ProductPricingVersions_SourceSampleTrialId");
@@ -71,11 +78,23 @@ public sealed class ProductPricingVersionConfiguration
             .OnDelete(DeleteBehavior.Restrict)
             .HasConstraintName("FK_ProductPricingVersions_Product");
 
+        entity.HasOne(x => x.FormulaPricingPolicy)
+            .WithMany(x => x.ProductPricingVersions)
+            .HasForeignKey(x => x.FormulaPricingPolicyId)
+            .OnDelete(DeleteBehavior.Restrict)
+            .HasConstraintName("FK_ProductPricingVersions_FormulaPricingPolicy");
+
         entity.HasOne(x => x.SourceFormula)
             .WithMany()
             .HasForeignKey(x => x.SourceFormulaId)
             .OnDelete(DeleteBehavior.Restrict)
             .HasConstraintName("FK_ProductPricingVersions_SourceFormula");
+
+        entity.HasOne(x => x.SourceManufacturingFormula)
+            .WithMany()
+            .HasForeignKey(x => x.SourceManufacturingFormulaId)
+            .OnDelete(DeleteBehavior.Restrict)
+            .HasConstraintName("FK_ProductPricingVersions_SourceManufacturingFormula");
 
         entity.HasOne(x => x.SourceSampleTrial)
             .WithMany()

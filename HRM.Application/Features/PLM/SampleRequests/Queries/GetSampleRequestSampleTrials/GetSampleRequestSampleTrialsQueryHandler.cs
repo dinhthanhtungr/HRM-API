@@ -57,6 +57,23 @@ internal sealed class GetSampleRequestSampleTrialsQueryHandler
                 x => x.CustomerId == request.CustomerId.Value);
         }
 
+        var sampleRequestCreatedRange =
+            SampleRequestSampleTrialReportRules.ResolveCreatedRange(
+                request.SampleRequestCreatedToDate,
+                request.IncludePreviousUnfinished);
+        if (sampleRequestCreatedRange.FromInclusive.HasValue)
+        {
+            visibleSampleRequests = visibleSampleRequests.Where(
+                x => x.CreatedDate >= sampleRequestCreatedRange.FromInclusive.Value);
+        }
+
+        var sampleRequestCreatedToExclusive = sampleRequestCreatedRange.ToExclusive;
+        if (sampleRequestCreatedToExclusive.HasValue)
+        {
+            visibleSampleRequests = visibleSampleRequests.Where(
+                x => x.CreatedDate < sampleRequestCreatedToExclusive.Value);
+        }
+
         var activeTrials = _dbContext.SampleRequestSampleTrials
             .AsNoTracking()
             .Where(x => x.IsActive );
@@ -150,6 +167,8 @@ internal sealed class GetSampleRequestSampleTrialsQueryHandler
                 ((x.Trial != null ? x.Trial.SampleRequestExternalIdSnapshot : null) ?? x.SampleRequest.ExternalId).Contains(keyword) ||
                 ((x.Trial != null ? x.Trial.ProductNameSnapshot : null) ?? x.SampleRequest.Product.Name ?? string.Empty).Contains(keyword) ||
                 ((x.Trial != null ? x.Trial.ColourCodeSnapshot : null) ?? x.SampleRequest.Product.ColourCode ?? string.Empty).Contains(keyword) ||
+                (x.SampleRequest.Formula != null && EF.Functions.ILike(x.SampleRequest.Formula.ExternalId, $"%{keyword}%")) ||
+                (x.Trial != null && x.Trial.Formula != null && EF.Functions.ILike(x.Trial.Formula.ExternalId, $"%{keyword}%")) ||
                 (x.Trial != null && (x.Trial.BatchNo ?? string.Empty).Contains(keyword)) ||
                 (x.Trial != null && (x.Trial.CustomerReplyNote ?? string.Empty).Contains(keyword)) ||
                 (x.Trial != null && (x.Trial.LabNote ?? string.Empty).Contains(keyword)));
@@ -174,7 +193,11 @@ internal sealed class GetSampleRequestSampleTrialsQueryHandler
                 HasTrial = x.Trial != null,
                 CanCreateTrial = canViewTechnicalFields,
                 CanUpdateTrial = canViewTechnicalFields && x.Trial != null,
-                CanUpdateCustomerFeedback = canUpdateCustomerFeedback && x.Trial != null,
+                CanUpdateCustomerFeedback = canUpdateCustomerFeedback &&
+                    x.Trial != null &&
+                    (x.Trial.Status == SampleTrialStatus.SampleSent ||
+                     x.Trial.Status == SampleTrialStatus.WaitingCustomerFeedback ||
+                     x.Trial.Status == SampleTrialStatus.PriceQuote),
 
                 SampleRequestStatus = x.SampleRequest.Status,
                 CustomerName = x.SampleRequest.Customer.CustomerName,

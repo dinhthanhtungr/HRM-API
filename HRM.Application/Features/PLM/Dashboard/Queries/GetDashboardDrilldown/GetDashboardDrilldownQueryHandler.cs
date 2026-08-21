@@ -109,6 +109,7 @@ internal sealed class GetDashboardDrilldownQueryHandler
                 (x.Product.Name ?? string.Empty).Contains(keyword) ||
                 (x.Product.ColourCode ?? string.Empty).Contains(keyword) ||
                 (x.Product.Code ?? string.Empty).Contains(keyword) ||
+                (x.Formula != null && EF.Functions.ILike(x.Formula.ExternalId, $"%{keyword}%")) ||
                 x.ManagerByNavigation.FullName.Contains(keyword));
         }
 
@@ -326,7 +327,7 @@ internal sealed class GetDashboardDrilldownQueryHandler
                 x.MerchandiseOrderDetails.Any(detail =>
                     detail.ProductExternalIdSnapshot.Contains(keyword) ||
                     detail.ProductNameSnapshot.Contains(keyword) ||
-                    detail.FormulaExternalIdSnapshot.Contains(keyword)));
+                    EF.Functions.ILike(detail.FormulaExternalIdSnapshot, $"%{keyword}%")));
         }
 
         var totalCount = await query.CountAsync(cancellationToken);

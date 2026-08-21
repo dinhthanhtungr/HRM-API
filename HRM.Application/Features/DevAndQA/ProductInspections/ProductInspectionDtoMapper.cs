@@ -1,0 +1,77 @@
+using HRM.Application.Features.DevAndQA.ProductInspections.Dtos;
+using HRM.Domain.Entities.DevandqaSchema;
+
+namespace HRM.Application.Features.DevAndQA.ProductInspections;
+
+internal static class ProductInspectionDtoMapper
+{
+    internal static ProductInspectionPdfDocumentDto ToPdfDocument(
+        ProductInspection x,
+        string? expiryType,
+        string? bagType,
+        ProductInspectionPdfSpecificationsDto? specifications)
+        => new()
+        {
+            Id = x.Id,
+            ExternalId = x.ExternalId,
+            ProductStandardId = x.ProductStandardId,
+            BatchId = x.BatchId,
+            ProductName = x.ProductName,
+            ProductCode = x.ProductCode,
+            Weight = x.Weight,
+            ManufacturingDate = x.ManufacturingDate,
+            ExpiryDate = x.ExpiryDate,
+            ExpiryType = expiryType,
+            Shape = x.Shape,
+            IsShapePass = x.IsShapePass,
+            ParticleSize = x.ParticleSize,
+            IsParticleSizePass = x.IsParticleSizePass,
+            PackingSpec = x.PackingSpec,
+            IsPackingSpecPass = x.IsPackingSpecPass,
+            VisualCheck = x.VisualCheck,
+            ColorDeltaE = x.ColorDeltaE,
+            IsColorDeltaEPass = x.IsColorDeltaEpass,
+            Moisture = x.Moisture,
+            IsMoisturePass = x.IsMoisturePass,
+            Mfr = x.Mfr,
+            IsMfrPass = x.IsMfrpass,
+            FlexuralStrength = x.FlexuralStrength,
+            IsFlexuralStrengthPass = x.IsFlexuralStrengthPass,
+            Elongation = x.Elongation,
+            IsElongationPass = x.IsElongationPass,
+            Hardness = x.Hardness,
+            IsHardnessPass = x.IsHardnessPass,
+            Density = x.Density,
+            IsDensityPass = x.IsDensityPass,
+            TensileStrength = x.TensileStrength,
+            IsTensileStrengthPass = x.IsTensileStrengthPass,
+            FlexuralModulus = x.FlexuralModulus,
+            IsFlexuralModulusPass = x.IsFlexuralModulusPass,
+            ImpactResistance = x.ImpactResistance,
+            IsImpactResistancePass = x.IsImpactResistancePass,
+            Antistatic = x.Antistatic,
+            IsAntistaticPass = x.IsAntistaticPass,
+            StorageCondition = x.StorageCondition,
+            IsStorageConditionPass = x.IsStorageConditionPass,
+            IntrinsicViscosity = x.IntrinsicViscosity,
+            IsIntrinsicViscosity = x.IsIntrinsicViscosity,
+            MeshType = x.MeshType,
+            IsMeshAttached = x.IsMeshAttached,
+            DwellTime = x.DwellTime,
+            BlackDots = x.BlackDots,
+            MigrationTest = x.MigrationTest,
+            DefectImpurity = x.DefectImpurity,
+            DefectBlackDot = x.DefectBlackDot,
+            DefectShortFiber = x.DefectShortFiber,
+            DefectMoist = x.DefectMoist,
+            DefectDusty = x.DefectDusty,
+            DefectWrongColor = x.DefectWrongColor,
+            Types = x.Types,
+            DeliveryAccepted = x.DeliveryAccepted,
+            Notes = x.Notes,
+            CreateDate = x.CreateDate,
+            CreatedBy = x.CreatedBy,
+            BagType = bagType,
+            Specifications = specifications
+        };
+}

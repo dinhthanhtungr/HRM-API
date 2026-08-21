@@ -16,18 +16,15 @@ internal sealed class GetQuotationPricingComparisonQueryHandler
 {
     private readonly ICRMReadDbContext _dbContext;
     private readonly ICustomerVisibilityService _visibilityService;
-    private readonly QuotationCurrentPricingResolver _pricingResolver;
     private readonly IDateTimeProvider _dateTimeProvider;
 
     public GetQuotationPricingComparisonQueryHandler(
         ICRMReadDbContext dbContext,
         ICustomerVisibilityService visibilityService,
-        QuotationCurrentPricingResolver pricingResolver,
         IDateTimeProvider dateTimeProvider)
     {
         _dbContext = dbContext;
         _visibilityService = visibilityService;
-        _pricingResolver = pricingResolver;
         _dateTimeProvider = dateTimeProvider;
     }
 
@@ -54,6 +51,7 @@ internal sealed class GetQuotationPricingComparisonQueryHandler
             .Select(x => new PricingComparisonQuotation
             {
                 QuotationId = x.QuotationId,
+                Currency = x.Currency,
                 Lines = x.Lines
                     .OrderBy(line => line.SortOrder)
                     .ThenBy(line => line.QuotationLineId)
@@ -61,6 +59,7 @@ internal sealed class GetQuotationPricingComparisonQueryHandler
                     {
                         QuotationLineId = line.QuotationLineId,
                         ProductId = line.ProductId,
+                        ProductPricingVersionId = line.ProductPricingVersionId,
                         ProductExternalId = line.ProductExternalIdSnapshot,
                         ProductName = line.ProductNameSnapshot,
                         PriceMode = line.PriceMode,
@@ -91,10 +90,22 @@ internal sealed class GetQuotationPricingComparisonQueryHandler
                 "Quotation was not found or is outside your visibility scope.");
         }
 
-        var currentPricingByProductId = await _pricingResolver.ResolveAsync(
-            quotation.Lines.Select(x => x.ProductId),
-            scope.CompanyId,
-            cancellationToken);
+        var productIds = quotation.Lines.Select(x => x.ProductId).Distinct().ToArray();
+        var approvedRows = await _dbContext.ProductPricingVersions
+            .AsNoTracking()
+            .Include(x => x.SourceFormula)
+            .Include(x => x.PriceTiers)
+            .Where(x =>
+                productIds.Contains(x.ProductId) &&
+                x.CompanyId == scope.CompanyId &&
+                x.Currency == quotation.Currency &&
+                x.Status == ProductPricingStatus.Approved &&
+                x.IsActive)
+            .OrderByDescending(x => x.Version)
+            .ToListAsync(cancellationToken);
+        var currentPricingByProductId = approvedRows
+            .GroupBy(x => x.ProductId)
+            .ToDictionary(x => x.Key, x => x.First());
         var lines = quotation.Lines
             .Select(line => BuildLineComparison(
                 line,
@@ -112,9 +123,10 @@ internal sealed class GetQuotationPricingComparisonQueryHandler
 
     private static QuotationLinePricingComparisonDto BuildLineComparison(
         PricingComparisonLine line,
-        QuotationCurrentProductPricing? current)
+        HRM.Domain.Entities.CustomerSchema.ProductPricingVersion? current)
     {
-        var currentTiers = current?.Pricing?.SuggestedPriceTiers
+        var currentTiers = current?.PriceTiers
+            .OrderBy(x => x.SortOrder)
             .Select(x => new QuotationCurrentPriceTierDto
             {
                 QuantityRangeLabel = x.QuantityRangeLabel,
@@ -123,11 +135,15 @@ internal sealed class GetQuotationPricingComparisonQueryHandler
                 MinInclusive = x.MinInclusive,
                 MaxInclusive = x.MaxInclusive,
                 UnitPrice = x.UnitPrice,
-                RequiresManualPrice = x.RequiresManualPrice,
+                RequiresManualPrice = false,
                 SortOrder = x.SortOrder
             })
             .ToList() ?? [];
-        var status = ResolveStatus(current, currentTiers);
+        var status = current is null
+            ? QuotationCurrentPricingStatus.ApprovedPricingNotFound
+            : currentTiers.Count == 0
+                ? QuotationCurrentPricingStatus.ManualTierPriceRequired
+                : QuotationCurrentPricingStatus.Available;
         var isComplete = status == QuotationCurrentPricingStatus.Available;
 
         return new QuotationLinePricingComparisonDto
@@ -139,47 +155,22 @@ internal sealed class GetQuotationPricingComparisonQueryHandler
             SavedPriceMode = line.PriceMode,
             SavedUnitPrice = line.UnitPrice,
             SavedPriceTiers = line.PriceTiers,
-            FormulaId = current?.FormulaId,
-            FormulaExternalId = current?.FormulaExternalId,
-            FormulaName = current?.FormulaName,
-            FormulaSelectionSource = current?.FormulaSelectionSource,
+            CurrentProductPricingVersionId = current?.ProductPricingVersionId,
+            CurrentProductPricingVersion = current?.Version,
+            IsUsingLatestApprovedPricing = current is not null &&
+                line.ProductPricingVersionId == current.ProductPricingVersionId,
+            FormulaId = current?.SourceFormulaId,
+            FormulaExternalId = current?.FormulaExternalIdSnapshot,
+            FormulaName = current?.SourceFormula?.Name,
+            FormulaSelectionSource = null,
             CurrentPricingStatus = status,
             IsCurrentPricingComplete = isComplete,
-            MissingMaterialPriceCount = current?.RealtimeMaterialCost.MissingPriceCount ?? 0,
+            MissingMaterialPriceCount = 0,
             CurrentPriceTiers = currentTiers,
             HasDifference = isComplete
                 ? HasTierDifference(line.PriceTiers, currentTiers)
                 : null
         };
-    }
-
-    private static QuotationCurrentPricingStatus ResolveStatus(
-        QuotationCurrentProductPricing? current,
-        IReadOnlyCollection<QuotationCurrentPriceTierDto> currentTiers)
-    {
-        if (current is null)
-        {
-            return QuotationCurrentPricingStatus.ProductNotFound;
-        }
-
-        if (!current.FormulaId.HasValue)
-        {
-            return QuotationCurrentPricingStatus.FormulaNotFound;
-        }
-
-        if (!current.HasFormulaMaterials)
-        {
-            return QuotationCurrentPricingStatus.FormulaMaterialsMissing;
-        }
-
-        if (!current.RealtimeMaterialCost.IsComplete)
-        {
-            return QuotationCurrentPricingStatus.MaterialPriceMissing;
-        }
-
-        return currentTiers.Any(x => x.RequiresManualPrice || !x.UnitPrice.HasValue)
-            ? QuotationCurrentPricingStatus.ManualTierPriceRequired
-            : QuotationCurrentPricingStatus.Available;
     }
 
     private static bool HasTierDifference(
@@ -215,6 +206,7 @@ internal sealed class GetQuotationPricingComparisonQueryHandler
     private sealed class PricingComparisonQuotation
     {
         public Guid QuotationId { get; init; }
+        public string Currency { get; init; } = string.Empty;
         public IReadOnlyList<PricingComparisonLine> Lines { get; init; } = [];
     }
 
@@ -222,6 +214,7 @@ internal sealed class GetQuotationPricingComparisonQueryHandler
     {
         public Guid QuotationLineId { get; init; }
         public Guid ProductId { get; init; }
+        public Guid? ProductPricingVersionId { get; init; }
         public string ProductExternalId { get; init; } = string.Empty;
         public string ProductName { get; init; } = string.Empty;
         public QuotationLinePriceMode PriceMode { get; init; }

@@ -164,6 +164,7 @@ namespace HRM.Infrastructure.DatabaseContext.ApplicationDbs
 
                 entity.Property(e => e.ProductId).HasColumnName("ProductId");
                 entity.Property(e => e.Status).HasColumnName("Status").HasMaxLength(32).HasDefaultValue("Draft");
+                entity.Property(e => e.StepOfProduct).HasColumnName("StepOfProduct");
 
                 entity.Property(e => e.CheckBy).HasColumnName("CheckBy");
                 entity.Property(e => e.CheckDate).HasColumnName("CheckDate");

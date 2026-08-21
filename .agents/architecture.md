@@ -46,3 +46,17 @@ Không tạo helper/service dùng chung quá sớm. Nếu mới chỉ có một 
 - Side effect quan trọng như notification/file/email nên đi qua service/interface.
 - Không trộn refactor lớn với feature nhỏ nếu không cần.
 
+
+## Handler Và File Organization
+
+- Mỗi Command hoặc Query public đặt trong file riêng.
+- Mỗi MediatR handler đặt trong file riêng và cùng folder với Command/Query tương ứng.
+- Không đặt nhiều handler trong cùng một file, kể cả khi phục vụ cùng một màn hình.
+- List query và detail query là hai use case riêng, phải có folder/handler riêng.
+- Mapper, selector, calculator và read-model dùng chung phải tách khỏi handler.
+- Handler không được gọi method nội bộ của handler khác; logic dùng chung phải chuyển
+  thành rule/helper/service có tên thể hiện nghiệp vụ.
+- Khi một file vượt khoảng 300 dòng hoặc chứa nhiều hơn một trách nhiệm chính, phải
+  đánh giá tách file trước khi hoàn tất.
+- Không tách máy móc mỗi private method thành service; chỉ tách theo trách nhiệm và
+  khả năng dùng chung.

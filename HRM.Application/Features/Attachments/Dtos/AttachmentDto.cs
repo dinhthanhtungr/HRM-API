@@ -20,7 +20,8 @@ public sealed record AttachmentUploadFile(
     Stream Stream,
     string FileName,
     string ContentType,
-    long Length);
+    long Length,
+    string? ContentHash = null);
 
 public sealed record AttachmentContent(
     Stream Stream,

@@ -68,6 +68,7 @@ namespace HRM.Domain.Entities.ManufacturingSchema
 
         //public virtual ICollection<ManufacturingFormula> ManufacturingFormulas { get; set; } = new List<ManufacturingFormula>();
         public virtual ICollection<ProductionSelectVersion> ProductionSelectVersions { get; set; } = new List<ProductionSelectVersion>();
+        public virtual ICollection<MfgProductionOrderLoss> Losses { get; set; } = new List<MfgProductionOrderLoss>();
         public virtual ICollection<SchedualMfg> SchedualMfgs { get; set; } = new List<SchedualMfg>();
     }
 }

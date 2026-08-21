@@ -3,6 +3,7 @@ using HRM.Application.Abstractions.Commons.Ais.CRM;
 using HRM.Application.Abstractions.Commons.Time;
 using HRM.Application.Abstractions.FileStorage;
 using HRM.Application.Features.Attachments.Services;
+using HRM.Application.Features.PLM.Materials.DocumentImport.Jobs;
 using HRM.Infrastructure.Services.ExternalIds;
 using HRM.Infrastructure.Services.FileStorage;
 using HRM.Infrastructure.Services.Geminis;
@@ -32,6 +33,13 @@ public static class DependencyInjection
             options.PublicBaseUrl = section["PublicBaseUrl"];
         });
         services.AddScoped<IFileStorage, FileShareStorage>();
+        services.Configure<MaterialDocumentImportOptions>(
+            configuration.GetSection(MaterialDocumentImportOptions.SectionName));
+        services.AddScoped<IMaterialDocumentSourceScanner, FileShareMaterialDocumentSourceScanner>();
+        services.AddSingleton<MaterialDocumentImportJobQueue>();
+        services.AddSingleton<IMaterialDocumentImportJobQueue>(provider =>
+            provider.GetRequiredService<MaterialDocumentImportJobQueue>());
+        services.AddScoped<IMaterialDocumentImportProcessor, MaterialDocumentImportProcessor>();
         services.AddSingleton<IImageThumbnailGenerator, ImageSharpThumbnailGenerator>();
         services.AddSingleton<IDateTimeProvider, SystemDateTimeProvider>();
 

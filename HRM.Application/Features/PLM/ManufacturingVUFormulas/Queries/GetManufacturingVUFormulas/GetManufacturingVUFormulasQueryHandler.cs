@@ -51,10 +51,14 @@ internal sealed class GetManufacturingVUFormulasQueryHandler
         if (request.NormalizedKeyword is { } keyword)
         {
             query = query.Where(x =>
-                x.Formula.ExternalId.Contains(keyword) ||
+                EF.Functions.ILike(x.Formula.ExternalId, $"%{keyword}%") ||
                 x.Formula.Name.Contains(keyword) ||
                 (x.Formula.Product.Name != null && x.Formula.Product.Name.Contains(keyword)) ||
-                (x.Formula.Product.ColourCode != null && x.Formula.Product.ColourCode.Contains(keyword)));
+                (x.Formula.Product.ColourCode != null && x.Formula.Product.ColourCode.Contains(keyword)) ||
+                x.Formula.Product.SampleRequests.Any(sampleRequest =>
+                    sampleRequest.IsActive &&
+                    sampleRequest.CompanyId == companyId &&
+                    sampleRequest.ExternalId.Contains(keyword)));
         }
 
         query = request.NormalizedSortBy?.ToLowerInvariant() switch

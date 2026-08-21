@@ -68,7 +68,7 @@ internal sealed class UpdateGroupCommandHandler
         group.GroupType = groupType;
         group.PartId = request.PartId;
         group.UpdatedBy = _currentUser.EmployeeId;
-        group.UpdatedDate = DateTime.UtcNow;
+        group.UpdatedDate = DateTime.Now;
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         var counts = await _dbContext.MemberInGroups

@@ -11,17 +11,23 @@ internal sealed class IsoPdfFooterComponent : IComponent
     private readonly byte[]? _bureauVeritasLogo;
     private readonly byte[]? _grsLogo;
     private readonly byte[]? _qrCode;
+    private readonly string? _formCode;
+    private readonly string? _effectiveDate;
 
     public IsoPdfFooterComponent(
         QuotationPdfBrandingOptions options,
         byte[]? bureauVeritasLogo,
         byte[]? grsLogo,
-        byte[]? qrCode)
+        byte[]? qrCode,
+        string? formCode = null,
+        string? effectiveDate = null)
     {
         _options = options;
         _bureauVeritasLogo = bureauVeritasLogo;
         _grsLogo = grsLogo;
         _qrCode = qrCode;
+        _formCode = formCode ?? options.FormCode;
+        _effectiveDate = effectiveDate ?? options.EffectiveDate;
     }
 
     public void Compose(IContainer container)
@@ -47,7 +53,7 @@ internal sealed class IsoPdfFooterComponent : IComponent
 
             column.Item().PaddingTop(PdfLayout.FooterPageTopPadding).Row(row =>
             {
-                row.RelativeItem().AlignLeft().Text(_options.FormCode ?? string.Empty).FontSize(PdfTypography.FooterSize);
+                row.RelativeItem().AlignLeft().Text(_formCode ?? string.Empty).FontSize(PdfTypography.FooterSize);
                 row.RelativeItem().AlignCenter().Text(text =>
                 {
                     text.DefaultTextStyle(PdfTypography.Footer);
@@ -56,7 +62,7 @@ internal sealed class IsoPdfFooterComponent : IComponent
                     text.Span(" / ");
                     text.TotalPages();
                 });
-                row.RelativeItem().AlignRight().Text(_options.EffectiveDate ?? string.Empty).FontSize(PdfTypography.FooterSize);
+                row.RelativeItem().AlignRight().Text(_effectiveDate ?? string.Empty).FontSize(PdfTypography.FooterSize);
             });
         });
     }

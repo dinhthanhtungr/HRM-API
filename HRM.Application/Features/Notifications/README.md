@@ -256,6 +256,7 @@ SampleRequestFormulaUpdateCancelled = 42 -> plm.sample_request.formula_update.ca
 SampleRequestDirectPatchNotified    = 43 -> plm.sample_request.direct_patch.notified    -> sample_request/change
 CustomerAiSummaryAutomationStatus   = 44 -> dev.customer.ai_summary.automation_status   -> system/automation
 SampleRequestCustomerFeedbackRecorded = 47 -> plm.sample_request.customer_feedback.recorded -> sample_request/sample
+QuotationPricingApproved             = 48 -> crm.quotation.pricing.approved             -> quotation/pricing
 ```
 
 `SampleRequestUpdateRequested = 25`, `SampleRequestUpdateApproved = 27` và
@@ -280,6 +281,15 @@ InternalMail conversation của báo giá. Mỗi lần gọi tạo notification/
 Notification service vẫn tạo SignalR outbox và Web Push outbox theo cấu hình chung.
 Payload còn có `action.code = Quotation.OpenPricingOptions` và `action.parameters` chứa `quotationId`,
 `quotationExternalId`. `Notification.Link` để trống; từng client ánh xạ action nghiệp vụ sang route riêng.
+
+`QuotationPricingApproved` được publish bởi `ApproveProductPricingVersionCommandHandler` sau khi version giá đã
+được lưu `Approved`. Handler tìm từng báo giá `Draft` active cùng company, currency và có line thuộc sản phẩm vừa
+duyệt; mỗi Sale phụ trách active cùng company nhận một notification cho từng báo giá, trừ khi chính Sale đó là
+người duyệt. Payload không chứa material cost, manufacturing cost hoặc margin; chỉ chứa quotation id/code,
+product id/code, pricing version id/version và `action.code = Quotation.Open`. Topic có
+`categoryCode = quotation`, `eventGroupCode = pricing`, `topicCode = crm.quotation.pricing.approved`.
+Notification vẫn đi qua `INotificationService.PublishAsync`, vì vậy SignalR/Web Push tiếp tục dùng outbox chung;
+module Quotation không gọi realtime channel trực tiếp và không tạo thêm InternalMail message cho sự kiện này.
 
 Tin nhắn trả lời trong InternalMail conversation có `RelatedType = Quotation` publish
 `QuotationMessageCreated`, thay vì topic chung `InternalMailMessageCreated`. Payload notification liên kết thread

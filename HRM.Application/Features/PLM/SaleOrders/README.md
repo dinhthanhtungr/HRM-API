@@ -19,7 +19,7 @@ Feature quản lý đơn hàng bán thành phẩm/sản phẩm thương mại. A
 ## API
 
 - `POST api/v1/plm/sale-orders` với `multipart/form-data`: field `request` chứa JSON theo `CreateSaleOrderRequest`, field `files` là PO tùy chọn. Slot được backend cố định là `PurchaseOrder`, FE không được chọn slot. Không có file thì tạo đơn `New`. Có PO thì Sale thường ngoài AC/HN được auto approve; các nhóm khác vẫn `New`. Response thành công trả `CreateSaleOrderResultDto` gồm `MerchandiseOrderId`, `ExternalId`, `AttachmentCollectionId` và `Status` thực tế do backend quyết định.
-- `GET api/v1/plm/sale-orders`: lấy danh sách có phân trang, tìm kiếm và bộ lọc trong công ty hiện tại. `From` lấy từ đầu ngày và `To` dùng mốc đầu ngày kế tiếp để bao gồm trọn ngày kết thúc.
+- `GET api/v1/plm/sale-orders`: lấy danh sách có phân trang, tìm kiếm và bộ lọc trong công ty hiện tại. Keyword hỗ trợ mã/tên Product, mã TP Sample Request active và mã VU Formula liên quan. `From` lấy từ đầu ngày và `To` dùng mốc đầu ngày kế tiếp để bao gồm trọn ngày kết thúc.
 - `GET api/v1/plm/sale-orders/{merchandiseOrderId}`: lấy chi tiết, chỉ trả dòng active và kèm số lượng đã giao/còn lại.
 - `GET api/v1/plm/sale-orders/customer-context/{customerId}`: gọi sau khi FE chọn khách hàng để lấy snapshot header, contact/address active, giá trị mặc định và `PaymentType`, `ShippingMethod`, `Note` từ đơn hợp lệ gần nhất.
 - `GET api/v1/plm/sale-orders/last-by-customer?customerId=&productId=`: lấy dòng bán gần nhất theo đúng cặp customer/product, gồm `FormulaId`, snapshot mã công thức, bao bì, khối lượng đóng gói, số lượng, giá bán và ghi chú.

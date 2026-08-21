@@ -13,5 +13,13 @@ public enum AttachmentSlot
     ColouredChip,
     QcReport,
     InternalMail,
-    Complaint
+    Complaint,
+
+    // Tài liệu gắn trực tiếp với nguyên vật liệu. Chỉ thêm ở cuối enum để
+    // không làm thay đổi giá trị số của các slot đã lưu trong database.
+    MaterialTds = 12,
+    MaterialMsds = 13,
+    MaterialCoa = 14,
+    MaterialCertificate = 15,
+    MaterialOther = 16
 }

@@ -76,7 +76,14 @@ namespace HRM.Application.Features.CRM.Quotations.Queries.GetQuotations
                     x.ExternalId.Contains(keyword) ||
                     x.Customer.ExternalId.Contains(keyword) ||
                     x.Customer.CustomerName.Contains(keyword) ||
-                    (x.ContactName != null && x.ContactName.Contains(keyword)));
+                    (x.ContactName != null && x.ContactName.Contains(keyword)) ||
+
+                    x.Lines.Any(line => line.ProductNavigation.ColourCode != null &&
+                        line.ProductNavigation.ColourCode.Contains(keyword)) ||
+
+                    x.Lines.Any(line =>
+                        line.SampleRequest != null &&
+                        line.SampleRequest.ExternalId.Contains(keyword)));
             }
 
             query = ApplySorting(query, request);

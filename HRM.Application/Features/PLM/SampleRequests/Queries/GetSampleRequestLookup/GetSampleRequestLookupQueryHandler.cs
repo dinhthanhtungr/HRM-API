@@ -59,7 +59,8 @@ internal sealed class GetSampleRequestLookupQueryHandler
                 x.Customer.CustomerName.Contains(keyword) ||
                 (x.Product.ColourCode ?? string.Empty).Contains(keyword) ||
                 (x.Product.Name ?? string.Empty).Contains(keyword) ||
-                (x.Product.Code ?? string.Empty).Contains(keyword));
+                (x.Product.Code ?? string.Empty).Contains(keyword) ||
+                (x.Formula != null && EF.Functions.ILike(x.Formula.ExternalId, $"%{keyword}%")));
         }
 
         return await query

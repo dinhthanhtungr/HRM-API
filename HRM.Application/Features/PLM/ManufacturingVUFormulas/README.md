@@ -8,7 +8,8 @@ snapshot vật tư trong `SampleRequests.FormulaMaterialSnapshots`.
 
 Base route: `/api/v1/plm/sample-production-orders`.
 
-- `GET /`: danh sách phân trang. Hỗ trợ `keyword`, `productId`, `status`,
+- `GET /`: danh sách phân trang. `keyword` tìm theo mã/tên Formula, tên/mã màu Product
+  hoặc mã Sample Request active liên quan đến Product; hỗ trợ thêm `productId`, `status`,
   `pageNumber`, `pageSize`, `sortBy`, `sortDirection`.
 - `GET /{manufacturingVUFormulaId}`: chi tiết lệnh và snapshot vật tư.
 - `POST /`: tạo lệnh từ một formula đang active trong công ty hiện tại.

@@ -25,6 +25,7 @@ namespace HRM.Infrastructure.DatabaseContext.Configurations.ManufacturingSchema
             entity.Property(x => x.SourceManufacturingFormulaId).HasColumnName("source_manufacturing_formula_id");
             entity.Property(x => x.SourceManufacturingExternalIdSnapshot).HasColumnName("source_manufacturing_externalid_snapshot").HasColumnType("citext");
             entity.Property(x => x.SourceVUFormulaId).HasColumnName("source_vu_formula_id");
+            entity.Property(x => x.SourceBomVersionId).HasColumnName("source_bom_version_id");
             entity.Property(x => x.SourceVUExternalIdSnapshot).HasColumnName("source_vu_externalid_snapshot").HasColumnType("citext");
 
             entity.Property(x => x.IsActive).HasColumnName("is_active").HasDefaultValue(true).IsRequired();
@@ -43,6 +44,7 @@ namespace HRM.Infrastructure.DatabaseContext.Configurations.ManufacturingSchema
             entity.HasIndex(x => x.CreatedBy).HasDatabaseName("ix_mfg_formulas_created_by");
             entity.HasIndex(x => x.SourceVUFormulaId).HasDatabaseName("ix_mfg_formulas_source_vu_formula_id");
             entity.HasIndex(x => x.SourceManufacturingFormulaId).HasDatabaseName("ix_mfg_formulas_source_mfg_formula_id");
+            entity.HasIndex(x => x.SourceBomVersionId).HasDatabaseName("ix_mfg_formulas_source_bom_version_id");
 
             entity.HasIndex(x => new { x.CompanyId, x.IsActive, x.CreatedDate, x.ManufacturingFormulaId })
                   .IsDescending(false, false, true, true)
@@ -72,6 +74,11 @@ namespace HRM.Infrastructure.DatabaseContext.Configurations.ManufacturingSchema
                   .HasForeignKey(x => x.SourceManufacturingFormulaId)
                   .OnDelete(DeleteBehavior.Restrict)
                   .HasConstraintName("FK__Mf__SourceManufacturingFormulaId");
+
+            entity.HasOne(x => x.SourceBomVersion).WithMany(x => x.ExecutionFormulas)
+                  .HasForeignKey(x => x.SourceBomVersionId)
+                  .OnDelete(DeleteBehavior.Restrict)
+                  .HasConstraintName("fk_mfg_formulas_source_bom_version");
         }
     }
 }

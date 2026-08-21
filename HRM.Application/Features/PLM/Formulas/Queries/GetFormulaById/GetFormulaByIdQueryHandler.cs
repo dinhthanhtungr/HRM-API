@@ -5,6 +5,7 @@ using HRM.Application.Commons.Pricing.Dtos;
 using HRM.Application.Commons.Pricing.Helpers;
 using HRM.Application.Commons.Pricing.Models;
 using HRM.Application.Features.PLM.Formulas.Dtos.Commons;
+using HRM.Application.Features.PLM.Formulas.Helpers;
 using HRM.Domain.Enums.Formulas;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -55,6 +56,7 @@ internal sealed class GetFormulaByIdQueryHandler
                     : string.Empty,
                 x.CheckDate,
                 x.SentBy,
+
                 SentByName = x.SentByNavigation != null
                     ? x.SentByNavigation.FullName
                     : string.Empty,
@@ -93,21 +95,34 @@ internal sealed class GetFormulaByIdQueryHandler
                 Quantity = x.Quantity,
                 Price = new LatestPriceSource(),
                 PriceTotal = 0m,
-                ItemName = IsMaterial(x.itemType)
-                    ? (x.Material != null ? x.Material.Name : x.MaterialNameSnapshot)
-                    : (x.Product != null ? x.Product.Name : x.MaterialNameSnapshot),
-                ItemExternalId = IsMaterial(x.itemType)
-                    ? (x.Material != null ? x.Material.ExternalId : x.MaterialExternalIdSnapshot)
-                    : (x.Product != null
-                        ? x.Product.SampleRequests
-                            .Where(sr => sr.IsActive)
-                            .OrderByDescending(sr => sr.CreatedDate)
-                            .Select(sr => sr.ExternalId)
-                            .FirstOrDefault()
-                        : x.MaterialExternalIdSnapshot)
+                ItemName = x.MaterialNameSnapshot,
+                ItemExternalId = x.MaterialExternalIdSnapshot
             })
             .OrderBy(x => x.LineNo)
             .ToListAsync(cancellationToken);
+
+        var currentItemData = await FormulaItemDisplayResolver.LoadCurrentDataAsync(
+            _dbContext,
+            formula.CompanyId ?? Guid.Empty,
+            materials.Select(material => new FormulaItemDisplaySource(
+                material.ItemId,
+                material.ItemType,
+                material.ItemName,
+                material.ItemExternalId)),
+            cancellationToken);
+
+        foreach (var material in materials)
+        {
+            var display = FormulaItemDisplayResolver.Resolve(
+                new FormulaItemDisplaySource(
+                    material.ItemId,
+                    material.ItemType,
+                    material.ItemName,
+                    material.ItemExternalId),
+                currentItemData);
+            material.ItemName = display.Name;
+            material.ItemExternalId = display.ExternalId;
+        }
 
         IReadOnlyDictionary<Guid, IReadOnlyList<FormulaMaterialSupplierPriceDto>> supplierPricesByMaterial =
             new Dictionary<Guid, IReadOnlyList<FormulaMaterialSupplierPriceDto>>();
@@ -129,7 +144,7 @@ internal sealed class GetFormulaByIdQueryHandler
 
             supplierPricesByMaterial = await LoadSupplierPricesAsync(
                 materials,
-                formula.CompanyId,
+            formula.CompanyId ?? Guid.Empty,
                 cancellationToken);
 
             foreach (var material in materials)

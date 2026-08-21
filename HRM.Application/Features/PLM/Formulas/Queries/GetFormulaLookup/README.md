@@ -14,8 +14,10 @@ Query hỗ trợ:
 - `productId`: chỉ lấy công thức liên quan đến product.
 - `sampleRequestId`: backend resolve `ProductId` của sample request trong cùng công ty hiện tại rồi lọc như `productId`.
 - `sourceType`: `FromVU`, `FromVA` hoặc `Both`; không gửi thì lấy cả hai nguồn.
-- `status`: lọc trạng thái công thức.
+- `statuses`: lọc nhiều trạng thái công thức theo quan hệ OR. Gửi query lặp, ví dụ `statuses=Draft&statuses=Approved`.
+- `status`: tương thích ngược cho client cũ khi chỉ lọc một trạng thái; nếu gửi cùng `statuses` thì backend gộp cả hai rồi loại trùng.
 - `keyword`, `pageNumber`, `pageSize`: tìm kiếm và phân trang theo contract `PaginationQuery`.
+  Keyword hỗ trợ mã/tên Formula, tên/mã màu Product và mã Sample Request active liên quan.
 
 Response là `PagedResult<FormulaLookupDto>`:
 
