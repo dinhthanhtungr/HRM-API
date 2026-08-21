@@ -201,10 +201,11 @@ public sealed class QuotationsController : ControllerBase
     [HttpGet("products/{productId:guid}/pricing-sources")]
     public async Task<IActionResult> GetProductPricingSources(
         Guid productId,
+        [FromQuery] string currency,
         CancellationToken cancellationToken)
     {
         var result = await _sender.Send(
-            new GetProductPricingSourcesQuery(productId), cancellationToken);
+            new GetProductPricingSourcesQuery(productId, currency), cancellationToken);
         return result.Success ? Ok(result.Data) : BadRequest(result);
     }
 

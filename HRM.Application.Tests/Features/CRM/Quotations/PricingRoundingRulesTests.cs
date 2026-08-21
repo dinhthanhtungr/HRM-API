@@ -35,12 +35,12 @@ public sealed class PricingRoundingRulesTests
     public void FormulaPricing_RoundsCalculatedPricesButPreservesStoredSellingPrice()
     {
         var calculated = FormulaPriceCalculator.Calculate(
-            FormulaPricingProfile.Powder,
+            PowderPolicy(),
             materialCost: 100.6m,
             manufacturingCost: 10.25m,
             standardSellingPrice: null);
         var stored = FormulaPriceCalculator.Calculate(
-            FormulaPricingProfile.Powder,
+            PowderPolicy(),
             materialCost: 100.6m,
             manufacturingCost: 10.25m,
             standardSellingPrice: 123.456789m);
@@ -54,23 +54,36 @@ public sealed class PricingRoundingRulesTests
         Assert.Equal(123.456789m, stored.StandardSellingPrice);
     }
 
-    [Theory]
-    [InlineData("TP4909C", null)]
-    [InlineData("TP4909", "C")]
-    public void FormulaPricing_RecognizesCompoundProfileAndReturnsTierTemplatesWithoutPrices(
-        string productCode,
-        string? productAdditive)
+    [Fact]
+    public void FormulaPricing_UsesConfiguredCompoundProfileAndTierTemplates()
     {
-        var profile = FormulaPriceCalculator.ResolveProfile(productCode, productAdditive);
-        var templates = FormulaPriceCalculator.BuildPriceTierTemplates(profile);
+        var policy = new FormulaPricingPolicyDefinition(
+            FormulaPricingProfile.Compound,
+            0m,
+            0m,
+            FormulaPricingRoundingRule.Nearest,
+            1m,
+            [
+                new("< 100 kg", null, 100m, true, false, 0m, 0),
+                new("> 10 tấn", 10000m, null, false, true, 0m, 1)
+            ]);
+        var templates = FormulaPriceCalculator.BuildPriceTierTemplates(policy);
 
-        Assert.Equal(FormulaPricingProfile.Compound, profile);
-        Assert.Equal(7, templates.Count);
+        Assert.Equal(2, templates.Count);
         Assert.Equal("< 100 kg", templates[0].QuantityRangeLabel);
         Assert.Equal("> 10 tấn", templates[^1].QuantityRangeLabel);
         Assert.All(templates, tier => Assert.Null(tier.UnitPrice));
         Assert.All(templates, tier => Assert.False(tier.RequiresManualPrice));
     }
+
+    private static FormulaPricingPolicyDefinition PowderPolicy()
+        => new(
+            FormulaPricingProfile.Powder,
+            10m,
+            0m,
+            FormulaPricingRoundingRule.Nearest,
+            1m,
+            [new("All", null, null, true, true, 0m, 0)]);
 
     [Fact]
     public void NormalizePricing_PreservesUserInputAndRoundsRuleCalculatedSellingPrice()

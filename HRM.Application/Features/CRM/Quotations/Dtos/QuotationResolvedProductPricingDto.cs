@@ -6,6 +6,7 @@ namespace HRM.Application.Features.CRM.Quotations.Dtos;
 
 public sealed class QuotationResolvedProductPricingDto
 {
+    public string PricingStatus { get; init; } = "Available";
     public Guid ProductId { get; init; }
     public string ProductCode { get; init; } = string.Empty;
     public string ProductName { get; init; } = string.Empty;

@@ -263,12 +263,10 @@ internal sealed class GetQuotationProductPricingOptionsQueryHandler
         var pricingVersionsByProduct = pricingVersionRows
             .GroupBy(x => x.ProductId)
             .ToDictionary(x => x.Key, x => x.ToArray());
-        var productsWithoutPricingVersion = productIds
-            .Where(productId => !pricingVersionsByProduct.ContainsKey(productId))
-            .ToArray();
         var pricingSourcesByProduct = await _sourceQueryService.LoadAsync(
-            productsWithoutPricingVersion,
+            productIds,
             companyId,
+            request.NormalizedCurrency,
             canViewSensitivePricing,
             cancellationToken);
 
@@ -277,20 +275,16 @@ internal sealed class GetQuotationProductPricingOptionsQueryHandler
             .Where(x =>
                 x.IsActive &&
                 x.CompanyId == companyId &&
-                productsWithoutPricingVersion.Contains(x.ProductId) &&
+                productIds.Contains(x.ProductId) &&
                 ProductPricingSourceRules.EligibleFormulaStatuses.Contains(x.Status))
             .Select(x => new PricingFormula
             {
                 ProductId = x.ProductId,
-                ProductCode = x.Product.ColourCode ?? x.Product.Code ?? string.Empty,
-                ProductAdditive = x.Product.Additive,
                 FormulaId = x.FormulaId,
                 FormulaExternalId = x.ExternalId,
                 FormulaName = x.Name,
                 Status = x.Status,
                 MaterialCost = x.TotalPrice,
-                ManufacturingCost = x.ProductionPrice,
-                StandardSellingPrice = x.PresidentPrice,
                 IsSelected = x.IsSelect,
                 PricingUpdatedDate = canViewSensitivePricing ? x.UpdatedDate : null
             })
@@ -367,17 +361,6 @@ internal sealed class GetQuotationProductPricingOptionsQueryHandler
         var latestPriceByItem = await _materialPriceQueryService
             .LoadLatestItemPriceInfoDictAsync(priceRequests, cancellationToken);
 
-        var realtimeMaterialCostByFormula = materialRows
-            .GroupBy(x => x.FormulaId)
-            .ToDictionary(
-                x => x.Key,
-                x => FormulaRealtimeMaterialCostCalculator.Calculate(
-                    x.Select(y => new FormulaMaterialCostItem(
-                        y.ItemId,
-                        y.ItemType,
-                        y.Quantity)),
-                    latestPriceByItem));
-
         IReadOnlyDictionary<Guid, IReadOnlyList<QuotationProductPricingMaterialSupplierDto>>
             supplierPricesByMaterial =
                 new Dictionary<Guid, IReadOnlyList<QuotationProductPricingMaterialSupplierDto>>();
@@ -453,14 +436,19 @@ internal sealed class GetQuotationProductPricingOptionsQueryHandler
             .GroupBy(x => x.ProductId)
             .ToDictionary(
                 x => x.Key,
-                x => (IReadOnlyList<QuotationProductPricingFormulaDto>)x
-                    .Select(formula => MapFormula(
-                        formula,
-                        realtimeMaterialCostByFormula.GetValueOrDefault(formula.FormulaId)
-                            ?? new FormulaRealtimeMaterialCostResult(null, false, 0),
-                        materialsByFormula.GetValueOrDefault(formula.FormulaId) ?? [],
-                        canViewSensitivePricing))
-                    .ToList());
+                x =>
+                {
+                    var sources = pricingSourcesByProduct.GetValueOrDefault(x.Key) ?? [];
+                    return (IReadOnlyList<QuotationProductPricingFormulaDto>)x
+                        .Select(formula => MapFormula(
+                            formula,
+                            sources.FirstOrDefault(source =>
+                                source.SourceType == ProductPricingSourceType.Formula &&
+                                source.SourceId == formula.FormulaId),
+                            materialsByFormula.GetValueOrDefault(formula.FormulaId) ?? [],
+                            canViewSensitivePricing))
+                        .ToList();
+                });
 
         var items = productCandidates
             .Select(product =>
@@ -488,7 +476,9 @@ internal sealed class GetQuotationProductPricingOptionsQueryHandler
                     PricingStatus = ResolvePricingStatus(
                         versions.Length > 0,
                         currentPricing?.Status,
-                        sources.Count > 0),
+                        sources.Count > 0,
+                        sources.Any(source =>
+                            source.PricingStatus == FormulaPricingPolicyRules.PricingPolicyMissing)),
                     HasPricingVersion = versions.Length > 0,
                     CurrentPricing = currentPricing is null
                         ? null
@@ -522,8 +512,14 @@ internal sealed class GetQuotationProductPricingOptionsQueryHandler
     private static ProductPricingLookupStatus ResolvePricingStatus(
         bool hasPricingVersion,
         ProductPricingStatus? visibleStatus,
-        bool hasEligibleSource)
+        bool hasEligibleSource,
+        bool pricingPolicyMissing)
     {
+        if (pricingPolicyMissing)
+        {
+            return ProductPricingLookupStatus.PricingPolicyMissing;
+        }
+
         if (visibleStatus == ProductPricingStatus.Approved)
         {
             return ProductPricingLookupStatus.Approved;
@@ -665,57 +661,45 @@ internal sealed class GetQuotationProductPricingOptionsQueryHandler
 
     private static QuotationProductPricingFormulaDto MapFormula(
         PricingFormula formula,
-        FormulaRealtimeMaterialCostResult realtimeMaterialCost,
+        ProductPricingSourceOptionDto? source,
         IReadOnlyList<QuotationProductPricingMaterialDto> materials,
         bool canViewSensitivePricing)
     {
-        var pricing = realtimeMaterialCost.IsComplete &&
-                      realtimeMaterialCost.MaterialCost.HasValue
-            ? FormulaPriceCalculator.Calculate(
-                formula.ProductCode,
-                formula.ProductAdditive,
-                realtimeMaterialCost.MaterialCost.Value,
-                formula.ManufacturingCost,
-                formula.StandardSellingPrice)
-            : null;
-
-        var manufacturingCost = pricing?.ManufacturingCost ??
-            FormulaPriceCalculator.ResolveManufacturingCost(
-                formula.ProductCode,
-                formula.ProductAdditive,
-                formula.ManufacturingCost);
-        var standardSellingPrice =
-            pricing?.StandardSellingPrice ?? formula.StandardSellingPrice;
-
         if (!canViewSensitivePricing)
         {
             return new QuotationProductPricingFormulaDto
             {
+                PricingStatus = source?.PricingStatus ?? FormulaPricingPolicyRules.PricingPolicyMissing,
                 FormulaId = formula.FormulaId,
                 FormulaExternalId = formula.FormulaExternalId,
                 FormulaName = formula.FormulaName,
                 Status = formula.Status,
                 IsCustomerSelected = formula.IsSelected,
-                StandardSellingPrice = standardSellingPrice
+                StandardSellingPrice = source?.StandardSellingPrice,
+                SuggestedPriceTiers = source?.PriceTierTemplates ?? []
             };
         }
 
         return new QuotationProductPricingFormulaDto
         {
+            PricingStatus = source?.PricingStatus ?? FormulaPricingPolicyRules.PricingPolicyMissing,
+            FormulaPricingPolicyId = source?.FormulaPricingPolicyId,
+            FormulaPricingPolicyVersion = source?.FormulaPricingPolicyVersion,
             FormulaId = formula.FormulaId,
             FormulaExternalId = formula.FormulaExternalId,
             FormulaName = formula.FormulaName,
             Status = formula.Status,
             IsCustomerSelected = formula.IsSelected,
             MaterialCost = formula.MaterialCost,
-            RealtimeMaterialCost = realtimeMaterialCost.MaterialCost,
-            IsRealtimeMaterialCostComplete = realtimeMaterialCost.IsComplete,
-            MissingMaterialPriceCount = realtimeMaterialCost.MissingPriceCount,
-            ManufacturingCost = manufacturingCost,
-            StandardSellingPrice = standardSellingPrice,
-            ProfitMarginRate = pricing?.ProfitMarginRate,
+            RealtimeMaterialCost = source?.CurrentMaterialCost,
+            IsRealtimeMaterialCostComplete = source?.IsCurrentMaterialCostComplete,
+            MissingMaterialPriceCount = source?.MissingMaterialPriceCount,
+            ManufacturingCost = source?.ManufacturingCost,
+            StandardSellingPrice = source?.StandardSellingPrice,
+            ProfitMarginRate = source?.ProfitMarginRate,
             PricingUpdatedDate = formula.PricingUpdatedDate,
-            Pricing = pricing,
+            Pricing = source?.Pricing,
+            SuggestedPriceTiers = source?.PriceTierTemplates ?? [],
             Materials = materials
         };
     }

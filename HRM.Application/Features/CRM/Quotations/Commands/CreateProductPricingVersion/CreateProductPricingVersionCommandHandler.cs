@@ -90,6 +90,7 @@ internal sealed class CreateProductPricingVersionCommandHandler
         var sourceResult = await _sourceValidator.ValidateAsync(
             command.Request.ProductId,
             companyId,
+            currency,
             command.Request.SourceType,
             command.Request.SourceId,
             cancellationToken);

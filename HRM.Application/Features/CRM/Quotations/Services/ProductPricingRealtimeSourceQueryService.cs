@@ -4,6 +4,7 @@ using HRM.Application.Abstractions.Persistence.PLM;
 using HRM.Application.Commons.Pricing.Dtos;
 using HRM.Application.Commons.Pricing.Helpers;
 using HRM.Application.Commons.Pricing.Models;
+using HRM.Application.Commons.Pricing.Services;
 using HRM.Application.Features.CRM.Quotations.Dtos;
 using HRM.Application.Features.PLM.Formulas.Helpers;
 using HRM.Domain.Enums.CustomerEnum;
@@ -21,23 +22,27 @@ internal sealed class ProductPricingRealtimeSourceQueryService
     private readonly IPLMReadDbContext _dbContext;
     private readonly IDateTimeProvider _dateTimeProvider;
     private readonly IMaterialPriceQueryService _materialPriceQueryService;
-    private readonly FormulaPricingPolicyProvider _pricingPolicyProvider;
+    private readonly IFormulaPricingPolicyResolver _pricingPolicyResolver;
+    private readonly FormulaPricingEngine _pricingEngine;
 
     public ProductPricingRealtimeSourceQueryService(
         IPLMReadDbContext dbContext,
         IDateTimeProvider dateTimeProvider,
         IMaterialPriceQueryService materialPriceQueryService,
-        FormulaPricingPolicyProvider pricingPolicyProvider)
+        IFormulaPricingPolicyResolver pricingPolicyResolver,
+        FormulaPricingEngine pricingEngine)
     {
         _dbContext = dbContext;
         _dateTimeProvider = dateTimeProvider;
         _materialPriceQueryService = materialPriceQueryService;
-        _pricingPolicyProvider = pricingPolicyProvider;
+        _pricingPolicyResolver = pricingPolicyResolver;
+        _pricingEngine = pricingEngine;
     }
 
     public async Task<IReadOnlyDictionary<Guid, IReadOnlyList<ProductPricingSourceOptionDto>>> LoadAsync(
         IReadOnlyCollection<Guid> productIds,
         Guid companyId,
+        string currency,
         CancellationToken cancellationToken)
     {
         if (productIds.Count == 0)
@@ -53,7 +58,7 @@ internal sealed class ProductPricingRealtimeSourceQueryService
 
         var materialRows = await LoadMaterialRowsAsync(sourceRows, companyId, cancellationToken);
         var latestPriceByItem = await LoadLatestPricesAsync(materialRows, cancellationToken);
-        var pricingPolicies = await LoadPricingPoliciesAsync(companyId, cancellationToken);
+        var pricingPolicies = await LoadPricingPoliciesAsync(companyId, currency, cancellationToken);
         var materialsBySource = materialRows
             .GroupBy(x => x.SourceKey)
             .ToDictionary(
@@ -87,8 +92,11 @@ internal sealed class ProductPricingRealtimeSourceQueryService
                         realtimeCostBySource.GetValueOrDefault(x.Key)
                             ?? new FormulaRealtimeMaterialCostResult(null, false, 0),
                         materialsBySource.GetValueOrDefault(x.Key) ?? [],
-                        pricingPolicies.GetValueOrDefault(FormulaPriceCalculator.ResolveProfile(
-                            x.ProductCode, x.ProductAdditive))))
+                        x.PricingProfile.HasValue
+                            ? pricingPolicies.GetValueOrDefault(x.PricingProfile.Value)
+                            : null,
+                        companyId,
+                        currency))
                     .ToArray());
     }
 
@@ -96,6 +104,7 @@ internal sealed class ProductPricingRealtimeSourceQueryService
         LoadSelectedAsync(
             IReadOnlyCollection<ProductPricingSourceSelection> selections,
             Guid companyId,
+            string currency,
             CancellationToken cancellationToken)
     {
         var normalizedSelections = selections
@@ -121,7 +130,7 @@ internal sealed class ProductPricingRealtimeSourceQueryService
 
         var materialRows = await LoadMaterialRowsAsync(sourceRows, companyId, cancellationToken);
         var latestPriceByItem = await LoadLatestPricesAsync(materialRows, cancellationToken);
-        var pricingPolicies = await LoadPricingPoliciesAsync(companyId, cancellationToken);
+        var pricingPolicies = await LoadPricingPoliciesAsync(companyId, currency, cancellationToken);
         var materialsBySource = materialRows
             .GroupBy(x => x.SourceKey)
             .ToDictionary(
@@ -148,8 +157,11 @@ internal sealed class ProductPricingRealtimeSourceQueryService
                 realtimeCostBySource.GetValueOrDefault(x.Key)
                     ?? new FormulaRealtimeMaterialCostResult(null, false, 0),
                 materialsBySource.GetValueOrDefault(x.Key) ?? [],
-                pricingPolicies.GetValueOrDefault(FormulaPriceCalculator.ResolveProfile(
-                    x.ProductCode, x.ProductAdditive))));
+                x.PricingProfile.HasValue
+                    ? pricingPolicies.GetValueOrDefault(x.PricingProfile.Value)
+                    : null,
+                companyId,
+                currency));
     }
 
     private async Task<IReadOnlyList<SourceRow>> LoadSourceRowsAsync(
@@ -167,8 +179,7 @@ internal sealed class ProductPricingRealtimeSourceQueryService
             .Select(x => new SourceRow
             {
                 ProductId = x.ProductId,
-                ProductCode = x.Product.ColourCode ?? x.Product.Code ?? string.Empty,
-                ProductAdditive = x.Product.Additive,
+                PricingProfile = x.Product.FormulaPricingProfile,
                 SourceType = ProductPricingSourceType.Formula,
                 SourceId = x.FormulaId,
                 ExternalId = x.ExternalId,
@@ -200,8 +211,7 @@ internal sealed class ProductPricingRealtimeSourceQueryService
             .Select(x => new SourceRow
             {
                 ProductId = x.ProductId,
-                ProductCode = x.Product.ColourCode ?? x.Product.Code ?? string.Empty,
-                ProductAdditive = x.Product.Additive,
+                PricingProfile = x.Product.FormulaPricingProfile,
                 SourceType = ProductPricingSourceType.ManufacturingFormula,
                 SourceId = x.ManufacturingFormulaId!.Value,
                 ExternalId = x.ManufacturingFormula!.ExternalId,
@@ -248,8 +258,7 @@ internal sealed class ProductPricingRealtimeSourceQueryService
                 .Select(x => new SourceRow
                 {
                     ProductId = x.ProductId,
-                    ProductCode = x.Product.ColourCode ?? x.Product.Code ?? string.Empty,
-                    ProductAdditive = x.Product.Additive,
+                    PricingProfile = x.Product.FormulaPricingProfile,
                     SourceType = ProductPricingSourceType.Formula,
                     SourceId = x.FormulaId,
                     ExternalId = x.ExternalId,
@@ -278,8 +287,7 @@ internal sealed class ProductPricingRealtimeSourceQueryService
                 .Select(x => new SourceRow
                 {
                     ProductId = x.ProductId,
-                    ProductCode = x.Product.ColourCode ?? x.Product.Code ?? string.Empty,
-                    ProductAdditive = x.Product.Additive,
+                    PricingProfile = x.Product.FormulaPricingProfile,
                     SourceType = ProductPricingSourceType.ManufacturingFormula,
                     SourceId = x.ManufacturingFormulaId!.Value,
                     ExternalId = x.ManufacturingFormula!.ExternalId,
@@ -432,39 +440,44 @@ internal sealed class ProductPricingRealtimeSourceQueryService
             cancellationToken);
     }
 
-    private static ProductPricingSourceOptionDto MapSource(
+    private ProductPricingSourceOptionDto MapSource(
         SourceRow source,
         FormulaRealtimeMaterialCostResult realtimeCost,
         IReadOnlyList<QuotationProductPricingMaterialDto> materials,
-        FormulaPricingPolicyDefinition? pricingPolicy)
+        ResolvedFormulaPricingPolicy? pricingPolicy,
+        Guid companyId,
+        string currency)
     {
-        var profile = FormulaPriceCalculator.ResolveProfile(
-            source.ProductCode,
-            source.ProductAdditive);
-        var pricing = realtimeCost.IsComplete && realtimeCost.MaterialCost.HasValue
-            ? pricingPolicy is null
-                ? FormulaPriceCalculator.Calculate(
-                    profile,
-                    realtimeCost.MaterialCost.Value,
-                    source.ManufacturingCost,
-                    standardSellingPrice: null)
-                : FormulaPriceCalculator.Calculate(
-                    pricingPolicy,
-                    realtimeCost.MaterialCost.Value,
-                    source.ManufacturingCost,
-                    standardSellingPrice: null)
+        var engineResult = source.PricingProfile.HasValue && pricingPolicy is not null
+            ? _pricingEngine.CalculateResolved(
+                new PricingEngineRequest
+                {
+                    CompanyId = companyId,
+                    ProductId = source.ProductId,
+                    SourceId = source.SourceId,
+                    SourceType = source.SourceType.ToString(),
+                    Profile = source.PricingProfile,
+                    Currency = currency,
+                    MaterialCost = realtimeCost.MaterialCost,
+                    ManufacturingCostOverride = source.ManufacturingCost
+                },
+                pricingPolicy,
+                realtimeCost)
             : null;
-        var manufacturingCost = pricing?.ManufacturingCost ??
-            (source.ManufacturingCost is > 0m
-                ? source.ManufacturingCost.Value
-                : pricingPolicy?.DefaultManufacturingCost ??
-                  FormulaPriceCalculator.ResolveManufacturingCost(
-                      source.ProductCode,
-                      source.ProductAdditive,
-                      source.ManufacturingCost));
+        var resolved = engineResult is { Success: true } ? engineResult.Data : null;
+        var pricingStatus = !source.PricingProfile.HasValue || pricingPolicy is null
+            ? FormulaPricingPolicyRules.PricingPolicyMissing
+            : !realtimeCost.IsComplete
+                ? "MaterialPriceMissing"
+                : engineResult is { Success: false }
+                    ? engineResult.Message ?? "PricingInvalid"
+                    : "Available";
 
         return new ProductPricingSourceOptionDto
         {
+            PricingStatus = pricingStatus,
+            FormulaPricingPolicyId = pricingPolicy?.FormulaPricingPolicyId,
+            FormulaPricingPolicyVersion = pricingPolicy?.Version,
             SourceType = source.SourceType,
             SourceId = source.SourceId,
             ExternalId = source.ExternalId,
@@ -476,32 +489,27 @@ internal sealed class ProductPricingRealtimeSourceQueryService
             CurrentMaterialCost = realtimeCost.MaterialCost,
             IsCurrentMaterialCostComplete = realtimeCost.IsComplete,
             MissingMaterialPriceCount = realtimeCost.MissingPriceCount,
-            ManufacturingCost = manufacturingCost,
-            UsedDefaultManufacturingCost = source.ManufacturingCost is null or <= 0m,
-            StandardSellingPrice = pricing?.StandardSellingPrice,
-            ProfitMarginRate = pricing?.ProfitMarginRate,
-            PricingProfile = profile,
-            PriceTierTemplates = pricingPolicy is null
-                ? FormulaPriceCalculator.BuildPriceTierTemplates(profile)
-                : FormulaPriceCalculator.BuildPriceTierTemplates(pricingPolicy),
-            Pricing = pricing,
+            ManufacturingCost = resolved?.ManufacturingCost,
+            UsedDefaultManufacturingCost = resolved?.Calculation?.UsedDefaultManufacturingCost == true,
+            StandardSellingPrice = resolved?.StandardSellingPrice,
+            ProfitMarginRate = resolved?.ProfitMarginRate,
+            PricingProfile = source.PricingProfile,
+            PriceTierTemplates = resolved?.SuggestedTiers ?? [],
+            Pricing = resolved?.Calculation,
             UpdatedDate = source.UpdatedDate,
             Materials = materials
         };
     }
 
-    private async Task<IReadOnlyDictionary<FormulaPricingProfile, FormulaPricingPolicyDefinition>>
-        LoadPricingPoliciesAsync(Guid companyId, CancellationToken cancellationToken)
+    private async Task<IReadOnlyDictionary<FormulaPricingProfile, ResolvedFormulaPricingPolicy>>
+        LoadPricingPoliciesAsync(Guid companyId, string currency, CancellationToken cancellationToken)
     {
         var profiles = new[] { FormulaPricingProfile.Powder, FormulaPricingProfile.Compound };
-        var result = new Dictionary<FormulaPricingProfile, FormulaPricingPolicyDefinition>();
-        foreach (var profile in profiles)
-        {
-            var policy = await _pricingPolicyProvider.GetPublishedAsync(
-                companyId, profile, "VND", cancellationToken);
-            if (policy is not null) result[profile] = policy;
-        }
-        return result;
+        var normalizedCurrency = currency.Trim().ToUpperInvariant();
+        var keys = profiles.Select(profile =>
+            new FormulaPricingPolicyLookupKey(companyId, profile, normalizedCurrency));
+        var policies = await _pricingPolicyResolver.GetPublishedBatchAsync(keys, cancellationToken);
+        return policies.ToDictionary(x => x.Key.Profile, x => x.Value);
     }
 
     private static QuotationProductPricingMaterialDto MapMaterial(
@@ -544,8 +552,7 @@ internal sealed class ProductPricingRealtimeSourceQueryService
     private sealed class SourceRow
     {
         public Guid ProductId { get; init; }
-        public string ProductCode { get; init; } = string.Empty;
-        public string? ProductAdditive { get; init; }
+        public FormulaPricingProfile? PricingProfile { get; init; }
         public ProductPricingSourceType SourceType { get; init; }
         public Guid SourceId { get; init; }
         public string ExternalId { get; init; } = string.Empty;

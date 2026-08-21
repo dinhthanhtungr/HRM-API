@@ -11,5 +11,6 @@ namespace HRM.Application.Features.PLM.Formulas.Queries.GetFormulaById
     public sealed class GetFormulaByIdQuery : IRequest<FormulaInformationDto?>
     {
         public Guid FormulaId { get; set; }
+        public string Currency { get; set; } = string.Empty;
     }
 }

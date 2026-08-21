@@ -9,15 +9,11 @@ namespace HRM.Application.Features.CRM.Quotations.Queries.GetQuotationProductPri
     internal class PricingFormula
     {
         public Guid ProductId { get; init; }
-        public string ProductCode { get; init; } = string.Empty;
-        public string? ProductAdditive { get; init; }
         public Guid FormulaId { get; init; }
         public string FormulaExternalId { get; init; } = string.Empty;
         public string FormulaName { get; init; } = string.Empty;
         public string Status { get; init; } = string.Empty;
         public decimal MaterialCost { get; init; }
-        public decimal? ManufacturingCost { get; init; }
-        public decimal? StandardSellingPrice { get; init; }
         public bool IsSelected { get; init; }
         public DateTime? PricingUpdatedDate { get; init; }
     }

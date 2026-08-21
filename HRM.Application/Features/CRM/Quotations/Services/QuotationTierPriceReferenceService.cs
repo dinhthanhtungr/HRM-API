@@ -149,6 +149,7 @@ internal sealed class QuotationTierPriceReferenceService
         var sources = await _sourceQueryService.LoadAsync(
             productsWithoutStoredTiers,
             companyId,
+            currency,
             cancellationToken);
         foreach (var productId in productsWithoutStoredTiers)
         {

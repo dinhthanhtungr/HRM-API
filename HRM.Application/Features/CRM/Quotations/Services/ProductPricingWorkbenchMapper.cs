@@ -1,5 +1,4 @@
 using HRM.Application.Commons.Pricing.Dtos;
-using HRM.Application.Commons.Pricing.Helpers;
 using HRM.Application.Features.CRM.Quotations.Dtos;
 using HRM.Domain.Entities.CustomerSchema;
 using HRM.Domain.Enums.CustomerEnum;
@@ -41,7 +40,9 @@ internal static class ProductPricingWorkbenchMapper
             ProductCode = product.ProductCode,
             ProductName = product.ProductName,
             Currency = currency,
-            PricingStatus = draft is not null
+            PricingStatus = source?.PricingStatus == FormulaPricingPolicyRules.PricingPolicyMissing
+                ? ProductPricingLookupStatus.PricingPolicyMissing
+                : draft is not null
                 ? ProductPricingLookupStatus.Draft
                 : approved is not null
                     ? ProductPricingLookupStatus.Approved
@@ -92,18 +93,8 @@ internal static class ProductPricingWorkbenchMapper
         PricingVersionRow? storedPricing,
         ProductPricingSourceOptionDto? source)
     {
-        if (source?.Pricing is null ||
-            !source.IsCurrentMaterialCostComplete ||
-            !source.CurrentMaterialCost.HasValue)
-        {
-            return null;
-        }
-
-        return FormulaPriceCalculator.Calculate(
-            source.Pricing.Profile,
-            source.CurrentMaterialCost.Value,
-            storedPricing?.ManufacturingCost ?? source.ManufacturingCost,
-            storedPricing?.StandardSellingPrice);
+        // Source pricing is the canonical engine calculation. This mapper must not recalculate it.
+        return source?.Pricing;
     }
 
     public static IReadOnlyList<QuotationPricingWorkspaceTierDto> MapStoredTiers(

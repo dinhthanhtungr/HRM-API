@@ -37,4 +37,5 @@ public sealed class PricingEngineResult
     public decimal? StandardSellingPrice { get; init; }
     public decimal? ProfitMarginRate { get; init; }
     public IReadOnlyList<FormulaSuggestedPriceTierDto> SuggestedTiers { get; init; } = [];
+    public FormulaPriceCalculationDto? Calculation { get; init; }
 }

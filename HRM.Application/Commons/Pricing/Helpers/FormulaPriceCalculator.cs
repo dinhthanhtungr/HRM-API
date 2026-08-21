@@ -8,7 +8,11 @@ namespace HRM.Application.Commons.Pricing.Helpers;
 /// Tính giá bán gợi ý theo cùng một quy tắc cho PLM và báo giá.
 /// Kết quả chỉ là preview; báo giá vẫn phải lưu snapshot giá được chọn.
 /// </summary>
-public static class FormulaPriceCalculator
+/// <summary>
+/// Compatibility calculator for read/write call-sites that have not yet moved to policy-based pricing.
+/// New code must use <see cref="FormulaPriceCalculator"/>.
+/// </summary>
+public static class LegacyFormulaPriceCalculator
 {
     private const decimal DefaultPowderManufacturingCost = 10_000m;
     private const decimal DefaultCompoundManufacturingCost = 20_000m;

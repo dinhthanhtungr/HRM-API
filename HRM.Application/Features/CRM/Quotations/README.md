@@ -1238,7 +1238,28 @@ Nếu một notification thuộc báo giá bị hiển thị ở mục khác, ki
 4. Payload có `relatedType = Quotation`, `relatedId`, `relatedExternalId`, `conversationId` chưa.
 5. Conversation có `RelatedType = Quotation` và `RelatedId = quotationId` chưa.
 
-## 14. Giới hạn hiện tại
+## 14. Contract đọc giá thống nhất
+
+Các API Workbench list/drawer, Quotation Pricing Workspace, Product Pricing Options,
+`GET /products/{productId}/pricing`, pricing comparison và PLM Formula detail dùng cùng
+`FormulaPricingEngine` và cùng canonical source result. Mapper chỉ map response, không gọi calculator.
+
+Mọi request realtime phải truyền currency. Resolver lấy policy `Published`, active, đúng
+`companyId + Product.FormulaPricingProfile + currency` và đã tới `EffectiveFrom`; không suy profile từ
+mã sản phẩm/`Additive`, không fallback `VND`, policy hoặc tier hard-code. Cùng product/source/currency sẽ trả
+cùng standard selling price và suggested tiers ở list, drawer, workspace và PLM.
+
+Khi không resolve được policy, source trả `pricing = null` và `pricingStatus = PricingPolicyMissing`.
+Khi thiếu giá material, source trả `pricing = null` và `pricingStatus = MaterialPriceMissing`.
+Policy id/version được trả cùng kết quả để client biết chính xác cấu hình đã dùng.
+
+Visibility giữ nguyên theo role:
+
+- Sale chỉ nhận metadata nguồn, standard selling price và tiers.
+- President/Developer nhận thêm material completeness, cost, margin, material/supplier details và history.
+- Quotation detail và PDF tiếp tục đọc snapshot, không tính realtime.
+
+## 15. Giới hạn hiện tại
 
 Chưa có:
 

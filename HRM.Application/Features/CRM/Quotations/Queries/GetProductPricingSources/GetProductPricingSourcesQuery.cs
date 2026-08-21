@@ -4,5 +4,5 @@ using MediatR;
 
 namespace HRM.Application.Features.CRM.Quotations.Queries.GetProductPricingSources;
 
-public sealed record GetProductPricingSourcesQuery(Guid ProductId)
+public sealed record GetProductPricingSourcesQuery(Guid ProductId, string Currency)
     : IRequest<OperationResult<IReadOnlyList<ProductPricingSourceOptionDto>>>;

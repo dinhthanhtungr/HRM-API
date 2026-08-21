@@ -158,6 +158,7 @@ internal sealed class GetProductPricingWorkbenchQueryHandler
         var storedSources = await _sourceQueryService.LoadSelectedAsync(
             storedSelections,
             companyId,
+            request.NormalizedCurrency,
             cancellationToken);
         var productsWithoutStoredPricing = currentByProduct
             .Where(x => x.Value.Preferred is null)
@@ -166,6 +167,7 @@ internal sealed class GetProductPricingWorkbenchQueryHandler
         var fallbackSources = await _sourceQueryService.LoadAsync(
             productsWithoutStoredPricing,
             companyId,
+            request.NormalizedCurrency,
             cancellationToken);
 
         var items = pageProducts

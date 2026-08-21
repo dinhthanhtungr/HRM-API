@@ -6,5 +6,6 @@ public enum ProductPricingLookupStatus
     WaitingForPricing = 10,
     WaitingForApproval = 20,
     Draft = 30,
-    Approved = 40
+    Approved = 40,
+    PricingPolicyMissing = 50
 }

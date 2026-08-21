@@ -1,4 +1,5 @@
 using HRM.Application.Commons.Pricing.Helpers;
+using HRM.Application.Commons.Pricing.Models;
 using HRM.Application.Features.CRM.Quotations.Dtos;
 using HRM.Application.Features.CRM.Quotations.Queries.GetProductPricingWorkbench;
 using HRM.Application.Features.CRM.Quotations.Services;
@@ -32,8 +33,13 @@ public sealed class ProductPricingWorkbenchMapperTests
             CreatedDate = new DateTime(2026, 8, 18)
         };
         var pricing = FormulaPriceCalculator.Calculate(
-            "TP4909",
-            null,
+            new FormulaPricingPolicyDefinition(
+                HRM.Domain.Enums.Formulas.FormulaPricingProfile.Powder,
+                10m,
+                10m,
+                FormulaPricingRoundingRule.Nearest,
+                1m,
+                []),
             120m,
             10m,
             null);
@@ -80,6 +86,7 @@ public sealed class ProductPricingWorkbenchMapperTests
         Assert.Equal(10m, result.ProfitMarginRate);
         Assert.Equal(1, result.WaitingQuotationCount);
         Assert.Equal(ProductPricingLookupStatus.Draft, result.PricingStatus);
+        Assert.Same(pricing, ProductPricingWorkbenchMapper.BuildEffectivePricing(draft, source));
     }
 
     [Fact]
@@ -138,5 +145,29 @@ public sealed class ProductPricingWorkbenchMapperTests
         Assert.True(result.IsSystemCalculatedDraft);
         Assert.Null(result.DraftPricingVersionId);
         Assert.Null(result.ApprovedPricingVersionId);
+    }
+
+    [Fact]
+    public void MapSummary_ReportsPricingPolicyMissingWithoutSnapshotFallback()
+    {
+        var result = ProductPricingWorkbenchMapper.MapSummary(
+            new ProductRow { ProductId = Guid.NewGuid() },
+            "USD",
+            draft: null,
+            approved: null,
+            new ProductPricingSourceOptionDto
+            {
+                SourceType = ProductPricingSourceType.Formula,
+                SourceId = Guid.NewGuid(),
+                PricingStatus = FormulaPricingPolicyRules.PricingPolicyMissing,
+                Pricing = null
+            },
+            requests: []);
+
+        Assert.Equal(ProductPricingLookupStatus.PricingPolicyMissing, result.PricingStatus);
+        Assert.Null(ProductPricingWorkbenchMapper.BuildEffectivePricing(null, new ProductPricingSourceOptionDto
+        {
+            PricingStatus = FormulaPricingPolicyRules.PricingPolicyMissing
+        }));
     }
 }

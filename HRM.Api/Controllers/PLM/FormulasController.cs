@@ -58,11 +58,13 @@ public sealed class FormulasController : ControllerBase
     [Authorize(Policy = PlmPolicies.ViewFormulaDetail)]
     public async Task<IActionResult> GetById(
         Guid formulaId,
+        [FromQuery] string currency,
         CancellationToken cancellationToken)
     {
         var result = await _sender.Send(new GetFormulaByIdQuery
         {
-            FormulaId = formulaId
+            FormulaId = formulaId,
+            Currency = currency
         }, cancellationToken);
 
         return result is null

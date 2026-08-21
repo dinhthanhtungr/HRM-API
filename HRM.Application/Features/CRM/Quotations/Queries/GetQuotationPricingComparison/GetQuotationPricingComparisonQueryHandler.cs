@@ -17,15 +17,18 @@ internal sealed class GetQuotationPricingComparisonQueryHandler
     private readonly ICRMReadDbContext _dbContext;
     private readonly ICustomerVisibilityService _visibilityService;
     private readonly IDateTimeProvider _dateTimeProvider;
+    private readonly QuotationCurrentPricingResolver _pricingResolver;
 
     public GetQuotationPricingComparisonQueryHandler(
         ICRMReadDbContext dbContext,
         ICustomerVisibilityService visibilityService,
-        IDateTimeProvider dateTimeProvider)
+        IDateTimeProvider dateTimeProvider,
+        QuotationCurrentPricingResolver pricingResolver)
     {
         _dbContext = dbContext;
         _visibilityService = visibilityService;
         _dateTimeProvider = dateTimeProvider;
+        _pricingResolver = pricingResolver;
     }
 
     public async Task<OperationResult<QuotationPricingComparisonDto>> Handle(
@@ -106,10 +109,16 @@ internal sealed class GetQuotationPricingComparisonQueryHandler
         var currentPricingByProductId = approvedRows
             .GroupBy(x => x.ProductId)
             .ToDictionary(x => x.Key, x => x.First());
+        var realtimePricingByProductId = await _pricingResolver.ResolveAsync(
+            productIds,
+            scope.CompanyId,
+            quotation.Currency,
+            cancellationToken);
         var lines = quotation.Lines
             .Select(line => BuildLineComparison(
                 line,
-                currentPricingByProductId.GetValueOrDefault(line.ProductId)))
+                currentPricingByProductId.GetValueOrDefault(line.ProductId),
+                realtimePricingByProductId.GetValueOrDefault(line.ProductId)))
             .ToList();
 
         return OperationResult<QuotationPricingComparisonDto>.Ok(
@@ -123,9 +132,10 @@ internal sealed class GetQuotationPricingComparisonQueryHandler
 
     private static QuotationLinePricingComparisonDto BuildLineComparison(
         PricingComparisonLine line,
-        HRM.Domain.Entities.CustomerSchema.ProductPricingVersion? current)
+        HRM.Domain.Entities.CustomerSchema.ProductPricingVersion? approved,
+        QuotationCurrentProductPricing? current)
     {
-        var currentTiers = current?.PriceTiers
+        var currentTiers = current?.Pricing?.SuggestedPriceTiers
             .OrderBy(x => x.SortOrder)
             .Select(x => new QuotationCurrentPriceTierDto
             {
@@ -135,15 +145,21 @@ internal sealed class GetQuotationPricingComparisonQueryHandler
                 MinInclusive = x.MinInclusive,
                 MaxInclusive = x.MaxInclusive,
                 UnitPrice = x.UnitPrice,
-                RequiresManualPrice = false,
+                RequiresManualPrice = x.RequiresManualPrice,
                 SortOrder = x.SortOrder
             })
             .ToList() ?? [];
         var status = current is null
-            ? QuotationCurrentPricingStatus.ApprovedPricingNotFound
-            : currentTiers.Count == 0
-                ? QuotationCurrentPricingStatus.ManualTierPriceRequired
-                : QuotationCurrentPricingStatus.Available;
+            ? QuotationCurrentPricingStatus.ProductNotFound
+            : current.PricingStatus == FormulaPricingPolicyRules.PricingPolicyMissing
+                ? QuotationCurrentPricingStatus.PricingPolicyMissing
+                : current.PricingStatus == "FormulaNotFound"
+                    ? QuotationCurrentPricingStatus.FormulaNotFound
+                : !current.RealtimeMaterialCost.IsComplete
+                    ? QuotationCurrentPricingStatus.MaterialPriceMissing
+                    : currentTiers.Any(x => x.RequiresManualPrice)
+                        ? QuotationCurrentPricingStatus.ManualTierPriceRequired
+                        : QuotationCurrentPricingStatus.Available;
         var isComplete = status == QuotationCurrentPricingStatus.Available;
 
         return new QuotationLinePricingComparisonDto
@@ -155,17 +171,17 @@ internal sealed class GetQuotationPricingComparisonQueryHandler
             SavedPriceMode = line.PriceMode,
             SavedUnitPrice = line.UnitPrice,
             SavedPriceTiers = line.PriceTiers,
-            CurrentProductPricingVersionId = current?.ProductPricingVersionId,
-            CurrentProductPricingVersion = current?.Version,
-            IsUsingLatestApprovedPricing = current is not null &&
-                line.ProductPricingVersionId == current.ProductPricingVersionId,
-            FormulaId = current?.SourceFormulaId,
-            FormulaExternalId = current?.FormulaExternalIdSnapshot,
-            FormulaName = current?.SourceFormula?.Name,
-            FormulaSelectionSource = null,
+            CurrentProductPricingVersionId = approved?.ProductPricingVersionId,
+            CurrentProductPricingVersion = approved?.Version,
+            IsUsingLatestApprovedPricing = approved is not null &&
+                line.ProductPricingVersionId == approved.ProductPricingVersionId,
+            FormulaId = current?.FormulaId,
+            FormulaExternalId = current?.FormulaExternalId,
+            FormulaName = current?.FormulaName,
+            FormulaSelectionSource = current?.FormulaSelectionSource,
             CurrentPricingStatus = status,
             IsCurrentPricingComplete = isComplete,
-            MissingMaterialPriceCount = 0,
+            MissingMaterialPriceCount = current?.RealtimeMaterialCost.MissingPriceCount ?? 0,
             CurrentPriceTiers = currentTiers,
             HasDifference = isComplete
                 ? HasTierDifference(line.PriceTiers, currentTiers)

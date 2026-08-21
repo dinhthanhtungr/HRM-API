@@ -314,33 +314,28 @@ do đó màn hình tra cứu và màn hình chỉnh sửa dùng chung một kế
 
 ## Quy tắc tính giá dùng chung
 
-Rule nằm tại `FormulaPriceCalculator` trong Application và được dùng chung cho PLM/CRM:
+PLM và CRM dùng cùng `FormulaPricingEngine`. Profile không còn được suy từ mã sản phẩm hoặc `Additive`;
+engine chỉ dùng `Product.FormulaPricingProfile` đã cấu hình tường minh. Policy được resolve theo
+`companyId + profile + currency`, phải ở trạng thái `Published`, active và đã tới `EffectiveFrom`.
 
-1. Profile là `Compound` khi `Product.Additive = C` hoặc mã sản phẩm kết thúc bằng `C`; trường hợp còn lại là `Powder`.
-2. Nếu `Formula.ProductionPrice` không có hoặc không lớn hơn 0, chi phí sản xuất mặc định là `20.000`
-   cho Compound và `10.000` cho Powder.
-3. `costBase = realtimeMaterialCost + manufacturingCost`; không dùng
-   `Formula.TotalPrice`.
-4. `standardSellingPrice = Formula.PresidentPrice ?? costBase`.
-5. `profitMarginRate = (standardSellingPrice - costBase) / costBase * 100`.
-6. Suggested price tiers lấy `standardSellingPrice` làm giá nền.
-7. Compound áp dụng offset lần lượt `+100.000`, `+50.000`, `+25.000`, `+10.000`, `0`, `-500`, `-1.000`.
-8. Powder áp dụng offset lần lượt `+50.000`, `+20.000`, `0`, `-1.000`, `-2.000`, `-3.000`;
-   bậc trên 5 tấn cần báo giá thủ công nên trả `unitPrice = null` và `requiresManualPrice = true`.
+Default manufacturing cost, default profit margin, cách làm tròn và toàn bộ tier/price offset đều lấy từ
+policy DB. `FormulaPriceCalculator` là hàm thuần chỉ nhận `FormulaPricingPolicyDefinition`; calculator không
+chứa profile tiers, currency hoặc default price. Tier có `priceOffset = null` trả `unitPrice = null` và
+`requiresManualPrice = true`.
 
-Giá gợi ý không được âm và được làm tròn 6 chữ số thập phân. Tỷ suất được làm tròn 4 chữ số.
-Đây là giá preview; khi lập báo giá, giá được chọn vẫn phải được lưu snapshot vào dòng/bậc giá báo giá.
+Không có policy phù hợp thì `pricing = null`, `pricingStatus = PricingPolicyMissing`; không fallback sang
+luật hard-code. Thiếu ít nhất một giá material thì `pricing = null`, `pricingStatus = MaterialPriceMissing`.
+Giá được chọn để lập báo giá vẫn phải lưu snapshot vào dòng/bậc giá báo giá.
 
 ## Ghi chú riêng cho API chi tiết công thức
 
-`GET /api/v1/plm/formulas/{formulaId}` không trả `materialCost` snapshot. API này trả `realtimeMaterialCost`,
+`GET /api/v1/plm/formulas/{formulaId}?currency=VND` yêu cầu currency và không trả `materialCost` snapshot. API này trả `realtimeMaterialCost`,
 `isRealtimeMaterialCostComplete`, `missingMaterialPriceCount`, `manufacturingCost`, `standardSellingPrice`,
-`profitMarginRate` và `pricing`.
+`profitMarginRate`, policy id/version, `suggestedPriceTiers`, `pricingStatus` và `pricing`.
 
-Nếu một dòng NVL/sản phẩm không có latest price hoặc latest price là `null`, backend coi giá đó là `0` để tính
-`realtimeMaterialCost` và toàn bộ block `pricing`. Dòng thiếu giá vẫn trả `hasLatestPrice = false`,
-`latestUnitPrice = 0`, `latestTotalPrice = 0` để FE cảnh báo thiếu giá nguồn. Rule thiếu giá bằng `0` này chỉ áp dụng
-cho API chi tiết công thức, không đổi contract của API tra cứu báo giá.
+Nếu một dòng NVL/sản phẩm không có latest price hoặc latest price là `null`, dòng đó trả
+`hasLatestPrice = false`, `latestUnitPrice = 0`, `latestTotalPrice = 0` để FE cảnh báo; nhưng engine đánh dấu
+material cost không đầy đủ và không tạo block `pricing`.
 
 Các dòng `materials[]` của API chi tiết công thức trả thêm `hasLatestPrice`, `latestUnitPrice`, `latestTotalPrice`,
 `latestPriceDate`, `latestPriceSource` và `supplierPrices`. User không thuộc `ApplicationRoleSets.PLM.FormulaPriceViewers`

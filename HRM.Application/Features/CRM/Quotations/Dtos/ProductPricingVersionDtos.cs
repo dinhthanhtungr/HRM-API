@@ -99,6 +99,10 @@ public sealed class ProductPricingVersionDto
 
 public sealed class ProductPricingSourceOptionDto
 {
+    public string PricingStatus { get; init; } = "Available";
+    public Guid? FormulaPricingPolicyId { get; init; }
+    public int? FormulaPricingPolicyVersion { get; init; }
+
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public ProductPricingSourceType SourceType { get; init; }
 

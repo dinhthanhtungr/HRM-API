@@ -135,7 +135,7 @@ internal sealed class PatchFormulaPricingCommandHandler
         else if (profitMarginRate.HasValue)
         {
             var calculatedStandardSellingPrice =
-                FormulaPriceCalculator.CalculateStandardSellingPrice(
+                LegacyFormulaPriceCalculator.CalculateStandardSellingPrice(
                     formula.Product.ColourCode ?? formula.Product.Code,
                     formula.Product.Additive,
                     calculationMaterialCost,
@@ -180,7 +180,7 @@ internal sealed class PatchFormulaPricingCommandHandler
 
         var pricing = realtimeMaterialCost.IsComplete &&
                       realtimeMaterialCost.MaterialCost.HasValue
-            ? FormulaPriceCalculator.Calculate(
+            ? LegacyFormulaPriceCalculator.Calculate(
                 formula.Product.ColourCode ?? formula.Product.Code,
                 formula.Product.Additive,
                 calculationMaterialCost,
@@ -188,7 +188,7 @@ internal sealed class PatchFormulaPricingCommandHandler
                 formula.PresidentPrice)
             : null;
         var manufacturingCostResult = pricing?.ManufacturingCost ??
-            FormulaPriceCalculator.ResolveManufacturingCost(
+            LegacyFormulaPriceCalculator.ResolveManufacturingCost(
                 formula.Product.ColourCode ?? formula.Product.Code,
                 formula.Product.Additive,
                 formula.ProductionPrice);

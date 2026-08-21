@@ -35,6 +35,9 @@ public sealed class QuotationProductPricingOptionDto
 
 public sealed class QuotationProductPricingFormulaDto
 {
+    public string PricingStatus { get; init; } = "Available";
+    public Guid? FormulaPricingPolicyId { get; init; }
+    public int? FormulaPricingPolicyVersion { get; init; }
     public Guid FormulaId { get; init; }
     public string FormulaExternalId { get; init; } = string.Empty;
     public string FormulaName { get; init; } = string.Empty;
@@ -52,6 +55,7 @@ public sealed class QuotationProductPricingFormulaDto
 
     public DateTime? PricingUpdatedDate { get; init; }
     public FormulaPriceCalculationDto? Pricing { get; init; }
+    public IReadOnlyList<FormulaSuggestedPriceTierDto> SuggestedPriceTiers { get; init; } = [];
 
     public IReadOnlyList<QuotationProductPricingMaterialDto>? Materials { get; init; }
 }

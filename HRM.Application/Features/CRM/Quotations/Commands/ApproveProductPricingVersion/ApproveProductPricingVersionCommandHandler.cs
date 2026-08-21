@@ -78,6 +78,7 @@ internal sealed class ApproveProductPricingVersionCommandHandler
         var sourceResult = await _sourceValidator.ValidateAsync(
             entity.ProductId,
             companyId,
+            entity.Currency,
             sourceType,
             sourceId,
             cancellationToken);

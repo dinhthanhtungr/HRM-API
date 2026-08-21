@@ -1,9 +1,12 @@
 using HRM.Application.Abstractions.Commons.Pricing;
 using HRM.Application.Abstractions.Persistence.PLM;
+using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Authorization.PLM;
 using HRM.Application.Commons.Pricing.Dtos;
 using HRM.Application.Commons.Pricing.Helpers;
 using HRM.Application.Commons.Pricing.Models;
+using HRM.Application.Commons.Pricing.Services;
+using HRM.Application.Features.CRM.Quotations.Services;
 using HRM.Application.Features.PLM.Formulas.Dtos.Commons;
 using HRM.Application.Features.PLM.Formulas.Helpers;
 using HRM.Domain.Enums.Formulas;
@@ -18,22 +21,30 @@ internal sealed class GetFormulaByIdQueryHandler
     private readonly IPLMReadDbContext _dbContext;
     private readonly IPLMFieldVisibilityService _fieldVisibility;
     private readonly IMaterialPriceQueryService _materialPriceQueryService;
+    private readonly FormulaPricingEngine _pricingEngine;
+    private readonly ICurrentUser _currentUser;
 
     public GetFormulaByIdQueryHandler(
         IPLMReadDbContext dbContext,
         IPLMFieldVisibilityService fieldVisibility,
-        IMaterialPriceQueryService materialPriceQueryService)
+        IMaterialPriceQueryService materialPriceQueryService,
+        FormulaPricingEngine pricingEngine,
+        ICurrentUser currentUser)
     {
         _dbContext = dbContext;
         _fieldVisibility = fieldVisibility;
         _materialPriceQueryService = materialPriceQueryService;
+        _pricingEngine = pricingEngine;
+        _currentUser = currentUser;
     }
 
     public async Task<FormulaInformationDto?> Handle(
         GetFormulaByIdQuery request,
         CancellationToken cancellationToken)
     {
-        if (request.FormulaId == Guid.Empty)
+        if (request.FormulaId == Guid.Empty ||
+            _currentUser.CompanyId is not { } companyId ||
+            companyId == Guid.Empty)
         {
             return null;
         }
@@ -42,7 +53,9 @@ internal sealed class GetFormulaByIdQueryHandler
 
         var formula = await _dbContext.Formulas
             .AsNoTracking()
-            .Where(x => x.FormulaId == request.FormulaId && x.IsActive)
+            .Where(x => x.FormulaId == request.FormulaId &&
+                        x.CompanyId == companyId &&
+                        x.IsActive)
             .Select(x => new
             {
                 x.FormulaId,
@@ -69,8 +82,8 @@ internal sealed class GetFormulaByIdQueryHandler
                 x.IsActive,
                 Note = x.Note ?? string.Empty,
                 x.CreatedDate,
-                ProductCode = x.Product.ColourCode ?? x.Product.Code ?? string.Empty,
-                ProductAdditive = x.Product.Additive
+                x.ProductId,
+                x.Product.FormulaPricingProfile
             })
             .FirstOrDefaultAsync(cancellationToken);
 
@@ -163,14 +176,36 @@ internal sealed class GetFormulaByIdQueryHandler
             ? materials.Count > 0 && missingMaterialPriceCount == 0
             : (bool?)null;
 
-        var pricing = canViewFormulaPrices
-            ? FormulaPriceCalculator.Calculate(
-                formula.ProductCode,
-                formula.ProductAdditive,
-                realtimeMaterialCost ?? 0m,
-                formula.ProductionPrice,
-                formula.PresidentPrice)
+        var engineResult = canViewFormulaPrices
+            ? await _pricingEngine.ResolveAsync(
+                new PricingEngineRequest
+                {
+                    CompanyId = formula.CompanyId ?? Guid.Empty,
+                    ProductId = formula.ProductId,
+                    SourceId = formula.FormulaId,
+                    SourceType = "Formula",
+                    Profile = formula.FormulaPricingProfile,
+                    Currency = request.Currency,
+                    MaterialCost = isRealtimeMaterialCostComplete == true
+                        ? realtimeMaterialCost
+                        : null,
+                    MaterialItems = materials.Select(material => new FormulaMaterialCostItem(
+                        material.ItemId == Guid.Empty ? null : material.ItemId,
+                        material.ItemType,
+                        material.Quantity)).ToArray(),
+                    ManufacturingCostOverride = formula.ProductionPrice,
+                    StandardSellingPrice = formula.PresidentPrice
+                }, cancellationToken)
             : null;
+        var enginePricing = engineResult is { Success: true } ? engineResult.Data : null;
+        var pricingStatus = !canViewFormulaPrices
+            ? "Hidden"
+            : engineResult is { Success: false }
+                ? engineResult.Message ?? FormulaPricingPolicyRules.PricingPolicyMissing
+                : enginePricing?.IsMaterialCostComplete == true
+                    ? "Available"
+                    : "MaterialPriceMissing";
+        var pricing = enginePricing?.Calculation;
 
         return new FormulaInformationDto
         {
@@ -198,6 +233,10 @@ internal sealed class GetFormulaByIdQueryHandler
             ManufacturingCost = pricing?.ManufacturingCost,
             StandardSellingPrice = pricing?.StandardSellingPrice,
             ProfitMarginRate = pricing?.ProfitMarginRate,
+            PricingStatus = pricingStatus,
+            FormulaPricingPolicyId = enginePricing?.FormulaPricingPolicyId,
+            FormulaPricingPolicyVersion = enginePricing?.FormulaPricingPolicyVersion,
+            SuggestedPriceTiers = enginePricing?.SuggestedTiers ?? [],
             Pricing = pricing,
 
             IsSelect = formula.IsSelect,

@@ -47,7 +47,14 @@ internal sealed class GetQuotationProductPricingQueryHandler
                 "Current user does not have a company context.");
         }
 
-        var currency = QuotationRules.TrimToNull(request.Currency)?.ToUpperInvariant() ?? "VND";
+        var normalizedCurrency = QuotationRules.TrimToNull(request.Currency);
+        if (normalizedCurrency is null)
+        {
+            return OperationResult<QuotationResolvedProductPricingDto>.Fail(
+                "Currency is required.");
+        }
+
+        var currency = normalizedCurrency.ToUpperInvariant();
         if (currency.Length > QuotationRules.MaximumCurrencyLength)
         {
             return OperationResult<QuotationResolvedProductPricingDto>.Fail(
@@ -72,6 +79,7 @@ internal sealed class GetQuotationProductPricingQueryHandler
         var resolvedByProductId = await _pricingResolver.ResolveAsync(
             [request.ProductId],
             companyId,
+            currency,
             cancellationToken);
         if (!resolvedByProductId.TryGetValue(request.ProductId, out var current))
         {
@@ -86,6 +94,7 @@ internal sealed class GetQuotationProductPricingQueryHandler
         return OperationResult<QuotationResolvedProductPricingDto>.Ok(
             new QuotationResolvedProductPricingDto
             {
+                PricingStatus = current.PricingStatus,
                 ProductId = current.ProductId,
                 ProductCode = current.ProductCode,
                 ProductName = current.ProductName,
@@ -131,11 +140,11 @@ internal sealed class GetQuotationProductPricingQueryHandler
                     ? current.RealtimeMaterialCost.MissingPriceCount
                     : null,
                 ManufacturingCost = canViewSensitivePricing
-                    ? approved?.ManufacturingCost ?? current.ManufacturingCost
+                    ? current.ManufacturingCost
                     : null,
-                StandardSellingPrice = approved?.StandardSellingPrice,
+                StandardSellingPrice = current.StandardSellingPrice,
                 ProfitMarginRate = canViewSensitivePricing
-                    ? approved?.ProfitMarginRate
+                    ? current.Pricing?.ProfitMarginRate
                     : null,
                 PricingUpdatedDate = canViewSensitivePricing
                     ? approved?.UpdatedDate ?? approved?.CreatedDate ?? current.PricingUpdatedDate

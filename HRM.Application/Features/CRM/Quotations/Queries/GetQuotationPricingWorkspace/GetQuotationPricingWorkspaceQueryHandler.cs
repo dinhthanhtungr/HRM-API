@@ -83,8 +83,9 @@ internal sealed class GetQuotationPricingWorkspaceQueryHandler
         var sourcesByProduct = await _sourceQueryService.LoadAsync(
             productIds,
             companyId,
+            quotation.Currency,
             includeSensitivePricing: true,
-            cancellationToken);
+            cancellationToken: cancellationToken);
 
         var draftByProduct = LatestByProduct(
             pricingVersions,
@@ -261,18 +262,9 @@ internal sealed class GetQuotationPricingWorkspaceQueryHandler
         ProductPricingVersion? storedPricing,
         ProductPricingSourceOptionDto? source)
     {
-        if (source?.Pricing is null ||
-            !source.IsCurrentMaterialCostComplete ||
-            !source.CurrentMaterialCost.HasValue)
-        {
-            return null;
-        }
-
-        return FormulaPriceCalculator.Calculate(
-            source.Pricing.Profile,
-            source.CurrentMaterialCost.Value,
-            storedPricing?.ManufacturingCost ?? source.ManufacturingCost,
-            storedPricing?.StandardSellingPrice);
+        // The source resolver owns the canonical calculation. Stored versions are
+        // snapshots and must not trigger a second calculation in a read handler.
+        return source?.Pricing;
     }
 
     private static IReadOnlyList<QuotationPricingWorkspaceTierDto> MapStoredTiers(

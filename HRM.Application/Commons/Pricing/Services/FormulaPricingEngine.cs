@@ -34,13 +34,23 @@ public sealed class FormulaPricingEngine(
             return OperationResult<PricingEngineResult>.Fail("PricingPolicyMissing");
 
         var realtime = await ResolveMaterialCostAsync(request, cancellationToken);
+        return CalculateResolved(request, policy, realtime);
+    }
+
+    public OperationResult<PricingEngineResult> CalculateResolved(
+        PricingEngineRequest request,
+        ResolvedFormulaPricingPolicy policy,
+        FormulaRealtimeMaterialCostResult realtime)
+    {
+        var profile = request.Profile!.Value;
+        var currency = request.Currency.Trim().ToUpperInvariant();
         if (!realtime.IsComplete || !realtime.MaterialCost.HasValue)
             return OperationResult<PricingEngineResult>.Ok(new PricingEngineResult
             {
                 FormulaPricingPolicyId = policy.FormulaPricingPolicyId,
                 FormulaPricingPolicyVersion = policy.Version,
                 Profile = profile,
-                Currency = key.Currency,
+                Currency = currency,
                 ProductId = request.ProductId,
                 SourceId = request.SourceId,
                 SourceType = request.SourceType,
@@ -66,7 +76,7 @@ public sealed class FormulaPricingEngine(
             FormulaPricingPolicyId = policy.FormulaPricingPolicyId,
             FormulaPricingPolicyVersion = policy.Version,
             Profile = profile,
-            Currency = key.Currency,
+            Currency = currency,
             ProductId = request.ProductId,
             SourceId = request.SourceId,
             SourceType = request.SourceType,
@@ -76,7 +86,8 @@ public sealed class FormulaPricingEngine(
             CostBase = calculation.CostBase,
             StandardSellingPrice = calculation.StandardSellingPrice,
             ProfitMarginRate = calculation.ProfitMarginRate,
-            SuggestedTiers = calculation.SuggestedPriceTiers
+            SuggestedTiers = calculation.SuggestedPriceTiers,
+            Calculation = calculation
         });
     }
 

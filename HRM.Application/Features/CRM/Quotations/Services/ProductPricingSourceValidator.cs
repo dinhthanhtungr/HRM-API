@@ -15,6 +15,7 @@ internal sealed class ProductPricingSourceValidator
     public async Task<OperationResult<ProductPricingSourceSnapshot>> ValidateAsync(
         Guid productId,
         Guid companyId,
+        string currency,
         ProductPricingSourceType sourceType,
         Guid sourceId,
         CancellationToken cancellationToken)
@@ -28,8 +29,9 @@ internal sealed class ProductPricingSourceValidator
         var sourcesByProduct = await _sourceQueryService.LoadAsync(
             [productId],
             companyId,
+            currency,
             includeSensitivePricing: true,
-            cancellationToken);
+            cancellationToken: cancellationToken);
         var source = sourcesByProduct.GetValueOrDefault(productId)?
             .FirstOrDefault(x => x.SourceType == sourceType && x.SourceId == sourceId);
         if (source is null)

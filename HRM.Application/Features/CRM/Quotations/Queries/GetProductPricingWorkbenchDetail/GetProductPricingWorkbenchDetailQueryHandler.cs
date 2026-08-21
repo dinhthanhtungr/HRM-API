@@ -128,6 +128,7 @@ internal sealed class GetProductPricingWorkbenchDetailQueryHandler
             var eligibleSources = await _sourceQueryService.LoadAsync(
                 [request.ProductId],
                 companyId,
+                request.NormalizedCurrency,
                 cancellationToken);
 
             selectedSource = eligibleSources.GetValueOrDefault(request.ProductId)?
@@ -145,6 +146,7 @@ internal sealed class GetProductPricingWorkbenchDetailQueryHandler
             var selectedSources = await _sourceQueryService.LoadSelectedAsync(
                 [selection],
                 companyId,
+                request.NormalizedCurrency,
                 cancellationToken);
             selectedSource = selectedSources.GetValueOrDefault(selection);
         }
@@ -153,6 +155,7 @@ internal sealed class GetProductPricingWorkbenchDetailQueryHandler
             var eligibleSources = await _sourceQueryService.LoadAsync(
                 [request.ProductId],
                 companyId,
+                request.NormalizedCurrency,
                 cancellationToken);
             selectedSource = ProductPricingWorkbenchSourceSelector.ChooseFallback(
                 eligibleSources.GetValueOrDefault(request.ProductId) ?? []);

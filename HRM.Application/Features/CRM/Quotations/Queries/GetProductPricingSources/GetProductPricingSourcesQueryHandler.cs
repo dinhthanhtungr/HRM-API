@@ -37,6 +37,7 @@ internal sealed class GetProductPricingSourcesQueryHandler
         }
 
         if (request.ProductId == Guid.Empty ||
+            string.IsNullOrWhiteSpace(request.Currency) ||
             _currentUser.CompanyId is not { } companyId ||
             companyId == Guid.Empty)
         {
@@ -60,8 +61,9 @@ internal sealed class GetProductPricingSourcesQueryHandler
         var sourcesByProduct = await _sourceQueryService.LoadAsync(
             [request.ProductId],
             companyId,
+            request.Currency.Trim().ToUpperInvariant(),
             includeSensitivePricing: true,
-            cancellationToken);
+            cancellationToken: cancellationToken);
 
         return OperationResult<IReadOnlyList<ProductPricingSourceOptionDto>>.Ok(
             sourcesByProduct.GetValueOrDefault(request.ProductId) ?? []);

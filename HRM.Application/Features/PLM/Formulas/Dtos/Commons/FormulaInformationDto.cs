@@ -32,6 +32,10 @@ namespace HRM.Application.Features.PLM.Formulas.Dtos.Commons
         public decimal? ManufacturingCost { get; set; }
         public decimal? StandardSellingPrice { get; set; }
         public decimal? ProfitMarginRate { get; set; }
+        public string PricingStatus { get; set; } = "Available";
+        public Guid? FormulaPricingPolicyId { get; set; }
+        public int? FormulaPricingPolicyVersion { get; set; }
+        public IReadOnlyList<FormulaSuggestedPriceTierDto> SuggestedPriceTiers { get; set; } = [];
         public FormulaPriceCalculationDto? Pricing { get; set; }
 
         public bool IsSelect { get; set; }
