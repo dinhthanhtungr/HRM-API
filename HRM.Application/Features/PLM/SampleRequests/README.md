@@ -806,3 +806,9 @@ dữ liệu giá hiện hành tại API pricing. Topic được tái sử dụng
 Tab Báo giá trong Notification Hub lấy conversation từ
 `GET /api/v1/internal-mail/conversations?relatedType=SampleRequest&eventGroupCode=quotation`, không dùng notification
 feed làm nguồn thread. Cách này giữ yêu cầu trong tab của cả sender dù sender không nhận self-notification.
+
+## Color Chip Records
+
+API lưu read-model phục vụ hiển thị/in phiếu Color Chip được tách tại
+`Features/PLM/ColorChipRecords`. Contract GET/POST/PATCH, company scope, quyền chỉnh sửa, attachment collection và
+semantics `clearFields` được mô tả trong [Color Chip Records README](../ColorChipRecords/README.md).
