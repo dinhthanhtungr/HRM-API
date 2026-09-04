@@ -19,4 +19,12 @@ public sealed class ExecutivePnLDeliveryCostRulesTests
 
         Assert.Equal(999m, result);
     }
+
+    [Fact]
+    public void ResolveAmount_UsesFallbackWhenNormalizedLotSnapshotIsZero()
+    {
+        var result = ExecutivePnLDeliveryCostRules.ResolveAmount(true, 0m, 999m);
+
+        Assert.Equal(999m, result);
+    }
 }

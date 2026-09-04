@@ -4,9 +4,8 @@ using HRM.Application.Commons.Authorization;
 namespace HRM.Application.Features.PLM.SaleOrders.Services;
 
 /// <summary>
-/// Admin, President, and Developer auto-approve only when create has attachments.
-/// Xác định quyền duyệt SaleOrder và trường hợp Sale thường được tự động duyệt khi tạo kèm PO.
-/// AC/HN luôn đi qua luồng duyệt thủ công; nhóm có quyền duyệt cũng không dùng nhánh auto approve.
+/// Nhóm duyệt đơn và Sale thường được tự động duyệt chỉ khi tạo kèm PO.
+/// AC/HN không tự duyệt chỉ bằng role SaleUser.
 /// </summary>
 internal static class SaleOrderApprovalRules
 {
@@ -15,12 +14,7 @@ internal static class SaleOrderApprovalRules
 
     public static bool CanAutoApproveOnCreate(ICurrentUser currentUser)
     {
-        if (currentUser.IsInAnyRole(new[]
-            {
-                ApplicationRoles.Admin,
-                ApplicationRoles.President,
-                ApplicationRoles.Developer
-            }))
+        if (CanApprove(currentUser))
         {
             return true;
         }

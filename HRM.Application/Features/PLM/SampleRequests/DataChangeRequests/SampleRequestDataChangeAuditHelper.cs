@@ -3,6 +3,7 @@ using HRM.Application.Abstractions.Persistence.PLM;
 using HRM.Domain.Entities.AuditSchema;
 using HRM.Domain.Entities.SampleRequestSchema;
 using HRM.Domain.Enums.Audits;
+using Microsoft.EntityFrameworkCore;
 
 namespace HRM.Application.Features.PLM.SampleRequests.DataChangeRequests;
 
@@ -76,6 +77,8 @@ internal static class SampleRequestDataChangeAuditHelper
             ["ReturnSample"] = product.ReturnSample,
             ["CategoryId"] = product.CategoryId,
             ["IsRecycle"] = product.IsRecycle,
+            ["GRS"] = product.GRS,
+            ["GRSConsumerType"] = product.GRSConsumerType,
             ["ReachStandard"] = product.ReachStandard,
             ["Additive"] = product.Additive
         };
@@ -127,6 +130,50 @@ internal static class SampleRequestDataChangeAuditHelper
             BuildProductAuditSnapshot(product),
             reason,
             cancellationToken);
+    }
+
+    /// <summary>
+    /// Ghi riêng một transition workflow của Sample Request. Dùng cho các luồng không đi qua PATCH
+    /// để timeline luôn có actor, thời điểm và status trước/sau trong cùng lần lưu nghiệp vụ.
+    /// </summary>
+    public static async Task AddStatusTransitionAuditIfChangedAsync(
+        DbSet<AuditLog> auditLogs,
+        SampleRequest sampleRequest,
+        string? oldStatus,
+        Guid? changedBy,
+        DateTime changedAt,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        var newStatus = sampleRequest.Status;
+        if (string.Equals(oldStatus?.Trim(), newStatus?.Trim(), StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var oldValues = new Dictionary<string, object?> { ["Status"] = oldStatus };
+        var newValues = new Dictionary<string, object?> { ["Status"] = newStatus };
+        var changedValues = new Dictionary<string, object?>
+        {
+            ["Status"] = new { Old = oldStatus, New = newStatus }
+        };
+
+        await auditLogs.AddAsync(new AuditLog
+        {
+            AuditLogId = Guid.CreateVersion7(),
+            CompanyId = sampleRequest.CompanyId,
+            SchemaName = SampleRequestAuditSchema,
+            TableName = SampleRequestAuditSource,
+            RecordId = sampleRequest.SampleRequestId,
+            ActionType = AuditActionType.Update,
+            ChangedBy = changedBy,
+            ChangedAt = changedAt,
+            OldValues = JsonSerializer.SerializeToDocument(oldValues),
+            NewValues = JsonSerializer.SerializeToDocument(newValues),
+            ChangedValues = JsonSerializer.SerializeToDocument(changedValues),
+            Reason = reason,
+            CorrelationId = Guid.CreateVersion7()
+        }, cancellationToken);
     }
 
     private static async Task AddAuditIfChangedAsync(

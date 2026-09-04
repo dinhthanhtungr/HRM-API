@@ -58,6 +58,8 @@ SaleOrder cung cấp endpoint đọc `GET /api/v1/plm/sale-orders/customer-produ
 
 Nếu cùng một Manufacturing Formula từng được dùng cho MFG của nhiều khách hàng, tồn của lot đó được đánh dấu mơ hồ và không được cộng vào tổng tồn của riêng khách nào. Rule này tránh tính trùng tồn kho; không có thao tác ghi dữ liệu và không cần migration.
 
+Riêng `customer-product-stock` loại kệ cân trộn `CT.0.1` khỏi tồn thực tế và detail trả về, vì tồn ở khu vực này chưa là tồn thành phẩm sẵn sàng quy thuộc/giao khách. Rule này không đổi API tồn kho Warehouse tổng quát.
+
 ## Phân quyền và bảo mật
 
 Controller có `[Authorize]`. Handler bắt buộc lọc dữ liệu theo `CurrentUser.CompanyId` cho tồn kho, reserved, material, product và sample request để tránh lộ tồn kho giữa các công ty. Stock nằm trên kệ inactive bị loại trước bước group, nên không thể xuất hiện trong tổng tồn, detail hoặc available.

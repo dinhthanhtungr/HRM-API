@@ -36,6 +36,10 @@ public sealed class ProductPricingWorkbenchVisibilityTests
         Assert.False(result.CanManagePricing);
         Assert.True(result.CanOpenPricingDetail);
         Assert.Equal(source.StandardSellingPrice, result.StandardSellingPrice);
+        Assert.Null(result.RealtimeStandardSellingPrice);
+        Assert.Null(result.StandardSellingPriceDifference);
+        Assert.Null(result.StandardSellingPriceDifferencePercent);
+        Assert.False(result.HasRealtimePriceComparison);
         Assert.Equal(source.PricingStatus, result.PricingStatus);
         Assert.Equal(source.WaitingQuotationCount, result.WaitingQuotationCount);
         Assert.Null(result.CurrentMaterialCost);
@@ -46,6 +50,11 @@ public sealed class ProductPricingWorkbenchVisibilityTests
         Assert.Equal(source.SourceStatus, result.SourceStatus);
         Assert.True(result.SourceIsEligible);
         Assert.Null(result.ApprovedPricingVersionId);
+        var relatedCustomer = Assert.Single(result.RelatedCustomers);
+        Assert.Equal("KH_3327", relatedCustomer.CustomerCode);
+        Assert.Equal("Green Herbs", relatedCustomer.CustomerName);
+        Assert.Equal(1, relatedCustomer.RelatedDocumentCount);
+        Assert.Null(relatedCustomer.HealthSummary);
     }
 
     [Fact]
@@ -127,6 +136,8 @@ public sealed class ProductPricingWorkbenchVisibilityTests
         Assert.Equal(detail.ManufacturingCost, result.ManufacturingCost);
         Assert.Equal(detail.StandardSellingPrice, result.StandardSellingPrice);
         Assert.Equal(detail.ProfitMarginRate, result.ProfitMarginRate);
+        Assert.Equal(detail.Summary.RealtimeStandardSellingPrice, result.Summary.RealtimeStandardSellingPrice);
+        Assert.Equal(detail.Summary.StandardSellingPriceDifference, result.Summary.StandardSellingPriceDifference);
     }
 
     private static ProductPricingWorkbenchItemDto FullSummary()
@@ -147,8 +158,27 @@ public sealed class ProductPricingWorkbenchVisibilityTests
             CurrentMaterialCost = 150_000m,
             ManufacturingCost = 10_000m,
             StandardSellingPrice = 200_000m,
+            RealtimeStandardSellingPrice = 190_000m,
+            StandardSellingPriceDifference = -10_000m,
+            StandardSellingPriceDifferencePercent = -5m,
+            HasRealtimePriceComparison = true,
             ProfitMarginRate = 20m,
-            ApprovedPricingVersionId = Guid.NewGuid()
+            ApprovedPricingVersionId = Guid.NewGuid(),
+            RelatedCustomers =
+            [
+                new ProductPricingWorkbenchCustomerContextDto
+                {
+                    CustomerId = Guid.NewGuid(),
+                    CustomerCode = "KH_3327",
+                    CustomerName = "Green Herbs",
+                    RelatedDocumentCount = 1,
+                    LatestRelatedDate = new DateTime(2026, 8, 27, 8, 51, 39),
+                    HealthSummary = new ProductPricingWorkbenchCustomerHealthSummaryDto
+                    {
+                        Summary = "Internal health summary"
+                    }
+                }
+            ]
         };
 
     private sealed class TestCurrentUser(string role) : ICurrentUser

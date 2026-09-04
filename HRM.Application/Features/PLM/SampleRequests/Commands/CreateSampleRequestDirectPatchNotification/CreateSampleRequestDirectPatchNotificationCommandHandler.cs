@@ -1,11 +1,10 @@
 using System.Text.Json;
 using HRM.Application.Abstractions.Persistence.PLM;
 using HRM.Application.Abstractions.Security;
-using HRM.Application.Commons.Authorization;
 using HRM.Application.Commons.Models;
 using HRM.Application.Features.InternalMail.Dtos;
+using HRM.Application.Features.CRM.CustomerCare.Visibility;
 using HRM.Application.Features.PLM.SampleRequests.Commands.SendSampleRequestMessage;
-using HRM.Application.Features.PLM.SampleRequests.DataChangeRequests;
 using HRM.Application.Features.PLM.SampleRequests.DirectPatchNotifications;
 using HRM.Application.Features.PLM.SampleRequests.Dtos.InternalMail;
 using HRM.Domain.Enums.InternalMailEnums;
@@ -30,15 +29,18 @@ internal sealed class CreateSampleRequestDirectPatchNotificationCommandHandler
 
     private readonly IPLMWriteDbContext _dbContext;
     private readonly ICurrentUser _currentUser;
+    private readonly ICustomerVisibilityService _visibilityService;
     private readonly ISender _sender;
 
     public CreateSampleRequestDirectPatchNotificationCommandHandler(
         IPLMWriteDbContext dbContext,
         ICurrentUser currentUser,
+        ICustomerVisibilityService visibilityService,
         ISender sender)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
+        _visibilityService = visibilityService;
         _sender = sender;
     }
 
@@ -77,29 +79,23 @@ internal sealed class CreateSampleRequestDirectPatchNotificationCommandHandler
             return OperationResult<SendInternalMessageResultDto>.Fail(changeError);
         }
 
-        var sampleRequest = await _dbContext.SampleRequests
-            .AsNoTracking()
-            .Where(x =>
-                x.SampleRequestId == request.SampleRequestId &&
-                x.CompanyId == companyId.Value &&
-                x.IsActive)
+        var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+        var sampleRequest = await _visibilityService.ApplySampleRequestVisibility(
+                _dbContext.SampleRequests
+                    .Where(x => x.SampleRequestId == request.SampleRequestId)
+                    .AsNoTracking(),
+                _dbContext.Customers.AsNoTracking(),
+                scope)
             .Select(x => new
             {
                 x.SampleRequestId,
-                x.ExternalId,
-                x.ManagerBy,
-                x.CreatedBy
+                x.ExternalId
             })
             .FirstOrDefaultAsync(cancellationToken);
 
         if (sampleRequest is null)
         {
             return OperationResult<SendInternalMessageResultDto>.Fail("Sample request was not found.");
-        }
-
-        if (!CanNotifyDirectPatch(_currentUser, sampleRequest.ManagerBy, sampleRequest.CreatedBy))
-        {
-            return OperationResult<SendInternalMessageResultDto>.Fail("You are not allowed to notify changes for this sample request.");
         }
 
         var existingResult = await FindExistingResultAsync(
@@ -278,24 +274,4 @@ internal sealed class CreateSampleRequestDirectPatchNotificationCommandHandler
     private static bool JsonElementEquals(JsonElement left, JsonElement right)
         => string.Equals(left.GetRawText(), right.GetRawText(), StringComparison.Ordinal);
 
-    private static bool CanNotifyDirectPatch(
-        ICurrentUser currentUser,
-        Guid managerBy,
-        Guid createdBy)
-    {
-        if (currentUser.IsInAnyRole(ApplicationRoleSets.PLM.ProductTechnicalEditors))
-        {
-            return true;
-        }
-
-        var employeeId = currentUser.EmployeeId;
-        return employeeId.HasValue &&
-            employeeId.Value != Guid.Empty &&
-            SampleRequestDataChangeAuthorization.CanRequest(currentUser) &&
-            SampleRequestDataChangeAuthorization.CanRequestFor(
-                currentUser,
-                employeeId.Value,
-                managerBy,
-                createdBy);
-    }
 }

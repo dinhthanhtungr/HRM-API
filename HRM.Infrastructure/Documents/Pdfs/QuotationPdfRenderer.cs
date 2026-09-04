@@ -42,7 +42,6 @@ internal sealed class QuotationPdfRenderer : IQuotationPdfRenderer
         var grsLogo = LoadImage(_options.GrsLogoPath);
         var qrCode = LoadImage(_options.QrCodePath);
         var useLandscape = quotation.Lines
-            .Where(line => line.PriceMode == QuotationLinePriceMode.Tiered)
             .SelectMany(line => line.PriceTiers)
             .Select(tier => tier.QuantityRangeLabel)
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -61,7 +60,24 @@ internal sealed class QuotationPdfRenderer : IQuotationPdfRenderer
                     quotation.CompanyPhone,
                     _options,
                     logo));
-                page.Content().PaddingTop(PdfLayout.ContentTopPadding).Column(column => ComposeContent(column, quotation));
+                page.Content().Layers(layers =>
+                {
+                    if (quotation.Status == QuotationStatus.Draft)
+                    {
+                        layers.Layer()
+                            .AlignCenter()
+                            .AlignMiddle()
+                            .Rotate(-35)
+                            .Text("BẢN NHÁP / DRAFT")
+                            .FontSize(42)
+                            .Bold()
+                            .FontColor("#E5E7EB");
+                    }
+
+                    layers.PrimaryLayer()
+                        .PaddingTop(PdfLayout.ContentTopPadding)
+                        .Column(column => ComposeContent(column, quotation));
+                });
                 page.Footer().Component(new IsoPdfFooterComponent(
                     _options,
                     bureauVeritasLogo,
@@ -80,6 +96,11 @@ internal sealed class QuotationPdfRenderer : IQuotationPdfRenderer
         column.Spacing(PdfLayout.QuotationColumnSpacing);
         column.Item().AlignCenter().Text("BẢNG BÁO GIÁ/QUOTATION")
             .FontSize(PdfTypography.QuotationTitleSize).Bold().FontColor(PdfColors.TitleRed);
+        //if (quotation.Status == QuotationStatus.Draft)
+        //{
+        //    column.Item().AlignCenter().Text("Tài liệu nội bộ — chưa xác nhận gửi khách hàng")
+        //        .FontSize(PdfTypography.SmallSize).FontColor("#9CA3AF");
+        //}
         column.Item().Element(container => ComposeQuotationInformation(container, quotation));
         column.Item().LineHorizontal(PdfLayout.SectionDividerWidth).LineColor(PdfColors.BrandGreen);
         column.Item().Text(
@@ -92,17 +113,7 @@ internal sealed class QuotationPdfRenderer : IQuotationPdfRenderer
             .Italic().FontSize(PdfTypography.SmallSize);
 
         var tieredLines = quotation.Lines
-            .Where(line =>
-                line.PriceMode == QuotationLinePriceMode.Tiered &&
-                line.PriceTiers.Count > 0)
-            .ToList();
-        var unpricedLines = quotation.Lines
-            .Where(line =>
-                line.PriceMode == QuotationLinePriceMode.Tiered &&
-                line.PriceTiers.Count == 0)
-            .ToList();
-        var fixedLines = quotation.Lines
-            .Where(line => line.PriceMode == QuotationLinePriceMode.Fixed)
+            .Where(line => line.PriceTiers.Count > 0)
             .ToList();
 
         if (tieredLines.Count > 0)
@@ -111,19 +122,6 @@ internal sealed class QuotationPdfRenderer : IQuotationPdfRenderer
                 container,
                 tieredLines,
                 quotation.Currency));
-        }
-
-        if (fixedLines.Count > 0)
-        {
-            column.Item().Element(container => ComposeFixedPriceTable(
-                container,
-                fixedLines,
-                quotation.Currency));
-        }
-
-        if (unpricedLines.Count > 0)
-        {
-            column.Item().Element(container => ComposeUnpricedLines(container, unpricedLines));
         }
 
         if (quotation.Lines.Count == 0)
@@ -162,7 +160,6 @@ internal sealed class QuotationPdfRenderer : IQuotationPdfRenderer
             row.RelativeItem(3).Column(customer =>
             {
                 AddLabelValue(customer, "Kính gửi/To:", quotation.ContactName ?? quotation.CustomerName);
-                AddLabelValue(customer, "Ông/Bà (Mr/Ms):", quotation.ContactName);
                 AddLabelValue(customer, "Đơn vị/Co.:", quotation.CustomerName);
                 AddLabelValue(customer, "Địa chỉ/Address:", quotation.CustomerAddress);
                 AddLabelValue(customer, "Điện thoại/Tel:", quotation.CustomerPhone);
@@ -215,6 +212,7 @@ internal sealed class QuotationPdfRenderer : IQuotationPdfRenderer
                 {
                     columns.RelativeColumn();
                 }
+                columns.RelativeColumn(0.9f);
             });
 
             table.Header(header =>
@@ -223,6 +221,7 @@ internal sealed class QuotationPdfRenderer : IQuotationPdfRenderer
                 HeaderCell(header.Cell().RowSpan(2), "Tên hàng/Name");
                 HeaderCell(header.Cell().ColumnSpan((uint)tierLabels.Count),
                     $"Số lượng/Quantity{quantityUnit}");
+                HeaderCell(header.Cell().RowSpan(2), "Ghi chú\nNote");
 
                 foreach (var label in tierLabels)
                 {
@@ -244,79 +243,14 @@ internal sealed class QuotationPdfRenderer : IQuotationPdfRenderer
                             StringComparison.OrdinalIgnoreCase));
                     BodyCell(
                         table.Cell(),
-                        tier is null ? "-" : FormatMoney(tier.UnitPrice, currency));
+                        tier is null
+                            ? "-"
+                            : tier.CustomerUnitPrice <= 0m
+                                ? string.Empty
+                                : FormatMoney(tier.CustomerUnitPrice, currency));
                 }
-            }
-        });
-    }
 
-    private static void ComposeFixedPriceTable(
-        IContainer container,
-        IReadOnlyList<QuotationPdfLineDto> lines,
-        string currency)
-    {
-        container.Table(table =>
-        {
-            table.ColumnsDefinition(columns =>
-            {
-                columns.ConstantColumn(58);
-                columns.RelativeColumn(2.2f);
-                columns.RelativeColumn();
-                columns.RelativeColumn();
-                columns.RelativeColumn(1.2f);
-                columns.RelativeColumn();
-                columns.RelativeColumn(1.3f);
-            });
-
-            table.Header(header =>
-            {
-                HeaderCell(header.Cell(), "Mã số/Code");
-                HeaderCell(header.Cell(), "Tên hàng/Name");
-                HeaderCell(header.Cell(), "Số lượng");
-                HeaderCell(header.Cell(), "ĐVT");
-                HeaderCell(header.Cell(), "Đơn giá");
-                HeaderCell(header.Cell(), "CK (%)");
-                HeaderCell(header.Cell(), "Thành tiền");
-            });
-
-            foreach (var line in lines)
-            {
-                BodyCell(table.Cell(), line.ProductCode);
-                BodyCell(table.Cell(), line.ProductName);
-                BodyCell(table.Cell(), FormatNumber(line.Quantity));
-                BodyCell(table.Cell(), line.Unit);
-                BodyCell(table.Cell(), FormatMoney(line.UnitPrice, currency));
-                BodyCell(table.Cell(), FormatNumber(line.DiscountPercent));
-                BodyCell(table.Cell(), FormatMoney(line.LineTotal, currency));
-            }
-        });
-    }
-
-    private static void ComposeUnpricedLines(
-        IContainer container,
-        IReadOnlyList<QuotationPdfLineDto> lines)
-    {
-        container.Table(table =>
-        {
-            table.ColumnsDefinition(columns =>
-            {
-                columns.ConstantColumn(58);
-                columns.RelativeColumn(2.3f);
-                columns.RelativeColumn();
-            });
-
-            table.Header(header =>
-            {
-                HeaderCell(header.Cell(), "Mã số/Code");
-                HeaderCell(header.Cell(), "Tên hàng/Name");
-                HeaderCell(header.Cell(), "Trạng thái/Status");
-            });
-
-            foreach (var line in lines)
-            {
-                BodyCell(table.Cell(), line.ProductCode);
-                BodyCell(table.Cell(), line.ProductName);
-                BodyCell(table.Cell(), "Chờ duyệt giá / Pending pricing");
+                BodyCell(table.Cell(), line.Note ?? "-");
             }
         });
     }
@@ -325,22 +259,10 @@ internal sealed class QuotationPdfRenderer : IQuotationPdfRenderer
         IContainer container,
         QuotationPdfDocumentDto quotation)
     {
-        container.Column(column =>
+        if (!string.IsNullOrWhiteSpace(quotation.Note))
         {
-            column.Item().Text(
-                    $"Ghi chú/Note : Giá trên không bao gồm thuế GTGT {FormatNumber(quotation.TaxPercent)} % - " +
-                    $"Note: The prices above are excluded {FormatNumber(quotation.TaxPercent)}% VAT")
-                .FontColor(PdfColors.LinkBlue).FontSize(PdfTypography.SmallSize);
-            column.Item().Text(QuotationPdfDefaults.TransportFeeNote)
-                .FontColor(PdfColors.LinkBlue).FontSize(PdfTypography.SmallSize);
-            column.Item().Text(QuotationPdfDefaults.InvoiceSurchargeNote)
-                .FontColor(PdfColors.TitleRed).FontSize(PdfTypography.SmallSize);
-
-            if (!string.IsNullOrWhiteSpace(quotation.Note))
-            {
-                column.Item().Text(quotation.Note).FontSize(PdfTypography.SmallSize);
-            }
-        });
+            container.Text(quotation.Note).FontSize(PdfTypography.SmallSize);
+        }
     }
 
     private static void ComposeTerms(
@@ -351,6 +273,24 @@ internal sealed class QuotationPdfRenderer : IQuotationPdfRenderer
         {
             column.Item().Text("Các điều khoản khác:")
                 .Bold().Underline();
+
+            if (quotation.HasStoredTerms)
+            {
+                var activeTerms = quotation.Terms
+                    .Where(x => x.IsActive)
+                    .OrderBy(x => x.SortOrder)
+                    .ToArray();
+                for (var index = 0; index < activeTerms.Length; index++)
+                {
+                    var term = activeTerms[index];
+                    var label = JoinBilingual(term.LabelVi, term.LabelEn);
+                    var value = JoinBilingual(term.ValueVi, term.ValueEn);
+                    AddTerm(column, $"{index + 1}. {label}:", value);
+                }
+
+                return;
+            }
+
             AddTerm(
                 column,
                 "1. Thời hạn giao hàng/Delivery date (Ngày nhận đơn hàng/The receive PO date):",
@@ -444,6 +384,15 @@ internal sealed class QuotationPdfRenderer : IQuotationPdfRenderer
 
     private static string DefaultIfBlank(string? value, string defaultValue)
         => string.IsNullOrWhiteSpace(value) ? defaultValue : value;
+
+    private static string JoinBilingual(string? vietnamese, string? english)
+    {
+        var values = new[] { vietnamese, english }
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+        return string.Join("/", values);
+    }
 
     private byte[]? LoadImage(string? configuredPath)
     {

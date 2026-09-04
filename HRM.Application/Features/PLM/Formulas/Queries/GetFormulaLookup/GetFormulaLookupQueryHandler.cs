@@ -32,7 +32,8 @@ internal sealed class GetFormulaLookupQueryHandler
             return EmptyResult(request);
         }
 
-        //var productId = await ResolveProductIdAsync(request, companyId, cancellationToken);
+        var productId = await ResolveProductIdAsync(request, companyId, cancellationToken);
+        //var colorCode = await ResolveColorCodeAsync(productId, companyId, cancellationToken);
         var includeVu = request.SourceType is null or FormulaSource.Both or FormulaSource.FromVU;
         var includeVa = request.SourceType is null or FormulaSource.Both or FormulaSource.FromVA;
 
@@ -46,24 +47,33 @@ internal sealed class GetFormulaLookupQueryHandler
             .Where(x =>
                 includeVu &&
                 x.IsActive &&
-                x.CompanyId == companyId);
+                x.Product.CompanyId == companyId);
 
         var vaFormulas = _dbContext.ManufacturingFormulas
             .AsNoTracking()
             .Where(x =>
                 includeVa &&
-                x.IsActive &&
-                x.CompanyId == companyId);
+                x.IsActive);
 
-        if (request.ProductId is { } scopedProductId && scopedProductId != Guid.Empty)
+        if (productId is { } scopedProductId)
         {
             vuFormulas = vuFormulas.Where(x => x.ProductId == scopedProductId);
             vaFormulas = vaFormulas.Where(x =>
-                (x.SourceVUFormula != null && x.SourceVUFormula.ProductId == scopedProductId) ||
-                x.ProductStandardFormulas.Any(s => s.ProductId == scopedProductId) ||
+                (x.SourceVUFormula != null &&
+                 x.SourceVUFormula.ProductId == scopedProductId &&
+                 x.SourceVUFormula.Product.CompanyId == companyId) ||
+                x.ProductStandardFormulas.Any(s =>
+                    s.ProductId == scopedProductId &&
+                    s.Product.CompanyId == companyId) ||
                 x.ProductionSelectVersions.Any(s =>
                     s.MfgProductionOrder.ProductId == scopedProductId &&
+                    s.MfgProductionOrder.Product.CompanyId == companyId &&
                     s.ManufacturingFormulaId.HasValue));
+        }
+        else
+        {
+            // Không có Product để xác định tenant của dữ liệu legacy thì chỉ lấy VA có company id khớp token.
+            vaFormulas = vaFormulas.Where(x => x.CompanyId == companyId);
         }
 
         var statuses = NormalizeStatuses(request);
@@ -111,6 +121,7 @@ internal sealed class GetFormulaLookupQueryHandler
         var vuRows = vuFormulas.Select(x => new FormulaLookupRow
         {
             FormulaId = x.FormulaId,
+            ColorCode = x.Product.ColourCode ?? string.Empty,
             SourceType = FormulaSource.FromVU,
             ExternalId = x.ExternalId,
             Name = x.Name,
@@ -123,6 +134,20 @@ internal sealed class GetFormulaLookupQueryHandler
         var vaRows = vaFormulas.Select(x => new FormulaLookupRow
         {
             FormulaId = x.ManufacturingFormulaId,
+            ColorCode =
+                    x.SourceVUFormula != null
+                        ? x.SourceVUFormula.Product.ColourCode ?? string.Empty
+                        : x.ProductStandardFormulas
+                            .Where(s => s.ValidTo == null)
+                            .OrderByDescending(s => s.ValidFrom)
+                            .Select(s => s.Product.ColourCode)
+                            .FirstOrDefault()
+                        ?? x.ProductionSelectVersions
+                            .Where(v => v.ValidTo == null)
+                            .OrderByDescending(v => v.ValidFrom)
+                            .Select(v => v.MfgProductionOrder.Product.ColourCode)
+                            .FirstOrDefault()
+                        ?? string.Empty,
             SourceType = FormulaSource.FromVA,
             ExternalId = x.ExternalId,
             Name = x.Name,
@@ -136,14 +161,14 @@ internal sealed class GetFormulaLookupQueryHandler
         var totalCount = await query.CountAsync(cancellationToken);
 
         var items = await query
-            .OrderByDescending(x => x.CreatedDate)
-            .ThenBy(x => x.SourceType)
-            .ThenBy(x => x.ExternalId)
+            .OrderBy(x => x.CreatedDate == null)
+            .ThenByDescending(x => x.CreatedDate)
             .Skip((request.NormalizedPageNumber - 1) * request.NormalizedPageSize)
             .Take(request.NormalizedPageSize)
             .Select(x => new FormulaLookupDto
             {
                 FormulaId = x.FormulaId,
+                ColorCode = x.ColorCode,
                 SourceType = x.SourceType,
                 ExternalId = x.ExternalId,
                 Name = x.Name,
@@ -185,6 +210,24 @@ internal sealed class GetFormulaLookupQueryHandler
             .Select(x => (Guid?)x.ProductId)
             .FirstOrDefaultAsync(cancellationToken);
     }
+
+    //private async Task<string> ResolveColorCodeAsync(
+    //    Guid? productId,
+    //    Guid companyId,
+    //    CancellationToken cancellationToken)
+    //{
+    //    if (productId is not { } scopedProductId)
+    //    {
+    //        return string.Empty;
+    //    }
+
+    //    return await _dbContext.Products
+    //        .AsNoTracking()
+    //        .Where(x => x.ProductId == scopedProductId && x.CompanyId == companyId)
+    //        .Select(x => x.ColourCode ?? string.Empty)
+    //        .FirstOrDefaultAsync(cancellationToken)
+    //        ?? string.Empty;
+    //}
 
     private static PagedResult<FormulaLookupDto> EmptyResult(GetFormulaLookupQuery request)
     {

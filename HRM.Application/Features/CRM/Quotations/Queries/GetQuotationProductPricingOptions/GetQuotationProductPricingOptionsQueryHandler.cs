@@ -87,6 +87,7 @@ internal sealed class GetQuotationProductPricingOptionsQueryHandler
 
         var requestType = request.NormalizedRequestType;
         var canViewSensitivePricing = ProductPricingAccessRules.CanManage(_currentUser);
+        var canViewStandardSellingPrice = ProductPricingAccessRules.CanViewWorkbench(_currentUser);
 
         var eligibleRequests = _dbContext.SampleRequests
             .AsNoTracking()
@@ -360,7 +361,11 @@ internal sealed class GetQuotationProductPricingOptionsQueryHandler
             .ToList();
 
         var latestPriceByItem = await _materialPriceQueryService
-            .LoadLatestItemPriceInfoDictAsync(priceRequests, cancellationToken);
+            .LoadLatestPricingItemPriceInfoDictAsync(
+                companyId,
+                request.NormalizedCurrency,
+                priceRequests,
+                cancellationToken);
 
         IReadOnlyDictionary<Guid, IReadOnlyList<QuotationProductPricingMaterialSupplierDto>>
             supplierPricesByMaterial =
@@ -463,6 +468,29 @@ internal sealed class GetQuotationProductPricingOptionsQueryHandler
                         .Where(x => x.Status == ProductPricingStatus.Approved)
                         .OrderByDescending(x => x.Version)
                         .FirstOrDefault();
+                var approvedPricing = canViewStandardSellingPrice
+                    ? versions
+                        .Where(x =>
+                            x.Status == ProductPricingStatus.Approved &&
+                            x.StandardSellingPrice > 0m)
+                        .OrderByDescending(x => x.Version)
+                        .FirstOrDefault()
+                    : null;
+                var systemCalculatedPrice = canViewStandardSellingPrice
+                    ? sources
+                        .Where(x => x.IsEligible && x.StandardSellingPrice.HasValue)
+                        .Select(x => x.StandardSellingPrice)
+                        .FirstOrDefault()
+                    : null;
+                var effectiveStandardSellingPrice = approvedPricing?.StandardSellingPrice ??
+                    systemCalculatedPrice;
+                var effectiveStandardSellingPriceSource = !canViewStandardSellingPrice
+                    ? QuotationProductStandardSellingPriceSource.Unavailable
+                    : approvedPricing is not null
+                        ? QuotationProductStandardSellingPriceSource.ApprovedPricingVersion
+                        : systemCalculatedPrice.HasValue
+                            ? QuotationProductStandardSellingPriceSource.SystemCalculated
+                            : QuotationProductStandardSellingPriceSource.Unavailable;
 
                 return new QuotationProductPricingOptionDto
                 {
@@ -486,6 +514,11 @@ internal sealed class GetQuotationProductPricingOptionsQueryHandler
                         : ProductPricingVersionMapper.ToDto(
                             currentPricing,
                             canViewSensitivePricing),
+                    StandardSellingPrice = effectiveStandardSellingPrice,
+                    StandardSellingPriceSource = effectiveStandardSellingPriceSource,
+                    ApprovedStandardSellingPrice = approvedPricing?.StandardSellingPrice,
+                    ApprovedStandardSellingPriceEffectiveFrom = approvedPricing?.ApprovedAt,
+                    SystemCalculatedStandardSellingPrice = systemCalculatedPrice,
 
                     CustomerId = product.CustomerId,
                     CustomerExternalId = product.CustomerExternalId,

@@ -145,19 +145,34 @@ internal sealed class PatchSampleRequestSampleTrialCommandHandler
             return OperationResult<Guid>.Fail(proposedError);
         }
 
-        var changed = ApplyPatch(
+        var trialChanged = ApplyPatch(
             trial,
             request,
             clearFields,
             formulaExternalIdResult.Data,
             employeeId);
-        if (!changed)
+        var sampleRequestChanged = ApplySampleRequestDeliveryDates(
+            sampleRequest,
+            request,
+            clearFields);
+        if (!trialChanged && !sampleRequestChanged)
         {
-            return OperationResult<Guid>.Ok(trial.SampleRequestSampleTrialId, "No sample trial fields changed.");
+            return OperationResult<Guid>.Ok(trial.SampleRequestSampleTrialId, "No sample trial or sample request fields changed.");
         }
 
-        trial.UpdatedBy = employeeId;
-        trial.UpdatedDate = _dateTimeProvider.Now;
+        var now = _dateTimeProvider.Now;
+        if (trialChanged)
+        {
+            trial.UpdatedBy = employeeId;
+            trial.UpdatedDate = now;
+        }
+
+        if (sampleRequestChanged)
+        {
+            sampleRequest.UpdatedBy = employeeId;
+            sampleRequest.UpdatedDate = now;
+        }
+
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         return OperationResult<Guid>.Ok(trial.SampleRequestSampleTrialId, "Updated sample trial successfully.");
@@ -408,6 +423,25 @@ internal sealed class PatchSampleRequestSampleTrialCommandHandler
         return changed;
     }
 
+    private static bool ApplySampleRequestDeliveryDates(
+        SampleRequest sampleRequest,
+        PatchSampleRequestSampleTrialCommand request,
+        IReadOnlySet<string> clearFields)
+    {
+        var changed = false;
+        changed |= ApplyNullable(
+            request.RequestDeliveryDate,
+            clearFields.Contains(SampleRequestSampleTrialPatchFields.RequestDeliveryDate),
+            () => sampleRequest.RequestDeliveryDate,
+            value => sampleRequest.RequestDeliveryDate = value);
+        changed |= ApplyNullable(
+            request.ExpectedDeliveryDate,
+            clearFields.Contains(SampleRequestSampleTrialPatchFields.ExpectedDeliveryDate),
+            () => sampleRequest.ExpectedDeliveryDate,
+            value => sampleRequest.ExpectedDeliveryDate = value);
+        return changed;
+    }
+
     private static bool ApplyNullable<T>(
         T? incoming,
         bool clear,
@@ -447,6 +481,8 @@ internal sealed class PatchSampleRequestSampleTrialCommandHandler
         AddIf(fields, SampleRequestSampleTrialPatchFields.BatchNo, request.BatchNo is not null);
         AddIf(fields, SampleRequestSampleTrialPatchFields.DeliveredSampleQuantityKg, request.DeliveredSampleQuantityKg.HasValue);
         AddIf(fields, SampleRequestSampleTrialPatchFields.AdditiveRate, request.AdditiveRate.HasValue);
+        AddIf(fields, SampleRequestSampleTrialPatchFields.RequestDeliveryDate, request.RequestDeliveryDate.HasValue);
+        AddIf(fields, SampleRequestSampleTrialPatchFields.ExpectedDeliveryDate, request.ExpectedDeliveryDate.HasValue);
         AddIf(fields, SampleRequestSampleTrialPatchFields.RequestReceivedDate, request.RequestReceivedDate.HasValue);
         AddIf(fields, SampleRequestSampleTrialPatchFields.FinishedDate, request.FinishedDate.HasValue);
         AddIf(fields, SampleRequestSampleTrialPatchFields.SentDate, request.SentDate.HasValue);

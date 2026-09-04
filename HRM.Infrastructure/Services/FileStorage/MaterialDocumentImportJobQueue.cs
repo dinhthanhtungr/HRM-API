@@ -87,7 +87,7 @@ internal sealed class MaterialDocumentImportJobQueue
         lock (state.SyncRoot)
         {
             state.Status = MaterialDocumentImportJobStatuses.Running;
-            state.StartedAt ??= DateTimeOffset.UtcNow;
+            state.StartedAt ??= DateTimeOffset.Now;
             state.TotalFiles = Math.Max(0, totalFiles);
             state.ErrorCode = null;
         }
@@ -161,7 +161,7 @@ internal sealed class MaterialDocumentImportJobQueue
         lock (state.SyncRoot)
         {
             state.Status = status;
-            state.CompletedAt = DateTimeOffset.UtcNow;
+            state.CompletedAt = DateTimeOffset.Now;
             state.ErrorCode = errorCode;
         }
 
@@ -187,7 +187,7 @@ internal sealed class MaterialDocumentImportJobQueue
         public object SyncRoot { get; } = new();
         public MaterialDocumentImportJobWorkItem WorkItem { get; }
         public string Status { get; set; } = MaterialDocumentImportJobStatuses.Queued;
-        public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
+        public DateTimeOffset CreatedAt { get; } = DateTimeOffset.Now;
         public DateTimeOffset? StartedAt { get; set; }
         public DateTimeOffset? CompletedAt { get; set; }
         public int TotalFiles { get; set; }

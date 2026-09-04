@@ -119,25 +119,35 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.MarkQuotationSent
                 return OperationResult.Ok("Quotation was already marked as sent.");
             }
 
-            if (quotation.Status != QuotationStatus.Draft)
+            if (quotation.SaleEmployeeId != scope.EmployeeId)
             {
-                return OperationResult.Fail("Only a draft quotation can be marked as sent.");
+                return OperationResult.Fail(
+                    "Only the assigned sale employee can mark this quotation as sent.");
             }
 
-            if (quotation.Lines.Count == 0)
+            if (!QuotationWorkflowRules.CanMarkSent(quotation.Status))
+            {
+                return OperationResult.Fail(
+                    "This quotation status cannot be marked as sent.");
+            }
+
+            var previousStatus = quotation.Status;
+
+            var activeLines = quotation.Lines.Where(line => line.IsActive).ToArray();
+            if (activeLines.Length == 0)
             {
                 return OperationResult.Fail("A quotation must have at least one line before it can be sent.");
             }
 
-            if (quotation.Lines.Any(line =>
-                    line.ProductPricingVersionId is null ||
-                    line.PriceMode != QuotationLinePriceMode.Tiered ||
-                    line.PriceTiers.Count == 0 ||
-                    line.PriceTiers.Any(tier => tier.UnitPrice < 0m)))
+            if (activeLines.Any(line =>
+                    !line.PriceTiers.Any(tier => tier.IsActive) ||
+                    line.PriceTiers.Any(tier =>
+                        tier.IsActive &&
+                        (tier.UnitPrice < 0m || tier.CommissionAmount < 0m))))
             {
                 return OperationResult.Fail(
-                    "Every quotation line must have pricing-version provenance and a complete " +
-                    "non-negative tiered snapshot before it can be sent.");
+                    "Every quotation line must have a complete non-negative tiered snapshot " +
+                    "before it can be sent.");
             }
 
             var recipientEmployeeIds = await ResolveManagementRecipientsAsync(
@@ -230,7 +240,7 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.MarkQuotationSent
             {
                 Id = Guid.CreateVersion7(),
                 QuotationId = quotation.QuotationId,
-                FromStatus = QuotationStatus.Draft,
+                FromStatus = previousStatus,
                 ToStatus = QuotationStatus.Sent,
                 Note = QuotationRules.TrimToNull(command.Request.Note),
                 ChangedBy = scope.EmployeeId,
@@ -318,7 +328,7 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.MarkQuotationSent
         {
             var subject = QuotationConversationSubjectService.BuildSubject(
                 quotation.ExternalId,
-                quotation.Lines
+                quotation.Lines.Where(x => x.IsActive)
                     .OrderBy(x => x.SortOrder)
                     .ThenBy(x => x.QuotationLineId)
                     .Select(x => x.ProductExternalIdSnapshot));

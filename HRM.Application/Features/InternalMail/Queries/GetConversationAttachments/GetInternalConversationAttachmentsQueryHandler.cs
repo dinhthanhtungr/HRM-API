@@ -2,6 +2,7 @@ using HRM.Application.Abstractions.Persistence.InternalMail;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Pagination;
 using HRM.Application.Features.InternalMail.Dtos;
+using HRM.Domain.Enums.InternalMailEnums;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -46,33 +47,81 @@ internal sealed class GetInternalConversationAttachmentsQueryHandler
             return null;
         }
 
-        var query = _dbContext.InternalMessageAttachments
+        var chatAttachments = await _dbContext.InternalMessageAttachments
             .AsNoTracking()
             .Where(x =>
                 x.Message.InternalConversationId == request.ConversationId &&
                 !x.Message.IsDeleted &&
-                x.Attachment.IsActive);
+                x.Attachment.IsActive)
+            .Select(x => new InternalConversationAttachmentDto
+            {
+                AttachmentId = x.AttachmentId,
+                Source = "Chat",
+                MessageId = x.InternalMessageId,
+                SenderEmployeeId = x.Message.SenderEmployeeId,
+                SenderName = x.Message.SenderEmployee.FullName,
+                SentAt = x.Message.SentAt,
+                FileName = x.Attachment.FileName,
+                SizeBytes = x.Attachment.SizeBytes
+            })
+            .ToListAsync(cancellationToken);
+
+        var sampleRequestAttachmentCollectionId = await _dbContext.InternalConversations
+            .AsNoTracking()
+            .Where(x =>
+                x.InternalConversationId == request.ConversationId &&
+                x.CompanyId == companyId.Value &&
+                x.IsActive &&
+                x.RelatedType == InternalMailRelatedType.SampleRequest &&
+                x.RelatedId.HasValue)
+            .Join(
+                _dbContext.SampleRequests.AsNoTracking(),
+                conversation => conversation.RelatedId!.Value,
+                sampleRequest => sampleRequest.SampleRequestId,
+                (_, sampleRequest) => new
+                {
+                    sampleRequest.AttachmentCollectionId,
+                    sampleRequest.CompanyId,
+                    sampleRequest.IsActive
+                })
+            .Where(x => x.IsActive && x.CompanyId == companyId.Value)
+            .Select(x => (Guid?)x.AttachmentCollectionId)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var sampleRequestAttachments = sampleRequestAttachmentCollectionId.HasValue
+            ? await _dbContext.AttachmentModels
+                .AsNoTracking()
+                .Where(x =>
+                    x.IsActive &&
+                    x.AttachmentCollectionId == sampleRequestAttachmentCollectionId.Value)
+                .Select(x => new InternalConversationAttachmentDto
+                {
+                    AttachmentId = x.AttachmentId,
+                    Source = "SampleRequest",
+                    SentAt = x.CreateDate,
+                    FileName = x.FileName,
+                    SizeBytes = x.SizeBytes
+                })
+                .ToListAsync(cancellationToken)
+            : new List<InternalConversationAttachmentDto>();
+
+        var items = chatAttachments
+            .Concat(sampleRequestAttachments)
+            .ToList();
+
+        foreach (var item in items)
+        {
+            InternalMessageAttachmentPresentation.Enrich(item, request.ConversationId);
+        }
 
         var normalizedKind = request.Kind?.Trim();
         if (string.Equals(normalizedKind, "Image", StringComparison.OrdinalIgnoreCase))
         {
-            query = query.Where(x =>
-                x.Attachment.FileName.ToLower().EndsWith(".png") ||
-                x.Attachment.FileName.ToLower().EndsWith(".jpg") ||
-                x.Attachment.FileName.ToLower().EndsWith(".jpeg") ||
-                x.Attachment.FileName.ToLower().EndsWith(".gif") ||
-                x.Attachment.FileName.ToLower().EndsWith(".webp") ||
-                x.Attachment.FileName.ToLower().EndsWith(".bmp"));
+            items = items.Where(x => x.IsImage).ToList();
         }
         else if (string.Equals(normalizedKind, "File", StringComparison.OrdinalIgnoreCase))
         {
-            query = query.Where(x =>
-                !x.Attachment.FileName.ToLower().EndsWith(".png") &&
-                !x.Attachment.FileName.ToLower().EndsWith(".jpg") &&
-                !x.Attachment.FileName.ToLower().EndsWith(".jpeg") &&
-                !x.Attachment.FileName.ToLower().EndsWith(".gif") &&
-                !x.Attachment.FileName.ToLower().EndsWith(".webp") &&
-                !x.Attachment.FileName.ToLower().EndsWith(".bmp"));
+            items = items.Where(x => !x.IsImage).ToList();
         }
         else if (!string.IsNullOrWhiteSpace(normalizedKind) &&
                  !string.Equals(normalizedKind, "All", StringComparison.OrdinalIgnoreCase))
@@ -84,30 +133,15 @@ internal sealed class GetInternalConversationAttachmentsQueryHandler
                 request.NormalizedPageSize);
         }
 
-        var totalCount = await query.CountAsync(cancellationToken);
+        var totalCount = items.Count;
         var pageNumber = request.NormalizedPageNumber;
         var pageSize = request.NormalizedPageSize;
-        var items = await query
-            .OrderByDescending(x => x.Message.SentAt)
-            .ThenByDescending(x => x.InternalMessageAttachmentId)
+        items = items
+            .OrderByDescending(x => x.SentAt)
+            .ThenByDescending(x => x.AttachmentId)
             .Skip((pageNumber - 1) * pageSize)
             .Take(pageSize)
-            .Select(x => new InternalConversationAttachmentDto
-            {
-                AttachmentId = x.AttachmentId,
-                MessageId = x.InternalMessageId,
-                SenderEmployeeId = x.Message.SenderEmployeeId,
-                SenderName = x.Message.SenderEmployee.FullName,
-                SentAt = x.Message.SentAt,
-                FileName = x.Attachment.FileName,
-                SizeBytes = x.Attachment.SizeBytes
-            })
-            .ToListAsync(cancellationToken);
-
-        foreach (var item in items)
-        {
-            InternalMessageAttachmentPresentation.Enrich(item);
-        }
+            .ToList();
 
         return new PagedResult<InternalConversationAttachmentDto>(
             items,

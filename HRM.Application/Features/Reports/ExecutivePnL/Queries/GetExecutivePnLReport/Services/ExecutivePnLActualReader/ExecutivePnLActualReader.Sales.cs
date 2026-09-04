@@ -1,5 +1,4 @@
 using HRM.Application.Commons.Reporting;
-using HRM.Domain.Enums.Formulas;
 using Microsoft.EntityFrameworkCore;
 using HRM.Application.Features.Reports.ExecutivePnL.Queries.GetExecutivePnLReport.Models;
 using HRM.Application.Features.Reports.ExecutivePnL.Shared.Services.Costing;
@@ -62,71 +61,29 @@ internal sealed partial class ExecutivePnLActualReader
         ExecutivePnLFilter filter,
         CancellationToken cancellationToken)
     {
-        var deliveryRows = await GetReportableDeliveryOrderDetails()
-            .Where(x => x.IsActive
-                && x.DeliveryOrder.IsActive
-                && x.DeliveryOrder.CreatedDate.HasValue
-                && x.DeliveryOrder.CreatedDate.Value >= filter.FromMonth
-                && x.DeliveryOrder.CreatedDate.Value < filter.RangeEnd)
-            .Where(x => !filter.CompanyId.HasValue || x.DeliveryOrder.CompanyId == filter.CompanyId.Value)
-            .Where(x => x.MerchandiseOrderDetailId.HasValue)
-            .Select(g => new
-            {
-                g.DeliveryOrder.CreatedDate,
-                g.Quantity,
-                LotNoList = g.LotConsumptions.Any(lot => lot.IsActive)
-                    ? string.Join(", ", g.LotConsumptions
-                        .Where(lot => lot.IsActive)
-                        .OrderBy(lot => lot.LotNo)
-                        .Select(lot => lot.LotNo))
-                    : g.LotNoList,
-                HasNormalizedLots = g.LotConsumptions.Any(lot => lot.IsActive),
-                LotCostSnapshotAmount = g.LotConsumptions
-                    .Where(lot => lot.IsActive)
-                    .Sum(lot => (decimal?)lot.TotalCostSnapshot) ?? 0m
-            })
+        var deliveryRows = await DeliveryRevenueQuery.Create(
+                _dbContext.DeliveryOrderDetails.AsNoTracking(),
+                filter.FromMonth,
+                filter.RangeEnd,
+                filter.CompanyId)
             .ToListAsync(cancellationToken);
 
-        var lotCodes = deliveryRows
-            .Where(x => !x.HasNormalizedLots)
-            .SelectMany(x => ExecutivePnLFormulaCostResolver.SplitLotCodes(x.LotNoList))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        var formulaCostRows = await _dbContext.ManufacturingFormulas
-            .AsNoTracking()
-            .Where(x => x.IsActive && lotCodes.Contains(x.ExternalId))
-            .Select(x => new
-            {
-                x.ExternalId,
-                FormulaCost = x.ManufacturingFormulaMaterials
-                    .Where(m => m.IsActive && m.itemType == ItemType.Material)
-                    .Sum(m => m.TotalPrice)
-            })
-            .ToListAsync(cancellationToken);
-
-        var formulaCostMap = formulaCostRows
-            .GroupBy(x => x.ExternalId, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(
-                g => g.Key,
-                g => g.First().FormulaCost,
-                StringComparer.OrdinalIgnoreCase);
+        var costSources = await ExecutivePnLDeliveryCostResolver.LoadAsync(
+            _dbContext,
+            deliveryRows,
+            filter.CompanyId,
+            cancellationToken);
 
         foreach (var row in deliveryRows)
         {
-            var createdDate = row.CreatedDate!.Value;
+            var createdDate = row.RevenueDate;
 
             if (!TryGetActual(actuals, createdDate.Year, createdDate.Month, out var actual))
             {
                 continue;
             }
 
-            // Chỉ dữ liệu lịch sử chưa backfill mới fallback về cost công thức theo LotNoList.
-            var legacyUnitCost = ExecutivePnLFormulaCostResolver.ResolveUnitCost(row.LotNoList, formulaCostMap);
-            actual.CostOfSales += ExecutivePnLDeliveryCostRules.ResolveAmount(
-                row.HasNormalizedLots,
-                row.LotCostSnapshotAmount,
-                row.Quantity * ExecutivePnLAmountResolvers.ResolveManufacturingUnitCost(legacyUnitCost));
+            actual.CostOfSales += ExecutivePnLDeliveryCostResolver.ResolveAmount(row, costSources);
         }
     }
 }

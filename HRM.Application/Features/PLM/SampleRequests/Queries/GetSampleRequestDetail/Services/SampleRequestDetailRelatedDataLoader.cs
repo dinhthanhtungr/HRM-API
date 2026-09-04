@@ -33,6 +33,7 @@ internal static class SampleRequestDetailRelatedDataLoader
                 FormulaId = x.FormulaId,
                 ExternalId = x.ExternalId,
                 Name = x.Name,
+                Status = x.Status,
                 TotalPrice = canViewFormulaPrices ? x.TotalPrice : null
             })
             .ToListAsync(cancellationToken);

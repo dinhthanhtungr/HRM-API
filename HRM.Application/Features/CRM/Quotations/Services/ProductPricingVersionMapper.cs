@@ -50,6 +50,7 @@ internal static class ProductPricingVersionMapper
             CreatedDate = entity.CreatedDate,
             UpdatedDate = entity.UpdatedDate,
             PriceTiers = entity.PriceTiers
+                .Where(x => x.IsActive)
                 .OrderBy(x => x.SortOrder)
                 .Select(x => new ProductPricingTierDto
                 {

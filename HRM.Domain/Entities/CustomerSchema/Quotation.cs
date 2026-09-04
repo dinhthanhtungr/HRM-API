@@ -15,7 +15,8 @@ namespace HRM.Domain.Entities.CustomerSchema
         public Guid CustomerId { get; set; }
         public Guid? ContactId { get; set; }
         public string? ContactName { get; set; }
-
+        public string? ContactPhone { get; set; }
+        public string? CustomerAddressSnapshot { get; set; }
         public Guid CompanyId { get; set; }
         public Guid SaleEmployeeId { get; set; }
 
@@ -59,6 +60,7 @@ namespace HRM.Domain.Entities.CustomerSchema
         public virtual Quotation? PreviousQuotation { get; set; }
         public virtual ICollection<Quotation> RevisedQuotations { get; set; } = [];
         public virtual ICollection<QuotationLine> Lines { get; set; } = [];
+        public virtual ICollection<QuotationTerm> Terms { get; set; } = [];
         public virtual ICollection<QuotationStatusHistory> StatusHistories { get; set; } = [];
     }
 }

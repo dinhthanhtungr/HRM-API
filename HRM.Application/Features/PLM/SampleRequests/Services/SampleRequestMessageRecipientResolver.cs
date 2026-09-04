@@ -86,7 +86,9 @@ internal sealed class SampleRequestMessageRecipientResolver : IMessageRecipientR
                     RequiredRecipients = Array.Empty<MessageRecipientDto>(),
                     SuggestedRecipients = Array.Empty<MessageRecipientDto>(),
                     SelectedRecipients = Array.Empty<MessageRecipientDto>(),
+                    SelectedSilentWatchers = Array.Empty<MessageRecipientDto>(),
                     CanAddRecipients = false,
+                    CanAddSilentWatchers = false,
                     CanRemoveSuggestedRecipients = true
                 });
             }
@@ -135,9 +137,17 @@ internal sealed class SampleRequestMessageRecipientResolver : IMessageRecipientR
                 productCategoryExternalId,
                 cancellationToken);
 
+        var salesGroupLeaderRecipients = await _sampleRequestRecipientResolver.ResolveSalesGroupLeaderRecipientsAsync(
+            companyId.Value,
+            currentEmployeeId.Value,
+            cancellationToken);
+
         var defaultRequiredRecipients = defaultRecipients
             .Where(x => x.Locked && x.EmployeeId != currentEmployeeId.Value)
             .Select(ToMessageRecipientDto)
+            .Concat(salesGroupLeaderRecipients
+                .Where(x => x.EmployeeId != currentEmployeeId.Value)
+                .Select(ToMessageRecipientDto))
             .ToList();
 
         var contextRequiredRecipients = await ResolveEmployeesAsync(
@@ -206,9 +216,67 @@ internal sealed class SampleRequestMessageRecipientResolver : IMessageRecipientR
             .Select(x => x.EmployeeId)
             .ToHashSet();
 
+        var regularRecipientIds = requiredRecipients
+            .Concat(suggestedRecipients)
+            .Concat(selectedRecipients)
+            .Select(x => x.EmployeeId)
+            .ToHashSet();
+
         if (selectedOptionalIds.Any(x => !selectedFoundIds.Contains(x)))
         {
             return OperationResult<MessageRecipientPreviewDto>.Fail("Some selected recipients do not exist or are inactive.");
+        }
+
+        var defaultSilentWatchers = await _sampleRequestRecipientResolver.ResolveDefaultSilentWatchersAsync(
+            companyId.Value,
+            currentEmployeeId.Value,
+            cancellationToken);
+        var hasExplicitSilentWatcherSelection = request.SelectedSilentWatcherEmployeeIds is not null;
+        var requestedSilentWatcherIds = request.SelectedSilentWatcherEmployeeIds?
+            .Where(x => x != Guid.Empty)
+            .Distinct()
+            .ToArray() ?? defaultSilentWatchers
+            .Select(x => x.EmployeeId)
+            .Where(x => !regularRecipientIds.Contains(x))
+            .ToArray();
+        if (requestedSilentWatcherIds.Contains(currentEmployeeId.Value))
+        {
+            return OperationResult<MessageRecipientPreviewDto>.Fail(
+                "The current employee cannot be a silent watcher.");
+        }
+
+        var selectedSilentWatcherIds = requestedSilentWatcherIds;
+        if (hasExplicitSilentWatcherSelection && selectedSilentWatcherIds.Any(regularRecipientIds.Contains))
+        {
+            return OperationResult<MessageRecipientPreviewDto>.Fail(
+                "A silent watcher cannot also be a message recipient.");
+        }
+
+        var selectedSilentWatchers = await ResolveEmployeesAsync(
+            selectedSilentWatcherIds,
+            companyId.Value,
+            "silent_watcher",
+            "Can read the sample request thread without notifications by default",
+            locked: false,
+            cancellationToken);
+        if (selectedSilentWatchers.Count != selectedSilentWatcherIds.Length)
+        {
+            return OperationResult<MessageRecipientPreviewDto>.Fail(
+                "Some silent watchers do not exist or are inactive.");
+        }
+
+        foreach (var silentWatcher in selectedSilentWatchers)
+        {
+            var defaultSilentWatcher = defaultSilentWatchers
+                .FirstOrDefault(x => x.EmployeeId == silentWatcher.EmployeeId);
+            if (defaultSilentWatcher is null)
+            {
+                continue;
+            }
+
+            silentWatcher.Source = defaultSilentWatcher.Source;
+            silentWatcher.Reason = defaultSilentWatcher.Reason;
+            silentWatcher.Locked = defaultSilentWatcher.Locked;
         }
 
         foreach (var selectedRecipient in selectedRecipients)
@@ -240,7 +308,9 @@ internal sealed class SampleRequestMessageRecipientResolver : IMessageRecipientR
             RequiredRecipients = requiredRecipients,
             SuggestedRecipients = suggestedRecipients,
             SelectedRecipients = selectedRecipients,
+            SelectedSilentWatchers = selectedSilentWatchers,
             CanAddRecipients = true,
+            CanAddSilentWatchers = true,
             CanRemoveSuggestedRecipients = true
         });
     }

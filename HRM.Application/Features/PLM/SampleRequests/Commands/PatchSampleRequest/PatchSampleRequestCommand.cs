@@ -1,4 +1,5 @@
 using HRM.Application.Commons.Models;
+using HRM.Domain.Enums.Products;
 using MediatR;
 using System.Text.Json.Serialization;
 
@@ -59,6 +60,8 @@ public sealed class PatchSampleRequestCommand : IRequest<OperationResult<Guid>>
     public double? RecycleRate { get; set; }
     public double? TaicalRate { get; set; }
     public bool? IsRecycle { get; set; }
+    public bool? GRS { get; set; }
+    public GRSConsumerType? GRSConsumerType { get; set; }
     public Guid? CategoryId { get; set; }
     public double? Weight { get; set; }
     public string? Unit { get; set; }

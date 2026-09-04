@@ -1,4 +1,5 @@
 using HRM.Application.Commons.Models;
+using HRM.Domain.Enums.Products;
 using HRM.Domain.Enums.SampleRequests;
 using MediatR;
 
@@ -6,7 +7,7 @@ namespace HRM.Application.Features.PLM.SampleRequests.Commands.CreateSampleReque
 
 /// <summary>
 /// Tạo yêu cầu phối mẫu mới từ dữ liệu Sale nhập, đồng thời tạo message đầu tiên gửi đến người nhận bắt buộc của SampleRequest.
-/// FE có thể gửi `InitialLabMessage` và `InitialLabRecipientEmployeeIds`; BE vẫn tự thêm required recipients theo rule SampleRequest.
+/// FE có thể gửi `InitialLabMessage`, người nhận notification và Watcher im lặng; BE vẫn tự thêm required recipients theo rule SampleRequest.
 /// </summary>
 public sealed class CreateSampleRequestCommand : IRequest<OperationResult<Guid>>
 {
@@ -37,6 +38,10 @@ public sealed class CreateSampleRequestCommand : IRequest<OperationResult<Guid>>
     public string? AdditionalComment { get; set; }
     public string? InitialLabMessage { get; set; }
     public IReadOnlyList<Guid> InitialLabRecipientEmployeeIds { get; set; } = Array.Empty<Guid>();
+    /// <summary>
+    /// Null nghĩa là FE không gửi field và BE tự chọn Lab watcher mặc định; mảng rỗng nghĩa là chủ động không thêm watcher.
+    /// </summary>
+    public IReadOnlyList<Guid>? InitialLabSilentWatcherEmployeeIds { get; set; }
 
     public string? ColourCode { get; set; }
     public string? ProductName { get; set; }
@@ -65,6 +70,8 @@ public sealed class CreateSampleRequestCommand : IRequest<OperationResult<Guid>>
     public double? RecycleRate { get; set; }
     public double? TaicalRate { get; set; }
     public bool? IsRecycle { get; set; }
+    public bool? GRS { get; set; }
+    public GRSConsumerType? GRSConsumerType { get; set; }
     public Guid? CategoryId { get; set; }
     public double? Weight { get; set; }
     public string? Unit { get; set; }

@@ -1,5 +1,7 @@
 using HRM.Application.Abstractions.Persistence.PLM;
+using HRM.Application.Abstractions.Security;
 using HRM.Application.Features.PLM.SampleRequests.Dtos.FormOptions;
+using HRM.Application.Features.PLM.SampleRequests.Rules;
 using HRM.Domain.ReferenceData.SampleRequests;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -10,10 +12,14 @@ internal sealed class GetSampleRequestFormOptionsQueryHandler
     : IRequestHandler<GetSampleRequestFormOptionsQuery, SampleRequestFormOptionsDto>
 {
     private readonly IPLMReadDbContext _dbContext;
+    private readonly ICurrentUser _currentUser;
 
-    public GetSampleRequestFormOptionsQueryHandler(IPLMReadDbContext dbContext)
+    public GetSampleRequestFormOptionsQueryHandler(
+        IPLMReadDbContext dbContext,
+        ICurrentUser currentUser)
     {
         _dbContext = dbContext;
+        _currentUser = currentUser;
     }
     public async Task<SampleRequestFormOptionsDto> Handle(
         GetSampleRequestFormOptionsQuery request,
@@ -37,13 +43,23 @@ internal sealed class GetSampleRequestFormOptionsQueryHandler
             .ToList();
 
         var categories = await _dbContext.Categories
-            .Where(x => x.IsActive == true && x.Types == "Product")
+            .Where(x =>
+                x.CompanyId == _currentUser.CompanyId &&
+                x.IsActive == true &&
+                x.Types == "Product" &&
+                x.ExternalId != null &&
+                SampleRequestProductCategoryRules.CanonicalCategoryCodes.Contains(x.ExternalId))
             .Select(x => new SampleRequestOptionDto
             {
                 Value = x.CategoryId,
-                DisplayName = x.Name ?? "_"
+                DisplayName = x.Name ?? "_",
+                Code = x.ExternalId!
             })
             .ToListAsync(cancellationToken);
+
+        categories = categories
+            .OrderBy(x => Array.IndexOf(SampleRequestProductCategoryRules.CanonicalCategoryCodes, x.Code))
+            .ToList();
 
         var branches = await _dbContext.Companies
             .Select(x => new SampleRequestOptionDto

@@ -4,11 +4,14 @@ internal static class FormulaConcurrencyRules
 {
     public static bool HasExpectedUpdatedDateConflict(
         DateTime? expectedUpdatedDate,
-        DateTime? currentUpdatedDate)
+        DateTime? currentUpdatedDate,
+        DateTime? createdDate = null)
     {
+        var currentTimestamp = currentUpdatedDate ?? createdDate;
+
         return expectedUpdatedDate.HasValue &&
-               currentUpdatedDate.HasValue &&
-               currentUpdatedDate.Value.Ticks != expectedUpdatedDate.Value.Ticks;
+               currentTimestamp.HasValue &&
+               currentTimestamp.Value.Ticks != expectedUpdatedDate.Value.Ticks;
     }
 
     public static bool HasExpectedUpdatedDateConflictWithDatabasePrecision(

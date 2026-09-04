@@ -144,12 +144,11 @@ SampleRequestMessageRecipientResolver
 
 Với form tạo mới Sample Request, FE nên gửi `draftCategoryId` đang chọn. Resolver sẽ đọc `Categories.ExternalId` của cùng company để quyết định leader mặc định:
 
-- `PC` -> leader `QAQC.RD` và `QAQC.MAU`.
-- `PMA`, `PPG` -> leader `QAQC.RD`.
-- `PHM`, `PBM`, `PDM` -> leader `QAQC.MAU`.
+- `CMP`, `PMA`, `PPG`, `AMB`, `VRG`, `ADD` -> leader `QAQC.RD`.
+- `PHM`, `PBM`, `PDM`, `CMB`, `PIG` -> leader `QAQC.MAU`.
 - `PKH`, `PTP`, `PMS`, `PPB`, hoặc loại không map được -> fallback leader `QAQC.RD` và `QAQC.MAU`.
 
-Chỉ `President` và `LabAdmin` nằm trong `requiredRecipients` với `locked = true`. Leader theo category là người nhận mặc định, xuất hiện trong `suggestedRecipients` và `selectedRecipients` ở lần preview đầu tiên nhưng `locked = false`, nên user có thể bỏ hoặc thay đổi.
+`President`, `LabAdmin` và account `qaqcad01` nằm trong `requiredRecipients` với `locked = true`. Khi current sender có `SaleUser`, leader active của chính group active chứa sender cũng nằm trong `requiredRecipients` với `source = sales_group_leader` và `locked = true`; sender bị loại trừ, không dùng role `Leader` toàn công ty và recipient trùng được gộp. Leader QAQC theo category là người nhận mặc định, xuất hiện trong `suggestedRecipients` và `selectedRecipients` ở lần preview đầu tiên nhưng `locked = false`, nên user có thể bỏ hoặc thay đổi.
 
 `selectedRecipientEmployeeIds` có hai semantics: omit/null cho lần preview đầu tiên để BE tự chọn leader mặc định; gửi `[]` khi user đã bỏ toàn bộ người nhận tùy chọn; gửi mảng id khi user đang chọn các người nhận tùy chọn đó. Khi submit, FE gửi đúng danh sách tùy chọn đã chọn qua field recipient tương ứng; BE vẫn tự thêm `President`/`LabAdmin`.
 
@@ -163,6 +162,14 @@ SendSampleRequestMessageCommandHandler
 ```
 
 Nhờ vậy danh sách FE preview và danh sách BE gửi thật không bị lệch.
+
+Với Sample Request, preview cũng nhận `selectedSilentWatcherEmployeeIds` và trả `selectedSilentWatchers`. Khi FE
+không gửi field này ở lần preview đầu tiên, các `LabUser`/`LabAdmin` active không xuất hiện trong
+`requiredRecipients`, `suggestedRecipients` hoặc `selectedRecipients` được chọn sẵn làm Watcher im lặng; FE có thể
+gửi `[]` để bỏ các lựa chọn mặc định đó.
+Đây là người được thêm vào thread với role `Watcher`, mute mặc định. Họ có quyền đọc và vẫn thấy notification trong
+Notification Hub ở trạng thái đã đọc, nhưng không nhận SignalR/Web Push hay làm tăng badge. Form tạo mới gửi các id
+này qua `initialLabSilentWatcherEmployeeIds`; một employee không được vừa là silent watcher vừa là recipient thông thường.
 
 ## Cách Thêm Context Mới
 

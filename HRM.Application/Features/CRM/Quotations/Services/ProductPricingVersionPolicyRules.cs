@@ -33,7 +33,11 @@ internal static class ProductPricingVersionPolicyRules
         }
 
         if (policy.CompanyId != version.CompanyId ||
-            policy.Profile != version.Product.FormulaPricingProfile ||
+            (policy.CategoryId.HasValue && policy.CategoryId != version.Product.CategoryId) ||
+            policy.Profile != FormulaPricingProfileResolver.Resolve(
+                version.Product.ColourCode,
+                version.Product.Code,
+                version.Product.Additive) ||
             !string.Equals(policy.Currency, version.Currency, StringComparison.OrdinalIgnoreCase))
         {
             return OperationResult<ResolvedFormulaPricingPolicy>.Fail(
@@ -55,17 +59,12 @@ internal static class ProductPricingVersionPolicyRules
         decimal? profitMarginRate,
         ProductPricingChangedField? changedField)
     {
-        if (!realtimeMaterialCost.HasValue)
-        {
-            return OperationResult<FormulaPriceCalculationDto>.Fail("MaterialPriceMissing");
-        }
-
         try
         {
             return OperationResult<FormulaPriceCalculationDto>.Ok(
                 FormulaPriceCalculator.Calculate(
                     policy,
-                    realtimeMaterialCost.Value,
+                    realtimeMaterialCost ?? 0m,
                     manufacturingCost,
                     standardSellingPrice,
                     profitMarginRate,

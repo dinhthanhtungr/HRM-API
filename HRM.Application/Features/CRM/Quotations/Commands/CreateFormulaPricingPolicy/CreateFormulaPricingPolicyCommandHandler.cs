@@ -45,16 +45,27 @@ internal sealed class CreateFormulaPricingPolicyCommandHandler(
             command.Request.DefaultProfitMarginRate,
             command.Request.RoundingRule,
             command.Request.RoundingIncrement,
-            command.Request.EffectiveFrom);
+            command.Request.EffectiveFrom,
+            command.Request.PriceValidityDays);
         if (configurationError is not null)
         {
             return OperationResult<FormulaPricingPolicyDto>.Fail(configurationError);
+        }
+
+        var categoryExists = !command.Request.CategoryId.HasValue || await dbContext.Categories.AsNoTracking().AnyAsync(x =>
+            x.CategoryId == command.Request.CategoryId.Value && x.CompanyId == companyId && x.IsActive == true,
+            cancellationToken);
+        if (!categoryExists)
+        {
+            return OperationResult<FormulaPricingPolicyDto>.Fail(
+                "Category was not found, inactive, or is outside the current company.");
         }
 
         var draftExists = await dbContext.FormulaPricingPolicies
             .AsNoTracking()
             .AnyAsync(x =>
                 x.CompanyId == companyId &&
+                x.CategoryId == command.Request.CategoryId &&
                 x.Profile == command.Request.Profile &&
                 x.Currency == currency &&
                 x.Status == FormulaPricingPolicyStatus.Draft &&
@@ -77,6 +88,7 @@ internal sealed class CreateFormulaPricingPolicyCommandHandler(
             .AsNoTracking()
             .Where(x =>
                 x.CompanyId == companyId &&
+                x.CategoryId == command.Request.CategoryId &&
                 x.Profile == command.Request.Profile &&
                 x.Currency == currency)
             .MaxAsync(x => (int?)x.Version, cancellationToken) ?? 0;
@@ -85,6 +97,7 @@ internal sealed class CreateFormulaPricingPolicyCommandHandler(
         {
             FormulaPricingPolicyId = policyId,
             CompanyId = companyId,
+            CategoryId = command.Request.CategoryId,
             Profile = command.Request.Profile,
             Currency = currency,
             Name = command.Request.Name.Trim(),
@@ -94,6 +107,7 @@ internal sealed class CreateFormulaPricingPolicyCommandHandler(
             RoundingRule = command.Request.RoundingRule,
             RoundingIncrement = command.Request.RoundingIncrement,
             EffectiveFrom = command.Request.EffectiveFrom,
+            PriceValidityDays = command.Request.PriceValidityDays,
             Status = FormulaPricingPolicyStatus.Draft,
             IsActive = true,
             CreatedBy = employeeId,

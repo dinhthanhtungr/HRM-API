@@ -1,3 +1,5 @@
+using HRM.Domain.Enums.Products;
+
 namespace HRM.Application.Features.PLM.SampleRequests.Dtos.Detail
 {
     public sealed class SampleRequestDetailTechnicalRequirementCardDto
@@ -29,6 +31,8 @@ namespace HRM.Application.Features.PLM.SampleRequests.Dtos.Detail
         public string? VisualTest { get; set; }
         public bool? ReturnSample { get; set; }
         public bool IsRecycle { get; set; }
+        public bool GRS { get; set; }
+        public GRSConsumerType? GRSConsumerType { get; set; }
         public string? OtherComment { get; set; } // Yêu cầu khác
     }
 }

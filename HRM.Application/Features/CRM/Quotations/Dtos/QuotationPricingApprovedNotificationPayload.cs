@@ -1,5 +1,7 @@
 namespace HRM.Application.Features.CRM.Quotations.Dtos;
 
+using HRM.Domain.Enums.CustomerEnum;
+
 public sealed class QuotationPricingApprovedNotificationPayload
 {
     public string ContentType { get; init; } = "QuotationPricingApproved";
@@ -9,6 +11,8 @@ public sealed class QuotationPricingApprovedNotificationPayload
     public string ProductCode { get; init; } = string.Empty;
     public Guid ProductPricingVersionId { get; init; }
     public int ProductPricingVersion { get; init; }
+    public QuotationStatus QuotationStatus { get; init; }
+    public bool IsQuotationPricingComplete { get; init; }
     public QuotationPricingApprovedActionDto Action { get; init; } = new();
 }
 

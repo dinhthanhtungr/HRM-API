@@ -1,5 +1,7 @@
 using HRM.Application.Abstractions.Security;
+using HRM.Application.Commons.Authorization.PLM;
 using HRM.Application.Features.PLM.SampleRequests.Commands.CreateSampleRequest;
+using HRM.Application.Features.PLM.SampleRequests.Commands.MigrateProductCategories;
 using HRM.Application.Features.PLM.SampleRequests.Commands.CreateSampleRequestSampleTrial;
 using HRM.Application.Features.PLM.SampleRequests.Commands.ConfirmSampleRequestSampleReceipt;
 using HRM.Application.Features.PLM.SampleRequests.Commands.CreateSampleRequestDataChangeRequest;
@@ -12,6 +14,7 @@ using HRM.Application.Features.PLM.SampleRequests.Commands.PatchSampleRequest;
 using HRM.Application.Features.PLM.SampleRequests.Commands.PatchSampleRequestSampleTrial;
 using HRM.Application.Features.PLM.SampleRequests.Commands.RecordSampleRequestSampleTrialCustomerFeedback;
 using HRM.Application.Features.PLM.SampleRequests.Commands.RecordSampleTrialCustomerFeedbackInteraction;
+using HRM.Application.Features.PLM.SampleRequests.Commands.RequestSampleRequestPriceQuote;
 using HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestDetail;
 using HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestFormOptions;
 using HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestHistory;
@@ -50,13 +53,30 @@ public sealed class SampleRequestsController : ControllerBase
     }
 
     /// <summary>
-    /// Lấy báo cáo theo từng lần gửi/thử mẫu để FE trình bày dạng bảng như file theo dõi Lab.
+    /// Lấy danh sách theo Sample Request, kèm Trial mới nhất để Sale theo dõi tiến độ Lab.
     /// </summary>
     [HttpGet("sample-trials")]
     public async Task<IActionResult> GetSampleTrials(
         [FromQuery] GetSampleRequestSampleTrialsQuery query,
         CancellationToken cancellationToken)
     {
+        var result = await _sender.Send(query, cancellationToken);
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Lấy lịch sử các lần Trial của một Sample Request; FE chỉ gọi khi người dùng mở phần lịch sử.
+    /// </summary>
+    [HttpGet("{sampleRequestId:guid}/sample-trials")]
+    public async Task<IActionResult> GetSampleTrialHistory(
+        Guid sampleRequestId,
+        [FromQuery] GetSampleRequestSampleTrialsQuery query,
+        CancellationToken cancellationToken)
+    {
+        query.SampleRequestId = sampleRequestId;
+        query.IncludeTrialHistory = true;
+
         var result = await _sender.Send(query, cancellationToken);
 
         return Ok(result);
@@ -154,6 +174,27 @@ public sealed class SampleRequestsController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>
+    /// Chuyển Product active của công ty hiện tại sang CMP/PIG theo rule chuẩn hoá đã duyệt.
+    /// </summary>
+    [HttpPost("products/migrate-categories")]
+    [Authorize(Policy = PlmPolicies.EditProductTechnicalInfo)]
+    public async Task<IActionResult> MigrateProductCategories(
+        [FromQuery] bool dryRun = true,
+        [FromQuery] string? targetCategoryCode = null,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _sender.Send(
+            new MigrateProductCategoriesCommand
+            {
+                DryRun = dryRun,
+                TargetCategoryCode = targetCategoryCode
+            },
+            cancellationToken);
+
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
     [HttpGet("lookup")]
     public async Task<IActionResult> GetLookup(
         [FromQuery] GetSampleRequestLookupQuery query,
@@ -240,6 +281,23 @@ public sealed class SampleRequestsController : ControllerBase
         return result.Success
             ? Ok(result)
             : BadRequest(result);
+    }
+
+    /// <summary>
+    /// Gửi yêu cầu báo giá vào thread của Sample Request. Nếu FE không chỉ định Formula,
+    /// backend ưu tiên Formula của trial active mới nhất rồi đến Formula trên Sample Request.
+    /// </summary>
+    [HttpPost("{sampleRequestId:guid}/price-quote-requests")]
+    public async Task<IActionResult> RequestPriceQuote(
+        Guid sampleRequestId,
+        [FromBody] RequestSampleRequestPriceQuoteRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(
+            new RequestSampleRequestPriceQuoteCommand(sampleRequestId, request),
+            cancellationToken);
+
+        return result.Success ? Ok(result) : BadRequest(result);
     }
 
     [HttpGet("{sampleRequestId:guid}/messages")]

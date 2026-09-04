@@ -5,6 +5,8 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using HRM.Domain.Entities.WarehouseSchema;
+using HRM.Domain.Entities.InventorySchema;
+using HRM.Domain.Entities.WeightMixingSchema;
 
 namespace HRM.Infrastructure.DatabaseContext.ApplicationDbs
 {
@@ -30,6 +32,11 @@ namespace HRM.Infrastructure.DatabaseContext.ApplicationDbs
         public virtual DbSet<UsagePurpose> UsagePurposes { get; set; } = default!;
         public virtual DbSet<WarehouseVoucher> WarehouseVouchers { get; set; } = default!;
         public virtual DbSet<WarehouseVoucherDetail> WarehouseVoucherDetails { get; set; } = default!;
+        public virtual DbSet<WeighCostAllocation> WeighCostAllocations { get; set; } = default!;
+        public virtual DbSet<InventoryStockLedger> InventoryStockLedgers { get; set; } = default!;
+        public virtual DbSet<WeighEvent> WeighEvents { get; set; } = default!;
+        public virtual DbSet<WeighVAMaterial> WeighVAMaterials { get; set; } = default!;
+        public virtual DbSet<WeighVA> WeighVAs { get; set; } = default!;
 
     }
 }

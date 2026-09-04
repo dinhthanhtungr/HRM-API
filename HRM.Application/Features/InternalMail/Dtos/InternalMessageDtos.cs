@@ -74,9 +74,11 @@ public sealed class InternalMessageAttachmentDto
 public sealed class InternalConversationAttachmentDto
 {
     public Guid AttachmentId { get; set; }
-    public Guid MessageId { get; set; }
-    public Guid SenderEmployeeId { get; set; }
-    public string SenderName { get; set; } = string.Empty;
+    /// <summary>"Chat" hoặc "SampleRequest" để FE hiển thị nguồn tệp.</summary>
+    public string Source { get; set; } = "Chat";
+    public Guid? MessageId { get; set; }
+    public Guid? SenderEmployeeId { get; set; }
+    public string? SenderName { get; set; }
     public DateTime SentAt { get; set; }
     public string FileName { get; set; } = string.Empty;
     public long SizeBytes { get; set; }

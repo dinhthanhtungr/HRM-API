@@ -20,7 +20,7 @@ public sealed class FormulaPricingEngineTests
 
         var result = await engine.ResolveAsync(new PricingEngineRequest
         {
-            CompanyId = companyId, Profile = FormulaPricingProfile.Powder, Currency = "vnd",
+            CompanyId = companyId, CategoryId = Guid.NewGuid(), Profile = FormulaPricingProfile.Powder, Currency = "vnd",
             MaterialCost = 101m
         }, CancellationToken.None);
 
@@ -39,7 +39,7 @@ public sealed class FormulaPricingEngineTests
         var companyId = Guid.NewGuid();
         var missing = new FormulaPricingEngine(new PolicyResolver(null), new MaterialPrices());
         var noPolicy = await missing.ResolveAsync(new PricingEngineRequest
-        { CompanyId = companyId, Profile = FormulaPricingProfile.Compound, Currency = "USD", MaterialCost = 1m }, CancellationToken.None);
+        { CompanyId = companyId, CategoryId = Guid.NewGuid(), Profile = FormulaPricingProfile.Compound, Currency = "USD", MaterialCost = 1m }, CancellationToken.None);
         Assert.False(noPolicy.Success);
         Assert.Equal("PricingPolicyMissing", noPolicy.Message);
 
@@ -49,17 +49,20 @@ public sealed class FormulaPricingEngineTests
         var incomplete = await new FormulaPricingEngine(new PolicyResolver(policy), new MaterialPrices())
             .ResolveAsync(new PricingEngineRequest
             {
-                CompanyId = companyId, Profile = FormulaPricingProfile.Compound, Currency = "USD",
+                CompanyId = companyId, CategoryId = Guid.NewGuid(), Profile = FormulaPricingProfile.Compound, Currency = "USD",
                 MaterialItems = [new FormulaMaterialCostItem(Guid.NewGuid(), ItemType.Material, 1m)]
             }, CancellationToken.None);
         Assert.True(incomplete.Success);
         Assert.False(incomplete.Data!.IsMaterialCostComplete);
         Assert.Equal(1, incomplete.Data.MissingMaterialPriceCount);
+        Assert.Equal(0m, incomplete.Data.MaterialCost);
+        Assert.Equal(1m, incomplete.Data.StandardSellingPrice);
+        Assert.NotNull(incomplete.Data.Calculation);
     }
 
     private sealed class PolicyResolver(ResolvedFormulaPricingPolicy? policy) : IFormulaPricingPolicyResolver
     {
-        public Task<ResolvedFormulaPricingPolicy?> GetPublishedAsync(Guid companyId, FormulaPricingProfile profile, string currency, CancellationToken cancellationToken) => Task.FromResult(policy);
+        public Task<ResolvedFormulaPricingPolicy?> GetPublishedAsync(Guid companyId, Guid categoryId, FormulaPricingProfile profile, string currency, CancellationToken cancellationToken) => Task.FromResult(policy);
         public Task<IReadOnlyDictionary<FormulaPricingPolicyLookupKey, ResolvedFormulaPricingPolicy>> GetPublishedBatchAsync(IEnumerable<FormulaPricingPolicyLookupKey> keys, CancellationToken cancellationToken)
         {
             var key = keys.Single();
@@ -72,5 +75,6 @@ public sealed class FormulaPricingEngineTests
         public Task<Dictionary<Guid, LatestMaterialPriceDto>> LoadLatestMaterialPriceInfoDictAsync(IEnumerable<Guid?> materialIds, CancellationToken cancellationToken = default) => Task.FromResult(new Dictionary<Guid, LatestMaterialPriceDto>());
         public Task<Dictionary<Guid, LatestMaterialPriceDto>> LoadLatestMaterialPriceInfoBySupplierDictAsync(Guid supplierId, IEnumerable<Guid?> materialIds, CancellationToken cancellationToken = default) => Task.FromResult(new Dictionary<Guid, LatestMaterialPriceDto>());
         public Task<Dictionary<PriceItemKey, LatestItemPriceDto>> LoadLatestItemPriceInfoDictAsync(IEnumerable<PriceItemRequest> items, CancellationToken cancellationToken = default) => Task.FromResult(new Dictionary<PriceItemKey, LatestItemPriceDto>());
+        public Task<Dictionary<PriceItemKey, LatestItemPriceDto>> LoadLatestPricingItemPriceInfoDictAsync(Guid companyId, string currency, IEnumerable<PriceItemRequest> items, CancellationToken cancellationToken = default) => Task.FromResult(new Dictionary<PriceItemKey, LatestItemPriceDto>());
     }
 }

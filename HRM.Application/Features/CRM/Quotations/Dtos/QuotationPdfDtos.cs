@@ -12,6 +12,7 @@ public sealed class QuotationPdfFileDto
 public sealed class QuotationPdfDocumentDto
 {
     public string ExternalId { get; init; } = string.Empty;
+    public QuotationStatus Status { get; init; }
     public DateTime QuotationDate { get; init; }
     public DateTime? ValidUntil { get; init; }
     public string Currency { get; init; } = string.Empty;
@@ -42,6 +43,8 @@ public sealed class QuotationPdfDocumentDto
     public string? PaymentTerms { get; init; }
     public string? DeliveryTerms { get; init; }
     public string? Note { get; init; }
+    public bool HasStoredTerms { get; init; }
+    public IReadOnlyList<QuotationPdfTermDto> Terms { get; init; } = [];
 
     public IReadOnlyList<QuotationPdfLineDto> Lines { get; init; } = [];
 }
@@ -65,5 +68,17 @@ public sealed class QuotationPdfPriceTierDto
 {
     public string QuantityRangeLabel { get; init; } = string.Empty;
     public decimal UnitPrice { get; init; }
+    public decimal CommissionAmount { get; init; }
+    public decimal CustomerUnitPrice { get; init; }
     public int SortOrder { get; init; }
+}
+
+public sealed class QuotationPdfTermDto
+{
+    public string LabelVi { get; init; } = string.Empty;
+    public string? LabelEn { get; init; }
+    public string? ValueVi { get; init; }
+    public string? ValueEn { get; init; }
+    public int SortOrder { get; init; }
+    public bool IsActive { get; init; }
 }

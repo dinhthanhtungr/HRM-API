@@ -21,6 +21,20 @@ Module này định nghĩa nền dữ liệu master cho E-BOM và M-BOM, tách b
 
 Các điều kiện xuyên bảng như cùng `CompanyId`, cùng Product, loại BOM phù hợp và trạng thái `Released` phải được kiểm tra tại Application layer khi triển khai use case ghi.
 
-## Trạng thái triển khai
+## E-BOM API
 
-Hiện tại mới có Domain entity, navigation collection, DbSet và EF Core configuration. Chưa có API, calculator, migration, backfill hoặc luồng tự động snapshot BOM vào lệnh sản xuất.
+API hiện chỉ mở phạm vi `Engineering`; chưa expose M-BOM, công đoạn, hao hụt hay integration lệnh sản xuất.
+
+```http
+GET   /api/v1/plm/boms?productId={productId}&keyword={keyword}
+GET   /api/v1/plm/boms/versions/{bomVersionId}
+POST  /api/v1/plm/boms
+PUT   /api/v1/plm/boms/versions/{bomVersionId}
+PATCH /api/v1/plm/boms/versions/{bomVersionId}
+```
+
+`POST` tạo `BomDefinition` loại `Engineering`, kèm version `1` ở trạng thái `Draft` và toàn bộ item. `PUT` chỉ áp dụng cho Draft và thay thế trọn danh sách item; backend đánh lại `lineNo` theo thứ tự mảng. `PATCH` chỉ sửa metadata Draft; field không gửi giữ nguyên, field nullable chỉ được xóa khi đưa đúng code vào `clearFields` (`effectiveFrom`, `effectiveTo`, `changeReason`, `note`).
+
+Mọi endpoint lọc theo `CurrentUser.CompanyId`; thao tác ghi yêu cầu `EmployeeId`. Material/Product component phải active và cùng công ty với BOM. E-BOM chỉ nhận item `Material` hoặc `Product`, không cho Product tự tham chiếu chính nó.
+
+Migration tạo schema/bảng nằm ở `HRM.Infrastructure/DatabaseContext/Migrations/20260902_CreateBomMaster.sql`. Database chưa có endpoint release/obsolete, standard-BOM assignment, BOM explosion hoặc snapshot vào production order; các phần đó được giữ cho phase sau.

@@ -273,6 +273,25 @@ public sealed class InternalMailController : ControllerBase
         }
     }
 
+    [HttpGet("conversations/{conversationId:guid}/related-attachments/{attachmentId:guid}")]
+    public Task<IActionResult> GetRelatedAttachmentContent(
+        Guid conversationId,
+        Guid attachmentId,
+        [FromQuery] string mode = "inline",
+        CancellationToken cancellationToken = default)
+    {
+        return GetScopedAttachmentContent(conversationId, attachmentId, mode, false, cancellationToken);
+    }
+
+    [HttpGet("conversations/{conversationId:guid}/related-attachments/{attachmentId:guid}/thumbnail")]
+    public Task<IActionResult> GetRelatedAttachmentThumbnail(
+        Guid conversationId,
+        Guid attachmentId,
+        CancellationToken cancellationToken = default)
+    {
+        return GetScopedAttachmentContent(conversationId, attachmentId, "inline", true, cancellationToken);
+    }
+
     [HttpPatch("messages/{messageId:guid}")]
     public async Task<IActionResult> UpdateMessage(
         Guid messageId,
@@ -352,5 +371,46 @@ public sealed class InternalMailController : ControllerBase
         }, cancellationToken);
 
         return result.Success ? NoContent() : BadRequest(result);
+    }
+
+    private async Task<IActionResult> GetScopedAttachmentContent(
+        Guid conversationId,
+        Guid attachmentId,
+        string mode,
+        bool thumbnail,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var content = await _sender.Send(new GetInternalMailAttachmentContentQuery
+            {
+                ConversationId = conversationId,
+                AttachmentId = attachmentId,
+                Thumbnail = thumbnail
+            }, cancellationToken);
+            if (content is null)
+            {
+                return NotFound();
+            }
+
+            if (thumbnail)
+            {
+                Response.Headers.CacheControl = "private, max-age=86400";
+                return File(content.Stream, content.ContentType, enableRangeProcessing: true);
+            }
+
+            if (string.Equals(mode, "download", StringComparison.OrdinalIgnoreCase))
+            {
+                return File(content.Stream, content.ContentType, fileDownloadName: content.FileName);
+            }
+
+            Response.Headers.ContentDisposition =
+                $"inline; filename*=UTF-8''{Uri.EscapeDataString(content.FileName)}";
+            return File(content.Stream, content.ContentType, enableRangeProcessing: true);
+        }
+        catch (FileNotFoundException)
+        {
+            return NotFound();
+        }
     }
 }

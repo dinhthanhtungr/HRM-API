@@ -1,4 +1,5 @@
 using HRM.Application.Commons.Pricing.Dtos;
+using HRM.Domain.Enums.Manufacturings;
 using HRM.Domain.Enums.Products;
 
 namespace HRM.Application.Features.PLM.Formulas.Dtos.Commons
@@ -11,6 +12,8 @@ namespace HRM.Application.Features.PLM.Formulas.Dtos.Commons
         public string Name { get; set; } = string.Empty;
 
         public string Status { get; set; } = FormulaStatus.Draft.ToString();
+
+        public StepOfProduct? StepOfProduct { get; set; }
 
         public Guid? CheckBy { get; set; }
         public string? CheckByName { get; set; }
@@ -44,6 +47,7 @@ namespace HRM.Application.Features.PLM.Formulas.Dtos.Commons
         public string? Note { get; set; }
 
         public DateTime? CreatedDate { get; set; }
+        public DateTime? UpdatedDate { get; set; }
 
         public IReadOnlyList<FormulaMaterialInformationDto> Materials { get; set; }
             = new List<FormulaMaterialInformationDto>();

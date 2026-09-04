@@ -6,7 +6,7 @@ using HRM.Infrastructure.DatabaseContext.ApplicationDbs;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 
-namespace HRM.Api.Backgrounds;
+namespace HRM.Api.Backgrounds.Notifications;
 
 /// <summary>
 /// Worker nền đọc các dòng notification outbox và phát event SignalR "notify".

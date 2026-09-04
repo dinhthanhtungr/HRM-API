@@ -8,12 +8,15 @@ using HRM.Application.Features.CRM.Quotations.Commands.RefreshQuotationPrices;
 using HRM.Application.Features.CRM.Quotations.Commands.ReplaceQuotationLines;
 using HRM.Application.Features.CRM.Quotations.Commands.RequestQuotation;
 using HRM.Application.Features.CRM.Quotations.Commands.UpdateQuotation;
+using HRM.Application.Features.CRM.Quotations.Commands.UpdateQuotationCustomerPriceTiers;
+using HRM.Application.Features.CRM.Quotations.Commands.WithdrawQuotationPricing;
 using HRM.Application.Features.CRM.Quotations.Commands.CreateFormulaPricingPolicy;
 using HRM.Application.Features.CRM.Quotations.Commands.PublishFormulaPricingPolicy;
 using HRM.Application.Features.CRM.Quotations.Commands.UpdateFormulaPricingPolicy;
 using HRM.Application.Features.CRM.Quotations.Dtos;
 using HRM.Application.Features.CRM.Quotations.Queries.ExportQuotationPdf;
 using HRM.Application.Features.CRM.Quotations.Queries.GetQuotationById;
+using HRM.Application.Features.CRM.Quotations.Queries.GetQuotationCustomerTerms;
 using HRM.Application.Features.CRM.Quotations.Queries.GetQuotationPricingComparison;
 using HRM.Application.Features.CRM.Quotations.Queries.GetQuotationPricingWorkspace;
 using HRM.Application.Features.CRM.Quotations.Queries.GetQuotationPricingQueue;
@@ -87,6 +90,18 @@ public sealed class QuotationsController : ControllerBase
         return result.Success ? Ok(result) : MutationFailure(result);
     }
 
+    [HttpPut("{quotationId:guid}/customer-price-tiers")]
+    public async Task<IActionResult> UpdateCustomerPriceTiers(
+        Guid quotationId,
+        [FromBody] UpdateQuotationCustomerPriceTiersRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(
+            new UpdateQuotationCustomerPriceTiersCommand(quotationId, request),
+            cancellationToken);
+        return result.Success ? Ok(result.Data) : MutationFailure(result);
+    }
+
     [HttpPost("{quotationId:guid}/refresh-prices")]
     public async Task<IActionResult> RefreshQuotationPrices(
         Guid quotationId,
@@ -121,6 +136,18 @@ public sealed class QuotationsController : ControllerBase
             new RequestQuotationCommand(quotationId, request),
             cancellationToken);
         return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    [HttpPost("{quotationId:guid}/withdraw-pricing-request")]
+    public async Task<IActionResult> WithdrawQuotationPricingRequest(
+        Guid quotationId,
+        [FromBody] WithdrawQuotationPricingRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(
+            new WithdrawQuotationPricingRequestCommand(quotationId, request),
+            cancellationToken);
+        return result.Success ? Ok(result.Data) : MutationFailure(result);
     }
 
     [HttpGet]
@@ -181,10 +208,11 @@ public sealed class QuotationsController : ControllerBase
     public async Task<IActionResult> GetProductPricing(
         Guid productId,
         [FromQuery] string? currency,
+        [FromQuery] Guid? customerId,
         CancellationToken cancellationToken)
     {
         var result = await _sender.Send(
-            new GetQuotationProductPricingQuery(productId, currency),
+            new GetQuotationProductPricingQuery(productId, currency, customerId),
             cancellationToken);
         return result.Success ? Ok(result.Data) : BadRequest(result);
     }
@@ -248,11 +276,12 @@ public sealed class QuotationsController : ControllerBase
 
     [HttpGet("pricing-policies")]
     public async Task<IActionResult> GetPricingPolicies(
+        [FromQuery] Guid? categoryId,
         [FromQuery] FormulaPricingProfile? profile,
         [FromQuery] string? currency,
         CancellationToken cancellationToken)
     {
-        var result = await _sender.Send(new GetFormulaPricingPoliciesQuery(profile, currency), cancellationToken);
+        var result = await _sender.Send(new GetFormulaPricingPoliciesQuery(categoryId, profile, currency), cancellationToken);
         return result.Success ? Ok(result.Data) : BadRequest(result);
     }
 
@@ -312,6 +341,17 @@ public sealed class QuotationsController : ControllerBase
     {
         var result = await _sender.Send(
             new GetQuotationPricingWorkspaceQuery(quotationId),
+            cancellationToken);
+        return result.Success ? Ok(result.Data) : BadRequest(result);
+    }
+
+    [HttpGet("customer-terms")]
+    public async Task<IActionResult> GetCustomerTerms(
+        [FromQuery] Guid customerId,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(
+            new GetQuotationCustomerTermsQuery(customerId),
             cancellationToken);
         return result.Success ? Ok(result.Data) : BadRequest(result);
     }

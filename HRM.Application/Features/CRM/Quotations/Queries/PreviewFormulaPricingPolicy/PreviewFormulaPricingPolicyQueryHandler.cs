@@ -51,6 +51,10 @@ internal sealed class PreviewFormulaPricingPolicyQueryHandler(
             query.Request.ManufacturingCost,
             query.Request.StandardSellingPrice);
 
+        result.PriceExpiresAt = policy.PriceValidityDays.HasValue && policy.EffectiveFrom.HasValue
+            ? policy.EffectiveFrom.Value.AddDays(policy.PriceValidityDays.Value)
+            : null;
+
         return OperationResult<FormulaPriceCalculationDto>.Ok(result);
     }
 }

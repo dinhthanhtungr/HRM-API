@@ -1,7 +1,6 @@
 using System.Globalization;
 using System.Text;
 using HRM.Domain.Entities.CustomerSchema;
-using HRM.Domain.Enums.CustomerEnum;
 
 namespace HRM.Application.Features.CRM.Quotations.Services;
 
@@ -24,24 +23,18 @@ internal static class QuotationSentContentBuilder
         content.AppendLine();
         content.AppendLine("Sản phẩm:");
 
-        foreach (var line in quotation.Lines.OrderBy(x => x.SortOrder).ThenBy(x => x.QuotationLineId))
+        foreach (var line in quotation.Lines.Where(x => x.IsActive).OrderBy(x => x.SortOrder).ThenBy(x => x.QuotationLineId))
         {
             content.AppendLine($"- [{line.ProductExternalIdSnapshot}] {line.ProductNameSnapshot}");
 
-            if (line.PriceMode == QuotationLinePriceMode.Tiered)
+            content.AppendLine("  Giá theo khối lượng:");
+            foreach (var tier in line.PriceTiers.Where(x => x.IsActive)
+                         .OrderBy(x => x.SortOrder)
+                         .ThenBy(x => x.QuotationLinePriceTierId))
             {
-                content.AppendLine("  Giá theo khối lượng:");
-                foreach (var tier in line.PriceTiers
-                             .OrderBy(x => x.SortOrder)
-                             .ThenBy(x => x.QuotationLinePriceTierId))
-                {
-                    content.AppendLine(
-                        $"  - {ResolveTierLabel(tier)}: {FormatPrice(tier.UnitPrice, currency, line.Unit)}");
-                }
-            }
-            else
-            {
-                content.AppendLine($"  Giá báo: {FormatPrice(line.UnitPrice, currency, line.Unit)}");
+                content.AppendLine(
+                    $"  - {ResolveTierLabel(tier)}: " +
+                    $"{FormatPrice(tier.CustomerUnitPrice, currency, line.Unit)}");
             }
 
             content.AppendLine($"  Ghi chú: {QuotationRules.TrimToNull(line.Note) ?? "-"}");

@@ -7,6 +7,7 @@ using HRM.Application.Features.PLM.SampleRequests.Commands.SendSampleRequestMess
 using HRM.Application.Features.PLM.SampleRequests.Dtos.InternalMail;
 using HRM.Application.Features.PLM.SampleRequests.FormulaChangeRequests;
 using HRM.Application.Features.PLM.SampleRequests.Rules;
+using HRM.Application.Features.PLM.SampleRequests.DataChangeRequests;
 using HRM.Domain.Enums.InternalMailEnums;
 using HRM.Domain.Enums.Notifications;
 using HRM.Domain.Enums.Products;
@@ -115,6 +116,7 @@ internal sealed class CreateSampleRequestFormulaChangeRequestCommandHandler
         }
 
         var now = DateTime.Now;
+        var oldStatus = sampleRequest.Status;
         SampleRequestStatusTransitionRules.MarkFormulaUpdateRequested(sampleRequest);
         sampleRequest.UpdatedBy = employeeId.Value;
         sampleRequest.UpdatedDate = now;
@@ -122,6 +124,15 @@ internal sealed class CreateSampleRequestFormulaChangeRequestCommandHandler
         requestedFormula.Status = FormulaStatus.PendingSaleConfirmation.ToString();
         requestedFormula.UpdatedBy = employeeId.Value;
         requestedFormula.UpdatedDate = now;
+
+        await SampleRequestDataChangeAuditHelper.AddStatusTransitionAuditIfChangedAsync(
+            _dbContext.AuditLogs,
+            sampleRequest,
+            oldStatus,
+            employeeId.Value,
+            now,
+            "FormulaUpdateRequested",
+            cancellationToken);
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 

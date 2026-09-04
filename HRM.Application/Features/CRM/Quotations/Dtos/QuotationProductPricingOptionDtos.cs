@@ -23,6 +23,19 @@ public sealed class QuotationProductPricingOptionDto
     public bool HasPricingVersion { get; init; }
     public ProductPricingVersionDto? CurrentPricing { get; init; }
 
+    /// <summary>
+    /// Giá chuẩn FE nên hiển thị: ưu tiên giá đã duyệt, nếu chưa có thì dùng giá hệ thống tính realtime.
+    /// Chỉ được map cho role có quyền xem Product Pricing Workbench.
+    /// </summary>
+    public decimal? StandardSellingPrice { get; init; }
+
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public QuotationProductStandardSellingPriceSource StandardSellingPriceSource { get; init; }
+
+    public decimal? ApprovedStandardSellingPrice { get; init; }
+    public DateTime? ApprovedStandardSellingPriceEffectiveFrom { get; init; }
+    public decimal? SystemCalculatedStandardSellingPrice { get; init; }
+
     public Guid? CustomerId { get; init; }
     public string? CustomerName { get; init; }
     public string? CustomerExternalId { get; init; }
@@ -31,6 +44,13 @@ public sealed class QuotationProductPricingOptionDto
     public bool HasEligiblePricingSource { get; init; }
     public IReadOnlyList<ProductPricingSourceOptionDto> PricingSources { get; init; } = [];
     public IReadOnlyList<QuotationProductPricingFormulaDto> Formulas { get; init; } = [];
+}
+
+public enum QuotationProductStandardSellingPriceSource
+{
+    Unavailable = 0,
+    ApprovedPricingVersion = 10,
+    SystemCalculated = 20
 }
 
 public sealed class QuotationProductPricingFormulaDto

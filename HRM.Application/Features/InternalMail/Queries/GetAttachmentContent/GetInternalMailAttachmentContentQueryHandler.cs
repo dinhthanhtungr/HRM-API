@@ -3,6 +3,7 @@ using HRM.Application.Abstractions.Persistence.InternalMail;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Features.Attachments.Dtos;
 using HRM.Application.Features.InternalMail.Dtos;
+using HRM.Domain.Enums.InternalMailEnums;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -47,20 +48,50 @@ internal sealed class GetInternalMailAttachmentContentQueryHandler
                 !x.Message.IsDeleted &&
                 x.Message.Conversation.CompanyId == companyId.Value &&
                 x.Message.Conversation.IsActive &&
+                (!request.ConversationId.HasValue ||
+                 x.Message.InternalConversationId == request.ConversationId.Value) &&
                 x.Message.Conversation.Participants.Any(participant =>
                     participant.EmployeeId == employeeId.Value && participant.IsActive))
-            .Select(x => new
-            {
+            .Select(x => new AttachmentFile(
                 x.Attachment.StoragePath,
                 x.Attachment.FileName,
-                IsImage = x.Attachment.FileName.ToLower().EndsWith(".png") ||
-                          x.Attachment.FileName.ToLower().EndsWith(".jpg") ||
-                          x.Attachment.FileName.ToLower().EndsWith(".jpeg") ||
-                          x.Attachment.FileName.ToLower().EndsWith(".gif") ||
-                          x.Attachment.FileName.ToLower().EndsWith(".webp") ||
-                          x.Attachment.FileName.ToLower().EndsWith(".bmp")
-            })
+                x.Attachment.FileName.ToLower().EndsWith(".png") ||
+                x.Attachment.FileName.ToLower().EndsWith(".jpg") ||
+                x.Attachment.FileName.ToLower().EndsWith(".jpeg") ||
+                x.Attachment.FileName.ToLower().EndsWith(".gif") ||
+                x.Attachment.FileName.ToLower().EndsWith(".webp") ||
+                x.Attachment.FileName.ToLower().EndsWith(".bmp")))
             .FirstOrDefaultAsync(cancellationToken);
+
+        if (attachment is null && request.ConversationId.HasValue)
+        {
+            attachment = await (
+                    from conversation in _dbContext.InternalConversations.AsNoTracking()
+                    join sampleRequest in _dbContext.SampleRequests.AsNoTracking()
+                        on conversation.RelatedId!.Value equals sampleRequest.SampleRequestId
+                    join sampleAttachment in _dbContext.AttachmentModels.AsNoTracking()
+                        on sampleRequest.AttachmentCollectionId equals sampleAttachment.AttachmentCollectionId
+                    where conversation.InternalConversationId == request.ConversationId.Value &&
+                          conversation.CompanyId == companyId.Value &&
+                          conversation.IsActive &&
+                          conversation.RelatedType == InternalMailRelatedType.SampleRequest &&
+                          sampleRequest.CompanyId == companyId.Value &&
+                          sampleRequest.IsActive &&
+                          sampleAttachment.AttachmentId == request.AttachmentId &&
+                          sampleAttachment.IsActive &&
+                          conversation.Participants.Any(participant =>
+                              participant.EmployeeId == employeeId.Value && participant.IsActive)
+                    select new AttachmentFile(
+                        sampleAttachment.StoragePath,
+                        sampleAttachment.FileName,
+                        sampleAttachment.FileName.ToLower().EndsWith(".png") ||
+                        sampleAttachment.FileName.ToLower().EndsWith(".jpg") ||
+                        sampleAttachment.FileName.ToLower().EndsWith(".jpeg") ||
+                        sampleAttachment.FileName.ToLower().EndsWith(".gif") ||
+                        sampleAttachment.FileName.ToLower().EndsWith(".webp") ||
+                        sampleAttachment.FileName.ToLower().EndsWith(".bmp")))
+                .FirstOrDefaultAsync(cancellationToken);
+        }
         if (attachment is null)
         {
             return null;
@@ -118,4 +149,6 @@ internal sealed class GetInternalMailAttachmentContentQueryHandler
         var file = await _fileStorage.OpenReadAsync(attachment.StoragePath, cancellationToken);
         return new AttachmentContent(file.Stream, file.ContentType, attachment.FileName, file.Length);
     }
+
+    private sealed record AttachmentFile(string StoragePath, string FileName, bool IsImage);
 }

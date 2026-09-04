@@ -1,7 +1,9 @@
 using HRM.Domain.Entities.CompanySchema;
+using HRM.Domain.Entities.AuditSchema;
 using HRM.Domain.Entities.CustomerSchema;
 using HRM.Domain.Entities.HrSchema;
 using HRM.Domain.Entities.SampleRequestSchema;
+using HRM.Domain.Entities.MaterialSchema;
 using HRM.Domain.Entities.WorkTaskSchema;
 using Microsoft.EntityFrameworkCore;
 
@@ -9,6 +11,7 @@ namespace HRM.Application.Abstractions.Persistence.CRM.CustomerCare;
 
 public interface ICRMWriteDbContext
 {
+    DbSet<AuditLog> AuditLogs { get; }
     DbSet<Address> Addresses { get; }
     DbSet<Contact> Contacts { get; }
     DbSet<Customer> Customers { get; }
@@ -23,11 +26,13 @@ public interface ICRMWriteDbContext
     DbSet<Quotation> Quotations { get; }
     DbSet<QuotationLine> QuotationLines { get; }
     DbSet<QuotationLinePriceTier> QuotationLinePriceTiers { get; }
+    DbSet<QuotationTerm> QuotationTerms { get; }
     DbSet<QuotationStatusHistory> QuotationStatusHistories { get; }
     DbSet<ProductPricingVersion> ProductPricingVersions { get; }
     DbSet<ProductPricingTier> ProductPricingTiers { get; }
     DbSet<FormulaPricingPolicy> FormulaPricingPolicies { get; }
     DbSet<FormulaPricingPolicyTier> FormulaPricingPolicyTiers { get; }
+    DbSet<Category> Categories { get; }
     DbSet<Formula> Formulas { get; }
     DbSet<SampleRequest> SampleRequests { get; }
     DbSet<SampleRequestSampleTrial> SampleRequestSampleTrials { get; }

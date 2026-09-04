@@ -75,7 +75,7 @@ internal sealed class QuotationCurrentPricingResolver
                 productId, productCode, productName,
                 null, null, null, null, null,
                 new FormulaRealtimeMaterialCostResult(null, false, 0),
-                null, null, null, false,
+                null, null, null, [], false,
                 "FormulaNotFound");
         }
 
@@ -97,6 +97,7 @@ internal sealed class QuotationCurrentPricingResolver
             source.ManufacturingCost,
             source.StandardSellingPrice,
             source.Pricing,
+            source.Pricing?.SuggestedPriceTiers ?? source.PriceTierTemplates,
             source.Materials.Count > 0,
             source.PricingStatus);
     }
@@ -115,5 +116,6 @@ internal sealed record QuotationCurrentProductPricing(
     decimal? ManufacturingCost,
     decimal? StandardSellingPrice,
     FormulaPriceCalculationDto? Pricing,
+    IReadOnlyList<FormulaSuggestedPriceTierDto> SuggestedPriceTiers,
     bool HasFormulaMaterials,
     string PricingStatus);

@@ -120,12 +120,13 @@ internal sealed class GetCustomerProductStockQueryHandler
             .ToDictionary(x => x.Key, x => x.Select(y => y.CustomerId).Distinct().Count());
 
         var productStock = await WarehouseStockQueryHelper
-            .ActiveShelfStocks(
+            .ForItemStock(
                 _warehouseDbContext.WarehouseShelfStocks.AsNoTracking(),
-                scope.CompanyId)
+                scope.CompanyId,
+                product.ProductCode,
+                StockType.FinishedGood,
+                excludeMixingShelf: true)
             .Where(x =>
-                x.Code == product.ProductCode &&
-                x.StockType == StockType.FinishedGood &&
                 ((x.LotNo != null && x.LotNo != string.Empty) ||
                  (x.LotKey != null && x.LotKey != string.Empty)))
             .Select(x => new CustomerProductShelfStock(

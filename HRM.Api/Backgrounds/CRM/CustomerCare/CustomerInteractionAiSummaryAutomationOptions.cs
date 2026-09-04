@@ -1,4 +1,4 @@
-namespace HRM.Api.Backgrounds;
+namespace HRM.Api.Backgrounds.CRM.CustomerCare;
 
 public sealed class CustomerInteractionAiSummaryAutomationOptions
 {

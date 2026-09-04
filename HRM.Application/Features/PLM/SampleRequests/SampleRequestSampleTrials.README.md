@@ -15,6 +15,11 @@ Trial là bản ghi lịch sử của một lần giao mẫu thực tế, không
      `formulaId` của đúng Trial pending mới nhất. Backend hiểu thao tác đã xác nhận là khách chấp nhận mẫu, tự đặt
      `CustomerReplyStatus = APPROVED`, duyệt Trial và hoàn thành Formula/Sample Request trong cùng transaction.
      Nếu Formula không khớp Trial pending mới nhất, ngoài customer scope hoặc user không có quyền thì toàn bộ PATCH bị từ chối.
+     Với Sample Request legacy không có bất kỳ Trial active nào, backend tạo Trial kế tiếp gắn Formula đã chọn và duyệt
+     ngay trong transaction đó để lưu lại dấu vết đã gửi–đã nhận–khách duyệt. `SentDate` kế thừa từ `SampleRequest.SendDate`,
+     fallback `RealDeliveryDate`, rồi mới dùng thời điểm chốt; `RequestReceivedDate`/`FinishedDate` là thời điểm Sale chốt,
+     `CustomerReplyStatus = APPROVED` và ghi chú phản hồi nêu rõ khách đã xác nhận hoàn thành mẫu. Không suy diễn số kg giao
+     thực tế hoặc người Lab gửi mẫu khi dữ liệu nguồn không có. Không tự tạo fallback nếu đang có Trial active khác trạng thái.
 5. Khi Sample Request đã `Completed`, Lab dùng luồng `formula-change-requests` hiện có để đề xuất Formula cải tiến; không gửi lại SampleSent cho hồ sơ đã hoàn tất.
 
 Mọi chuyển trạng thái trên được lưu trước; message/notification chỉ được gửi sau khi lưu thành công. Message dùng lại conversation của Sample Request và vẫn no-op cho VU nội bộ/private theo `SampleRequestMessageRules`.
@@ -144,14 +149,30 @@ Các snapshot như tên khách hàng, mã yêu cầu, tên sản phẩm, mã mà
 GET /api/v1/plm/sample-requests/sample-trials
 ```
 
-Endpoint bắt đầu từ danh sách Sample Request mà current user được phép xem, sau đó `LEFT JOIN` các trial active:
+Endpoint bắt đầu từ danh sách Sample Request mà current user được phép xem. Danh sách chính luôn trả đúng một dòng cho một Sample Request và chỉ gắn Trial active mới nhất theo `trialNo` lớn nhất:
 
-- Sample Request chưa có trial vẫn trả một dòng với `hasTrial = false`, `sampleRequestSampleTrialId`, `trialNo` và `status` bằng `null`.
-- Sample Request có một trial trả một dòng trial.
-- Sample Request có nhiều trial trả mỗi trial thành một dòng riêng.
-- Khi truyền `status` hoặc `customerReplyStatus`, các dòng chưa có trial không thỏa bộ lọc và sẽ không xuất hiện.
+- Sample Request chưa có Trial vẫn trả một dòng với `hasTrial = false`, `sampleRequestSampleTrialId`, `trialNo` và `status` bằng `null`.
+- Sample Request có một hoặc nhiều Trial vẫn chỉ trả một dòng; dữ liệu Trial trên dòng là Trial mới nhất.
+- `trialCount` là tổng Trial active của yêu cầu; `hasPreviousTrials = true` khi có nhiều hơn một Trial để FE hiển thị nút mở lịch sử.
+- Khi truyền `status` hoặc `customerReplyStatus`, backend lọc trên Trial mới nhất; Sample Request chưa có Trial không thỏa các filter này.
+
+Danh sách chính luôn sắp xếp `SampleRequest.CreatedDate` giảm dần, không đổi vị trí khi tạo Trial mới. Response trả rõ `sampleRequestCreatedDate` cho mốc này; `createdDate` cũ vẫn là ngày tạo Trial mới nhất (hoặc fallback Sample Request khi chưa có Trial). `sortBy` và `sortDirection` cũ được bỏ qua cho endpoint này. `fromDate`/`toDate` của danh sách chính lọc theo `SampleRequest.CreatedDate`.
+
+FE tải Trial cũ khi người dùng expand bằng:
+
+```http
+GET /api/v1/plm/sample-requests/{sampleRequestId}/sample-trials
+```
+
+Route lịch sử trả các Trial active của đúng Sample Request, sắp `trialNo` giảm dần và dùng cùng DTO với danh sách chính.
 
 Response trả thêm `sampleRequestStatus` và `requestedSampleQuantity` từ hồ sơ gốc để FE vẫn có dữ liệu hữu ích khi trial chưa được tạo.
+
+Mỗi dòng còn trả `formulaId` và `formulaExternalId` để hiển thị ngay mã VU Formula mà không cần gọi
+Formula detail/lookup cho từng dòng. Khi có Trial, `formulaExternalId` ưu tiên `Trial.Formula.ExternalId`,
+fallback sang `Trial.BatchNo` snapshot cho dữ liệu lịch sử. Khi chưa có Trial, API fallback sang Formula hiện
+đang gắn trên Sample Request. `null` nghĩa là dòng chưa có Formula liên quan; FE chỉ gọi Formula lookup khi
+người dùng mở thao tác chọn/đổi Formula.
 
 Response cũng trả quyền hành động:
 
@@ -168,20 +189,24 @@ sampleRequestId, customerId
 fromDate, toDate
 sampleRequestCreatedToDate (`yyyy-MM-dd`, inclusive)
 includePreviousUnfinished (`true` mặc định)
-reportType (`CompletedSamples`, `WaitingCustomerFeedback`)
+reportType (`All`, `CompletedSamples`, `WaitingCustomerFeedback`)
 status, customerReplyStatus
-sortBy, sortDirection
 ```
 
-Khi không gửi `reportType`, `fromDate`/`toDate` giữ semantics tương thích cũ và lọc theo ngày fallback
-`FinishedDate -> SentDate -> RequestReceivedDate -> CreatedDate`. Hai loại báo cáo chuyên biệt dùng ngày và điều kiện cố định:
+`All` và không truyền `reportType` trả toàn bộ Sample Request active mà current user được phép xem, không loại theo
+trạng thái workflow. Mỗi Sample Request vẫn chỉ gắn Trial active mới nhất nếu có. Hai loại báo cáo chuyên biệt có điều kiện:
 
-- `CompletedSamples`: chỉ lấy Trial có `FinishedDate`, khoảng ngày áp dụng trực tiếp lên `FinishedDate`.
-- `WaitingCustomerFeedback`: chỉ lấy Trial có `RequestReceivedDate`, trạng thái `WaitingCustomerFeedback` và
-  `CustomerReplyStatus` đang rỗng hoặc `WAITING`; khoảng ngày áp dụng trực tiếp lên `RequestReceivedDate`.
+- `CompletedSamples`: Sample Request `Completed` và Trial mới nhất có trạng thái `Approved`; không phụ thuộc
+  `FinishedDate`. Danh sách sắp theo `CustomerReplyDate` giảm dần, fallback `UpdatedDate` rồi `CreatedDate` cho dữ liệu cũ.
+- `WaitingCustomerFeedback`: Trial mới nhất có `RequestReceivedDate`, trạng thái `WaitingCustomerFeedback` và
+  `CustomerReplyStatus` đang rỗng hoặc `WAITING`. Danh sách sắp theo `RequestReceivedDate` giảm dần.
 
-`sampleRequestCreatedToDate` là bộ lọc bổ sung, độc lập với `reportType` và không thay đổi ý nghĩa của `fromDate`/`toDate`.
-Tham số này lọc theo `SampleRequest.CreatedDate` với semantics "tạo đến hết ngày": ví dụ
+`fromDate` và `toDate` dùng mốc ngày theo loại báo cáo: `CompletedSamples` lọc `CustomerReplyDate`,
+`WaitingCustomerFeedback` lọc `RequestReceivedDate`, còn `All`/không truyền `reportType` lọc
+`SampleRequest.CreatedDate`. `toDate` bao gồm trọn ngày.
+
+`sampleRequestCreatedToDate` luôn lọc độc lập theo `SampleRequest.CreatedDate`, bất kể loại báo cáo.
+`sampleRequestCreatedToDate` có semantics "tạo đến hết ngày": ví dụ
 `sampleRequestCreatedToDate=2026-07-31` dùng điều kiện `SampleRequest.CreatedDate < 2026-08-01 00:00:00`, nên các hồ sơ
 tạo từ tháng trước nhưng hiện vẫn chờ phản hồi tiếp tục xuất hiện. Không truyền tham số thì không giới hạn ngày tạo.
 Đây là trạng thái tồn đọng hiện tại theo ngày tạo hồ sơ, không phải snapshot trạng thái tại cuối ngày/tháng đã chọn.
@@ -194,23 +219,8 @@ tạo từ tháng trước nhưng hiện vẫn chờ phản hồi tiếp tục x
 
 Nếu không truyền `sampleRequestCreatedToDate`, `includePreviousUnfinished` không áp dụng bộ lọc ngày vì không có tháng làm mốc.
 
-Màn hình tồn đọng nên chủ động gửi `reportType=WaitingCustomerFeedback`; backend vẫn giữ hành vi cũ khi không truyền
-`reportType` để tương thích với client hiện có. Nếu truyền đồng thời `sampleRequestCreatedToDate` và `fromDate`/`toDate`,
-các điều kiện được kết hợp bằng `AND`.
-
-`fromDate` và `toDate` lọc theo ngày báo cáo ưu tiên lần lượt `finishedDate`, `sentDate`, `requestReceivedDate`, rồi `createdDate`. `toDate` bao gồm trọn ngày được truyền vào.
-
-Các `sortBy` được hỗ trợ:
-
-```text
-sampleRequestExternalId
-customerName
-trialNo
-requestReceivedDate
-finishedDate
-sentDate
-updatedDate
-```
+Màn hình tồn đọng nên chủ động gửi `reportType=WaitingCustomerFeedback`. Nếu truyền đồng thời
+`sampleRequestCreatedToDate` và `fromDate`/`toDate`, các điều kiện được kết hợp bằng `AND`.
 
 `turnaroundDays` do backend tính từ `requestReceivedDate` đến `finishedDate` và không trả số âm. Dữ liệu snapshot được ưu tiên để báo cáo lịch sử không thay đổi; nếu snapshot trống, API fallback sang dữ liệu Sample Request/Product/Customer hiện tại.
 
@@ -232,6 +242,8 @@ Ví dụ request:
   "batchNo": "VU260400324",
   "deliveredSampleQuantityKg": 1.1,
   "additiveRate": 0.02,
+  "requestDeliveryDate": "2026-06-13T00:00:00",
+  "expectedDeliveryDate": "2026-06-14T00:00:00",
   "requestReceivedDate": "2026-06-15T00:00:00",
   "finishedDate": "2026-06-25T00:00:00",
   "sentDate": "2026-06-26T00:00:00",
@@ -242,7 +254,7 @@ Ví dụ request:
 }
 ```
 
-Backend tự tính `trialNo = max(trialNo) + 1`, tạo snapshot khách hàng/mã yêu cầu/sản phẩm/mã màu/loại sản phẩm và gán audit fields. Formula phải active, thuộc đúng product; người gửi phải active và cùng company. Nếu có `sentDate` nhưng không gửi `sentByEmployeeId`, backend dùng employee hiện tại.
+Backend tự tính `trialNo = max(trialNo) + 1`, tạo snapshot khách hàng/mã yêu cầu/sản phẩm/mã màu/loại sản phẩm và gán audit fields. Formula phải active, thuộc đúng product; người gửi phải active và cùng company. Nếu có `sentDate` nhưng không gửi `sentByEmployeeId`, backend dùng employee hiện tại. Khi gửi `requestDeliveryDate` hoặc `expectedDeliveryDate`, backend đồng thời cập nhật ngày tương ứng trên Sample Request cha trong cùng lần lưu; không gửi thì giữ nguyên dữ liệu Sample Request.
 
 Chỉ user thuộc `ApplicationRoleSets.PLM.ProductTechnicalEditors` được tạo trial. API vẫn kiểm tra company và customer visibility ở backend.
 
@@ -260,6 +272,8 @@ PATCH sử dụng semantics:
 - Không được vừa gửi value vừa đưa cùng field vào `clearFields`.
 - `status` không nullable và không nằm trong `clearFields`.
 - `expectedUpdatedDate` là concurrency token tùy chọn; nếu record đã đổi, backend yêu cầu FE reload.
+
+`requestDeliveryDate` và `expectedDeliveryDate` của payload Trial là dữ liệu của Sample Request cha, không phải snapshot trên Trial. Khi gửi value, backend cập nhật Sample Request trong cùng transaction; khi không gửi, giữ nguyên. PATCH có thể clear bằng chính field code `requestDeliveryDate` hoặc `expectedDeliveryDate` trong `clearFields`.
 
 Technical editor giữ quyền PATCH các field hiện có. Sale thuộc `ApplicationRoleSets.Modules.Sales` chỉ được gửi
 `customerReplyStatus`, `customerReplyNote`, hoặc clear đúng hai field này qua `clearFields`. Nếu payload Sale có bất kỳ
@@ -305,6 +319,8 @@ Ví dụ chuyển nhiều field về `null`:
     "batchNo",
     "deliveredSampleQuantityKg",
     "additiveRate",
+    "requestDeliveryDate",
+    "expectedDeliveryDate",
     "requestReceivedDate",
     "finishedDate",
     "sentDate",
@@ -333,6 +349,36 @@ customerReplyNote
 ```
 
 Backend từ chối số lượng/tỷ lệ âm, ngày hoàn thành trước ngày nhận, ngày gửi trước ngày hoàn thành, string trắng và string vượt độ dài cấu hình.
+
+## Giá bán tiêu chuẩn trên báo cáo gửi mẫu
+
+Hai route danh sách và lịch sử nhận query `currency` tối đa 10 ký tự, mặc định `VND`:
+
+```http
+GET /api/v1/plm/sample-requests/sample-trials?pageNumber=1&pageSize=15&currency=VND
+GET /api/v1/plm/sample-requests/{sampleRequestId}/sample-trials?currency=VND
+```
+
+Mỗi dòng trả thêm:
+
+```json
+{
+  "approvedStandardSellingPrice": 134322,
+  "standardSellingPriceApprovedAt": "2026-08-29T15:19:00",
+  "systemCalculatedStandardSellingPrice": 145000
+}
+```
+
+- `approvedStandardSellingPrice`: `StandardSellingPrice` của `ProductPricingVersion` active, `Approved`, đúng
+  company/product/currency và có version lớn nhất.
+- `standardSellingPriceApprovedAt`: `ApprovedAt` của chính version trên; không dùng `UpdatedDate` thay thế.
+- `systemCalculatedStandardSellingPrice`: giá realtime từ `ProductPricingSourceQueryService` và pricing policy
+  hiện hành. Backend ưu tiên Formula đang gắn với Trial/SampleRequest; nếu Formula đó không còn là nguồn hợp lệ thì
+  dùng nguồn Product hợp lệ được resolver ưu tiên.
+
+Ba field chỉ được map cho role có quyền mở Product Pricing Workbench (`SaleUser`, `President`, `Developer`). User
+khác nhận `null`. API không trả thêm material cost, manufacturing cost, margin hoặc tier, và không dùng snapshot
+Formula làm fallback cho giá realtime.
 
 ## Ghi chú về API tạo Trial trực tiếp
 

@@ -1,7 +1,10 @@
 using HRM.Application.Abstractions.Persistence.CRM.CustomerCare;
 using HRM.Application.Commons.Models;
+using HRM.Application.Commons.Pricing.Helpers;
+using HRM.Application.Commons.Pricing.Models;
 using HRM.Application.Features.CRM.Quotations.Dtos;
 using HRM.Domain.Entities.CustomerSchema;
+using HRM.Domain.Enums.CustomerEnum;
 using Microsoft.EntityFrameworkCore;
 
 namespace HRM.Application.Features.CRM.Quotations.Services;
@@ -12,10 +15,14 @@ namespace HRM.Application.Features.CRM.Quotations.Services;
 internal sealed class QuotationLineBuilder
 {
     private readonly ICRMReadDbContext _dbContext;
+    private readonly FormulaPricingPolicyProvider _pricingPolicyProvider;
 
-    public QuotationLineBuilder(ICRMReadDbContext dbContext)
+    public QuotationLineBuilder(
+        ICRMReadDbContext dbContext,
+        FormulaPricingPolicyProvider pricingPolicyProvider)
     {
         _dbContext = dbContext;
+        _pricingPolicyProvider = pricingPolicyProvider;
     }
 
     public async Task<OperationResult<IReadOnlyList<QuotationLine>>> BuildAsync(
@@ -35,8 +42,9 @@ internal sealed class QuotationLineBuilder
         for (var index = 0; index < requests.Count; index++)
         {
             var request = requests[index];
-            if (request.ProductId == Guid.Empty || request.Quantity <= 0m ||
-                request.SampleRequestId == Guid.Empty || request.ProductPricingVersionId == Guid.Empty)
+            if (request.ProductId == Guid.Empty || request.Quantity <= 0m || request.UnitPrice < 0m ||
+                request.SampleRequestId == Guid.Empty || request.ProductPricingVersionId == Guid.Empty ||
+                !Enum.IsDefined(request.PriceMode))
             {
                 return OperationResult<IReadOnlyList<QuotationLine>>.Fail(
                     $"Quotation line at index {index} is invalid.");
@@ -66,6 +74,9 @@ internal sealed class QuotationLineBuilder
             {
                 x.ProductId,
                 x.ColourCode,
+                x.Code,
+                x.Additive,
+                x.CategoryId,
                 x.Name,
                 x.Unit
             })
@@ -75,6 +86,57 @@ internal sealed class QuotationLineBuilder
         {
             return OperationResult<IReadOnlyList<QuotationLine>>.Fail(
                 "One or more products were not found, inactive, or outside the current company.");
+        }
+
+        var manualRequests = requests
+            .Where(x => x.PriceMode == QuotationLinePriceMode.ManualAuthorized)
+            .ToArray();
+        if (manualRequests.Length > 0)
+        {
+            if (manualRequests.Any(x => x.ProductPricingVersionId.HasValue))
+            {
+                return OperationResult<IReadOnlyList<QuotationLine>>.Fail(
+                    "Manual authorized pricing cannot reference a standard pricing version.");
+            }
+
+            var policyKeysByProduct = manualRequests
+                .Select(x => x.ProductId)
+                .Distinct()
+                .ToDictionary(
+                    productId => productId,
+                    productId =>
+                    {
+                        var product = products[productId];
+                        return new FormulaPricingPolicyLookupKey(
+                            companyId,
+                            product.CategoryId,
+                            FormulaPricingProfileResolver.Resolve(
+                                product.ColourCode,
+                                product.Code,
+                                product.Additive),
+                            currency);
+                    });
+            var policies = await _pricingPolicyProvider.GetPublishedBatchAsync(
+                policyKeysByProduct.Values,
+                cancellationToken);
+
+            foreach (var request in manualRequests)
+            {
+                var key = policyKeysByProduct[request.ProductId];
+                if (!policies.TryGetValue(key, out var policy))
+                {
+                    return OperationResult<IReadOnlyList<QuotationLine>>.Fail(
+                        "A published pricing policy is required before manual customer pricing can be saved.");
+                }
+
+                var tierError = QuotationManualPriceTierRules.Validate(
+                    request.PriceTiers,
+                    policy.Definition);
+                if (tierError is not null)
+                {
+                    return OperationResult<IReadOnlyList<QuotationLine>>.Fail(tierError);
+                }
+            }
         }
 
         var pricingVersionIds = requests
@@ -96,7 +158,8 @@ internal sealed class QuotationLineBuilder
         if (pricingVersions.Count != pricingVersionIds.Length || requests.Any(request =>
                 request.ProductPricingVersionId.HasValue &&
                 (!pricingVersions.TryGetValue(request.ProductPricingVersionId.Value, out var pricingVersion) ||
-                 pricingVersion.ProductId != request.ProductId)))
+                 pricingVersion.ProductId != request.ProductId ||
+                 pricingVersion.StandardSellingPrice is null or < 0m)))
         {
             return OperationResult<IReadOnlyList<QuotationLine>>.Fail(
                 "One or more product pricing versions were not found, not approved, outside the current company/currency, or belong to another product.");
@@ -139,34 +202,14 @@ internal sealed class QuotationLineBuilder
             var productName = QuotationRules.TrimToNull(product.Name);
             var unit = QuotationRules.TrimToNull(request.Unit) ?? QuotationRules.TrimToNull(product.Unit);
             var quotationLineId = Guid.CreateVersion7();
-            var approvedPricing = request.ProductPricingVersionId.HasValue
-                ? pricingVersions[request.ProductPricingVersionId.Value]
-                : null;
-            if (approvedPricing is null &&
-                (request.PriceTiers.Count > 0 || request.UnitPrice > 0m))
-            {
-                return OperationResult<IReadOnlyList<QuotationLine>>.Fail(
-                    $"lines[{index}] cannot contain prices without an approved ProductPricingVersionId.");
-            }
-
-            var pricingResult = approvedPricing is null
-                ? QuotationPriceTierBuilder.Build(
-                    quotationLineId,
-                    request.PriceMode,
-                    request.Quantity,
-                    fixedUnitPrice: 0m,
-                    requests: [],
-                    $"lines[{index}]",
-                    allowMissingPrice: true)
-                : QuotationPricingSnapshotFactory.Create(
-                    quotationLineId,
-                    companyId,
-                    request.ProductId,
-                    currency,
-                    request.Quantity,
-                    request.PriceMode,
-                    approvedPricing,
-                    $"lines[{index}]");
+            var standardSellingPrice = request.ProductPricingVersionId.HasValue
+                ? pricingVersions[request.ProductPricingVersionId.Value].StandardSellingPrice!.Value
+                : request.UnitPrice;
+            var pricingResult = QuotationPriceTierBuilder.Build(
+                quotationLineId,
+                request.Quantity,
+                request.PriceTiers,
+                $"lines[{index}]");
             if (!pricingResult.Success || pricingResult.Data is null)
             {
                 return OperationResult<IReadOnlyList<QuotationLine>>.Fail(pricingResult.Message!);
@@ -196,15 +239,16 @@ internal sealed class QuotationLineBuilder
                 Quantity = request.Quantity,
                 Unit = unit,
                 PriceMode = request.PriceMode,
-                UnitPrice = pricingResult.Data.EffectiveUnitPrice,
+                UnitPrice = standardSellingPrice,
                 DiscountPercent = request.DiscountPercent,
                 LineTotal = QuotationRules.CalculateLineTotal(
                     request.Quantity,
-                    pricingResult.Data.EffectiveUnitPrice,
+                    standardSellingPrice,
                     request.DiscountPercent),
                 PriceTiers = pricingResult.Data.PriceTiers.ToList(),
                 Note = QuotationRules.TrimToNull(request.Note),
-                SortOrder = request.SortOrder ?? index
+                SortOrder = request.SortOrder ?? index,
+                IsActive = request.IsActive
             });
         }
 

@@ -20,12 +20,14 @@ internal sealed class ApproveProductPricingVersionCommandHandler
     private readonly KeyedMutationLock<Guid> _mutationLock;
     private readonly ProductPricingSourceValidator _sourceValidator;
     private readonly ProductPricingApprovalNotificationService _approvalNotificationService;
+    private readonly QuotationPricingApprovalStateService _quotationApprovalStateService;
 
     public ApproveProductPricingVersionCommandHandler(
         ICRMWriteDbContext dbContext, ICurrentUser currentUser,
         IDateTimeProvider dateTimeProvider, KeyedMutationLock<Guid> mutationLock,
         ProductPricingSourceValidator sourceValidator,
-        ProductPricingApprovalNotificationService approvalNotificationService)
+        ProductPricingApprovalNotificationService approvalNotificationService,
+        QuotationPricingApprovalStateService quotationApprovalStateService)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
@@ -33,6 +35,7 @@ internal sealed class ApproveProductPricingVersionCommandHandler
         _mutationLock = mutationLock;
         _sourceValidator = sourceValidator;
         _approvalNotificationService = approvalNotificationService;
+        _quotationApprovalStateService = quotationApprovalStateService;
     }
 
     public async Task<OperationResult<ProductPricingVersionDto>> Handle(
@@ -99,11 +102,6 @@ internal sealed class ApproveProductPricingVersionCommandHandler
                 ProductPricingVersionPolicyRules.RebaseConflict(
                     "The source now resolves to a different pricing policy"));
         }
-        if (!sourceResult.Data.IsMaterialCostComplete)
-        {
-            return OperationResult<ProductPricingVersionDto>.Fail("MaterialPriceMissing");
-        }
-
         var pricingResult = ProductPricingVersionPolicyRules.Calculate(
             policyResult.Data.Definition,
             sourceResult.Data.MaterialCostSnapshot,
@@ -117,11 +115,11 @@ internal sealed class ApproveProductPricingVersionCommandHandler
         }
 
         if (pricingResult.Data.StandardSellingPrice <= 0m ||
-            entity.PriceTiers.Count == 0 ||
-            entity.PriceTiers.Any(x => x.UnitPrice < 0m))
+            !entity.PriceTiers.Any(x => x.IsActive) ||
+            entity.PriceTiers.Any(x => x.IsActive && x.UnitPrice < 0m))
         {
             return OperationResult<ProductPricingVersionDto>.Fail(
-                "Material cost, manufacturing cost, standard selling price, profit margin and non-negative price tiers are required before approval.");
+                "A positive standard selling price and non-negative price tiers are required before approval.");
         }
 
         if (!entity.HasManualTierAdjustment)
@@ -167,6 +165,12 @@ internal sealed class ApproveProductPricingVersionCommandHandler
             return OperationResult<ProductPricingVersionDto>.Fail(
                 OptimisticConcurrencyHelper.CreateConflictMessage("Product pricing version", exception));
         }
+
+        await _quotationApprovalStateService.ReconcileForProductAsync(
+            entity.ProductId,
+            companyId,
+            employeeId,
+            cancellationToken);
 
         await _approvalNotificationService.PublishAsync(
             entity,

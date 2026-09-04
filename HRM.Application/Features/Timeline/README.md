@@ -45,6 +45,8 @@ Timeline tổng quan hỗ trợ thêm hai bộ lọc complaint, được áp d�
 
 Timeline tổng quan apply visibility khách hàng/current user, filter keyword, status, `Paused` động, date range theo `TimelineCreatedScope` và filter log theo `CreatedBy`, `CompanyId`, `EventType`.
 
+Trong card của timeline tổng quan, `totalPrice` là tổng thanh toán **đã gồm VAT**. Backend lấy tổng trước thuế đã lưu trên `MerchandiseOrder.TotalPrice`, tính `TotalPrice * (1 + Vat / 100)` và làm tròn 2 chữ số theo `AwayFromZero`; `vat = null` được hiểu là 0%. Field `vat` vẫn trả nguyên tỷ lệ phần trăm đã lưu.
+
 Timeline detail page theo `MerchandiseOrderDetailId`. Delivery được group theo `MerchandiseOrderDetailId`, không group theo `ProductId`, để tránh trộn dữ liệu khi một đơn có nhiều dòng cùng sản phẩm. `ExpectedDate` của mỗi dòng chỉ lấy trực tiếp từ `ExpectedDate` của MFG active mới nhất; không fallback hoặc tính từ `MerchandiseOrderDetail.ExpectedDeliveryDate`. Khi chưa có MFG hoặc MFG chưa được lập lịch, field này là `null`.
 
 ## Side effect

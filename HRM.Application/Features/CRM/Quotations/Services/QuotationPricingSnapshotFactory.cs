@@ -13,7 +13,6 @@ internal static class QuotationPricingSnapshotFactory
         Guid productId,
         string currency,
         decimal quantity,
-        QuotationLinePriceMode priceMode,
         ProductPricingVersion approvedVersion,
         string fieldPath)
     {
@@ -21,6 +20,7 @@ internal static class QuotationPricingSnapshotFactory
             !approvedVersion.IsActive ||
             approvedVersion.CompanyId != companyId ||
             approvedVersion.ProductId != productId ||
+            approvedVersion.StandardSellingPrice is null or < 0m ||
             !string.Equals(approvedVersion.Currency, currency, StringComparison.OrdinalIgnoreCase))
         {
             return OperationResult<QuotationLinePricing>.Fail(
@@ -29,6 +29,7 @@ internal static class QuotationPricingSnapshotFactory
         }
 
         var tiers = approvedVersion.PriceTiers
+            .Where(x => x.IsActive)
             .OrderBy(x => x.SortOrder)
             .Select(x => new QuotationLinePriceTierRequest
             {
@@ -38,16 +39,24 @@ internal static class QuotationPricingSnapshotFactory
                 MinInclusive = x.MinInclusive,
                 MaxInclusive = x.MaxInclusive,
                 UnitPrice = x.UnitPrice,
+                CommissionAmount = 0m,
                 SortOrder = x.SortOrder
             })
             .ToArray();
 
-        return QuotationPriceTierBuilder.Build(
+        var tierResult = QuotationPriceTierBuilder.Build(
             quotationLineId,
-            priceMode,
             quantity,
-            fixedUnitPrice: 0m,
             tiers,
             fieldPath);
+        if (!tierResult.Success || tierResult.Data is null)
+        {
+            return tierResult;
+        }
+
+        return OperationResult<QuotationLinePricing>.Ok(
+            new QuotationLinePricing(
+                approvedVersion.StandardSellingPrice.Value,
+                tierResult.Data.PriceTiers));
     }
 }

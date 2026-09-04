@@ -9,6 +9,7 @@ using HRM.Application.Features.PLM.SampleRequests.Dtos.InternalMail;
 using HRM.Application.Features.PLM.SampleRequests.DataChangeRequests;
 using HRM.Application.Features.PLM.SampleRequests.DirectPatchNotifications;
 using HRM.Application.Features.PLM.SampleRequests.FormulaChangeRequests;
+using HRM.Application.Features.PLM.SampleRequests.PriceQuoteRequests;
 using HRM.Application.Features.PLM.SampleRequests.Rules;
 using HRM.Application.Features.PLM.SampleRequests.Services;
 using HRM.Domain.Entities.InternalMailSchema;
@@ -129,6 +130,39 @@ internal sealed class SendSampleRequestMessageCommandHandler
             return OperationResult<SendInternalMessageResultDto>.Fail(extraRecipientEmployeeIds.Message ?? "Recipient is invalid.");
         }
 
+        var useDefaultSilentWatchers = request.UseDefaultSilentWatchersWhenOmitted &&
+            request.SilentWatcherEmployeeIds is null;
+        IReadOnlyCollection<Guid> requestedSilentWatcherIds;
+        if (useDefaultSilentWatchers)
+        {
+            requestedSilentWatcherIds = (await _sampleRequestRecipientResolver.ResolveDefaultSilentWatchersAsync(
+                    sampleRequest.CompanyId,
+                    currentEmployeeId.Value,
+                    cancellationToken))
+                .Select(x => x.EmployeeId)
+                .ToArray();
+        }
+        else
+        {
+            var silentWatcherEmployeeIds = await ResolveExtraRecipientsAsync(
+                request.SilentWatcherEmployeeIds,
+                sampleRequest.CompanyId,
+                cancellationToken);
+            if (!silentWatcherEmployeeIds.Success)
+            {
+                return OperationResult<SendInternalMessageResultDto>.Fail(
+                    silentWatcherEmployeeIds.Message ?? "Silent watcher is invalid.");
+            }
+
+            requestedSilentWatcherIds = silentWatcherEmployeeIds.Data ?? Array.Empty<Guid>();
+        }
+
+        if (requestedSilentWatcherIds.Contains(currentEmployeeId.Value))
+        {
+            return OperationResult<SendInternalMessageResultDto>.Fail(
+                "The current employee cannot be a silent watcher.");
+        }
+
         var conversation = await FindOrCreateConversationAsync(
             sampleRequest.SampleRequestId,
             sampleRequest.CompanyId,
@@ -145,6 +179,15 @@ internal sealed class SendSampleRequestMessageCommandHandler
             cancellationToken);
 
         foreach (var recipient in defaultRecipients.Where(x => x.Locked))
+        {
+            targetUserIds.Add(recipient.EmployeeId);
+        }
+
+        var salesGroupLeaderRecipients = await _sampleRequestRecipientResolver.ResolveSalesGroupLeaderRecipientsAsync(
+            sampleRequest.CompanyId,
+            currentEmployeeId.Value,
+            cancellationToken);
+        foreach (var recipient in salesGroupLeaderRecipients)
         {
             targetUserIds.Add(recipient.EmployeeId);
         }
@@ -166,6 +209,28 @@ internal sealed class SendSampleRequestMessageCommandHandler
 
         targetUserIds.Add(currentEmployeeId.Value);
 
+        var silentWatcherIds = requestedSilentWatcherIds
+            .Where(x => x != Guid.Empty)
+            .Distinct()
+            .ToArray();
+        if (useDefaultSilentWatchers)
+        {
+            // LabAdmin hoặc người đã là recipient thường phải giữ vai trò recipient thường, không thành watcher.
+            silentWatcherIds = silentWatcherIds
+                .Where(x => !targetUserIds.Contains(x))
+                .ToArray();
+        }
+        else if (silentWatcherIds.Any(targetUserIds.Contains))
+        {
+            return OperationResult<SendInternalMessageResultDto>.Fail(
+                "A silent watcher cannot also be a message recipient.");
+        }
+
+        var participantIds = targetUserIds
+            .Concat(silentWatcherIds)
+            .Distinct()
+            .ToArray();
+
         var replyToMessageId = request.ReplyToMessageId;
         if (replyToMessageId is { } replyId && replyId != Guid.Empty)
         {
@@ -186,6 +251,7 @@ internal sealed class SendSampleRequestMessageCommandHandler
             conversation.InternalConversationId,
             currentEmployeeId.Value,
             targetUserIds,
+            silentWatcherIds,
             cancellationToken);
 
         var now = DateTime.Now;
@@ -223,7 +289,8 @@ internal sealed class SendSampleRequestMessageCommandHandler
             DataChangeRequest = request.DataChangeRequest,
             FormulaChangeRequest = request.FormulaChangeRequest,
             DirectPatchNotification = request.DirectPatchNotification,
-            SampleReceiptAction = request.SampleReceiptAction
+            SampleReceiptAction = request.SampleReceiptAction,
+            PriceQuoteRequest = request.PriceQuoteRequest
         }, PayloadJsonOptions);
 
         await _dbContext.InternalMessages.AddAsync(internalMessage, cancellationToken);
@@ -234,7 +301,7 @@ internal sealed class SendSampleRequestMessageCommandHandler
         await AddReadStatesAsync(
             internalMessage.InternalMessageId,
             currentEmployeeId.Value,
-            targetUserIds,
+            participantIds,
             now,
             cancellationToken);
 
@@ -247,7 +314,7 @@ internal sealed class SendSampleRequestMessageCommandHandler
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         var title = request.TitleOverride ?? BuildTitle(request.Type);
-        var sampleRequestLink = $"/plm/sample-requests/{sampleRequest.SampleRequestId}";
+        var sampleRequestLink = request.LinkOverride ?? $"/plm/sample-requests/{sampleRequest.SampleRequestId}";
 
         var notificationPayload = JsonSerializer.Serialize(new SampleRequestThreadMessagePayload
         {
@@ -263,7 +330,8 @@ internal sealed class SendSampleRequestMessageCommandHandler
             DataChangeRequest = request.DataChangeRequest,
             FormulaChangeRequest = request.FormulaChangeRequest,
             DirectPatchNotification = request.DirectPatchNotification,
-            SampleReceiptAction = request.SampleReceiptAction
+            SampleReceiptAction = request.SampleReceiptAction,
+            PriceQuoteRequest = request.PriceQuoteRequest
         }, PayloadJsonOptions);
 
         var createdByName = await _dbContext.Employees
@@ -288,14 +356,32 @@ internal sealed class SendSampleRequestMessageCommandHandler
             MessageId = internalMessage.InternalMessageId,
             PayloadJson = notificationPayload,
             TargetUserIds = request.NotificationRecipientEmployeeIdsOverride is null
-                ? await ResolveNotifiableParticipantsAsync(
-                    conversation.InternalConversationId,
-                    currentEmployeeId.Value,
-                    cancellationToken)
+                ? (await ResolveNotifiableParticipantsAsync(
+                        conversation.InternalConversationId,
+                        currentEmployeeId.Value,
+                        cancellationToken))
+                    // Participant mới chỉ đang được EF theo dõi trước SaveChanges, nên query database
+                    // phía trên chưa thấy ở notification đầu tiên. Dùng thêm targetUserIds đã resolve
+                    // trong command để cả normal recipient lẫn silent watcher có state Hub ngay lập tức.
+                    .Concat(targetUserIds)
+                    .Where(x => x != Guid.Empty && x != currentEmployeeId.Value && !silentWatcherIds.Contains(x))
+                    .Distinct()
+                    .ToArray()
                 : request.NotificationRecipientEmployeeIdsOverride
                     .Where(x => x != Guid.Empty && x != currentEmployeeId.Value)
                     .Distinct()
-                    .ToArray()
+                    .ToArray(),
+            // Ở lần tạo Sample Request đầu tiên, silent watcher vừa được Add vào DbContext nên chưa
+            // query được từ database trước SaveChanges. Union với danh sách request để state Hub được
+            // tạo ngay cho tin đầu tiên; các tin tiếp theo vẫn resolve muted participant từ database.
+            SilentUserIds = (await ResolveSilentParticipantsAsync(
+                    conversation.InternalConversationId,
+                    currentEmployeeId.Value,
+                    cancellationToken))
+                .Concat(silentWatcherIds)
+                .Where(x => x != Guid.Empty && x != currentEmployeeId.Value)
+                .Distinct()
+                .ToArray()
         }, cancellationToken);
 
         return OperationResult<SendInternalMessageResultDto>.Ok(new SendInternalMessageResultDto
@@ -384,9 +470,20 @@ internal sealed class SendSampleRequestMessageCommandHandler
     private async Task EnsureParticipantsAsync(
         Guid conversationId,
         Guid senderEmployeeId,
-        IReadOnlyCollection<Guid> participantIds,
+        IReadOnlyCollection<Guid> memberParticipantIds,
+        IReadOnlyCollection<Guid> silentWatcherIds,
         CancellationToken cancellationToken)
     {
+        var memberIds = memberParticipantIds
+            .Where(x => x != Guid.Empty)
+            .ToHashSet();
+        var silentWatcherIdSet = silentWatcherIds
+            .Where(x => x != Guid.Empty && !memberIds.Contains(x))
+            .ToHashSet();
+        var participantIds = memberIds
+            .Concat(silentWatcherIdSet)
+            .ToHashSet();
+
         var existingParticipants = await _dbContext.InternalConversationParticipants
             .Where(x => x.InternalConversationId == conversationId)
             .ToListAsync(cancellationToken);
@@ -399,7 +496,12 @@ internal sealed class SendSampleRequestMessageCommandHandler
             participant.DeletedByEmployeeId = null;
             participant.IsArchived = false;
             participant.ArchivedAt = null;
-            participant.IsMuted = false;
+            participant.Role = participant.EmployeeId == senderEmployeeId
+                ? InternalConversationParticipantRole.Owner
+                : silentWatcherIdSet.Contains(participant.EmployeeId)
+                    ? InternalConversationParticipantRole.Watcher
+                    : InternalConversationParticipantRole.Member;
+            participant.IsMuted = silentWatcherIdSet.Contains(participant.EmployeeId);
         }
 
         var missingParticipantIds = participantIds
@@ -415,10 +517,12 @@ internal sealed class SendSampleRequestMessageCommandHandler
                 EmployeeId = employeeId,
                 Role = employeeId == senderEmployeeId
                     ? InternalConversationParticipantRole.Owner
-                    : InternalConversationParticipantRole.Member,
+                    : silentWatcherIdSet.Contains(employeeId)
+                        ? InternalConversationParticipantRole.Watcher
+                        : InternalConversationParticipantRole.Member,
                 JoinedAt = DateTime.Now,
                 IsArchived = false,
-                IsMuted = false
+                IsMuted = silentWatcherIdSet.Contains(employeeId)
             }, cancellationToken);
         }
     }
@@ -500,6 +604,11 @@ internal sealed class SendSampleRequestMessageCommandHandler
             return SampleRequestDirectPatchNotificationPayloadTypes.Notification;
         }
 
+        if (request.PriceQuoteRequest is not null)
+        {
+            return SampleRequestPriceQuotePayloadTypes.Request;
+        }
+
         return "InternalMailMessage";
     }
 
@@ -515,6 +624,22 @@ internal sealed class SendSampleRequestMessageCommandHandler
                 x.EmployeeId != senderEmployeeId &&
                 x.IsActive &&
                 !x.IsMuted)
+            .Select(x => x.EmployeeId)
+            .ToListAsync(cancellationToken);
+    }
+
+    private async Task<IReadOnlyCollection<Guid>> ResolveSilentParticipantsAsync(
+        Guid conversationId,
+        Guid senderEmployeeId,
+        CancellationToken cancellationToken)
+    {
+        return await _dbContext.InternalConversationParticipants
+            .AsNoTracking()
+            .Where(x =>
+                x.InternalConversationId == conversationId &&
+                x.EmployeeId != senderEmployeeId &&
+                x.IsActive &&
+                x.IsMuted)
             .Select(x => x.EmployeeId)
             .ToListAsync(cancellationToken);
     }

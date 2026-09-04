@@ -66,6 +66,20 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.CreateQuotation
                 return OperationResult<QuotationCreateResultDto>.Fail("ExchangeRate must be greater than zero.");
             }
 
+            if (QuotationRules.TrimToNull(request.ContactPhone)?.Length >
+                QuotationRules.MaximumContactPhoneLength)
+            {
+                return OperationResult<QuotationCreateResultDto>.Fail(
+                    $"ContactPhone cannot exceed {QuotationRules.MaximumContactPhoneLength} characters.");
+            }
+
+            if (QuotationRules.TrimToNull(request.CustomerAddressSnapshot)?.Length >
+                QuotationRules.MaximumCustomerAddressLength)
+            {
+                return OperationResult<QuotationCreateResultDto>.Fail(
+                    $"CustomerAddressSnapshot cannot exceed {QuotationRules.MaximumCustomerAddressLength} characters.");
+            }
+
             if ((request.QuotationDate.HasValue && request.QuotationDate.Value == default) ||
                 (request.ValidUntil.HasValue && request.ValidUntil.Value == default))
             {
@@ -74,11 +88,13 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.CreateQuotation
             }
 
             var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
-            var customerExists = await _visibilityService
+            var customer = await _visibilityService
                 .ApplyCustomerVisibility(_readDbContext.Customers.AsNoTracking(), scope)
-                .AnyAsync(x => x.CustomerId == request.CustomerId, cancellationToken);
+                .Where(x => x.CustomerId == request.CustomerId)
+                .Select(x => new { x.CustomerId, x.RegistrationAddress })
+                .FirstOrDefaultAsync(cancellationToken);
 
-            if (!customerExists)
+            if (customer is null)
             {
                 return OperationResult<QuotationCreateResultDto>.Fail(
                     "Customer was not found or is outside your visibility scope.");
@@ -88,6 +104,7 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.CreateQuotation
                 request.CustomerId,
                 request.ContactId,
                 request.ContactName,
+                request.ContactPhone,
                 cancellationToken);
             if (!contactResult.Success)
             {
@@ -123,6 +140,14 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.CreateQuotation
             }
 
             var quotationId = Guid.CreateVersion7();
+            var termResult = QuotationTermBuilder.Build(
+                quotationId,
+                request.Terms);
+            if (!termResult.Success || termResult.Data is null)
+            {
+                return OperationResult<QuotationCreateResultDto>.Fail(termResult.Message!);
+            }
+
             var lineResult = await _lineBuilder.BuildAsync(
                 quotationId,
                 scope.CompanyId,
@@ -142,6 +167,10 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.CreateQuotation
                 CustomerId = request.CustomerId,
                 ContactId = request.ContactId,
                 ContactName = contactResult.ContactName,
+                ContactPhone = contactResult.ContactPhone,
+                CustomerAddressSnapshot = request.CustomerAddressSnapshot is null
+                    ? QuotationRules.TrimToNull(customer.RegistrationAddress)
+                    : QuotationRules.TrimToNull(request.CustomerAddressSnapshot),
                 CompanyId = scope.CompanyId,
                 SaleEmployeeId = scope.EmployeeId,
                 Status = QuotationStatus.Draft,
@@ -159,7 +188,8 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.CreateQuotation
                 CreatedDate = now,
                 UpdatedBy = scope.EmployeeId,
                 UpdatedDate = now,
-                Lines = lineResult.Data.ToList()
+                Lines = lineResult.Data.ToList(),
+                Terms = termResult.Data.ToList()
             };
             QuotationRules.RecalculateTotals(quotation);
 
@@ -182,11 +212,14 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.CreateQuotation
             Guid customerId,
             Guid? contactId,
             string? requestedContactName,
+            string? requestedContactPhone,
             CancellationToken cancellationToken)
         {
             if (!contactId.HasValue)
             {
-                return ContactResolution.Allowed(QuotationRules.TrimToNull(requestedContactName));
+                return ContactResolution.Allowed(
+                    QuotationRules.TrimToNull(requestedContactName),
+                    QuotationRules.TrimToNull(requestedContactPhone));
             }
 
             if (contactId.Value == Guid.Empty)
@@ -200,7 +233,7 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.CreateQuotation
                     x.ContactId == contactId.Value &&
                     x.CustomerId == customerId &&
                     x.IsActive)
-                .Select(x => new { x.FirstName, x.LastName })
+                .Select(x => new { x.FirstName, x.LastName, x.Phone })
                 .FirstOrDefaultAsync(cancellationToken);
 
             if (contact is null)
@@ -211,13 +244,21 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.CreateQuotation
 
             var snapshot = QuotationRules.TrimToNull(requestedContactName)
                 ?? QuotationRules.TrimToNull($"{contact.FirstName} {contact.LastName}");
-            return ContactResolution.Allowed(snapshot);
+            var phoneSnapshot = QuotationRules.TrimToNull(requestedContactPhone)
+                ?? QuotationRules.TrimToNull(contact.Phone);
+            return ContactResolution.Allowed(snapshot, phoneSnapshot);
         }
 
-        private sealed record ContactResolution(bool Success, string? ContactName, string? Error)
+        private sealed record ContactResolution(
+            bool Success,
+            string? ContactName,
+            string? ContactPhone,
+            string? Error)
         {
-            public static ContactResolution Allowed(string? contactName) => new(true, contactName, null);
-            public static ContactResolution Denied(string error) => new(false, null, error);
+            public static ContactResolution Allowed(string? contactName, string? contactPhone)
+                => new(true, contactName, contactPhone, null);
+            public static ContactResolution Denied(string error)
+                => new(false, null, null, error);
         }
     }
 

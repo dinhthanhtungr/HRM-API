@@ -1,42 +1,71 @@
 using HRM.Application.Features.CRM.Quotations.Dtos;
 using HRM.Application.Features.CRM.Quotations.Services;
-using HRM.Domain.Enums.CustomerEnum;
 
 namespace HRM.Application.Tests.Features.CRM.Quotations;
 
 public sealed class QuotationPriceTierBuilderTests
 {
     [Fact]
-    public void Build_AllowsEmptyTierSnapshot_WhenDraftLineMayHaveMissingPrice()
+    public void Build_RejectsEmptyTierSnapshot()
     {
         var result = QuotationPriceTierBuilder.Build(
             Guid.NewGuid(),
-            QuotationLinePriceMode.Tiered,
             quantity: 1m,
-            fixedUnitPrice: 0m,
-            requests: [],
-            fieldPath: "lines[0]",
-            allowMissingPrice: true);
-
-        Assert.True(result.Success);
-        Assert.NotNull(result.Data);
-        Assert.Equal(0m, result.Data.EffectiveUnitPrice);
-        Assert.Empty(result.Data.PriceTiers);
-    }
-
-    [Fact]
-    public void Build_RejectsEmptyTierSnapshot_WhenCompletePriceIsRequired()
-    {
-        var result = QuotationPriceTierBuilder.Build(
-            Guid.NewGuid(),
-            QuotationLinePriceMode.Tiered,
-            quantity: 1m,
-            fixedUnitPrice: 0m,
             requests: [],
             fieldPath: "lines[0]");
 
         Assert.False(result.Success);
-        Assert.Contains("at least one tier", result.Message);
+        Assert.Contains("at least one active tier", result.Message);
+    }
+
+    [Fact]
+    public void Build_RejectsTierSnapshotWithoutAnActiveTier()
+    {
+        var result = QuotationPriceTierBuilder.Build(
+            Guid.NewGuid(),
+            quantity: 1m,
+            requests:
+            [
+                new QuotationLinePriceTierRequest
+                {
+                    QuantityRangeLabel = ">= 50 kg",
+                    MinQuantity = 50m,
+                    MinInclusive = true,
+                    UnitPrice = 10m,
+                    SortOrder = 0,
+                    IsActive = false
+                }
+            ],
+            fieldPath: "lines[0]");
+
+        Assert.False(result.Success);
+        Assert.Contains("at least one active tier", result.Message);
+    }
+
+    [Fact]
+    public void Build_AllowsActiveTierThatDoesNotMatchTheLineQuantity()
+    {
+        var result = QuotationPriceTierBuilder.Build(
+            Guid.NewGuid(),
+            quantity: 1m,
+            requests:
+            [
+                new QuotationLinePriceTierRequest
+                {
+                    QuantityRangeLabel = ">= 50 kg",
+                    MinQuantity = 50m,
+                    MinInclusive = true,
+                    UnitPrice = 10m,
+                    SortOrder = 0,
+                    IsActive = true
+                }
+            ],
+            fieldPath: "lines[0]");
+
+        Assert.True(result.Success);
+        Assert.NotNull(result.Data);
+        Assert.Equal(10m, result.Data.EffectiveUnitPrice);
+        Assert.Single(result.Data.PriceTiers);
     }
 
     [Fact]
@@ -44,9 +73,7 @@ public sealed class QuotationPriceTierBuilderTests
     {
         var result = QuotationPriceTierBuilder.Build(
             Guid.NewGuid(),
-            QuotationLinePriceMode.Tiered,
             quantity: 1m,
-            fixedUnitPrice: 0m,
             requests:
             [
                 new QuotationLinePriceTierRequest
@@ -55,11 +82,11 @@ public sealed class QuotationPriceTierBuilderTests
                     MaxQuantity = 50m,
                     MaxInclusive = false,
                     UnitPrice = 0m,
-                    SortOrder = 0
+                    SortOrder = 0,
+                    IsActive = true
                 }
             ],
-            fieldPath: "lines[0]",
-            allowMissingPrice: true);
+            fieldPath: "lines[0]");
 
         Assert.True(result.Success);
         Assert.NotNull(result.Data);
@@ -71,9 +98,7 @@ public sealed class QuotationPriceTierBuilderTests
     {
         var result = QuotationPriceTierBuilder.Build(
             Guid.NewGuid(),
-            QuotationLinePriceMode.Tiered,
             quantity: 1m,
-            fixedUnitPrice: 0m,
             requests:
             [
                 new QuotationLinePriceTierRequest
@@ -82,11 +107,11 @@ public sealed class QuotationPriceTierBuilderTests
                     MaxQuantity = 50m,
                     MaxInclusive = false,
                     UnitPrice = -1m,
-                    SortOrder = 0
+                    SortOrder = 0,
+                    IsActive = true
                 }
             ],
-            fieldPath: "lines[0]",
-            allowMissingPrice: true);
+            fieldPath: "lines[0]");
 
         Assert.False(result.Success);
         Assert.Contains("non-negative unitPrice", result.Message);

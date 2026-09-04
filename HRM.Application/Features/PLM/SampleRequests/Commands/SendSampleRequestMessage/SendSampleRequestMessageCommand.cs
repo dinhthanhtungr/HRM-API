@@ -4,6 +4,7 @@ using HRM.Application.Features.InternalMail.Dtos;
 using HRM.Application.Features.PLM.SampleRequests.DataChangeRequests;
 using HRM.Application.Features.PLM.SampleRequests.DirectPatchNotifications;
 using HRM.Application.Features.PLM.SampleRequests.FormulaChangeRequests;
+using HRM.Application.Features.PLM.SampleRequests.PriceQuoteRequests;
 using HRM.Application.Features.PLM.SampleRequests.SampleReceiptConfirmations;
 using HRM.Domain.Enums.Notifications;
 using HRM.Domain.Enums.SampleRequests;
@@ -45,11 +46,23 @@ public sealed class SendSampleRequestMessageCommand : IRequest<OperationResult<S
     internal SampleReceiptActionPayload? SampleReceiptAction { get; set; }
 
     [JsonIgnore]
+    internal SampleRequestPriceQuotePayload? PriceQuoteRequest { get; set; }
+
+    [JsonIgnore]
     internal TopicNotifications? TopicOverride { get; set; }
 
     [JsonIgnore]
     internal string? TitleOverride { get; set; }
 
     [JsonIgnore]
+    internal string? LinkOverride { get; set; }
+
+    [JsonIgnore]
     internal IReadOnlyCollection<Guid>? NotificationRecipientEmployeeIdsOverride { get; set; }
+
+    [JsonIgnore]
+    internal IReadOnlyList<Guid>? SilentWatcherEmployeeIds { get; set; }
+
+    [JsonIgnore]
+    internal bool UseDefaultSilentWatchersWhenOmitted { get; set; }
 }

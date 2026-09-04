@@ -56,6 +56,7 @@ internal sealed class GetQuotationPricingComparisonQueryHandler
                 QuotationId = x.QuotationId,
                 Currency = x.Currency,
                 Lines = x.Lines
+                    .Where(line => line.IsActive)
                     .OrderBy(line => line.SortOrder)
                     .ThenBy(line => line.QuotationLineId)
                     .Select(line => new PricingComparisonLine
@@ -68,17 +69,23 @@ internal sealed class GetQuotationPricingComparisonQueryHandler
                         PriceMode = line.PriceMode,
                         UnitPrice = line.UnitPrice,
                         PriceTiers = line.PriceTiers
+                            .Where(tier => tier.IsActive)
                             .OrderBy(tier => tier.SortOrder)
                             .ThenBy(tier => tier.QuotationLinePriceTierId)
                             .Select(tier => new QuotationLinePriceTierDto
                             {
                                 QuotationLinePriceTierId = tier.QuotationLinePriceTierId,
+                                IsSnapshot = true,
+                                IsActive = true,
+                                RequiresManualPrice = false,
                                 QuantityRangeLabel = tier.QuantityRangeLabel,
                                 MinQuantity = tier.MinQuantity,
                                 MaxQuantity = tier.MaxQuantity,
                                 MinInclusive = tier.MinInclusive,
                                 MaxInclusive = tier.MaxInclusive,
                                 UnitPrice = tier.UnitPrice,
+                                CommissionAmount = tier.CommissionAmount,
+                                CustomerUnitPrice = tier.CustomerUnitPrice,
                                 SortOrder = tier.SortOrder
                             })
                             .ToList()

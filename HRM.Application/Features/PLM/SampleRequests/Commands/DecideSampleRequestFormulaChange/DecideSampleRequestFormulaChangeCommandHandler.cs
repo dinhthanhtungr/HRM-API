@@ -7,6 +7,7 @@ using HRM.Application.Features.PLM.SampleRequests.Commands.SendSampleRequestMess
 using HRM.Application.Features.PLM.SampleRequests.Dtos.InternalMail;
 using HRM.Application.Features.PLM.SampleRequests.FormulaChangeRequests;
 using HRM.Application.Features.PLM.SampleRequests.Rules;
+using HRM.Application.Features.PLM.SampleRequests.DataChangeRequests;
 using HRM.Domain.Enums.InternalMailEnums;
 using HRM.Domain.Enums.Notifications;
 using HRM.Domain.Enums.Products;
@@ -138,6 +139,7 @@ internal sealed class DecideSampleRequestFormulaChangeCommandHandler
         }
 
         var now = DateTime.Now;
+        var oldStatus = sampleRequest.Status;
         var approved = request.Decision == SampleRequestFormulaChangeDecision.Approve;
         var cancelled = request.Decision == SampleRequestFormulaChangeDecision.Cancel;
 
@@ -189,6 +191,19 @@ internal sealed class DecideSampleRequestFormulaChangeCommandHandler
         requestMessage.IsEdited = true;
         requestMessage.EditedAt = now;
         requestMessage.EditedByEmployeeId = employeeId.Value;
+
+        await SampleRequestDataChangeAuditHelper.AddStatusTransitionAuditIfChangedAsync(
+            _dbContext.AuditLogs,
+            sampleRequest,
+            oldStatus,
+            employeeId.Value,
+            now,
+            approved
+                ? "FormulaUpdateApproved"
+                : cancelled
+                    ? "FormulaUpdateCancelled"
+                    : "FormulaUpdateRejected",
+            cancellationToken);
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 

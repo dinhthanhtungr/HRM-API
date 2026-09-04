@@ -32,6 +32,41 @@ public sealed class PricingRoundingRulesTests
     }
 
     [Fact]
+    public void RealtimeMaterialCost_UsesZeroForMissingOrZeroPricesAndKeepsWarningCount()
+    {
+        var pricedItemId = Guid.NewGuid();
+        var zeroPriceItemId = Guid.NewGuid();
+        var missingItemId = Guid.NewGuid();
+        var result = FormulaRealtimeMaterialCostCalculator.Calculate(
+            [
+                new FormulaMaterialCostItem(pricedItemId, ItemType.Material, 2m),
+                new FormulaMaterialCostItem(zeroPriceItemId, ItemType.Material, 3m),
+                new FormulaMaterialCostItem(missingItemId, ItemType.Material, 4m)
+            ],
+            new Dictionary<PriceItemKey, LatestItemPriceDto>
+            {
+                [new PriceItemKey(ItemType.Material, pricedItemId)] = new()
+                {
+                    ItemType = ItemType.Material,
+                    ItemId = pricedItemId,
+                    CurrentPrice = 100m,
+                    PriceSource = LatestPriceSourceType.PurchaseOrder
+                },
+                [new PriceItemKey(ItemType.Material, zeroPriceItemId)] = new()
+                {
+                    ItemType = ItemType.Material,
+                    ItemId = zeroPriceItemId,
+                    CurrentPrice = 0m,
+                    PriceSource = LatestPriceSourceType.MaterialSupplier
+                }
+            });
+
+        Assert.Equal(200m, result.MaterialCost);
+        Assert.False(result.IsComplete);
+        Assert.Equal(2, result.MissingPriceCount);
+    }
+
+    [Fact]
     public void FormulaPricing_RoundsCalculatedPricesButPreservesStoredSellingPrice()
     {
         var calculated = FormulaPriceCalculator.Calculate(

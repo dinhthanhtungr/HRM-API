@@ -1,11 +1,9 @@
 using HRM.Application.Abstractions.Persistence.Reports;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Reporting;
-using HRM.Application.Features.Reports.ExecutivePnL.Queries.GetExecutivePnLReport.Services;
 using HRM.Application.Features.Reports.ExecutivePnL.Shared.Models;
 using HRM.Application.Features.Reports.ExecutivePnL.Shared.Services.Costing;
 using HRM.Application.Features.Reports.ExecutivePnL.Shared.Services.SalesAttribution;
-using HRM.Domain.Enums.Formulas;
 using Microsoft.EntityFrameworkCore;
 
 namespace HRM.Application.Features.Reports.ExecutivePnL.Queries.GetExecutivePnLDashboardByProductType;
@@ -44,7 +42,11 @@ internal sealed class ExecutivePnLProductTypeReader
             filter.SalePerson,
             cancellationToken);
 
-        var formulaCostMap = await LoadFormulaCostMapAsync(revenueLines, cancellationToken);
+        var costSources = await ExecutivePnLDeliveryCostResolver.LoadAsync(
+            _dbContext,
+            revenueLines,
+            filter.CompanyId,
+            cancellationToken);
 
         var rows = revenueLines
             .Where(x => salesScope.TryGetAttribution(x.CustomerId, out _))
@@ -52,11 +54,7 @@ internal sealed class ExecutivePnLProductTypeReader
             {
                 salesScope.TryGetAttribution(x.CustomerId, out var attribution);
 
-                var costOfSales = ExecutivePnLDeliveryCostRules.ResolveAmount(
-                    x.HasNormalizedLots,
-                    x.LotCostSnapshotAmount,
-                    x.Quantity * ExecutivePnLAmountResolvers.ResolveManufacturingUnitCost(
-                        ExecutivePnLFormulaCostResolver.ResolveUnitCost(x.LotNoList, formulaCostMap)));
+                var costOfSales = ExecutivePnLDeliveryCostResolver.ResolveAmount(x, costSources);
 
                 return new ExecutivePnLProductTypeMonthlyMetricRow
                 {
@@ -109,33 +107,4 @@ internal sealed class ExecutivePnLProductTypeReader
             .ToList();
     }
 
-    private async Task<Dictionary<string, decimal>> LoadFormulaCostMapAsync(
-        IReadOnlyCollection<DeliveryRevenueLine> revenueLines,
-        CancellationToken cancellationToken)
-    {
-        var lotCodes = revenueLines
-            .Where(x => !x.HasNormalizedLots)
-            .SelectMany(x => ExecutivePnLFormulaCostResolver.SplitLotCodes(x.LotNoList))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        var formulaCostRows = await _dbContext.ManufacturingFormulas
-            .AsNoTracking()
-            .Where(x => x.IsActive && lotCodes.Contains(x.ExternalId))
-            .Select(x => new
-            {
-                x.ExternalId,
-                FormulaCost = x.ManufacturingFormulaMaterials
-                    .Where(m => m.IsActive && m.itemType == ItemType.Material)
-                    .Sum(m => m.TotalPrice)
-            })
-            .ToListAsync(cancellationToken);
-
-        return formulaCostRows
-            .GroupBy(x => x.ExternalId, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(
-                x => x.Key,
-                x => x.First().FormulaCost,
-                StringComparer.OrdinalIgnoreCase);
-    }
 }

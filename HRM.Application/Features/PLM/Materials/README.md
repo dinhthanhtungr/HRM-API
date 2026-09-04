@@ -113,7 +113,7 @@ Request:
 }
 ```
 
-- `newPrice` báº¯t buá»™c lá»›n hÆ¡n 0 vÃ  Ä‘Æ°á»£c lÃ m trÃ²n 4 chá»¯ sá»‘ tháº­p phÃ¢n theo precision cá»§a `MaterialsSupplier.CurrentPrice`.
+- `newPrice` được phép bằng 0 cho NVL gia công, không được âm và được làm tròn 4 chữ số thập phân theo precision của `MaterialsSupplier.CurrentPrice`.
 - `expectedCurrentPrice` lÃ  tÃ¹y chá»n. Náº¿u giÃ¡ hiá»‡n táº¡i Ä‘Ã£ khÃ¡c giÃ¡ FE Ä‘á»c trÆ°á»›c Ä‘Ã³, API tá»« chá»‘i Ä‘á»ƒ trÃ¡nh ghi Ä‘Ã¨ cáº­p nháº­t cá»§a ngÆ°á»i khÃ¡c.
 - `currency` lÃ  tÃ¹y chá»n; khÃ´ng truyá»n thÃ¬ giá»¯ currency hiá»‡n táº¡i, cÃ³ truyá»n thÃ¬ tá»‘i Ä‘a 10 kÃ½ tá»± vÃ  Ä‘Æ°á»£c chuáº©n hÃ³a uppercase.
 - API chá»‰ cáº­p nháº­t liÃªn káº¿t Material - Supplier active, cÃ³ Material vÃ  Supplier cÃ¹ng company vá»›i current user.

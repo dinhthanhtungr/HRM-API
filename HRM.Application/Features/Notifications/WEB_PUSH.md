@@ -18,7 +18,7 @@ Business feature
 -> FE mở link và gọi API có phân quyền để lấy dữ liệu thật
 ```
 
-Payload Web Push chỉ có `notificationId`, tiêu đề chung và đường dẫn. Không gửi nội dung
+Payload Web Push có `notificationId`, danh sách employee nhận alert, tiêu đề chung và đường dẫn. Không gửi nội dung
 nghiệp vụ đầy đủ qua push để tránh lộ dữ liệu trên màn hình khóa.
 
 ## API cho FE

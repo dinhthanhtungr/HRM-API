@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using HRM.Domain.Enums.Formulas;
+using HRM.Domain.Enums.Manufacturings;
 using HRM.Domain.Enums.Products;
 
 namespace HRM.Application.Features.PLM.Formulas.Dtos.Commons;
@@ -14,6 +15,8 @@ public sealed class UpsertFormulaRequest
     public Guid? ProductId { get; init; }
 
     public string? Note { get; init; }
+
+    public StepOfProduct? StepOfProduct { get; init; }
     public DateTime? EffectiveDate { get; init; }
     public bool? IsSelect { get; init; }
     public DateTime? ExpectedUpdatedDate { get; init; }
@@ -44,7 +47,18 @@ public sealed class UpdateFormulaStatusRequest
 
     public decimal? DeliveredSampleQuantityKg { get; init; }
 
+    /// <summary>
+    /// Optional production route update. When omitted, the existing Formula value is retained.
+    /// </summary>
+    public StepOfProduct? StepOfProduct { get; init; }
+
     public DateTime? ExpectedUpdatedDate { get; init; }
+
+    /// <summary>
+    /// Optional Formula changes to persist atomically before the status transition.
+    /// The request order of FormulaUpdate.Materials is the canonical material order.
+    /// </summary>
+    public UpsertFormulaRequest? FormulaUpdate { get; init; }
 }
 
 public sealed class FormulaWriteResultDto

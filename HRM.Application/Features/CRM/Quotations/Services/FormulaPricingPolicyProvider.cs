@@ -17,18 +17,19 @@ internal sealed class FormulaPricingPolicyProvider(
         FormulaPricingPolicyDefinition Definition);
 
     public async Task<FormulaPricingPolicyDefinition?> GetPublishedAsync(
-        Guid companyId, FormulaPricingProfile profile, string currency,
+        Guid companyId, Guid categoryId, FormulaPricingProfile profile, string currency,
         CancellationToken cancellationToken)
         => (await GetPublishedPolicyAsync(
-            companyId, profile, currency, cancellationToken))?.Definition;
+            companyId, categoryId, profile, currency, cancellationToken))?.Definition;
 
     async Task<ResolvedFormulaPricingPolicy?> IFormulaPricingPolicyResolver.GetPublishedAsync(
         Guid companyId,
+        Guid categoryId,
         FormulaPricingProfile profile,
         string currency,
         CancellationToken cancellationToken)
     {
-        var policy = await GetPublishedPolicyAsync(companyId, profile, currency, cancellationToken);
+        var policy = await GetPublishedPolicyAsync(companyId, categoryId, profile, currency, cancellationToken);
         return policy is null ? null : new ResolvedFormulaPricingPolicy(
             policy.FormulaPricingPolicyId,
             (await dbContext.FormulaPricingPolicies.AsNoTracking()
@@ -44,8 +45,8 @@ internal sealed class FormulaPricingPolicyProvider(
             CancellationToken cancellationToken)
     {
         var requested = keys
-            .Where(x => x.CompanyId != Guid.Empty && Enum.IsDefined(x.Profile) && !string.IsNullOrWhiteSpace(x.Currency))
-            .Select(x => new FormulaPricingPolicyLookupKey(x.CompanyId, x.Profile, x.Currency.Trim().ToUpperInvariant()))
+            .Where(x => x.CompanyId != Guid.Empty && x.CategoryId != Guid.Empty && Enum.IsDefined(x.Profile) && !string.IsNullOrWhiteSpace(x.Currency))
+            .Select(x => new FormulaPricingPolicyLookupKey(x.CompanyId, x.CategoryId, x.Profile, x.Currency.Trim().ToUpperInvariant()))
             .Distinct()
             .ToArray();
         if (requested.Length == 0) return new Dictionary<FormulaPricingPolicyLookupKey, ResolvedFormulaPricingPolicy>();
@@ -58,32 +59,48 @@ internal sealed class FormulaPricingPolicyProvider(
                 x.Status == FormulaPricingPolicyStatus.Published && x.IsActive &&
                 x.EffectiveFrom.HasValue && x.EffectiveFrom <= now)
             .ToListAsync(cancellationToken);
-        return rows
-            .Where(x => requested.Contains(new FormulaPricingPolicyLookupKey(x.CompanyId, x.Profile, x.Currency)))
-            .GroupBy(x => new FormulaPricingPolicyLookupKey(x.CompanyId, x.Profile, x.Currency))
-            .ToDictionary(
-                group => group.Key,
-                group =>
-                {
-                    var policy = group.OrderByDescending(x => x.Version).First();
-                    return new ResolvedFormulaPricingPolicy(
-                        policy.FormulaPricingPolicyId, policy.Version,
-                        FormulaPricingPolicyRules.ToDefinition(policy));
-                });
+        var applicableRows = rows
+            .Where(x => requested.Any(key =>
+                x.CompanyId == key.CompanyId &&
+                x.Currency == key.Currency &&
+                (x.CategoryId == key.CategoryId ||
+                 (!x.CategoryId.HasValue && x.Profile == key.Profile))))
+            .ToList();
+        return requested.Select(key => new
+            {
+                Key = key,
+                // Category policy is the current product taxonomy rule. Legacy profile is only a fallback.
+                Policy = applicableRows
+                    .Where(x => x.CompanyId == key.CompanyId && x.Currency == key.Currency &&
+                        x.CategoryId == key.CategoryId)
+                    .OrderByDescending(x => x.Version)
+                    .FirstOrDefault()
+                    ?? applicableRows
+                        .Where(x => x.CompanyId == key.CompanyId && x.Currency == key.Currency &&
+                            !x.CategoryId.HasValue && x.Profile == key.Profile)
+                        .OrderByDescending(x => x.Version)
+                        .FirstOrDefault()
+            }).Where(x => x.Policy is not null).ToDictionary(
+                x => x.Key,
+                x => new ResolvedFormulaPricingPolicy(
+                    x.Policy!.FormulaPricingPolicyId, x.Policy.Version,
+                    FormulaPricingPolicyRules.ToDefinition(x.Policy)));
     }
 
     public async Task<ResolvedPolicy?> GetPublishedPolicyAsync(
-        Guid companyId, FormulaPricingProfile profile, string currency,
+        Guid companyId, Guid categoryId, FormulaPricingProfile profile, string currency,
         CancellationToken cancellationToken)
     {
         var now = dateTimeProvider.Now;
         var normalizedCurrency = currency.Trim().ToUpperInvariant();
         var policy = await dbContext.FormulaPricingPolicies.AsNoTracking()
             .Include(x => x.Tiers)
-            .Where(x => x.CompanyId == companyId && x.Profile == profile &&
+            .Where(x => x.CompanyId == companyId &&
+                (x.CategoryId == categoryId || (!x.CategoryId.HasValue && x.Profile == profile)) &&
                 x.Currency == normalizedCurrency && x.Status == FormulaPricingPolicyStatus.Published &&
                 x.IsActive && x.EffectiveFrom.HasValue && x.EffectiveFrom <= now)
-            .OrderByDescending(x => x.Version)
+            .OrderByDescending(x => x.CategoryId == categoryId)
+            .ThenByDescending(x => x.Version)
             .FirstOrDefaultAsync(cancellationToken);
         return policy is null
             ? null

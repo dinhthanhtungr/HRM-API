@@ -1,5 +1,7 @@
 using HRM.Application.Abstractions.Persistence.PLM;
+using HRM.Application.Commons.Rules;
 using HRM.Application.Features.PLM.SampleRequests.Dtos.FormOptions;
+using HRM.Domain.Enums.SampleRequests;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -20,6 +22,7 @@ internal sealed class GetSampleRequestLookupQueryHandler
         CancellationToken cancellationToken)
     {
         var query = _dbContext.SampleRequests
+            .Where(x => x.Product.ColourCode != null || x.Product.Name != null )
             .AsNoTracking()
             .AsQueryable();
 
@@ -35,7 +38,11 @@ internal sealed class GetSampleRequestLookupQueryHandler
 
         if (request.CustomerId is { } customerId && customerId != Guid.Empty)
         {
-            query = query.Where(x => x.CustomerId == customerId);
+            query = request.ForSaleOrder
+                ? query.Where(x =>
+                    x.CustomerId == customerId ||
+                    x.Customer.ExternalId == InternalCustomerRules.InternalCustomerExternalId)
+                : query.Where(x => x.CustomerId == customerId);
         }
 
         if (request.SampleRequestId is { } sampleRequestId && sampleRequestId != Guid.Empty)
@@ -47,6 +54,13 @@ internal sealed class GetSampleRequestLookupQueryHandler
         {
             var status = request.NormalizedStatus;
             query = query.Where(x => x.Status == status);
+        }
+
+        if (request.ForSaleOrder)
+        {
+            var sampleSent = SampleRequestStatus.SampleSent.ToString();
+            var completed = SampleRequestStatus.Completed.ToString();
+            query = query.Where(x => x.Status == sampleSent || x.Status == completed);
         }
 
         if (!string.IsNullOrWhiteSpace(request.NormalizedKeyword))

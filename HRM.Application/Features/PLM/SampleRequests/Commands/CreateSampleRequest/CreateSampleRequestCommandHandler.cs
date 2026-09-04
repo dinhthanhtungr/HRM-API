@@ -54,6 +54,11 @@ internal sealed class CreateSampleRequestCommandHandler
         }
 
         var initialLabMessage = TrimToNull(request.InitialLabMessage);
+        if (request.GRSConsumerType.HasValue && !Enum.IsDefined(request.GRSConsumerType.Value))
+        {
+            return OperationResult<Guid>.Fail("GRSConsumerType is invalid.");
+        }
+
         if (initialLabMessage is { Length: > MaxInitialLabMessageLength })
         {
             return OperationResult<Guid>.Fail($"InitialLabMessage cannot exceed {MaxInitialLabMessageLength} characters.");
@@ -184,7 +189,9 @@ internal sealed class CreateSampleRequestCommandHandler
             Type = SampleRequestNotificationType.GeneralMessage,
             Message = initialLabMessage ?? BuildLabSummaryMessage(externalId, request),
             TitleOverride = "Yêu cầu phối mẫu mới",
-            ExtraRecipientEmployeeIds = request.InitialLabRecipientEmployeeIds
+            ExtraRecipientEmployeeIds = request.InitialLabRecipientEmployeeIds,
+            SilentWatcherEmployeeIds = request.InitialLabSilentWatcherEmployeeIds,
+            UseDefaultSilentWatchersWhenOmitted = true
         }, cancellationToken);
 
         if (!messageResult.Success)
@@ -236,6 +243,8 @@ internal sealed class CreateSampleRequestCommandHandler
         Append(builder, "Tỷ lệ sử dụng", request.UsageRate);
         Append(builder, "Yêu cầu sản phẩm", request.ProductRequirement);
         Append(builder, "Ghi chú Lab", request.LabComment);
+        Append(builder, "GRS", request.GRS ?? false);
+        Append(builder, "Loại GRS", request.GRSConsumerType);
 
         var message = builder.ToString().Trim();
         return message.Length <= 2000
@@ -328,18 +337,43 @@ internal sealed class CreateSampleRequestCommandHandler
     {
         if (request.ProductId is { } productId && productId != Guid.Empty)
         {
-            var productExists = await _dbContext.Products
+            var existingProductCategoryExternalId = await _dbContext.Products
                 .AsNoTracking()
-                .AnyAsync(x => x.ProductId == productId && x.IsActive, cancellationToken);
+                .Where(x =>
+                    x.ProductId == productId &&
+                    x.CompanyId == companyId &&
+                    x.IsActive)
+                .Select(x => x.Category!.ExternalId)
+                .FirstOrDefaultAsync(cancellationToken);
 
-            return productExists
+            if (existingProductCategoryExternalId is null)
+            {
+                return OperationResult<Guid>.Fail("Product does not exist or is inactive.");
+            }
+
+            return SampleRequestProductCategoryRules.IsCanonical(existingProductCategoryExternalId)
                 ? OperationResult<Guid>.Ok(productId)
-                : OperationResult<Guid>.Fail("Product does not exist or is inactive.");
+                : OperationResult<Guid>.Fail("Bạn đang chọn loại sản phẩm củ.");
         }
 
         if (request.CategoryId is null || request.CategoryId == Guid.Empty)
         {
             return OperationResult<Guid>.Fail("Product CategoryId is invalid.");
+        }
+
+        var requestedCategoryExternalId = await _dbContext.Categories
+            .AsNoTracking()
+            .Where(x =>
+                x.CategoryId == request.CategoryId.Value &&
+                x.CompanyId == companyId &&
+                x.IsActive == true &&
+                x.Types == "Product")
+            .Select(x => x.ExternalId)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (!SampleRequestProductCategoryRules.IsCanonical(requestedCategoryExternalId))
+        {
+            return OperationResult<Guid>.Fail("Bạn đang chọn loại sản phẩm củ.");
         }
 
         var newProduct = new Product
@@ -443,6 +477,8 @@ internal sealed class CreateSampleRequestCommandHandler
         product.VisualTest = TrimToNull(request.VisualTest);
         product.ReturnSample = request.ReturnSample;
         product.IsRecycle = request.IsRecycle ?? false;
+        product.GRS = request.GRS ?? false;
+        product.GRSConsumerType = request.GRSConsumerType;
         product.OtherComment = TrimToNull(request.ProductOtherComment);
         product.CategoryId = request.CategoryId!.Value;
         product.Weight = request.Weight;

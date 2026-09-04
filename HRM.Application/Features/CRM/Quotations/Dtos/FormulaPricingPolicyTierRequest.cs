@@ -9,4 +9,5 @@ public sealed class FormulaPricingPolicyTierRequest
     public bool MaxInclusive { get; init; } = true;
     public decimal? PriceOffset { get; init; }
     public int SortOrder { get; init; }
+    public bool IsActive { get; init; } = true;
 }

@@ -20,6 +20,26 @@ Toàn bộ chỉ số doanh số của P&L tổng, Customer, Trend, Sales, Produ
 active có liên kết Merchandise Order Detail, loại khách nội bộ `KH_VIETAUS`, loại delivery trạng thái `Canceled`
 và quy đổi về VND theo currency/tỷ giá của Merchandise Order liên kết.
 
+Giá vốn dùng công tắc nội bộ `ExecutivePnLCostSourcePolicy.Current`, không nhận từ query/API để mọi người
+xem cùng một nguồn tính trong cùng thời điểm. Mặc định `FormulaSnapshot` lấy toàn bộ snapshot NVL trên công thức VU đã chọn ở dòng sales order:
+`số lượng giao * tổng (FormulaMaterials.Quantity * FormulaMaterials.UnitPrice)` với các dòng
+`itemType = Material`. Nếu công thức không có snapshot NVL, report mới dùng snapshot legacy của lô giao hoặc
+`BaseCostSnapshot`.
+
+Khi đổi sang `WarehouseActual`, nguồn chi phí kho theo LSX là
+`OperationMaterialBuffer.AmountCost` hoặc, ưu tiên khi buffer chưa có, giá thực cân đã `COSTED` trong
+`inv.weigh_cost_allocations`. Nguồn cân được nối qua `WeighEvent -> WeighVAMaterial -> WeighVA.OrderCode`
+về mã LSX; sau đó chia cho `ProductionOutputReceiptSource.ProducedQtyKg`. Nếu LSX thiếu giá cân/buffer
+hoặc thiếu sản lượng hoàn thành thì vẫn fallback về `FormulaSnapshot`.
+
+Khi đổi sang `InventoryWeightedAverage`, report lấy `avg_cost_after` của giao dịch cuối cùng trong tháng giao
+cho từng NVL từ `inv.stock_ledger`, sau đó tính `số lượng giao * tổng(định mức Formula * giá bình quân NVL)`.
+Nếu Formula thiếu giá bình quân của bất kỳ NVL active nào trong tháng đó, dòng giao fallback về `FormulaSnapshot`.
+
+Để đối soát từng dòng giao từ database, chạy [ExportCostSourceReconciliation.sql](ExportCostSourceReconciliation.sql).
+File này xuất cả LSX, chi phí kho, sản lượng LSX, hai mức giá vốn và cột `cost_source_used`; chỉ cần đổi kỳ,
+`company_id` và `selected_mode` trong CTE `params`.
+
 Các dashboard phân rã theo sale/product vẫn áp scope phân quyền và assignment riêng. Vì vậy tổng của chúng chỉ
 đối soát với Customer/Trend trên cùng kỳ, company và cùng tập customer mà người dùng được phép xem/phân bổ.
 

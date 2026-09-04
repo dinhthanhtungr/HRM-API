@@ -42,5 +42,15 @@ namespace HRM.Application.Abstractions.Commons.Pricing
         Task<Dictionary<PriceItemKey, LatestItemPriceDto>> LoadLatestItemPriceInfoDictAsync(
             IEnumerable<PriceItemRequest> items,
             CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Tải giá để tính Formula. Thành phẩm ưu tiên giá chuẩn đã được duyệt của đúng công ty và tiền tệ;
+        /// giá từ đơn nội bộ chỉ là fallback legacy khi chưa có giá chuẩn.
+        /// </summary>
+        Task<Dictionary<PriceItemKey, LatestItemPriceDto>> LoadLatestPricingItemPriceInfoDictAsync(
+            Guid companyId,
+            string currency,
+            IEnumerable<PriceItemRequest> items,
+            CancellationToken cancellationToken = default);
     }
 }

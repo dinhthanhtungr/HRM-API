@@ -340,8 +340,6 @@ namespace HRM.Infrastructure.DatabaseContext.ApplicationDbs
                 entity.Property(e => e.Name).HasColumnName("Name").HasColumnType("citext");
                 entity.Property(e => e.ColourName).HasColumnName("ColourName");
                 entity.Property(e => e.Additive).HasColumnName("Additive");
-                entity.Property(e => e.FormulaPricingProfile).HasColumnName("FormulaPricingProfile")
-                    .HasConversion<int>();
                 entity.Property(e => e.UsageRate).HasColumnName("UsageRate");
                 entity.Property(e => e.DeltaE).HasColumnName("DeltaE");
                 entity.Property(e => e.Requirement).HasColumnName("Requirement");
@@ -363,6 +361,10 @@ namespace HRM.Infrastructure.DatabaseContext.ApplicationDbs
                 entity.Property(e => e.ReachStandard).HasColumnName("ReachStandard");
                 entity.Property(e => e.ReturnSample).HasColumnName("ReturnSample");
                 entity.Property(e => e.IsRecycle).HasColumnName("IsRecycle").HasDefaultValue(false);
+                entity.Property(e => e.GRS).HasColumnName("GRS").HasDefaultValue(false);
+                entity.Property(e => e.GRSConsumerType)
+                    .HasColumnName("GRSConsumerType")
+                    .HasConversion<int>();
 
                 entity.Property(e => e.MaxTemp).HasColumnName("MaxTemp");
                 entity.Property(e => e.WeatherResistance).HasColumnName("WeatherResistance");

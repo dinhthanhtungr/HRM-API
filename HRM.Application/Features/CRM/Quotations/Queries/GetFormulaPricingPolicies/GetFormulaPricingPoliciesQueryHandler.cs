@@ -35,9 +35,11 @@ internal sealed class GetFormulaPricingPoliciesQueryHandler(
             .Where(x =>
                 x.CompanyId == companyId &&
                 x.IsActive &&
+                (!query.CategoryId.HasValue || x.CategoryId == query.CategoryId.Value) &&
                 (!query.Profile.HasValue || x.Profile == query.Profile.Value) &&
                 (currency == null || x.Currency == currency))
-            .OrderBy(x => x.Profile)
+            .OrderBy(x => x.CategoryId)
+            .ThenBy(x => x.Profile)
             .ThenBy(x => x.Currency)
             .ThenByDescending(x => x.Version)
             .ToListAsync(cancellationToken);

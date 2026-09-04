@@ -28,6 +28,7 @@ public sealed class ProductPricingTierConfiguration
         entity.Property(x => x.MaxInclusive).HasDefaultValue(true);
         entity.Property(x => x.UnitPrice).HasPrecision(22, 6);
         entity.Property(x => x.SortOrder).HasDefaultValue(0);
+        entity.Property(x => x.IsActive).HasDefaultValue(true);
 
         entity.HasIndex(x => new { x.ProductPricingVersionId, x.SortOrder })
             .IsUnique()

@@ -2,6 +2,7 @@ using HRM.Application.Abstractions.Commons.ExternalIds;
 using HRM.Application.Abstractions.Persistence.PLM.SaleOrders;
 using HRM.Application.Commons.Models;
 using HRM.Application.Features.PLM.SaleOrders.Dtos;
+using HRM.Application.Features.PLM.Shared.Rules;
 using HRM.Application.Features.Timeline.Dtos;
 using HRM.Application.Features.Timeline.Services;
 using HRM.Domain.Entities.AttachmentSchema;
@@ -94,7 +95,8 @@ internal sealed class SaleOrderCreationService
             .AsNoTracking()
             .Where(x =>
                 x.CompanyId == companyId &&
-                x.CustomerId == request.CustomerId &&
+                (x.CustomerId == request.CustomerId ||
+                 x.Customer.ExternalId == PLMCustomerRules.InternalCustomerExternalId) &&
                 x.IsActive &&
                 x.FormulaId.HasValue &&
                 detailFormulaIds.Contains(x.FormulaId.Value) &&
@@ -121,7 +123,7 @@ internal sealed class SaleOrderCreationService
             if (!completedSampleRequestFormulaProductPairs.Contains((detail.FormulaId, detail.ProductId)))
             {
                 return OperationResult<MerchandiseOrder>.Fail(
-                    $"Công thức {formula.ExternalId} chưa được chốt trong Sample Request hoàn thành của khách hàng, không thể lên đơn hàng.");
+                    $"Công thức {formula.ExternalId} chưa được chốt trong Sample Request hoàn thành của khách hàng hoặc KH_VIETAUS, không thể lên đơn hàng.");
             }
         }
 
@@ -210,9 +212,7 @@ internal sealed class SaleOrderCreationService
                 PackageWeight = TrimToEmpty(detailRequest.PackageWeight),
                 Status = order.Status,
                 Comment = TrimToNull(detailRequest.Comment),
-                DeliveryRequestDate = detailRequest.DeliveryRequestDate == default
-                    ? now
-                    : detailRequest.DeliveryRequestDate,
+                DeliveryRequestDate = detailRequest.DeliveryRequestDate,
                 DeliveryActualDate = detailRequest.DeliveryActualDate,
                 ExpectedDeliveryDate = detailRequest.ExpectedDeliveryDate,
                 BaseCostSnapshot = detailRequest.BaseCostSnapshot,

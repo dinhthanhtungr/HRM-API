@@ -1,3 +1,6 @@
+using System.Text.Json.Serialization;
+using HRM.Domain.Enums.Merchadises;
+
 namespace HRM.Application.Features.PLM.SaleOrders.Dtos;
 
 /// <summary>
@@ -178,6 +181,11 @@ public sealed class SaleOrderLineDto
 /// </summary>
 public sealed class SaleOrderProductDefaultsDto
 {
+    /// <summary>
+    /// Cho biết có dữ liệu dòng SaleOrder cũ để điền mặc định hay không.
+    /// Pricing hiện hành vẫn được trả ngay cả khi khách chưa có lịch sử mua.
+    /// </summary>
+    public bool HasPreviousSale { get; init; }
     public Guid MerchandiseOrderId { get; init; }
     public Guid MerchandiseOrderDetailId { get; init; }
     public Guid ProductId { get; init; }
@@ -189,6 +197,62 @@ public sealed class SaleOrderProductDefaultsDto
     public string? Comment { get; init; }
     public decimal UnitPriceAgreed { get; init; }
     public DateTime CreateDate { get; init; }
+    public SaleOrderCurrentPricingDto CurrentPricing { get; init; } = new();
+}
+
+/// <summary>
+/// Giá gợi ý hiện hành khi lập SaleOrder. Giá bán chuẩn đã duyệt được ưu tiên;
+/// nếu chưa có, backend trả giá tính realtime từ pricing policy đang hiệu lực.
+/// </summary>
+public sealed class SaleOrderCurrentPricingDto
+{
+    public string Source { get; init; } = "Unavailable";
+    public string Currency { get; init; } = "VND";
+    public decimal? SuggestedUnitPrice { get; init; }
+
+    public Guid? ProductPricingVersionId { get; init; }
+    public int? ProductPricingVersion { get; init; }
+    public DateTime? ApprovedAt { get; init; }
+    public DateTime? CalculatedAt { get; init; }
+
+    public Guid? FormulaPricingPolicyId { get; init; }
+    public int? FormulaPricingPolicyVersion { get; init; }
+    public DateTime? PricingPolicyEffectiveFrom { get; init; }
+
+    public Guid? PricingSourceId { get; init; }
+    public string PricingSourceType { get; init; } = string.Empty;
+    public string PricingSourceExternalId { get; init; } = string.Empty;
+    public string PricingStatus { get; init; } = "Unavailable";
+
+    // Các khoản cost/margin chỉ có giá trị với FormulaPriceViewers.
+    public decimal? MaterialCost { get; init; }
+    public decimal? ManufacturingCost { get; init; }
+    public decimal? CostBase { get; init; }
+    public decimal? ProfitMarginRate { get; init; }
+    public bool? IsMaterialCostComplete { get; init; }
+    public int? MissingMaterialPriceCount { get; init; }
+
+    /// <summary>
+    /// Nguồn độc lập của PriceTiers. Nguồn này có thể khác Source của SuggestedUnitPrice.
+    /// </summary>
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public SaleOrderPriceTierSource PriceTierSource { get; init; }
+
+    public DateTime? PriceTierSourceDate { get; init; }
+    public Guid? PriceTierQuotationId { get; init; }
+    public string? PriceTierQuotationExternalId { get; init; }
+    public IReadOnlyList<SaleOrderSuggestedPriceTierDto> PriceTiers { get; init; } = [];
+}
+
+public sealed class SaleOrderSuggestedPriceTierDto
+{
+    public string QuantityRangeLabel { get; init; } = string.Empty;
+    public decimal? MinQuantity { get; init; }
+    public decimal? MaxQuantity { get; init; }
+    public bool MinInclusive { get; init; }
+    public bool MaxInclusive { get; init; }
+    public decimal? UnitPrice { get; init; }
+    public int SortOrder { get; init; }
 }
 
 /// <summary>

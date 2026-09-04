@@ -75,6 +75,20 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.UpdateQuotation
                     "QuotationDate and ValidUntil must be valid dates when provided.");
             }
 
+            IReadOnlyList<HRM.Domain.Entities.CustomerSchema.QuotationTerm>? replacementTerms = null;
+            if (request.Terms is not null)
+            {
+                var termResult = QuotationTermBuilder.Build(
+                    command.QuotationId,
+                    request.Terms);
+                if (!termResult.Success || termResult.Data is null)
+                {
+                    return OperationResult<QuotationTotalsDto>.Fail(termResult.Message!);
+                }
+
+                replacementTerms = termResult.Data;
+            }
+
             using var mutationLease = await _mutationLock.AcquireAsync(
                 command.QuotationId,
                 cancellationToken);
@@ -82,6 +96,7 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.UpdateQuotation
             var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
             var quotation = await _writeDbContext.Quotations
                 .AsTracking()
+                .Include(x => x.Terms)
                 .FirstOrDefaultAsync(
                     x =>
                         x.QuotationId == command.QuotationId &&
@@ -104,10 +119,45 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.UpdateQuotation
                     "Quotation was not found or is outside your visibility scope.");
             }
 
-            if (quotation.Status != QuotationStatus.Draft)
+            if (quotation.Status is not (
+                QuotationStatus.Draft or
+                QuotationStatus.PendingApproval or
+                QuotationStatus.Approved))
             {
                 return OperationResult<QuotationTotalsDto>.Fail(
-                    "Only a draft quotation can be updated.");
+                    "Only a draft, pending or approved quotation can be updated.");
+            }
+
+            if (QuotationRules.TrimToNull(request.ContactPhone)?.Length >
+                QuotationRules.MaximumContactPhoneLength)
+            {
+                return OperationResult<QuotationTotalsDto>.Fail(
+                    $"ContactPhone cannot exceed {QuotationRules.MaximumContactPhoneLength} characters.");
+            }
+
+            if (QuotationRules.TrimToNull(request.CustomerAddressSnapshot)?.Length >
+                QuotationRules.MaximumCustomerAddressLength)
+            {
+                return OperationResult<QuotationTotalsDto>.Fail(
+                    $"CustomerAddressSnapshot cannot exceed {QuotationRules.MaximumCustomerAddressLength} characters.");
+            }
+
+            if (quotation.Status is QuotationStatus.PendingApproval or QuotationStatus.Approved)
+            {
+                if (quotation.SaleEmployeeId != scope.EmployeeId)
+                {
+                    return OperationResult<QuotationTotalsDto>.Fail(
+                        "Only the assigned sale employee can update approved quotation terms.");
+                }
+
+                if (request.CustomerId.HasValue ||
+                    request.Currency is not null ||
+                    request.ExchangeRate.HasValue ||
+                    request.QuotationDate.HasValue)
+                {
+                    return OperationResult<QuotationTotalsDto>.Fail(
+                        "Customer, currency, exchange rate and quotation date cannot be changed after pricing approval. Withdraw the pricing request first.");
+                }
             }
 
             var concurrencyError = OptimisticConcurrencyHelper.ValidateExpectedUpdatedDate(
@@ -121,16 +171,21 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.UpdateQuotation
 
             var targetCustomerId = request.CustomerId ?? quotation.CustomerId;
             var customerChanged = request.CustomerId.HasValue && request.CustomerId.Value != quotation.CustomerId;
+            string? changedCustomerAddress = null;
             if (customerChanged)
             {
-                var customerExists = await _visibilityService
+                var targetCustomer = await _visibilityService
                     .ApplyCustomerVisibility(_readDbContext.Customers.AsNoTracking(), scope)
-                    .AnyAsync(x => x.CustomerId == targetCustomerId, cancellationToken);
-                if (!customerExists)
+                    .Where(x => x.CustomerId == targetCustomerId)
+                    .Select(x => new { x.CustomerId, x.RegistrationAddress })
+                    .FirstOrDefaultAsync(cancellationToken);
+                if (targetCustomer is null)
                 {
                     return OperationResult<QuotationTotalsDto>.Fail(
                         "Customer was not found or is outside your visibility scope.");
                 }
+                changedCustomerAddress = QuotationRules.TrimToNull(
+                    targetCustomer.RegistrationAddress);
 
                 var hasSampleRequestOutsideTargetCustomer = await _readDbContext.QuotationLines
                     .AsNoTracking()
@@ -221,10 +276,24 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.UpdateQuotation
                 () => quotation.Note,
                 value => quotation.Note = value);
 
+            if (customerChanged && request.CustomerAddressSnapshot is null)
+            {
+                changed |= PatchHelper.SetNullableRef(
+                    changedCustomerAddress,
+                    () => quotation.CustomerAddressSnapshot,
+                    value => quotation.CustomerAddressSnapshot = value);
+            }
+
+            changed |= PatchHelper.SetTrimmed(
+                request.CustomerAddressSnapshot,
+                () => quotation.CustomerAddressSnapshot,
+                value => quotation.CustomerAddressSnapshot = value);
+
             if (customerChanged && !request.ContactId.HasValue)
             {
                 quotation.ContactId = null;
                 quotation.ContactName = null;
+                quotation.ContactPhone = null;
                 changed = true;
             }
 
@@ -245,12 +314,40 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.UpdateQuotation
                         () => quotation.ContactName,
                         value => quotation.ContactName = value);
                 }
+
+                if (request.ContactPhone is null)
+                {
+                    changed |= PatchHelper.SetNullableRef(
+                        contactResolution.ContactPhone,
+                        () => quotation.ContactPhone,
+                        value => quotation.ContactPhone = value);
+                }
             }
 
             changed |= PatchHelper.SetTrimmed(
                 request.ContactName,
                 () => quotation.ContactName,
                 value => quotation.ContactName = value);
+            changed |= PatchHelper.SetTrimmed(
+                request.ContactPhone,
+                () => quotation.ContactPhone,
+                value => quotation.ContactPhone = value);
+
+            if (replacementTerms is not null)
+            {
+                foreach (var existingTerm in quotation.Terms.Where(x => x.IsActive))
+                {
+                    existingTerm.IsActive = false;
+                }
+
+                foreach (var term in replacementTerms)
+                {
+                    quotation.Terms.Add(term);
+                }
+
+                _writeDbContext.QuotationTerms.AddRange(replacementTerms);
+                changed = true;
+            }
 
             if (taxPercentChanged)
             {
@@ -299,7 +396,7 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.UpdateQuotation
         {
             if (!contactId.HasValue || contactId.Value == Guid.Empty)
             {
-                return ContactResolution.Allowed(null);
+                return ContactResolution.Allowed(null, null);
             }
 
             var contact = await _readDbContext.Contacts
@@ -308,20 +405,27 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.UpdateQuotation
                     x.ContactId == contactId.Value &&
                     x.CustomerId == customerId &&
                     x.IsActive)
-                .Select(x => new { x.FirstName, x.LastName })
+                .Select(x => new { x.FirstName, x.LastName, x.Phone })
                 .FirstOrDefaultAsync(cancellationToken);
 
             return contact is null
                 ? ContactResolution.Denied(
                     "Contact was not found or does not belong to the selected customer.")
                 : ContactResolution.Allowed(
-                    QuotationRules.TrimToNull($"{contact.FirstName} {contact.LastName}"));
+                    QuotationRules.TrimToNull($"{contact.FirstName} {contact.LastName}"),
+                    QuotationRules.TrimToNull(contact.Phone));
         }
 
-        private sealed record ContactResolution(bool Success, string? ContactName, string? Error)
+        private sealed record ContactResolution(
+            bool Success,
+            string? ContactName,
+            string? ContactPhone,
+            string? Error)
         {
-            public static ContactResolution Allowed(string? contactName) => new(true, contactName, null);
-            public static ContactResolution Denied(string error) => new(false, null, error);
+            public static ContactResolution Allowed(string? contactName, string? contactPhone)
+                => new(true, contactName, contactPhone, null);
+            public static ContactResolution Denied(string error)
+                => new(false, null, null, error);
         }
     }
 

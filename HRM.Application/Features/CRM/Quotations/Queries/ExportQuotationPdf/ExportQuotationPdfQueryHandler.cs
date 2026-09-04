@@ -44,6 +44,7 @@ internal sealed class ExportQuotationPdfQueryHandler
             .Select(x => new QuotationPdfDocumentDto
             {
                 ExternalId = x.ExternalId,
+                Status = x.Status,
                 QuotationDate = x.QuotationDate,
                 ValidUntil = x.ValidUntil,
                 Currency = x.Currency,
@@ -52,11 +53,11 @@ internal sealed class ExportQuotationPdfQueryHandler
                 CompanyPhone = x.Company.Phone,
                 CompanyEmail = x.Company.Email,
                 CustomerName = x.Customer.CustomerName,
-                CustomerAddress = x.Customer.RegistrationAddress,
+                CustomerAddress = x.CustomerAddressSnapshot ?? x.Customer.RegistrationAddress,
                 CustomerPhone = x.Customer.Phone,
                 CustomerFax = x.Customer.FaxNumber,
                 ContactName = x.ContactName,
-                ContactPhone = x.Contact != null ? x.Contact.Phone : null,
+                ContactPhone = x.ContactPhone ?? (x.Contact != null ? x.Contact.Phone : null),
                 ContactEmail = x.Contact != null ? x.Contact.Email : null,
                 SaleEmployeeName = x.SaleEmployee.FullName,
                 SaleEmployeePhone = x.SaleEmployee.PhoneNumber,
@@ -69,7 +70,22 @@ internal sealed class ExportQuotationPdfQueryHandler
                 PaymentTerms = x.PaymentTerms,
                 DeliveryTerms = x.DeliveryTerms,
                 Note = x.Note,
+                HasStoredTerms = x.Terms.Any(),
+                Terms = x.Terms
+                    .OrderBy(term => term.SortOrder)
+                    .ThenBy(term => term.QuotationTermId)
+                    .Select(term => new QuotationPdfTermDto
+                    {
+                        LabelVi = term.LabelVi,
+                        LabelEn = term.LabelEn,
+                        ValueVi = term.ValueVi,
+                        ValueEn = term.ValueEn,
+                        SortOrder = term.SortOrder,
+                        IsActive = term.IsActive
+                    })
+                    .ToList(),
                 Lines = x.Lines
+                    .Where(line => line.IsActive)
                     .OrderBy(line => line.SortOrder)
                     .ThenBy(line => line.QuotationLineId)
                     .Select(line => new QuotationPdfLineDto
@@ -85,12 +101,15 @@ internal sealed class ExportQuotationPdfQueryHandler
                         Note = line.Note,
                         SortOrder = line.SortOrder,
                         PriceTiers = line.PriceTiers
+                            .Where(tier => tier.IsActive)
                             .OrderBy(tier => tier.SortOrder)
                             .ThenBy(tier => tier.QuotationLinePriceTierId)
                             .Select(tier => new QuotationPdfPriceTierDto
                             {
                                 QuantityRangeLabel = tier.QuantityRangeLabel,
                                 UnitPrice = tier.UnitPrice,
+                                CommissionAmount = tier.CommissionAmount,
+                                CustomerUnitPrice = tier.CustomerUnitPrice,
                                 SortOrder = tier.SortOrder
                             })
                             .ToList()
@@ -103,6 +122,12 @@ internal sealed class ExportQuotationPdfQueryHandler
         {
             return OperationResult<QuotationPdfFileDto>.Fail(
                 "Quotation was not found or is outside your visibility scope.");
+        }
+
+        if (quotation.Lines.Any(line => line.PriceTiers.Count == 0))
+        {
+            return OperationResult<QuotationPdfFileDto>.Fail(
+                "Every quotation line must have at least one active price tier before it can be exported.");
         }
 
         var content = _renderer.Render(quotation);

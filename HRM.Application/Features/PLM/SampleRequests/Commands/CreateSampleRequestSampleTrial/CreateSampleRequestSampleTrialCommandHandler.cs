@@ -109,6 +109,13 @@ internal sealed class CreateSampleRequestSampleTrialCommandHandler
             .MaxAsync(cancellationToken) ?? 0) + 1;
 
         var now = _dateTimeProvider.Now;
+        var sampleRequestDeliveryDatesChanged = ApplySampleRequestDeliveryDates(sampleRequest, request);
+        if (sampleRequestDeliveryDatesChanged)
+        {
+            sampleRequest.UpdatedBy = employeeId;
+            sampleRequest.UpdatedDate = now;
+        }
+
         var trial = new SampleRequestSampleTrial
         {
             SampleRequestSampleTrialId = Guid.CreateVersion7(),
@@ -253,6 +260,29 @@ internal sealed class CreateSampleRequestSampleTrialCommandHandler
                    request.RequestReceivedDate,
                    request.FinishedDate,
                    request.SentDate);
+    }
+
+    private static bool ApplySampleRequestDeliveryDates(
+        SampleRequest sampleRequest,
+        CreateSampleRequestSampleTrialCommand request)
+    {
+        var changed = false;
+
+        if (request.RequestDeliveryDate.HasValue &&
+            sampleRequest.RequestDeliveryDate != request.RequestDeliveryDate)
+        {
+            sampleRequest.RequestDeliveryDate = request.RequestDeliveryDate;
+            changed = true;
+        }
+
+        if (request.ExpectedDeliveryDate.HasValue &&
+            sampleRequest.ExpectedDeliveryDate != request.ExpectedDeliveryDate)
+        {
+            sampleRequest.ExpectedDeliveryDate = request.ExpectedDeliveryDate;
+            changed = true;
+        }
+
+        return changed;
     }
 
     private static string? TrimToNull(string? value)

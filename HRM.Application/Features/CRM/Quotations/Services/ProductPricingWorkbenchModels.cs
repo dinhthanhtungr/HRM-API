@@ -26,6 +26,8 @@ internal sealed class PricingVersionRow
     public decimal? ProfitMarginRate { get; init; }
     public ProductPricingStatus Status { get; init; }
     public int Version { get; init; }
+    public DateTime? ApprovedAt { get; init; }
+    public int? PriceValidityDays { get; init; }
     public DateTime CreatedDate { get; init; }
     public DateTime? UpdatedDate { get; init; }
 }

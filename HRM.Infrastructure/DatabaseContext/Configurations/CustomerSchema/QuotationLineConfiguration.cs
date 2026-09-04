@@ -44,12 +44,14 @@ namespace HRM.Infrastructure.DatabaseContext.Configurations.CustomerSchema
             entity.Property(x => x.ProductPricingVersionId)
                 .HasColumnName("ProductPricingVersionId");
 
+
             entity.Property(x => x.PriceMode)
                 .HasColumnName("PriceMode")
                 .HasConversion<int>()
-                .HasDefaultValue(QuotationLinePriceMode.Fixed);
+                .HasDefaultValue(QuotationLinePriceMode.FormulaCalculatedLocked);
 
             entity.Property(x => x.Note).HasColumnType("text");
+            entity.Property(x => x.IsActive).HasDefaultValue(true);
 
             entity.HasIndex(x => new { x.QuotationId, x.SortOrder })
                 .HasDatabaseName("IX_QuotationLines_Quotation_SortOrder");
@@ -59,6 +61,7 @@ namespace HRM.Infrastructure.DatabaseContext.Configurations.CustomerSchema
 
             entity.HasIndex(x => x.ProductPricingVersionId)
                 .HasDatabaseName("IX_QuotationLines_ProductPricingVersionId");
+
 
             entity.HasOne(x => x.Quotation)
                 .WithMany(x => x.Lines)
@@ -81,6 +84,7 @@ namespace HRM.Infrastructure.DatabaseContext.Configurations.CustomerSchema
                 .HasForeignKey(x => x.ProductPricingVersionId)
                 .OnDelete(DeleteBehavior.Restrict)
                 .HasConstraintName("FK_QuotationLines_ProductPricingVersion");
+
 
             entity.HasMany(x => x.PriceTiers)
                 .WithOne(x => x.QuotationLine)

@@ -6,7 +6,7 @@ using HRM.Application.Features.Notifications.Dtos;
 using HRM.Infrastructure.DatabaseContext.ApplicationDbs;
 using Microsoft.EntityFrameworkCore;
 
-namespace HRM.Api.Backgrounds;
+namespace HRM.Api.Backgrounds.Notifications;
 
 /// <summary>
 /// Gui Web Push best-effort tu outbox. Notification DB van la nguon that;
@@ -74,7 +74,11 @@ public sealed class WebPushOutboxProcessor : BackgroundService
                 var payload = JsonSerializer.Deserialize<WebPushOutboxPayload>(message.PayloadJson)
                     ?? throw new InvalidOperationException("Web Push outbox payload is invalid.");
 
-                var delivery = await DeliverNotificationAsync(dbContext, payload.NotificationId, cancellationToken);
+                var delivery = await DeliverNotificationAsync(
+                    dbContext,
+                    payload.NotificationId,
+                    payload.TargetEmployeeIds,
+                    cancellationToken);
 
                 message.Attempts++;
                 message.Error = delivery.FailedCount > 0
@@ -104,6 +108,7 @@ public sealed class WebPushOutboxProcessor : BackgroundService
     private async Task<WebPushDeliverySummary> DeliverNotificationAsync(
         ApplicationDbContext dbContext,
         Guid notificationId,
+        IReadOnlyCollection<Guid>? targetEmployeeIds,
         CancellationToken cancellationToken)
     {
         if (notificationId == Guid.Empty)
@@ -127,7 +132,11 @@ public sealed class WebPushOutboxProcessor : BackgroundService
             return new WebPushDeliverySummary(0, 0);
         }
 
-        var subscriptions = await dbContext.WebPushSubscriptions
+        var normalizedTargetEmployeeIds = targetEmployeeIds?
+            .Where(x => x != Guid.Empty)
+            .Distinct()
+            .ToArray();
+        var subscriptionsQuery = dbContext.WebPushSubscriptions
             .Where(x =>
                 x.CompanyId == notification.CompanyId &&
                 x.IsActive &&
@@ -135,8 +144,13 @@ public sealed class WebPushOutboxProcessor : BackgroundService
                 dbContext.NotificationUserStates.Any(state =>
                     state.NotificationId == notification.Id &&
                     state.UserId == x.EmployeeId &&
-                    !state.IsArchived))
-            .ToListAsync(cancellationToken);
+                    !state.IsArchived));
+        if (normalizedTargetEmployeeIds is not null)
+        {
+            subscriptionsQuery = subscriptionsQuery.Where(x => normalizedTargetEmployeeIds.Contains(x.EmployeeId));
+        }
+
+        var subscriptions = await subscriptionsQuery.ToListAsync(cancellationToken);
 
         var now = _dateTimeProvider.Now;
         var failedCount = 0;

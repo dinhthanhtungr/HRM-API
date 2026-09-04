@@ -12,6 +12,7 @@ using HRM.Application.Features.CRM.Quotations.Services;
 using HRM.Application.Features.Notifications.Dtos;
 using HRM.Application.Features.Notifications.Services;
 using HRM.Domain.Entities.InternalMailSchema;
+using HRM.Domain.Entities.CustomerSchema;
 using HRM.Domain.Enums.CustomerEnum;
 using HRM.Domain.Enums.InternalMailEnums;
 using HRM.Domain.Enums.Notifications;
@@ -33,29 +34,35 @@ internal sealed class RequestQuotationCommandHandler
     ];
 
     private readonly ICRMReadDbContext _readDbContext;
+    private readonly ICRMWriteDbContext _writeDbContext;
     private readonly IInternalMailDbContext _internalMailDbContext;
     private readonly ICustomerVisibilityService _visibilityService;
     private readonly ISaleGroupRecipientResolver _saleGroupRecipientResolver;
     private readonly INotificationService _notificationService;
     private readonly IDateTimeProvider _dateTimeProvider;
     private readonly KeyedMutationLock<Guid> _mutationLock;
+    private readonly QuotationPricingApprovalStateService _pricingApprovalStateService;
 
     public RequestQuotationCommandHandler(
         ICRMReadDbContext readDbContext,
+        ICRMWriteDbContext writeDbContext,
         IInternalMailDbContext internalMailDbContext,
         ICustomerVisibilityService visibilityService,
         ISaleGroupRecipientResolver saleGroupRecipientResolver,
         INotificationService notificationService,
         IDateTimeProvider dateTimeProvider,
-        KeyedMutationLock<Guid> mutationLock)
+        KeyedMutationLock<Guid> mutationLock,
+        QuotationPricingApprovalStateService pricingApprovalStateService)
     {
         _readDbContext = readDbContext;
+        _writeDbContext = writeDbContext;
         _internalMailDbContext = internalMailDbContext;
         _visibilityService = visibilityService;
         _saleGroupRecipientResolver = saleGroupRecipientResolver;
         _notificationService = notificationService;
         _dateTimeProvider = dateTimeProvider;
         _mutationLock = mutationLock;
+        _pricingApprovalStateService = pricingApprovalStateService;
     }
 
     public async Task<OperationResult<RequestQuotationResultDto>> Handle(
@@ -92,7 +99,8 @@ internal sealed class RequestQuotationCommandHandler
                 x.CustomerId,
                 x.Customer.CustomerName,
                 x.SaleEmployeeId,
-                x.Status))
+                x.Status,
+                x.Lines.Count(line => line.IsActive)))
             .FirstOrDefaultAsync(cancellationToken);
 
         if (quotation is null)
@@ -101,10 +109,22 @@ internal sealed class RequestQuotationCommandHandler
                 "Quotation was not found or is outside your visibility scope.");
         }
 
-        if (quotation.Status != QuotationStatus.Draft)
+        if (!QuotationWorkflowRules.CanRequestPricing(quotation.Status))
         {
             return OperationResult<RequestQuotationResultDto>.Fail(
                 "Only a draft quotation can request pricing.");
+        }
+
+        if (quotation.SaleEmployeeId != scope.EmployeeId)
+        {
+            return OperationResult<RequestQuotationResultDto>.Fail(
+                "Only the assigned sale employee can request quotation pricing.");
+        }
+
+        if (quotation.ActiveLineCount == 0)
+        {
+            return OperationResult<RequestQuotationResultDto>.Fail(
+                "A quotation must have at least one active line before pricing can be requested.");
         }
 
         var recipientEmployeeIds = await ResolveManagementRecipientsAsync(
@@ -119,6 +139,34 @@ internal sealed class RequestQuotationCommandHandler
         }
 
         var now = _dateTimeProvider.Now;
+        var trackedQuotation = await _writeDbContext.Quotations
+            .AsTracking()
+            .FirstAsync(x =>
+                x.QuotationId == quotation.QuotationId &&
+                x.CompanyId == quotation.CompanyId &&
+                x.IsActive,
+                cancellationToken);
+        trackedQuotation.Status = QuotationStatus.PendingApproval;
+        trackedQuotation.UpdatedBy = scope.EmployeeId;
+        trackedQuotation.UpdatedDate = now;
+        _writeDbContext.QuotationStatusHistories.Add(new QuotationStatusHistory
+        {
+            Id = Guid.CreateVersion7(),
+            QuotationId = quotation.QuotationId,
+            FromStatus = QuotationStatus.Draft,
+            ToStatus = QuotationStatus.PendingApproval,
+            Note = requestedMessage,
+            ChangedBy = scope.EmployeeId,
+            ChangedDate = now
+        });
+        await _writeDbContext.SaveChangesAsync(cancellationToken);
+
+        var approvalState = await _pricingApprovalStateService.ReconcileLockedAsync(
+            quotation.QuotationId,
+            quotation.CompanyId,
+            scope.EmployeeId,
+            cancellationToken);
+
         var actorName = await _internalMailDbContext.Employees
             .AsNoTracking()
             .Where(x => x.EmployeeId == scope.EmployeeId)
@@ -257,7 +305,9 @@ internal sealed class RequestQuotationCommandHandler
                 ConversationId = conversation.InternalConversationId,
                 MessageId = message.InternalMessageId,
                 NotificationId = notificationId,
-                RequestedAt = now
+                RequestedAt = now,
+                QuotationStatus = approvalState.Status,
+                UpdatedDate = approvalState.UpdatedDate ?? trackedQuotation.UpdatedDate
             },
             "Quotation request sent successfully.");
     }
@@ -395,5 +445,6 @@ internal sealed class RequestQuotationCommandHandler
         Guid CustomerId,
         string CustomerName,
         Guid SaleEmployeeId,
-        QuotationStatus Status);
+        QuotationStatus Status,
+        int ActiveLineCount);
 }

@@ -1,4 +1,6 @@
 using HRM.Application.Features.PLM.Formulas.Commands.PatchFormulaPricing;
+using HRM.Application.Features.PLM.Formulas.Commands.RequestFormulaRequote;
+using HRM.Application.Features.PLM.Formulas.Commands.CloneFormula;
 using HRM.Application.Features.PLM.Formulas.Commands.CreateFormula;
 using HRM.Application.Features.PLM.Formulas.Commands.DeleteFormula;
 using HRM.Application.Features.PLM.Formulas.Commands.UpdateFormulaInformation;
@@ -8,6 +10,7 @@ using HRM.Application.Features.PLM.Formulas.Commands.SaveFormulaVersion;
 using HRM.Application.Features.PLM.Formulas.Dtos.Commons;
 using HRM.Application.Features.PLM.Formulas.Dtos.Versions;
 using HRM.Application.Features.PLM.Formulas.Queries.GetFormulaById;
+using HRM.Application.Features.PLM.Formulas.Queries.ExportFormulaMaterialsExcel;
 using HRM.Application.Features.PLM.Formulas.Queries.GetFormulaLookup;
 using HRM.Application.Features.PLM.Formulas.Queries.GetFormulaMaterials;
 using HRM.Application.Features.PLM.Formulas.Queries.GetFormulaRelatedAttachments;
@@ -58,13 +61,11 @@ public sealed class FormulasController : ControllerBase
     [Authorize(Policy = PlmPolicies.ViewFormulaDetail)]
     public async Task<IActionResult> GetById(
         Guid formulaId,
-        [FromQuery] string currency,
         CancellationToken cancellationToken)
     {
         var result = await _sender.Send(new GetFormulaByIdQuery
         {
-            FormulaId = formulaId,
-            Currency = currency
+            FormulaId = formulaId
         }, cancellationToken);
 
         return result is null
@@ -84,6 +85,28 @@ public sealed class FormulasController : ControllerBase
         }, cancellationToken);
 
         return Ok(result);
+    }
+
+    /// <summary>
+    /// Xuất danh sách NVL và giá gần nhất của Formula thành tệp Excel.
+    /// </summary>
+    [HttpGet("{formulaId:guid}/materials/excel")]
+    [Authorize(Policy = PlmPolicies.ViewFormulaMaterials)]
+    [Authorize(Policy = PlmPolicies.ViewFormulaPrices)]
+    public async Task<IActionResult> ExportMaterialsExcel(
+        Guid formulaId,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(
+            new ExportFormulaMaterialsExcelQuery(formulaId),
+            cancellationToken);
+
+        if (!result.Success || result.Data is null)
+        {
+            return NotFound(result);
+        }
+
+        return File(result.Data.Content, result.Data.ContentType, result.Data.FileName);
     }
 
     /// <summary>
@@ -196,6 +219,39 @@ public sealed class FormulasController : ControllerBase
         return result.Success ? Ok(result.Data) : BadRequest(result);
     }
 
+    /// <summary>
+    /// Copies the source Formula and its active materials into a new Draft Formula.
+    /// </summary>
+    [HttpPost("{sourceFormulaId:guid}/clone")]
+    [Authorize(Policy = PlmPolicies.ManageFormula)]
+    public async Task<IActionResult> Clone(
+        Guid sourceFormulaId,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(
+            new CloneFormulaCommand(sourceFormulaId),
+            cancellationToken);
+
+        return result.Success ? Ok(result.Data) : BadRequest(result);
+    }
+
+    /// <summary>
+    /// Sends a Formula re-quote request into the selected Sample Request conversation.
+    /// </summary>
+    [HttpPost("{formulaId:guid}/requote-requests")]
+    [Authorize(Policy = PlmPolicies.ManageFormula)]
+    public async Task<IActionResult> RequestRequote(
+        Guid formulaId,
+        [FromBody] RequestFormulaRequoteRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(
+            new RequestFormulaRequoteCommand(formulaId, request),
+            cancellationToken);
+
+        return result.Success ? Ok(result.Data) : BadRequest(result);
+    }
+
     [HttpPut("{formulaId:guid}")]
     [Authorize(Policy = PlmPolicies.ManageFormula)]
     public async Task<IActionResult> Update(
@@ -213,6 +269,23 @@ public sealed class FormulasController : ControllerBase
     [HttpPatch("{formulaId:guid}/status")]
     [Authorize(Policy = PlmPolicies.ManageFormula)]
     public async Task<IActionResult> UpdateStatus(
+        Guid formulaId,
+        [FromBody] UpdateFormulaStatusRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(
+            new UpdateFormulaStatusCommand(formulaId, request),
+            cancellationToken);
+
+        return result.Success ? Ok(result.Data) : BadRequest(result);
+    }
+
+    /// <summary>
+    /// Persists optional Formula changes and transitions status atomically.
+    /// </summary>
+    [HttpPost("{formulaId:guid}/status-transition")]
+    [Authorize(Policy = PlmPolicies.ManageFormula)]
+    public async Task<IActionResult> TransitionStatus(
         Guid formulaId,
         [FromBody] UpdateFormulaStatusRequest request,
         CancellationToken cancellationToken)

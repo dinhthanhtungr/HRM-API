@@ -6,6 +6,7 @@ using MediatR;
 namespace HRM.Application.Features.CRM.Quotations.Queries.GetFormulaPricingPolicies;
 
 public sealed record GetFormulaPricingPoliciesQuery(
+    Guid? CategoryId,
     FormulaPricingProfile? Profile,
     string? Currency)
     : IRequest<OperationResult<IReadOnlyList<FormulaPricingPolicyDto>>>;

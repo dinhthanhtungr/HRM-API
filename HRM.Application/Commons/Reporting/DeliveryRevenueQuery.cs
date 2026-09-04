@@ -22,6 +22,8 @@ internal sealed class DeliveryRevenueLine
     public decimal Quantity { get; init; }
     public decimal RevenueAmountVnd { get; init; }
     public decimal BaseCostAmount { get; init; }
+    public Guid FormulaId { get; init; }
+    public Guid MerchandiseOrderDetailId { get; init; }
 }
 
 /// <summary>
@@ -80,6 +82,8 @@ internal static class DeliveryRevenueQuery
                 .Where(lot => lot.IsActive)
                 .Sum(lot => (decimal?)lot.TotalCostSnapshot) ?? 0m,
             Quantity = x.Quantity,
+            FormulaId = x.MerchandiseOrderDetail.FormulaId,
+            MerchandiseOrderDetailId = x.MerchandiseOrderDetailId!.Value,
             RevenueAmountVnd = x.MerchandiseOrderDetail.MerchandiseOrder.Currency == null
                 || x.MerchandiseOrderDetail.MerchandiseOrder.Currency.Trim() == string.Empty
                 || x.MerchandiseOrderDetail.MerchandiseOrder.Currency.ToUpper() == "VND"

@@ -120,6 +120,7 @@ internal sealed class GetInternalMessagesQueryHandler
                 })
                 .ToListAsync(cancellationToken);
 
+
             var attachments = await _dbContext.InternalMessageAttachments
                 .AsNoTracking()
                 .Where(x => messageIds.Contains(x.InternalMessageId) && x.Attachment.IsActive)

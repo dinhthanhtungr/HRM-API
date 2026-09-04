@@ -1,6 +1,6 @@
 using HRM.Application.Features.PLM.Materials.DocumentImport.Jobs;
 
-namespace HRM.Api.Backgrounds;
+namespace HRM.Api.Backgrounds.PLM.Materials;
 
 /// <summary>
 /// Xử lý tuần tự các job import tài liệu NVL để tránh hai job cùng ghi vào

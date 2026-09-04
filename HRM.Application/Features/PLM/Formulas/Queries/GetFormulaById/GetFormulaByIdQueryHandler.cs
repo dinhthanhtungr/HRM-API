@@ -1,4 +1,5 @@
 using HRM.Application.Abstractions.Commons.Pricing;
+using HRM.Application.Abstractions.Persistence.Commons.Pricing;
 using HRM.Application.Abstractions.Persistence.PLM;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Authorization.PLM;
@@ -9,6 +10,7 @@ using HRM.Application.Commons.Pricing.Services;
 using HRM.Application.Features.CRM.Quotations.Services;
 using HRM.Application.Features.PLM.Formulas.Dtos.Commons;
 using HRM.Application.Features.PLM.Formulas.Helpers;
+using HRM.Domain.Enums.CustomerEnum;
 using HRM.Domain.Enums.Formulas;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -19,6 +21,7 @@ internal sealed class GetFormulaByIdQueryHandler
     : IRequestHandler<GetFormulaByIdQuery, FormulaInformationDto?>
 {
     private readonly IPLMReadDbContext _dbContext;
+    private readonly IPriceReadDbContext _priceDbContext;
     private readonly IPLMFieldVisibilityService _fieldVisibility;
     private readonly IMaterialPriceQueryService _materialPriceQueryService;
     private readonly FormulaPricingEngine _pricingEngine;
@@ -26,12 +29,14 @@ internal sealed class GetFormulaByIdQueryHandler
 
     public GetFormulaByIdQueryHandler(
         IPLMReadDbContext dbContext,
+        IPriceReadDbContext priceDbContext,
         IPLMFieldVisibilityService fieldVisibility,
         IMaterialPriceQueryService materialPriceQueryService,
         FormulaPricingEngine pricingEngine,
         ICurrentUser currentUser)
     {
         _dbContext = dbContext;
+        _priceDbContext = priceDbContext;
         _fieldVisibility = fieldVisibility;
         _materialPriceQueryService = materialPriceQueryService;
         _pricingEngine = pricingEngine;
@@ -63,6 +68,7 @@ internal sealed class GetFormulaByIdQueryHandler
                 x.ExternalId,
                 x.Name,
                 x.Status,
+                x.StepOfProduct,
                 x.CheckBy,
                 CheckByName = x.CheckByNavigation != null
                     ? x.CheckByNavigation.FullName
@@ -82,8 +88,12 @@ internal sealed class GetFormulaByIdQueryHandler
                 x.IsActive,
                 Note = x.Note ?? string.Empty,
                 x.CreatedDate,
+                x.UpdatedDate,
                 x.ProductId,
-                x.Product.FormulaPricingProfile
+                ProductCategoryId = x.Product.CategoryId,
+                ProductColourCode = x.Product.ColourCode,
+                ProductCode = x.Product.Code,
+                ProductAdditive = x.Product.Additive
             })
             .FirstOrDefaultAsync(cancellationToken);
 
@@ -91,6 +101,31 @@ internal sealed class GetFormulaByIdQueryHandler
         {
             return null;
         }
+
+        var approvedPricing = canViewFormulaPrices
+            ? await _priceDbContext.ProductPricingVersions
+                .AsNoTracking()
+                .Where(x =>
+                    x.CompanyId == companyId &&
+                    x.ProductId == formula.ProductId &&
+                    x.Currency == request.Currency &&
+                    x.IsActive &&
+                    x.Status == ProductPricingStatus.Approved)
+                .OrderByDescending(x => x.Version)
+                .ThenByDescending(x => x.ApprovedAt ?? x.UpdatedDate ?? x.CreatedDate)
+                .Select(x => new
+                {
+                    x.ManufacturingCost,
+                    x.StandardSellingPrice,
+                    x.ProfitMarginRate
+                })
+                .FirstOrDefaultAsync(cancellationToken)
+            : null;
+
+        var pricingProfile = FormulaPricingProfileResolver.Resolve(
+            formula.ProductColourCode,
+            formula.ProductCode,
+            formula.ProductAdditive);
 
         var materials = await _dbContext.FormulaMaterials
             .AsNoTracking()
@@ -153,7 +188,11 @@ internal sealed class GetFormulaByIdQueryHandler
                 .ToList();
 
             var latestPriceByItem = await _materialPriceQueryService
-                .LoadLatestItemPriceInfoDictAsync(priceRequests, cancellationToken);
+                .LoadLatestPricingItemPriceInfoDictAsync(
+                    formula.CompanyId ?? Guid.Empty,
+                    request.Currency,
+                    priceRequests,
+                    cancellationToken);
 
             supplierPricesByMaterial = await LoadSupplierPricesAsync(
                 materials,
@@ -181,10 +220,11 @@ internal sealed class GetFormulaByIdQueryHandler
                 new PricingEngineRequest
                 {
                     CompanyId = formula.CompanyId ?? Guid.Empty,
+                    CategoryId = formula.ProductCategoryId,
                     ProductId = formula.ProductId,
                     SourceId = formula.FormulaId,
                     SourceType = "Formula",
-                    Profile = formula.FormulaPricingProfile,
+                    Profile = pricingProfile,
                     Currency = request.Currency,
                     MaterialCost = isRealtimeMaterialCostComplete == true
                         ? realtimeMaterialCost
@@ -193,8 +233,12 @@ internal sealed class GetFormulaByIdQueryHandler
                         material.ItemId == Guid.Empty ? null : material.ItemId,
                         material.ItemType,
                         material.Quantity)).ToArray(),
-                    ManufacturingCostOverride = formula.ProductionPrice,
-                    StandardSellingPrice = formula.PresidentPrice
+                    // `pricing` là preview theo policy/realtime. Không đưa bản giá Approved vào
+                    // engine vì một giá đã duyệt có thể nằm ngoài giới hạn preview của policy.
+                    // Các card giá hiện hành được map trực tiếp từ ProductPricingVersion bên dưới.
+                    ManufacturingCostOverride = null,
+                    StandardSellingPrice = null,
+                    ProfitMarginRate = null
                 }, cancellationToken)
             : null;
         var enginePricing = engineResult is { Success: true } ? engineResult.Data : null;
@@ -213,6 +257,7 @@ internal sealed class GetFormulaByIdQueryHandler
             ExternalId = formula.ExternalId,
             Name = formula.Name,
             Status = formula.Status,
+            StepOfProduct = formula.StepOfProduct,
 
             CheckBy = formula.CheckBy,
             CheckByName = formula.CheckByName,
@@ -227,12 +272,13 @@ internal sealed class GetFormulaByIdQueryHandler
             IsRealtimeMaterialCostComplete = isRealtimeMaterialCostComplete,
             MissingMaterialPriceCount = missingMaterialPriceCount,
             EffectiveDate = formula.EffectiveDate,
-            ProductionPrice = canViewFormulaPrices ? formula.ProductionPrice : null,
+            // Formula.*Price là legacy; pricing hiện hành chỉ lấy từ ProductPricingVersion Approved.
+            ProductionPrice = canViewFormulaPrices ? approvedPricing?.ManufacturingCost : null,
             PresidentPrice = canViewFormulaPrices ? formula.PresidentPrice : null,
             ProfitMarginPrice = canViewFormulaPrices ? formula.ProfitMarginPrice : null,
-            ManufacturingCost = pricing?.ManufacturingCost,
-            StandardSellingPrice = pricing?.StandardSellingPrice,
-            ProfitMarginRate = pricing?.ProfitMarginRate,
+            ManufacturingCost = canViewFormulaPrices ? approvedPricing?.ManufacturingCost : null,
+            StandardSellingPrice = canViewFormulaPrices ? approvedPricing?.StandardSellingPrice : null,
+            ProfitMarginRate = canViewFormulaPrices ? approvedPricing?.ProfitMarginRate : null,
             PricingStatus = pricingStatus,
             FormulaPricingPolicyId = enginePricing?.FormulaPricingPolicyId,
             FormulaPricingPolicyVersion = enginePricing?.FormulaPricingPolicyVersion,
@@ -243,6 +289,7 @@ internal sealed class GetFormulaByIdQueryHandler
             IsActive = formula.IsActive,
             Note = formula.Note,
             CreatedDate = formula.CreatedDate,
+            UpdatedDate = formula.UpdatedDate ?? formula.CreatedDate,
             Materials = materials
         };
     }

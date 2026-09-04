@@ -60,8 +60,14 @@ internal static class ProductPricingWorkbenchVisibility
             Currency = source.Currency,
             PricingStatus = source.PricingStatus,
             IsSystemCalculatedDraft = source.IsSystemCalculatedDraft,
+            PricingHealthStatus = source.PricingHealthStatus,
+            RequiresPricingAction = source.RequiresPricingAction,
+            PricingReviewDueDate = source.PricingReviewDueDate,
             WaitingQuotationCount = source.WaitingQuotationCount,
             LatestRequestedAt = includeSensitiveFields ? source.LatestRequestedAt : null,
+            RelatedCustomers = includeSensitiveFields
+                ? source.RelatedCustomers
+                : ToSaleRelatedCustomers(source.RelatedCustomers),
             SourceType = source.SourceType,
             SourceId = source.SourceId,
             SourceExternalId = source.SourceExternalId,
@@ -80,10 +86,21 @@ internal static class ProductPricingWorkbenchVisibility
             ManufacturingCost = includeSensitiveFields ? source.ManufacturingCost : null,
             UsedDefaultManufacturingCost = includeSensitiveFields && source.UsedDefaultManufacturingCost,
             StandardSellingPrice = source.StandardSellingPrice,
+            RealtimeStandardSellingPrice = includeSensitiveFields ? source.RealtimeStandardSellingPrice : null,
+            StandardSellingPriceDifference = includeSensitiveFields ? source.StandardSellingPriceDifference : null,
+            StandardSellingPriceDifferencePercent = includeSensitiveFields
+                ? source.StandardSellingPriceDifferencePercent
+                : null,
+            HasRealtimePriceComparison = includeSensitiveFields && source.HasRealtimePriceComparison,
             ProfitMarginRate = includeSensitiveFields ? source.ProfitMarginRate : null,
             DraftPricingVersionId = includeSensitiveFields ? source.DraftPricingVersionId : null,
             ApprovedPricingVersionId = includeSensitiveFields ? source.ApprovedPricingVersionId : null,
-            PricingUpdatedDate = includeSensitiveFields ? source.PricingUpdatedDate : null
+            PricingUpdatedDate = includeSensitiveFields ? source.PricingUpdatedDate : null,
+            PriceConfirmedAt = includeSensitiveFields ? source.PriceConfirmedAt : null,
+            PriceExpiresAt = includeSensitiveFields ? source.PriceExpiresAt : null,
+            RemainingValidityDays = includeSensitiveFields ? source.RemainingValidityDays : null,
+            OverdueDays = includeSensitiveFields ? source.OverdueDays : null,
+            IsPriceExpired = includeSensitiveFields ? source.IsPriceExpired : null
         };
 
     private static ProductPricingSourceOptionDto? ToSaleSource(
@@ -97,6 +114,20 @@ internal static class ProductPricingWorkbenchVisibility
                 ExternalId = source.ExternalId,
                 Name = source.Name
             };
+
+    private static IReadOnlyList<ProductPricingWorkbenchCustomerContextDto> ToSaleRelatedCustomers(
+        IReadOnlyList<ProductPricingWorkbenchCustomerContextDto> relatedCustomers)
+        => relatedCustomers
+            .Select(customer => new ProductPricingWorkbenchCustomerContextDto
+            {
+                CustomerId = customer.CustomerId,
+                CustomerCode = customer.CustomerCode,
+                CustomerName = customer.CustomerName,
+                RelatedDocumentCount = customer.RelatedDocumentCount,
+                LatestRelatedDate = customer.LatestRelatedDate,
+                HealthSummary = null
+            })
+            .ToArray();
 
     private static IReadOnlyList<QuotationPricingWorkspaceTierDto> ToSaleTiers(
         IReadOnlyList<QuotationPricingWorkspaceTierDto> tiers)

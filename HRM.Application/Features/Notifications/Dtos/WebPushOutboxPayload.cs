@@ -1,9 +1,11 @@
 namespace HRM.Application.Features.Notifications.Dtos;
 
 /// <summary>
-/// Web Push worker tu resolve nguoi nhan that qua NotificationUserState, nen outbox chi can notificationId.
+/// Danh sách employee đích chỉ gồm người nhận được phép nhận Web Push.
+/// Payload lịch sử không có TargetEmployeeIds vẫn fallback theo NotificationUserState.
 /// </summary>
 public sealed class WebPushOutboxPayload
 {
     public Guid NotificationId { get; set; }
+    public IReadOnlyCollection<Guid>? TargetEmployeeIds { get; set; }
 }

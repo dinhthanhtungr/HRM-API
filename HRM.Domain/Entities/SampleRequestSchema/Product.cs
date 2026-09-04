@@ -8,7 +8,7 @@ using HRM.Domain.Entities.HrSchema;
 using HRM.Domain.Entities.ManufacturingSchema;
 using HRM.Domain.Entities.MaterialSchema;
 using HRM.Domain.Entities.OrderSchema;
-using HRM.Domain.Enums.Formulas;
+using HRM.Domain.Enums.Products;
 
 namespace HRM.Domain.Entities.SampleRequestSchema;
 
@@ -23,11 +23,6 @@ public partial class Product
     public string? ColourName { get; set; }
 
     public string? Additive { get; set; }
-
-    /// <summary>
-    /// Pricing profile được cấu hình tường minh; không suy từ mã sản phẩm hoặc Additive.
-    /// </summary>
-    public FormulaPricingProfile? FormulaPricingProfile { get; set; }
 
     public double? UsageRate { get; set; }
 
@@ -72,6 +67,8 @@ public partial class Product
 
     public bool? ReturnSample { get; set; }
     public bool IsRecycle { get; set; } = false;
+    public bool GRS { get; set; } = false;
+    public GRSConsumerType? GRSConsumerType { get; set; }
 
     public string? OtherComment { get; set; }
 

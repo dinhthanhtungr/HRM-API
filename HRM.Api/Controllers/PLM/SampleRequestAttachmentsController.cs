@@ -107,9 +107,11 @@ public sealed class SampleRequestAttachmentsController : ControllerBase
     {
         try
         {
+            var deletedBy = ResolveCurrentUserId();
             await _sampleRequestAttachmentService.DeleteAsync(
                 sampleRequestId,
                 attachmentId,
+                deletedBy == Guid.Empty ? null : deletedBy,
                 cancellationToken);
 
             return NoContent();

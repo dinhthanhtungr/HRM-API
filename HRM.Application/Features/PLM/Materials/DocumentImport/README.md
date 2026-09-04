@@ -35,11 +35,17 @@ code are never matched by material name automatically.
 Use a UNC path in production because a Windows service normally cannot see a
 drive mapped only in an interactive user session.
 
+One job can scan multiple configured source folders. `SourceRoots` takes precedence over the legacy single `SourceRoot`; when only `SourceRoot` is configured, the existing single-folder behavior remains unchanged.
+
 ```json
 {
   "MaterialDocumentImport": {
-    "SourceRoot": "\\\\file-server\\DATA_HCM\\KEHOACH_THUMUA\\PUBLIC_KH_THUMUA\\4. ISO\\DS TDS, MSDS NVL\\FILE TIENG ANH",
-    "SourceLabel": "TDS/MSDS NVL - English",
+    "SourceRoots": [
+      "\\\\file-server\\DATA_HCM\\...\\FILE TIENG ANH",
+      "\\\\file-server\\DATA_HCM\\...\\FILE TIENG VIET\\TDS,MSDS",
+      "\\\\file-server\\DATA_HCM\\...\\FILE TIENG VIET\\TDS,MSDS hang GRS"
+    ],
+    "SourceLabel": "TDS/MSDS NVL",
     "IncludeSubdirectories": true,
     "MaxFiles": 10000,
     "AllowedExtensions": [
@@ -51,15 +57,16 @@ drive mapped only in an interactive user session.
 }
 ```
 
-The equivalent environment variable for the source path is:
+The equivalent environment variables for the source paths are:
 
 ```text
-MaterialDocumentImport__SourceRoot=\\file-server\DATA_HCM\KEHOACH_THUMUA\...
+MaterialDocumentImport__SourceRoots__0=\\file-server\DATA_HCM\...
+MaterialDocumentImport__SourceRoots__1=\\file-server\DATA_HCM\...
+MaterialDocumentImport__SourceRoots__2=\\file-server\DATA_HCM\...
 ```
 
-The OS account running the API must have read permission on the share. The API
-never accepts a source path from the client and never returns the absolute
-configured path.
+The OS account running the API must have read permission on every configured share. The API
+never accepts a source path from the client and never returns the absolute configured path. When multiple roots are configured, the API prefixes its internal relative file path with a source index so a queued job always reopens the file under the same configured root; this internal path is never a client-supplied filesystem path.
 
 ## Matching rules
 

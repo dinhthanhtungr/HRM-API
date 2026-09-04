@@ -14,12 +14,16 @@ public sealed class SaleOrderTimelineCardDto
 {
     public Guid MerchandiseOrderId { get; init; }
     public string ExternalId { get; init; } = string.Empty;
+    public string PONo { get; init; } = string.Empty;
     public string? CreatedName { get; init; }
     public string Status { get; set; } = string.Empty;
     public DateTime CreatedDate { get; init; }
     public string CustomerName { get; init; } = string.Empty;
     public string CustomerExternalId { get; init; } = string.Empty;
-    public decimal? TotalPrice { get; init; }
+    /// <summary>
+    /// Tổng tiền thanh toán của đơn, đã bao gồm VAT theo field <see cref="Vat"/>.
+    /// </summary>
+    public decimal? TotalPrice { get; set; }
     public decimal? Vat { get; init; }
     public bool IsDeliveryPaused { get; set; }
     public DateTime? DeliveryPausedFrom { get; init; }

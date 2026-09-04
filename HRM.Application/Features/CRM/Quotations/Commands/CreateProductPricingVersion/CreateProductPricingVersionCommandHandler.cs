@@ -78,7 +78,10 @@ internal sealed class CreateProductPricingVersionCommandHandler
                 x.IsActive)
             .Select(x => new
             {
-                x.FormulaPricingProfile
+                x.ColourCode,
+                x.Code,
+                x.Additive,
+                x.CategoryId
             })
             .FirstOrDefaultAsync(cancellationToken);
         if (productInfo is null)
@@ -106,21 +109,14 @@ internal sealed class CreateProductPricingVersionCommandHandler
                 FormulaPricingPolicyRules.PricingPolicyMissing);
         }
 
-        if (!sourceResult.Data.IsMaterialCostComplete ||
-            !sourceResult.Data.MaterialCostSnapshot.HasValue)
-        {
-            return OperationResult<ProductPricingVersionDto>.Fail("MaterialPriceMissing");
-        }
-
-        if (productInfo.FormulaPricingProfile is not { } pricingProfile ||
-            !Enum.IsDefined(pricingProfile))
-        {
-            return OperationResult<ProductPricingVersionDto>.Fail(
-                "Pricing profile is not configured for this product.");
-        }
+        var pricingProfile = FormulaPricingProfileResolver.Resolve(
+            productInfo.ColourCode,
+            productInfo.Code,
+            productInfo.Additive);
 
         var pricingPolicy = await _pricingPolicyProvider.GetPublishedPolicyAsync(
             companyId,
+            productInfo.CategoryId,
             pricingProfile,
             currency,
             cancellationToken);
@@ -158,7 +154,7 @@ internal sealed class CreateProductPricingVersionCommandHandler
              tiersResult.Data.Tiers.Count == 0))
         {
             return OperationResult<ProductPricingVersionDto>.Fail(
-                "Material cost, manufacturing cost, standard selling price, profit margin and non-negative price tiers are required before approval.");
+                "A positive standard selling price and non-negative price tiers are required before approval.");
         }
 
         using var lease = await _mutationLock.AcquireAsync(

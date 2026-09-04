@@ -57,8 +57,9 @@ internal sealed class ProductPricingRealtimeSourceQueryService
         }
 
         var materialRows = await LoadMaterialRowsAsync(sourceRows, companyId, cancellationToken);
-        var latestPriceByItem = await LoadLatestPricesAsync(materialRows, cancellationToken);
-        var pricingPolicies = await LoadPricingPoliciesAsync(companyId, currency, cancellationToken);
+        var latestPriceByItem = await LoadLatestPricesAsync(
+            materialRows, companyId, currency, cancellationToken);
+        var pricingPolicies = await LoadPricingPoliciesAsync(sourceRows, companyId, currency, cancellationToken);
         var materialsBySource = materialRows
             .GroupBy(x => x.SourceKey)
             .ToDictionary(
@@ -93,7 +94,8 @@ internal sealed class ProductPricingRealtimeSourceQueryService
                             ?? new FormulaRealtimeMaterialCostResult(null, false, 0),
                         materialsBySource.GetValueOrDefault(x.Key) ?? [],
                         x.PricingProfile.HasValue
-                            ? pricingPolicies.GetValueOrDefault(x.PricingProfile.Value)
+                            ? pricingPolicies.GetValueOrDefault(new FormulaPricingPolicyLookupKey(
+                                companyId, x.ProductCategoryId, x.PricingProfile.Value, currency.Trim().ToUpperInvariant()))
                             : null,
                         companyId,
                         currency))
@@ -129,8 +131,9 @@ internal sealed class ProductPricingRealtimeSourceQueryService
         }
 
         var materialRows = await LoadMaterialRowsAsync(sourceRows, companyId, cancellationToken);
-        var latestPriceByItem = await LoadLatestPricesAsync(materialRows, cancellationToken);
-        var pricingPolicies = await LoadPricingPoliciesAsync(companyId, currency, cancellationToken);
+        var latestPriceByItem = await LoadLatestPricesAsync(
+            materialRows, companyId, currency, cancellationToken);
+        var pricingPolicies = await LoadPricingPoliciesAsync(sourceRows, companyId, currency, cancellationToken);
         var materialsBySource = materialRows
             .GroupBy(x => x.SourceKey)
             .ToDictionary(
@@ -158,7 +161,8 @@ internal sealed class ProductPricingRealtimeSourceQueryService
                     ?? new FormulaRealtimeMaterialCostResult(null, false, 0),
                 materialsBySource.GetValueOrDefault(x.Key) ?? [],
                 x.PricingProfile.HasValue
-                    ? pricingPolicies.GetValueOrDefault(x.PricingProfile.Value)
+                    ? pricingPolicies.GetValueOrDefault(new FormulaPricingPolicyLookupKey(
+                        companyId, x.ProductCategoryId, x.PricingProfile.Value, currency.Trim().ToUpperInvariant()))
                     : null,
                 companyId,
                 currency));
@@ -173,13 +177,17 @@ internal sealed class ProductPricingRealtimeSourceQueryService
             .AsNoTracking()
             .Where(x =>
                 x.IsActive &&
-                x.CompanyId == companyId &&
+                x.Product.IsActive &&
+                x.Product.CompanyId == companyId &&
                 productIds.Contains(x.ProductId) &&
                 ProductPricingSourceRules.EligibleFormulaStatuses.Contains(x.Status))
             .Select(x => new SourceRow
             {
                 ProductId = x.ProductId,
-                PricingProfile = x.Product.FormulaPricingProfile,
+                ProductCategoryId = x.Product.CategoryId,
+                ProductColourCode = x.Product.ColourCode,
+                ProductCode = x.Product.Code,
+                ProductAdditive = x.Product.Additive,
                 SourceType = ProductPricingSourceType.Formula,
                 SourceId = x.FormulaId,
                 ExternalId = x.ExternalId,
@@ -211,7 +219,10 @@ internal sealed class ProductPricingRealtimeSourceQueryService
             .Select(x => new SourceRow
             {
                 ProductId = x.ProductId,
-                PricingProfile = x.Product.FormulaPricingProfile,
+                ProductCategoryId = x.Product.CategoryId,
+                ProductColourCode = x.Product.ColourCode,
+                ProductCode = x.Product.Code,
+                ProductAdditive = x.Product.Additive,
                 SourceType = ProductPricingSourceType.ManufacturingFormula,
                 SourceId = x.ManufacturingFormulaId!.Value,
                 ExternalId = x.ManufacturingFormula!.ExternalId,
@@ -223,6 +234,8 @@ internal sealed class ProductPricingRealtimeSourceQueryService
             })
             .ToListAsync(cancellationToken);
 
+        ApplyLegacyPricingProfiles(formulaSources);
+        ApplyLegacyPricingProfiles(manufacturingSources);
         return formulaSources
             .Concat(manufacturingSources)
             .GroupBy(x => x.Key)
@@ -252,13 +265,17 @@ internal sealed class ProductPricingRealtimeSourceQueryService
             : await _dbContext.Formulas
                 .AsNoTracking()
                 .Where(x =>
-                    x.CompanyId == companyId &&
+                    x.Product.IsActive &&
+                    x.Product.CompanyId == companyId &&
                     productIds.Contains(x.ProductId) &&
                     formulaIds.Contains(x.FormulaId))
                 .Select(x => new SourceRow
                 {
-                    ProductId = x.ProductId,
-                    PricingProfile = x.Product.FormulaPricingProfile,
+                ProductId = x.ProductId,
+                ProductCategoryId = x.Product.CategoryId,
+                ProductColourCode = x.Product.ColourCode,
+                    ProductCode = x.Product.Code,
+                    ProductAdditive = x.Product.Additive,
                     SourceType = ProductPricingSourceType.Formula,
                     SourceId = x.FormulaId,
                     ExternalId = x.ExternalId,
@@ -286,8 +303,11 @@ internal sealed class ProductPricingRealtimeSourceQueryService
                     x.ManufacturingFormula.CompanyId == companyId)
                 .Select(x => new SourceRow
                 {
-                    ProductId = x.ProductId,
-                    PricingProfile = x.Product.FormulaPricingProfile,
+                ProductId = x.ProductId,
+                ProductCategoryId = x.Product.CategoryId,
+                ProductColourCode = x.Product.ColourCode,
+                    ProductCode = x.Product.Code,
+                    ProductAdditive = x.Product.Additive,
                     SourceType = ProductPricingSourceType.ManufacturingFormula,
                     SourceId = x.ManufacturingFormulaId!.Value,
                     ExternalId = x.ManufacturingFormula!.ExternalId,
@@ -304,6 +324,8 @@ internal sealed class ProductPricingRealtimeSourceQueryService
                 })
                 .ToListAsync(cancellationToken);
 
+        ApplyLegacyPricingProfiles(formulaSources);
+        ApplyLegacyPricingProfiles(manufacturingSources);
         var requestedKeys = selections.ToHashSet();
         return formulaSources
             .Concat(manufacturingSources)
@@ -340,7 +362,8 @@ internal sealed class ProductPricingRealtimeSourceQueryService
                 .Where(x =>
                     x.IsActive &&
                     formulaIds.Contains(x.FormulaId) &&
-                    x.Formula.CompanyId == companyId)
+                    x.Formula.Product.IsActive &&
+                    x.Formula.Product.CompanyId == companyId)
                 .Select(x => new MaterialRow
                 {
                     SourceType = ProductPricingSourceType.Formula,
@@ -416,6 +439,8 @@ internal sealed class ProductPricingRealtimeSourceQueryService
 
     private async Task<Dictionary<PriceItemKey, LatestItemPriceDto>> LoadLatestPricesAsync(
         IReadOnlyCollection<MaterialRow> materialRows,
+        Guid companyId,
+        string currency,
         CancellationToken cancellationToken)
     {
         var requests = materialRows
@@ -435,7 +460,9 @@ internal sealed class ProductPricingRealtimeSourceQueryService
             .Select(x => x.First())
             .ToArray();
 
-        return await _materialPriceQueryService.LoadLatestItemPriceInfoDictAsync(
+        return await _materialPriceQueryService.LoadLatestPricingItemPriceInfoDictAsync(
+            companyId,
+            currency,
             requests,
             cancellationToken);
     }
@@ -453,6 +480,7 @@ internal sealed class ProductPricingRealtimeSourceQueryService
                 new PricingEngineRequest
                 {
                     CompanyId = companyId,
+                    CategoryId = source.ProductCategoryId,
                     ProductId = source.ProductId,
                     SourceId = source.SourceId,
                     SourceType = source.SourceType.ToString(),
@@ -501,15 +529,28 @@ internal sealed class ProductPricingRealtimeSourceQueryService
         };
     }
 
-    private async Task<IReadOnlyDictionary<FormulaPricingProfile, ResolvedFormulaPricingPolicy>>
-        LoadPricingPoliciesAsync(Guid companyId, string currency, CancellationToken cancellationToken)
+    private async Task<IReadOnlyDictionary<FormulaPricingPolicyLookupKey, ResolvedFormulaPricingPolicy>>
+        LoadPricingPoliciesAsync(IReadOnlyCollection<SourceRow> sources, Guid companyId, string currency, CancellationToken cancellationToken)
     {
-        var profiles = new[] { FormulaPricingProfile.Powder, FormulaPricingProfile.Compound };
         var normalizedCurrency = currency.Trim().ToUpperInvariant();
-        var keys = profiles.Select(profile =>
-            new FormulaPricingPolicyLookupKey(companyId, profile, normalizedCurrency));
+        var keys = sources
+            .Where(x => x.ProductCategoryId != Guid.Empty && x.PricingProfile.HasValue)
+            .Select(x => new FormulaPricingPolicyLookupKey(
+                companyId, x.ProductCategoryId, x.PricingProfile!.Value, normalizedCurrency))
+            .Distinct();
         var policies = await _pricingPolicyResolver.GetPublishedBatchAsync(keys, cancellationToken);
-        return policies.ToDictionary(x => x.Key.Profile, x => x.Value);
+        return policies;
+    }
+
+    private static void ApplyLegacyPricingProfiles(IEnumerable<SourceRow> sources)
+    {
+        foreach (var source in sources)
+        {
+            source.PricingProfile = FormulaPricingProfileResolver.Resolve(
+                source.ProductColourCode,
+                source.ProductCode,
+                source.ProductAdditive);
+        }
     }
 
     private static QuotationProductPricingMaterialDto MapMaterial(
@@ -552,7 +593,11 @@ internal sealed class ProductPricingRealtimeSourceQueryService
     private sealed class SourceRow
     {
         public Guid ProductId { get; init; }
-        public FormulaPricingProfile? PricingProfile { get; init; }
+        public Guid ProductCategoryId { get; init; }
+        public string? ProductColourCode { get; init; }
+        public string? ProductCode { get; init; }
+        public string? ProductAdditive { get; init; }
+        public FormulaPricingProfile? PricingProfile { get; set; }
         public ProductPricingSourceType SourceType { get; init; }
         public Guid SourceId { get; init; }
         public string ExternalId { get; init; } = string.Empty;

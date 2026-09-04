@@ -1,6 +1,6 @@
 using HRM.Application.Features.CRM.CustomerCare.Services;
 
-namespace HRM.Api.Backgrounds;
+namespace HRM.Api.Backgrounds.CRM.CustomerCare;
 
 /// <summary>
 /// Kích hoạt processor cảnh báo follow-up task đến hạn; rule nghiệp vụ nằm trong Application.

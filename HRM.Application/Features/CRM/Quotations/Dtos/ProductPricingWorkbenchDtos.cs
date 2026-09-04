@@ -24,8 +24,21 @@ public sealed class ProductPricingWorkbenchItemDto
     public ProductPricingLookupStatus PricingStatus { get; init; }
     public bool IsSystemCalculatedDraft { get; init; }
 
+    /// <summary>
+    /// Khả năng dùng dữ liệu định giá hiện tại. Khác với SourceIsEligible là trạng thái kỹ thuật của Formula.
+    /// </summary>
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public ProductPricingHealthStatus PricingHealthStatus { get; init; }
+    public bool RequiresPricingAction { get; init; }
+    public DateTime? PricingReviewDueDate { get; init; }
+
     public int WaitingQuotationCount { get; init; }
     public DateTime? LatestRequestedAt { get; init; }
+    /// <summary>
+    /// Toàn bộ khách hàng liên quan qua Sample Request hoặc quotation active của sản phẩm này. Chỉ President/Developer nhận được
+    /// customer health summary để đánh giá ngữ cảnh trước khi duyệt giá.
+    /// </summary>
+    public IReadOnlyList<ProductPricingWorkbenchCustomerContextDto> RelatedCustomers { get; init; } = [];
 
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public ProductPricingSourceType? SourceType { get; init; }
@@ -46,12 +59,53 @@ public sealed class ProductPricingWorkbenchItemDto
 
     public decimal? ManufacturingCost { get; init; }
     public bool UsedDefaultManufacturingCost { get; init; }
+    /// <summary>
+    /// Giá bán tiêu chuẩn snapshot của version Draft, hoặc Approved khi chưa có Draft.
+    /// Chỉ fallback sang giá realtime khi chưa có version giá nào được lưu.
+    /// </summary>
     public decimal? StandardSellingPrice { get; init; }
+    public decimal? RealtimeStandardSellingPrice { get; init; }
+    public decimal? StandardSellingPriceDifference { get; init; }
+    public decimal? StandardSellingPriceDifferencePercent { get; init; }
+    public bool HasRealtimePriceComparison { get; init; }
     public decimal? ProfitMarginRate { get; init; }
 
     public Guid? DraftPricingVersionId { get; init; }
     public Guid? ApprovedPricingVersionId { get; init; }
     public DateTime? PricingUpdatedDate { get; init; }
+    public DateTime? PriceConfirmedAt { get; init; }
+    public DateTime? PriceExpiresAt { get; init; }
+    public int? RemainingValidityDays { get; init; }
+    public int? OverdueDays { get; init; }
+    public bool? IsPriceExpired { get; init; }
+}
+
+/// <summary>
+/// Ngữ cảnh khách hàng từ Sample Request hoặc quotation active của sản phẩm. AI summary là snapshot mới nhất đã tạo thành công;
+/// null nghĩa là khách chưa có AI summary hợp lệ, không phải dữ liệu bị suy diễn.
+/// </summary>
+public sealed class ProductPricingWorkbenchCustomerContextDto
+{
+    public Guid CustomerId { get; init; }
+    public string CustomerCode { get; init; } = string.Empty;
+    public string CustomerName { get; init; } = string.Empty;
+    public int RelatedDocumentCount { get; init; }
+    public DateTime LatestRelatedDate { get; init; }
+    public ProductPricingWorkbenchCustomerHealthSummaryDto? HealthSummary { get; init; }
+}
+
+/// <summary>
+/// Phần thông tin AI Health cần thiết để người duyệt pricing hiểu nhu cầu, giai đoạn và rủi ro khách hàng.
+/// </summary>
+public sealed class ProductPricingWorkbenchCustomerHealthSummaryDto
+{
+    public string Summary { get; init; } = string.Empty;
+    public string CustomerNeed { get; init; } = string.Empty;
+    public string CurrentStage { get; init; } = string.Empty;
+    public string Risk { get; init; } = string.Empty;
+    public string NextAction { get; init; } = string.Empty;
+    public string Sentiment { get; init; } = string.Empty;
+    public DateTime? GeneratedAt { get; init; }
 }
 
 public sealed class ProductPricingWorkbenchDetailDto

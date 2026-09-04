@@ -1,15 +1,43 @@
 # Giá công thức
 
+## Xuất Excel danh sách NVL
+
+```http
+GET /api/v1/plm/formulas/{formulaId}/materials/excel
+```
+
+Endpoint tải tệp `.xlsx` gồm các NVL active trong Formula, với các cột `STT`, `Mã NVL`, `Tên NVL`,
+`STD`, `Giá gần nhất`. `STD` lấy từ `FormulaMaterial.Quantity`; mã/tên là dữ liệu snapshot của dòng Formula để phản ánh đúng dữ liệu trong công thức;
+giá gần nhất dùng nguồn mua hàng/nhà cung cấp hiện hành. NVL chưa có giá hợp lệ để trống cột giá.
+
+Endpoint yêu cầu đồng thời `PLM.FormulaMaterials.View` và `PLM.FormulaPrices.View`; backend cũng kiểm tra
+nhóm `FormulaMaterialViewers` và `FormulaPriceViewers`, nên không đủ một trong hai quyền không thể tải file.
+
 ## API ghi công thức
 
 Các API ghi công thức nằm dưới:
 
 ```http
 POST   /api/v1/plm/formulas
+POST   /api/v1/plm/formulas/{sourceFormulaId}/clone
+POST   /api/v1/plm/formulas/{formulaId}/requote-requests
 PUT    /api/v1/plm/formulas/{formulaId}
 PATCH  /api/v1/plm/formulas/{formulaId}/status
 DELETE /api/v1/plm/formulas/{formulaId}
 ```
+
+`POST /api/v1/plm/formulas/{sourceFormulaId}/clone` tạo một Formula `Draft` mới trong cùng company. Backend tự sinh
+`externalId` và tên Formula mới, đặt `isSelect = false`, copy note, giá header và toàn bộ active material từ Formula nguồn.
+Line number của bản copy luôn được tạo lại `1..N`; response trả `formulaId` mới để FE điều hướng thẳng sang màn hình sửa.
+FE không cần gọi `item-lookup` cho từng dòng khi copy; lookup chỉ dùng nếu người dùng thêm/chọn item mới sau đó.
+
+`POST /api/v1/plm/formulas/{formulaId}/requote-requests` gửi yêu cầu báo giá lại vào đúng conversation của
+Sample Request đã chọn. Request body gồm `sampleRequestId`, `message` bắt buộc (tối đa 2000 ký tự) và `isUrgent`.
+Formula và Sample Request phải cùng Product/cùng company. Message nằm trong thread Sample Request với type
+`PriceQuoteRequest`; notification topic hiện có là `SampleRequestPriceQuoteRequested`
+(`plm.sample_request.price_quote.requested`) và chỉ gửi President active cùng company, không gửi người tạo.
+Link notification mở Product Pricing Options theo mã màu khi có. Payload notification chỉ có metadata message/thread;
+không chứa cost, margin hoặc giá. Sample Request private/KH_VIETAUS tuân theo rule chung và không phát message/notification.
 
 ## Danh sách công thức khi lên đơn hàng
 
@@ -114,6 +142,7 @@ Payload tạo/cập nhật:
   "name": "Formula VU",
   "productId": "00000000-0000-0000-0000-000000000000",
   "note": "Ghi chú",
+  "stepOfProduct": 7,
   "effectiveDate": "2026-07-28T00:00:00",
   "isSelect": false,
   "expectedUpdatedDate": "2026-07-28T10:30:00",
@@ -131,10 +160,18 @@ Payload tạo/cập nhật:
 }
 ```
 
+`stepOfProduct` là luồng công đoạn sản xuất của Formula, dùng enum số thống nhất với database và FE:
+`0` Sang bao, `1` Đùn, `2` Trộn, `3` Trộn Recolor, `4` Nghiền, `5` Trộn → Đùn,
+`6` Trộn → Đùn → Trộn Recolor, `7` Trộn → Nghiền → Đùn, `8` Trộn → Nghiền → Đùn → Trộn Recolor.
+Giá trị `null` được chấp nhận khi Formula chưa xác định công đoạn. `POST` và `PUT` lưu trực tiếp
+giá trị này; `GET /api/v1/plm/formulas/{formulaId}` cũng trả `stepOfProduct` dưới dạng số hoặc `null`.
+
 `itemType` nhận các giá trị enum `Material`, `Product`, `MaterialFailure`, `ProductFailure`.
 Với item material, `itemId` là `MaterialId`; với item product, `itemId` là `ProductId`.
 Nếu không gửi `categoryId`, backend lấy category từ material/product được chọn. `unitPrice` không gửi thì mặc định `0`.
 Khi có danh sách `materials`, `Formula.TotalPrice` được tính lại bằng tổng `quantity * unitPrice`.
+`lineNo` trong response là thứ tự canonical do backend trả về. Khi ghi, FE chỉ gửi `materials[]`
+theo thứ tự UI; backend không dùng `materials[].lineNo` từ request và đánh lại `1..N` theo vị trí mảng.
 
 `PATCH /status` cho chuyển sang:
 
@@ -143,6 +180,35 @@ Approved   -> Formula.Status = Approved, Formula.CheckBy/CheckDate = current emp
 SampleSent -> Formula.Status = SampleSent, Formula.SentBy/SentDate = current employee/time.
 Completed  -> Formula.Status = Completed, Formula.IsSelect = true, SampleRequest.Status = Completed.
 ```
+
+`PATCH /api/v1/plm/formulas/{formulaId}/status` cũng nhận `stepOfProduct` tùy chọn. Khi gửi
+code hợp lệ, backend cập nhật công đoạn cùng lúc với status; khi không gửi field này, giá trị công đoạn
+đang lưu không đổi. PATCH không hỗ trợ xóa công đoạn bằng `null`; dùng `PUT` với
+`"stepOfProduct": null` nếu cần xóa.
+
+Với `POST /status-transition`, FE có thể đặt `stepOfProduct` ở root hoặc trong `formulaUpdate`.
+Nếu gửi ở cả hai vị trí, hai giá trị phải giống nhau.
+
+Khi người dùng bấm đổi trạng thái trong lúc có thay đổi Formula chưa lưu, FE dùng:
+
+```http
+POST /api/v1/plm/formulas/{formulaId}/status-transition
+```
+
+Payload nhận toàn bộ field status như `PATCH /status`, thêm `formulaUpdate` tùy chọn có cùng contract
+với `PUT /api/v1/plm/formulas/{formulaId}`. `expectedUpdatedDate` ở root là concurrency token canonical;
+nếu `formulaUpdate.expectedUpdatedDate` được gửi thì phải giống root. Backend áp dụng `formulaUpdate`,
+validate transition, tạo đúng một Formula Version và lưu Formula/material/status trong cùng một lần
+`SaveChanges`. Nếu validation hoặc transition thất bại, không phần nào được lưu. Khi không có thay đổi
+Formula, FE không gửi `formulaUpdate` và vẫn có thể dùng `PATCH /status` như cũ.
+
+Khi `Approved` được gọi kèm `sampleRequestId` hợp lệ cùng Product, backend gửi message/notification trong
+conversation của Sample Request với topic `SampleRequestFormulaApproved`
+(`plm.sample_request.formula.approved`). Nội dung báo Formula đã được xác nhận và giá tham khảo có thể tra cứu.
+Notification có `Link = /crm/quotations/product-pricing-options?keyword={ColourCode}` để người nhận bấm mở
+màn hình tra cứu giá đã lọc theo mã màu. Payload không chứa material cost, giá sản xuất, giá bán hoặc margin;
+quyền xem giá và quyền truy cập màn hình tra cứu vẫn được kiểm soát độc lập. Sample Request `private` hoặc
+khách `KH_VIETAUS` vẫn không tạo message/notification theo rule chung.
 
 `SampleSent` được chuyển khi công thức hiện đang ở trạng thái `Approved`, hoặc gửi lại khi công thức đã là `SampleSent`; backend từ chối chuyển thẳng từ `Draft`, `Cancelled` hoặc trạng thái khác sang `SampleSent`.
 `Completed` chỉ được chuyển khi công thức hiện đang ở trạng thái `SampleSent`.
@@ -223,9 +289,16 @@ không lấy từ snapshot `Formula.TotalPrice`.
 
 ## Giá bán tiêu chuẩn và dữ liệu Formula legacy
 
-API Formula detail/preview lấy kết quả realtime từ `FormulaPricingEngine`, với policy Published
-đúng company/profile/currency. Manufacturing cost mặc định, profit margin, rounding và tiers đều
-đến từ policy DB; không suy profile từ product code/Additive và không fallback khi thiếu policy.
+Giá NVL (`totalPrice`/`realtimeMaterialCost`) trên API Formula detail/preview luôn được tính realtime từ
+đơn giá NVL mới nhất. Ba chỉ số hiển thị định giá hiện hành là `manufacturingCost`,
+`standardSellingPrice` và `profitMarginRate` lấy duy nhất từ `ProductPricingVersion` active, `Approved`
+mới nhất theo company/product/currency. Nếu chưa có bản Approved, cả ba field là `null`; không fallback
+sang giá policy, Formula hoặc giá realtime.
+
+`FormulaPricingEngine` vẫn dùng policy Published đúng company/profile/currency để tính preview/tier và
+so sánh chi phí. Block `pricing` là preview độc lập, không nhận bản giá Approved, vì giá đã duyệt có thể
+nằm ngoài giới hạn preview của policy. Vì vậy lỗi preview không được làm API Formula detail thất bại hoặc
+thay đổi ba card giá đã duyệt ở cấp ngoài.
 
 `Formula.TotalPrice`, `Formula.ProductionPrice`, `Formula.PresidentPrice` và
 `Formula.ProfitMarginPrice` được giữ nguyên để đọc dữ liệu lịch sử. Chúng không còn là nguồn giá
@@ -254,7 +327,8 @@ Draft và approve. Endpoint cũ không gọi material price service, calculator 
 ## Response giá chuẩn từ backend
 
 GET Formula trả pricing canonical từ engine. Khi thiếu policy trả `pricing = null` cùng
-`PricingPolicyMissing`; khi thiếu giá NVL trả `pricing = null` cùng `MaterialPriceMissing`.
+`PricingPolicyMissing`. Khi thiếu giá NVL hoặc giá bằng 0, engine dùng 0 để tiếp tục tính và vẫn trả
+`pricing`; `MaterialPriceMissing` cùng `missingMaterialPriceCount` chỉ là cảnh báo.
 `GET /api/v1/crm/quotations/product-pricing-options` cũng trả cùng cấu trúc `pricing` trong từng Formula,
 do đó màn hình tra cứu và màn hình chỉnh sửa dùng chung một kết quả tính.
 
@@ -281,18 +355,19 @@ chứa profile tiers, currency hoặc default price. Tier có `priceOffset = nul
 `requiresManualPrice = true`.
 
 Không có policy phù hợp thì `pricing = null`, `pricingStatus = PricingPolicyMissing`; không fallback sang
-luật hard-code. Thiếu ít nhất một giá material thì `pricing = null`, `pricingStatus = MaterialPriceMissing`.
+luật hard-code. Thiếu ít nhất một giá material hoặc có giá bằng 0 thì `pricingStatus = MaterialPriceMissing`
+để cảnh báo, nhưng `pricing` vẫn được tính với các dòng đó bằng 0 và không chặn lưu/duyệt.
 Giá được chọn để lập báo giá vẫn phải lưu snapshot vào dòng/bậc giá báo giá.
 
 ## Ghi chú riêng cho API chi tiết công thức
 
-`GET /api/v1/plm/formulas/{formulaId}?currency=VND` yêu cầu currency và không trả `materialCost` snapshot. API này trả `realtimeMaterialCost`,
+`GET /api/v1/plm/formulas/{formulaId}` không nhận query `currency`; backend luôn dùng `VND` để resolve pricing policy và không trả `materialCost` snapshot. API này trả `updatedDate` là mốc concurrency canonical: FE giữ nguyên giá trị từ GET và gửi lại dưới tên `expectedUpdatedDate` khi ghi. Với Formula cũ chưa có `UpdatedDate`, API dùng `CreatedDate` làm mốc fallback. API này cũng trả `realtimeMaterialCost`,
 `isRealtimeMaterialCostComplete`, `missingMaterialPriceCount`, `manufacturingCost`, `standardSellingPrice`,
 `profitMarginRate`, policy id/version, `suggestedPriceTiers`, `pricingStatus` và `pricing`.
 
 Nếu một dòng NVL/sản phẩm không có latest price hoặc latest price là `null`, dòng đó trả
-`hasLatestPrice = false`, `latestUnitPrice = 0`, `latestTotalPrice = 0` để FE cảnh báo; nhưng engine đánh dấu
-material cost không đầy đủ và không tạo block `pricing`.
+`hasLatestPrice = false`, `latestUnitPrice = 0`, `latestTotalPrice = 0` để FE cảnh báo. Engine đánh dấu
+material cost không đầy đủ nhưng vẫn tạo block `pricing` với dòng thiếu giá được tính bằng 0.
 
 Các dòng `materials[]` của API chi tiết công thức trả thêm `hasLatestPrice`, `latestUnitPrice`, `latestTotalPrice`,
 `latestPriceDate`, `latestPriceSource` và `supplierPrices`. User không thuộc `ApplicationRoleSets.PLM.FormulaPriceViewers`
@@ -334,5 +409,31 @@ POST /api/v1/plm/formulas/{formulaId}/versions/{versionNo}/restore
 ```
 
 Hai API GET yêu cầu `PLM.Formula.Detail.View` và luôn lọc `CurrentUser.CompanyId`. Header giá chỉ được trả cho `FormulaPriceViewers`; danh sách item chỉ được trả cho `FormulaMaterialViewers`, và giá từng item tiếp tục được ẩn nếu user không có quyền xem giá.
+
+## Yêu cầu báo giá lại Formula
+
+Endpoint tương thích hiện hữu:
+
+```http
+POST /api/v1/plm/formulas/{formulaId}/requote-requests
+```
+
+không còn tự triển khai recipient/message riêng. Handler chuyển tiếp sang
+`RequestSampleRequestPriceQuoteCommand` với `formulaId` tường minh, vì vậy cùng dùng validation company/product,
+conversation Sample Request, recipient President và topic `plm.sample_request.price_quote.requested` như endpoint
+`POST /api/v1/plm/sample-requests/{sampleRequestId}/price-quote-requests`.
+
+## Yêu cầu báo giá lại Formula
+
+Endpoint tương thích hiện hữu:
+
+```http
+POST /api/v1/plm/formulas/{formulaId}/requote-requests
+```
+
+không còn tự triển khai recipient/message riêng. Handler chuyển tiếp sang
+`RequestSampleRequestPriceQuoteCommand` với `formulaId` tường minh, vì vậy cùng dùng validation company/product,
+conversation Sample Request, recipient President và topic `plm.sample_request.price_quote.requested` như endpoint
+`POST /api/v1/plm/sample-requests/{sampleRequestId}/price-quote-requests`.
 
 POST lưu yêu cầu `PLM.Formula.Manage`; POST khôi phục yêu cầu đồng thời `PLM.Formula.Manage` và `PLM.FormulaPricing.Update` vì action này ghi lại cả giá snapshot. Current user phải có `EmployeeId`. Khôi phục không sửa version cũ: backend thay header/material active của Formula bằng snapshot đã chọn rồi tạo một version mới với `ChangeReason = Restored from version ...`. Do contract FormulaVersion không snapshot `ExternalId`, `ProductId`, `EffectiveDate`, `IsSelect` và các field audit trạng thái, thao tác restore giữ nguyên các field đó trên Formula hiện tại.

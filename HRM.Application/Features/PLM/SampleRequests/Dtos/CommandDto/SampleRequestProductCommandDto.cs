@@ -1,3 +1,5 @@
+using HRM.Domain.Enums.Products;
+
 namespace HRM.Application.Features.PLM.SampleRequests.Dtos.CommandDto;
 
 public sealed class SampleRequestProductCommandDto
@@ -29,6 +31,8 @@ public sealed class SampleRequestProductCommandDto
     public string? VisualTest { get; set; }
     public bool? ReturnSample { get; set; }
     public bool? IsRecycle { get; set; }
+    public bool? GRS { get; set; }
+    public GRSConsumerType? GRSConsumerType { get; set; }
     public string? OtherComment { get; set; }
     public Guid? CategoryId { get; set; }
     public double? Weight { get; set; }

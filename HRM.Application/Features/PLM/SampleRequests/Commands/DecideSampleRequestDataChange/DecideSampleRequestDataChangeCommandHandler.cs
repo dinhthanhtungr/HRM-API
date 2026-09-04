@@ -141,13 +141,8 @@ internal sealed class DecideSampleRequestDataChangeCommandHandler
                 return OperationResult<SampleRequestDataChangeDecisionResultDto>.Fail("Sample request or product was not found.");
             }
 
-            var staleField = selectedChanges.FirstOrDefault(change =>
-                !SampleRequestDataChangeFieldCatalog.CurrentValueMatches(sampleRequest, change));
-            if (staleField is not null)
-            {
-                return OperationResult<SampleRequestDataChangeDecisionResultDto>.Fail(
-                    $"{staleField.Label} has changed since this request was created. Review the current data before approving.");
-            }
+            // Temporarily allow Lab approval to overwrite current values with the proposed values.
+            // The message, permission, company and pending-field validations remain enforced.
 
             var patch = new PatchSampleRequestCommand
             {

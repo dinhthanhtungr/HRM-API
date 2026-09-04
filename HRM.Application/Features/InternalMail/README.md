@@ -31,7 +31,7 @@ Base route: `/api/v1/internal-mail`
 | `POST` | `/conversations` | Tạo cuộc trao đổi nội bộ tự do (`RelatedType = Internal`) |
 | `GET` | `/conversations/{conversationId}` | Lấy header và participant |
 | `GET` | `/conversations/{conversationId}/messages` | Lấy thread có phân trang |
-| `GET` | `/conversations/{conversationId}/attachments` | Lấy toàn bộ attachment của conversation theo `kind=All|Image|File`, phân trang độc lập với message |
+| `GET` | `/conversations/{conversationId}/attachments` | Lấy attachment chat và tệp gốc của Sample Request liên kết theo `kind=All|Image|File`, phân trang độc lập với message |
 | `GET` | `/conversations/{conversationId}/messages/search` | Tìm message trong một thread để FE hiển thị số kết quả và nhảy tới message |
 | `GET` | `/conversations/{conversationId}/messages/{messageId}/context` | Lấy cụm message trước/sau message đích khi kết quả search chưa được load |
 | `POST` | `/conversations/{conversationId}/messages` | Gửi message JSON hoặc multipart có reply/file cho toàn bộ participant |
@@ -42,7 +42,7 @@ Base route: `/api/v1/internal-mail`
 | `POST` | `/conversations/{conversationId}/read` | Đánh dấu thread đã đọc cho current employee |
 | `PATCH` | `/conversations/{conversationId}/preferences` | Archive/restore hoặc mute/unmute cá nhân |
 | `GET` | `/conversations/{conversationId}/participants` | Danh sách người tham gia |
-| `POST` | `/conversations/{conversationId}/participants` | Owner thêm Member/Watcher |
+| `POST` | `/conversations/{conversationId}/participants` | Bất kỳ participant active nào thêm Member/Watcher |
 | `DELETE` | `/conversations/{conversationId}/participants/{employeeId}` | Owner, President hoặc Developer gỡ participant theo xóa mềm, giữ message/read audit |
 
 Các filter chính của `GET /conversations`:
@@ -66,7 +66,9 @@ Mỗi attachment trả `attachmentId`, `fileName`, `sizeBytes`, `contentType`, `
 
 Thumbnail được tạo WebP tối đa 480x480, giữ tỉ lệ và lưu trong storage cạnh file gốc. Ảnh mới tạo thumbnail ngay lúc upload; ảnh lịch sử được tạo và cache ở lần gọi thumbnail đầu tiên. Endpoint thumbnail vẫn kiểm tra company và participant active như endpoint file gốc, không public storage path và không cần migration.
 
-Sidebar ảnh/file dùng `GET /conversations/{conversationId}/attachments?kind=Image|File&pageNumber=1&pageSize=30`. API này đọc toàn bộ attachment trong conversation, không phụ thuộc các trang message FE đã tải; response kèm `messageId`, sender và `sentAt` để FE gọi message context rồi scroll về đúng tin gốc.
+Sidebar ảnh/file dùng `GET /conversations/{conversationId}/attachments?kind=Image|File&pageNumber=1&pageSize=30`. API này đọc toàn bộ attachment chat trong conversation và, nếu conversation liên kết `SampleRequest`, tự gộp thêm tệp gốc của yêu cầu phối mẫu. Mỗi item có `source = Chat|SampleRequest`; item `Chat` kèm `messageId`, sender và `sentAt` để FE gọi message context rồi scroll về tin gốc, còn item `SampleRequest` có `messageId = null` và dùng nhãn nguồn `SampleRequest`.
+
+Tệp nguồn `SampleRequest` trả `contentUrl`/`downloadUrl` theo route scoped `/conversations/{conversationId}/related-attachments/{attachmentId}` (và `/thumbnail` cho ảnh). Route này kiểm tra current employee vẫn là participant active của conversation, conversation và Sample Request cùng company, attachment còn active và đúng collection của Sample Request. Không gộp hoặc tự trả tệp Formula.
 
 Route gửi message giữ tương thích JSON cũ. Để gửi file, dùng cùng route với `multipart/form-data`:
 
@@ -108,6 +110,7 @@ Trao đổi SampleRequest phải đi qua feature PLM để BE tự validate hồ
 ```http
 POST /api/v1/plm/sample-requests/{sampleRequestId}/messages
 GET  /api/v1/plm/sample-requests/{sampleRequestId}/messages
+POST /api/v1/plm/sample-requests/{sampleRequestId}/price-quote-requests
 POST /api/v1/plm/sample-requests/{sampleRequestId}/data-change-requests
 POST /api/v1/plm/sample-requests/{sampleRequestId}/data-change-requests/{messageId}/decision
 ```
@@ -122,6 +125,23 @@ RelatedId = sampleRequestId
 ```
 
 `PriceQuoteRequest`, `ChangeRequest`, `UpdateRequest` và `GeneralMessage` đều là message trong cùng conversation. Mỗi message vẫn tạo notification riêng; FE gộp danh sách theo `ConversationId`.
+
+Notification chỉ là side effect cho unread/realtime/push, không phải nguồn dữ liệu của hộp thư. Tab Báo giá trong
+nhóm Sample Request phải đọc conversation bằng:
+
+```http
+GET /api/v1/internal-mail/conversations?relatedType=SampleRequest&eventGroupCode=quotation
+```
+
+Backend lọc các conversation có ít nhất một message active mang
+`contentType = SampleRequestPriceQuoteRequested`. Vì vậy người gửi vẫn tìm lại được yêu cầu trong tab Báo giá dù
+không nhận notification của chính mình.
+
+API `price-quote-requests` là cổng nghiệp vụ dành riêng cho yêu cầu báo giá. Nó tự resolve Formula hiện tại,
+người nhận President và structured payload; FE không dùng API `messages` để tự giả lập loại message này.
+Block `priceQuoteRequest.action` dùng action code `SampleRequest.OpenPriceQuote` và cung cấp
+`sampleRequestId`, `sampleRequestExternalId`, `productId`, `productCode`, `formulaId`. FE ánh xạ action code sang
+route hiện hành; không suy route từ title/body của message.
 
 Yêu cầu đổi dữ liệu kỹ thuật cũng nằm trong conversation này. Message gốc có
 `contentType = SampleRequestDataChangeRequest` và proposal trong `dataChangeRequest` của `PayloadJson`.
@@ -168,6 +188,10 @@ camelCase và luôn có `contentType = InternalMailMessage`, `conversationId`, `
 GET /api/v1/notifications/feed?categoryCode=sample_request&eventGroupCode=message
 ```
 
+Khi feed item có `conversationId`, response bổ sung `conversationTitle` là subject conversation hiện tại sau khi
+kiểm tra current employee vẫn là participant active. FE dùng `conversationTitle` làm tên thread trong mọi filter;
+`context.aggregateCode` chỉ là mã nghiệp vụ ngắn như `TP_29739`.
+
 Bỏ trống cả hai filter để lấy tất cả. Yêu cầu báo giá trong ngữ cảnh SampleRequest vẫn thuộc
 `categoryCode = sample_request`, `eventGroupCode = quotation`; topic cụ thể là `SampleRequestPriceQuoteRequested`.
 
@@ -180,7 +204,7 @@ Topic enum được xem là append-only vì có thể đang lưu dạng số tro
 - Chỉ participant active mới đọc conversation/message, tránh IDOR qua GUID. Gỡ participant đặt `IsActive = false`, lưu `DeletedAt` và `DeletedByEmployeeId`; message/read-state vẫn giữ audit. Thêm lại cùng employee sẽ kích hoạt lại row cũ và xóa dấu gỡ/archive/mute.
 - FE không được truyền `CompanyId`, sender hoặc owner tùy ý.
 - Chỉ sender sửa message; sender hoặc owner mới được soft delete.
-- Chỉ owner thêm participant; owner, President hoặc Developer có thể gỡ participant. Endpoint thêm không cho tự gán role `Owner`.
+- Bất kỳ participant active nào cũng có thể thêm participant cùng company; owner, President hoặc Developer có thể gỡ participant. Endpoint thêm không cho tự gán role `Owner`.
 - Message đã xóa không trả lại body/payload cho FE.
 - Notification không có API public để FE tự tạo; notification được publish như side effect của nghiệp vụ.
 - Payload quyết định không nhận giá trị mới từ FE; chỉ nhận field code và đọc proposal từ message gốc.

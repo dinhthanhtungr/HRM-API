@@ -23,10 +23,11 @@ namespace HRM.Domain.Entities.CustomerSchema
         public decimal DiscountPercent { get; set; }
         public decimal LineTotal { get; set; }
 
-        public QuotationLinePriceMode PriceMode { get; set; } = QuotationLinePriceMode.Fixed;
+        public QuotationLinePriceMode PriceMode { get; set; } = QuotationLinePriceMode.FormulaCalculatedLocked;
 
         public string? Note { get; set; }
         public int SortOrder { get; set; }
+        public bool IsActive { get; set; } = true;
 
         public virtual Product ProductNavigation { get; set; } = null!;
         public virtual SampleRequest? SampleRequest { get; set; }

@@ -112,6 +112,12 @@ public sealed class SampleRequestSampleTrialReportRulesTests
     {
         Assert.Null(new GetSampleRequestSampleTrialsQuery().ReportType);
         Assert.Equal(
+            SampleTrialReportType.All,
+            new GetSampleRequestSampleTrialsQuery
+            {
+                ReportType = SampleTrialReportType.All
+            }.ReportType);
+        Assert.Equal(
             SampleTrialReportType.CompletedSamples,
             new GetSampleRequestSampleTrialsQuery
             {
@@ -182,5 +188,35 @@ public sealed class SampleRequestSampleTrialReportRulesTests
         Assert.Contains("\"HasTrial\":false", json);
         Assert.Contains("\"Status\":null", json);
         Assert.Contains("\"SampleRequestStatus\":\"New\"", json);
+    }
+
+    [Fact]
+    public void ReportDto_IndicatesWhenPreviousTrialsCanBeLoaded()
+    {
+        var json = JsonSerializer.Serialize(new SampleRequestSampleTrialReportDto
+        {
+            HasTrial = true,
+            TrialCount = 2,
+            HasPreviousTrials = true
+        });
+
+        Assert.Contains("\"TrialCount\":2", json);
+        Assert.Contains("\"HasPreviousTrials\":true", json);
+    }
+
+    [Fact]
+    public void ReportDto_SerializesSampleRequestDeliveryDates()
+    {
+        var requestDeliveryDate = new DateTime(2026, 8, 30);
+        var expectedDeliveryDate = new DateTime(2026, 9, 2);
+
+        var json = JsonSerializer.Serialize(new SampleRequestSampleTrialReportDto
+        {
+            RequestDeliveryDate = requestDeliveryDate,
+            ExpectedDeliveryDate = expectedDeliveryDate
+        });
+
+        Assert.Contains("\"RequestDeliveryDate\":\"2026-08-30T00:00:00\"", json);
+        Assert.Contains("\"ExpectedDeliveryDate\":\"2026-09-02T00:00:00\"", json);
     }
 }

@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using HRM.Application.Features.PLM.SampleRequests.Commands.PatchSampleRequest;
 using HRM.Domain.Entities.SampleRequestSchema;
+using HRM.Domain.Enums.Products;
 
 namespace HRM.Application.Features.PLM.SampleRequests.DataChangeRequests;
 
@@ -58,6 +59,8 @@ internal static class SampleRequestDataChangeFieldCatalog
             ["product.visual_test"] = String("product.visual_test", "Visual test", x => x.Product.VisualTest, (x, value) => x.VisualTest = value),
             ["product.return_sample"] = Boolean("product.return_sample", "Return sample", x => x.Product.ReturnSample, (x, value) => x.ReturnSample = value),
             ["product.is_recycle"] = Boolean("product.is_recycle", "Is recycle", x => x.Product.IsRecycle, (x, value) => x.IsRecycle = value),
+            ["product.grs"] = Boolean("product.grs", "GRS", x => x.Product.GRS, (x, value) => x.GRS = value),
+            ["product.grs_consumer_type"] = GRSConsumerTypeField("product.grs_consumer_type", "GRS consumer type", x => x.Product.GRSConsumerType, (x, value) => x.GRSConsumerType = value),
             ["product.weight"] = Number("product.weight", "Weight", x => x.Product.Weight, (x, value) => x.Weight = value),
             ["product.unit"] = String("product.unit", "Unit", x => x.Product.Unit, (x, value) => x.Unit = value),
             ["product.other_comment"] = String("product.other_comment", "Product other comment", x => x.Product.OtherComment, (x, value) => x.ProductOtherComment = value)
@@ -308,6 +311,34 @@ internal static class SampleRequestDataChangeFieldCatalog
                 return true;
             },
             (patch, value) => apply(patch, value.GetBoolean()));
+    }
+
+    private static FieldDefinition GRSConsumerTypeField(
+        string code,
+        string label,
+        Func<SampleRequest, GRSConsumerType?> read,
+        Action<PatchSampleRequestCommand, GRSConsumerType?> apply)
+    {
+        return new FieldDefinition(
+            code,
+            label,
+            sampleRequest => read(sampleRequest),
+            (JsonElement value, out JsonElement normalized, out string? error) =>
+            {
+                if (value.ValueKind != JsonValueKind.Number ||
+                    !value.TryGetInt32(out var parsed) ||
+                    !Enum.IsDefined((GRSConsumerType)parsed))
+                {
+                    normalized = default;
+                    error = "value must be a valid GRSConsumerType integer.";
+                    return false;
+                }
+
+                normalized = JsonSerializer.SerializeToElement(parsed);
+                error = null;
+                return true;
+            },
+            (patch, value) => apply(patch, (GRSConsumerType)value.GetInt32()));
     }
 
     private static bool JsonElementEquals(JsonElement left, JsonElement right)

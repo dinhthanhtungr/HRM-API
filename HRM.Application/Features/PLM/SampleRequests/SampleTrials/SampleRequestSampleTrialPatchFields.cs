@@ -7,6 +7,8 @@ public static class SampleRequestSampleTrialPatchFields
     public const string BatchNo = "batchNo";
     public const string DeliveredSampleQuantityKg = "deliveredSampleQuantityKg";
     public const string AdditiveRate = "additiveRate";
+    public const string RequestDeliveryDate = "requestDeliveryDate";
+    public const string ExpectedDeliveryDate = "expectedDeliveryDate";
     public const string RequestReceivedDate = "requestReceivedDate";
     public const string FinishedDate = "finishedDate";
     public const string SentDate = "sentDate";
@@ -23,6 +25,8 @@ public static class SampleRequestSampleTrialPatchFields
         BatchNo,
         DeliveredSampleQuantityKg,
         AdditiveRate,
+        RequestDeliveryDate,
+        ExpectedDeliveryDate,
         RequestReceivedDate,
         FinishedDate,
         SentDate,

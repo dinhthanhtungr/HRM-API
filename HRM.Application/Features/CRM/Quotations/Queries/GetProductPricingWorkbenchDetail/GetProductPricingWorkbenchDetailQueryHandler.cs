@@ -1,5 +1,6 @@
 using HRM.Application.Abstractions.Persistence.CRM.CustomerCare;
 using HRM.Application.Abstractions.Security;
+using HRM.Application.Abstractions.Commons.Time;
 using HRM.Application.Commons.Models;
 using HRM.Application.Features.CRM.Quotations.Dtos;
 using HRM.Application.Features.CRM.Quotations.Services;
@@ -21,17 +22,23 @@ internal sealed class GetProductPricingWorkbenchDetailQueryHandler
     private readonly ICurrentUser _currentUser;
     private readonly ProductPricingRealtimeSourceQueryService _sourceQueryService;
     private readonly ProductPricingRequestQueryService _requestQueryService;
+    private readonly IDateTimeProvider _dateTimeProvider;
+    private readonly QuotationFeatureOptions _featureOptions;
 
     public GetProductPricingWorkbenchDetailQueryHandler(
         ICRMReadDbContext dbContext,
         ICurrentUser currentUser,
         ProductPricingRealtimeSourceQueryService sourceQueryService,
-        ProductPricingRequestQueryService requestQueryService)
+        ProductPricingRequestQueryService requestQueryService,
+        IDateTimeProvider dateTimeProvider,
+        QuotationFeatureOptions featureOptions)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
         _sourceQueryService = sourceQueryService;
         _requestQueryService = requestQueryService;
+        _dateTimeProvider = dateTimeProvider;
+        _featureOptions = featureOptions;
     }
 
     public async Task<OperationResult<ProductPricingWorkbenchDetailDto>> Handle(
@@ -125,20 +132,21 @@ internal sealed class GetProductPricingWorkbenchDetailQueryHandler
         ProductPricingSourceOptionDto? selectedSource;
         if (request.SourceType is { } requestedSourceType && request.SourceId is { } requestedSourceId)
         {
-            var eligibleSources = await _sourceQueryService.LoadAsync(
-                [request.ProductId],
+            var selection = new ProductPricingSourceSelection(
+                request.ProductId,
+                requestedSourceType,
+                requestedSourceId);
+            var selectedSources = await _sourceQueryService.LoadSelectedAsync(
+                [selection],
                 companyId,
                 request.NormalizedCurrency,
                 cancellationToken);
 
-            selectedSource = eligibleSources.GetValueOrDefault(request.ProductId)?
-                .FirstOrDefault(x =>
-                    x.SourceType == requestedSourceType &&
-                    x.SourceId == requestedSourceId);
+            selectedSource = selectedSources.GetValueOrDefault(selection);
             if (selectedSource is null)
             {
                 return OperationResult<ProductPricingWorkbenchDetailDto>.Fail(
-                    "The selected pricing source is not eligible or does not belong to this product/company.");
+                    "The selected pricing source was not found or does not belong to this product/company.");
             }
         }
         else if (storedPricing is not null && TryGetSelection(storedPricing, out var selection))
@@ -168,17 +176,25 @@ internal sealed class GetProductPricingWorkbenchDetailQueryHandler
             cancellationToken);
         var draftRow = draft is null ? null : ToRow(draft);
         var approvedRow = approved is null ? null : ToRow(approved);
+        var health = ProductPricingHealthEvaluator.Evaluate(
+            selectedSource,
+            draftRow,
+            approvedRow,
+            _dateTimeProvider.Now,
+            _featureOptions);
         var summary = ProductPricingWorkbenchMapper.MapSummary(
             product,
             request.NormalizedCurrency,
             draftRow,
             approvedRow,
             selectedSource,
-            requestRows);
+            requestRows,
+            health: health);
         var effectivePricing = ProductPricingWorkbenchMapper.BuildEffectivePricing(
             storedPricing is null ? null : ToRow(storedPricing),
             selectedSource);
         var storedTiers = storedPricing?.PriceTiers
+            .Where(x => x.IsActive)
             .OrderBy(x => x.SortOrder)
             .ThenBy(x => x.ProductPricingTierId)
             .ToArray() ?? [];
@@ -292,6 +308,7 @@ internal sealed class GetProductPricingWorkbenchDetailQueryHandler
             ProfitMarginRate = version.ProfitMarginRate,
             Status = version.Status,
             Version = version.Version,
+            ApprovedAt = version.ApprovedAt,
             CreatedDate = version.CreatedDate,
             UpdatedDate = version.UpdatedDate
         };

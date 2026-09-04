@@ -109,7 +109,9 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.RefreshQuotationPrice
                 return OperationResult<QuotationTotalsDto>.Fail(concurrencyError);
             }
 
-            var lineLookup = quotation.Lines.ToDictionary(x => x.QuotationLineId);
+            var lineLookup = quotation.Lines
+                .Where(x => x.IsActive)
+                .ToDictionary(x => x.QuotationLineId);
             if (requestedLines.Any(x => !lineLookup.ContainsKey(x.QuotationLineId)))
             {
                 return OperationResult<QuotationTotalsDto>.Fail(
@@ -150,7 +152,6 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.RefreshQuotationPrice
                     line.ProductId,
                     quotation.Currency,
                     line.Quantity,
-                    line.PriceMode,
                     pricingVersion,
                     $"lines[{index}]");
                 if (!pricingResult.Success || pricingResult.Data is null)

@@ -1,9 +1,13 @@
 using System.Text;
 using System.Reflection;
-using HRM.Api.Backgrounds;
+using HRM.Api.Backgrounds.CRM.CustomerCare;
+using HRM.Api.Backgrounds.CRM.Quotations;
+using HRM.Api.Backgrounds.Notifications;
+using HRM.Api.Backgrounds.PLM.Materials;
 using HRM.Domain.Entities.Security;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Abstractions.Identity;
+using HRM.Application.Features.CRM.Quotations.Services;
 using HRM.Api.Security.Authorization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Hosting;
@@ -25,10 +29,14 @@ internal static class PresentationDependencyInjection
         services.AddEndpointsApiExplorer();
         services.AddHttpContextAccessor();
         services.AddScoped<ICurrentUser, CurrentUser>();
+        services.AddSingleton(
+            configuration.GetSection(QuotationFeatureOptions.SectionName)
+                .Get<QuotationFeatureOptions>() ?? new QuotationFeatureOptions());
         services.AddSignalR();
         services.AddHostedService<OutboxProcessor>();
         services.AddHostedService<WebPushOutboxProcessor>();
         services.AddHostedService<CustomerFollowUpTaskDueReminderWorker>();
+        services.AddHostedService<QuotationPricingExpiryReminderWorker>();
         services.Configure<CustomerInteractionAiSummaryAutomationOptions>(
             configuration.GetSection("Gemini:Automation"));
         services.AddHostedService<CustomerInteractionAiSummaryAutomationWorker>();

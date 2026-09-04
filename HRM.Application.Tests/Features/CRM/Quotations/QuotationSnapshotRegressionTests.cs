@@ -30,7 +30,6 @@ public sealed class QuotationSnapshotRegressionTests
             productId,
             "USD",
             quantity: 75m,
-            QuotationLinePriceMode.Tiered,
             source,
             "lines[0]");
 
@@ -68,11 +67,11 @@ public sealed class QuotationSnapshotRegressionTests
 
         var wrongCurrency = QuotationPricingSnapshotFactory.Create(
             Guid.NewGuid(), companyId, productId, "EUR", 75m,
-            QuotationLinePriceMode.Tiered, source, "lines[0]");
+            source, "lines[0]");
         source.Status = ProductPricingStatus.Draft;
         var draft = QuotationPricingSnapshotFactory.Create(
             Guid.NewGuid(), companyId, productId, "USD", 75m,
-            QuotationLinePriceMode.Tiered, source, "lines[0]");
+            source, "lines[0]");
 
         Assert.False(wrongCurrency.Success);
         Assert.False(draft.Success);
@@ -126,7 +125,7 @@ public sealed class QuotationSnapshotRegressionTests
                     ProductNameSnapshot = "Snapshot product",
                     Quantity = 75m,
                     Unit = "kg",
-                    PriceMode = QuotationLinePriceMode.Tiered,
+                    PriceMode = QuotationLinePriceMode.ApprovedPricingLocked,
                     UnitPrice = snapshot.EffectiveUnitPrice,
                     LineTotal = 75m * snapshot.EffectiveUnitPrice,
                     PriceTiers = snapshot.PriceTiers.ToList()
@@ -151,7 +150,7 @@ public sealed class QuotationSnapshotRegressionTests
                     ProductName = "Snapshot product",
                     Quantity = 75m,
                     Unit = "kg",
-                    PriceMode = QuotationLinePriceMode.Tiered,
+                    PriceMode = QuotationLinePriceMode.ApprovedPricingLocked,
                     UnitPrice = snapshot.EffectiveUnitPrice,
                     LineTotal = 75m * snapshot.EffectiveUnitPrice,
                     PriceTiers = snapshot.PriceTiers.Select(x => new QuotationPdfPriceTierDto

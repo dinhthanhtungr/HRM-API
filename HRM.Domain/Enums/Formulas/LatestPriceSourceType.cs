@@ -5,6 +5,8 @@ namespace HRM.Domain.Enums.Formulas
         Unknown = 0,
         PurchaseOrder = 1,
         MaterialSupplier = 2,
-        MerchandiseOrder = 3
+        MerchandiseOrder = 3,
+        ProductPricingVersion = 4,
+        FormulaMaterialCost = 5
     }
 }

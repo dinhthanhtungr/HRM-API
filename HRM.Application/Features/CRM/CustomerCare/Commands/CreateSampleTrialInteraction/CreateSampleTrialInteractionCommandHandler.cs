@@ -1,11 +1,13 @@
 using HRM.Application.Abstractions.Commons.Time;
 using HRM.Application.Abstractions.Persistence.CRM.CustomerCare;
 using HRM.Application.Commons.Authorization;
+using HRM.Application.Commons.Concurrency;
 using HRM.Application.Commons.Models;
 using HRM.Application.Features.CRM.CustomerCare.Dtos;
 using HRM.Application.Features.CRM.CustomerCare.Services;
 using HRM.Application.Features.InternalMail.Dtos;
 using HRM.Application.Features.PLM.SampleRequests.Commands.SendSampleRequestMessage;
+using HRM.Application.Features.PLM.SampleRequests.DataChangeRequests;
 using HRM.Application.Features.PLM.SampleRequests.Rules;
 using HRM.Application.Features.PLM.SampleRequests.SampleTrials;
 using HRM.Domain.Entities.CustomerSchema;
@@ -152,14 +154,18 @@ internal sealed class CreateSampleTrialInteractionCommandHandler
         request.OrderDate = NormalizeDatabaseTimestamp(request.OrderDate);
         request.NextFollowUpDate = NormalizeDatabaseTimestamp(request.NextFollowUpDate);
 
-        if (request.ExpectedTrialUpdatedDate.HasValue &&
-            trial.UpdatedDate != request.ExpectedTrialUpdatedDate.Value)
+        var concurrencyError = OptimisticConcurrencyHelper.ValidateExpectedUpdatedDateWithDatabasePrecision(
+            request.ExpectedTrialUpdatedDate,
+            trial.UpdatedDate,
+            "Sample trial");
+        if (concurrencyError is not null)
         {
             return OperationResult<Guid>.Fail(
                 "Sample trial was changed by another user. Reload before saving feedback.");
         }
 
         var now = NormalizeDatabaseTimestamp(_dateTimeProvider.Now);
+        var oldSampleRequestStatus = trial.SampleRequest.Status;
         var lifecycleValidationError = await ApplyCustomerFeedbackLifecycleAsync(
             trial,
             replyStatus!,
@@ -228,6 +234,14 @@ internal sealed class CreateSampleTrialInteractionCommandHandler
             interactionAt,
             scope.EmployeeId,
             now);
+        await SampleRequestDataChangeAuditHelper.AddStatusTransitionAuditIfChangedAsync(
+            _writeDbContext.AuditLogs,
+            trial.SampleRequest,
+            oldSampleRequestStatus,
+            scope.EmployeeId,
+            now,
+            "CustomerCareSampleTrialInteraction",
+            cancellationToken);
         customer.LastContactDate = !customer.LastContactDate.HasValue || interactionAt > customer.LastContactDate
             ? interactionAt
             : customer.LastContactDate;

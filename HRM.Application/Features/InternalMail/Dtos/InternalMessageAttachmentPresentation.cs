@@ -14,10 +14,13 @@ internal static class InternalMessageAttachmentPresentation
         attachment.DownloadUrl = $"{attachment.ContentUrl}?mode=download";
     }
 
-    public static void Enrich(InternalConversationAttachmentDto attachment)
+    public static void Enrich(InternalConversationAttachmentDto attachment, Guid? conversationId = null)
     {
         (attachment.ContentType, attachment.Kind, attachment.IsImage) = Resolve(attachment.FileName);
-        attachment.ContentUrl = $"{ContentRoute}/{attachment.AttachmentId}";
+        attachment.ContentUrl = string.Equals(attachment.Source, "SampleRequest", StringComparison.Ordinal)
+            && conversationId.HasValue
+            ? $"/api/v1/internal-mail/conversations/{conversationId.Value}/related-attachments/{attachment.AttachmentId}"
+            : $"{ContentRoute}/{attachment.AttachmentId}";
         attachment.ThumbnailUrl = attachment.IsImage
             ? $"{attachment.ContentUrl}/thumbnail"
             : null;

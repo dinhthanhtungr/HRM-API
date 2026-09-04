@@ -55,6 +55,7 @@ internal static class SampleRequestDirectPatchFieldCatalog
         "product.colour_code",
         "product.name",
         "product.colour_name",
+        "product.category_id",
         "product.additive",
         "product.usage_rate",
         "product.delta_e",
@@ -70,12 +71,17 @@ internal static class SampleRequestDirectPatchFieldCatalog
         "product.polymer_matched_in",
         "product.code",
         "product.end_user",
+        "product.food_safety",
+        "product.rohs_standard",
+        "product.reach_standard",
         "product.max_temp",
         "product.weather_resistance",
         "product.light_condition",
         "product.visual_test",
         "product.return_sample",
         "product.is_recycle",
+        "product.grs",
+        "product.grs_consumer_type",
         "product.weight",
         "product.unit",
         "product.other_comment"
@@ -83,6 +89,6 @@ internal static class SampleRequestDirectPatchFieldCatalog
 
     public static bool IsSupported(string? fieldCode)
         => !string.IsNullOrWhiteSpace(fieldCode) &&
-            !SampleRequestLabApprovalRules.IsRequiredApprovalField(fieldCode) &&
+            !SampleRequestLabApprovalRules.RequiresLabApprovalForCurrentMode(fieldCode) &&
             DirectNotifyFieldCodes.Contains(fieldCode.Trim());
 }

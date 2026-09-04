@@ -22,6 +22,9 @@ public sealed class QuotationResolvedProductPricingDto
     public IReadOnlyList<ProductPricingTierDto> ApprovedPriceTiers { get; init; } = [];
 
     [JsonConverter(typeof(JsonStringEnumConverter))]
+    public QuotationDefaultPriceTierSource? DefaultPriceTierSource { get; init; }
+
+    [JsonConverter(typeof(JsonStringEnumConverter))]
     public ProductPricingSourceType? PricingSourceType { get; init; }
 
     public Guid? PricingSourceId { get; init; }

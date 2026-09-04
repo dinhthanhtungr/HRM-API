@@ -43,14 +43,14 @@ internal sealed class DraftQuotationProductSnapshotSyncService
                 x.CompanyId == companyId &&
                 x.IsActive &&
                 x.Status == QuotationStatus.Draft &&
-                x.Lines.Any(line => line.ProductId == productId))
+                x.Lines.Any(line => line.IsActive && line.ProductId == productId))
             .OrderBy(x => x.QuotationId)
             .ToListAsync(cancellationToken);
 
         foreach (var quotation in quotations)
         {
             var snapshotChanged = false;
-            foreach (var line in quotation.Lines.Where(x => x.ProductId == productId))
+            foreach (var line in quotation.Lines.Where(x => x.IsActive && x.ProductId == productId))
             {
                 if (string.Equals(
                     line.ProductExternalIdSnapshot,
@@ -74,7 +74,7 @@ internal sealed class DraftQuotationProductSnapshotSyncService
                 quotation.QuotationId,
                 quotation.CompanyId,
                 quotation.ExternalId,
-                quotation.Lines
+                quotation.Lines.Where(x => x.IsActive)
                     .OrderBy(x => x.SortOrder)
                     .ThenBy(x => x.QuotationLineId)
                     .Select(x => x.ProductExternalIdSnapshot),

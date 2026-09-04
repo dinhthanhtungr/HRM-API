@@ -6,6 +6,7 @@ namespace HRM.Application.Features.CRM.Quotations.Dtos;
 
 public sealed class UpdateFormulaPricingPolicyRequest
 {
+    public Guid? CategoryId { get; init; }
     public string Name { get; init; } = string.Empty;
     public decimal DefaultManufacturingCost { get; init; }
     public decimal DefaultProfitMarginRate { get; init; }
@@ -15,6 +16,6 @@ public sealed class UpdateFormulaPricingPolicyRequest
 
     public decimal RoundingIncrement { get; init; }
     public DateTime EffectiveFrom { get; init; }
+    public int? PriceValidityDays { get; init; }
     public IReadOnlyList<FormulaPricingPolicyTierRequest> Tiers { get; init; } = [];
-    public DateTime? ExpectedUpdatedDate { get; init; }
 }

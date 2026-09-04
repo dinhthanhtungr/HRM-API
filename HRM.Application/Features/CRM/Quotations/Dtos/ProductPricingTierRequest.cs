@@ -9,4 +9,5 @@ public sealed class ProductPricingTierRequest
     public bool MaxInclusive { get; init; } = true;
     public decimal UnitPrice { get; init; }
     public int SortOrder { get; init; }
+    public bool IsActive { get; init; } = true;
 }

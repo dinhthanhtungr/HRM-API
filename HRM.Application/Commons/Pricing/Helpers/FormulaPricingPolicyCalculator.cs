@@ -65,7 +65,7 @@ public static class FormulaPriceCalculator
         var resolvedProfitMarginRate = CalculateProfitMarginRate(
             resolvedStandardSellingPrice,
             costBase);
-        if (resolvedProfitMarginRate is < 0m or > 100m)
+        if (resolvedProfitMarginRate < 0m)
             throw new ArgumentOutOfRangeException(nameof(standardSellingPrice));
 
         return new FormulaPriceCalculationDto
@@ -123,7 +123,7 @@ public static class FormulaPriceCalculator
         if (policy.RoundingIncrement <= 0m || !Enum.IsDefined(policy.RoundingRule) ||
             policy.DefaultManufacturingCost < 0m || policy.DefaultProfitMarginRate is < 0m or > 100m ||
             materialCost < 0m || manufacturingCost < 0m || standardSellingPrice < 0m ||
-            profitMarginRate is < 0m or > 100m ||
+            profitMarginRate < 0m ||
             (changedField.HasValue && !Enum.IsDefined(changedField.Value)))
             throw new ArgumentOutOfRangeException(nameof(policy));
     }

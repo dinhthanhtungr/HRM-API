@@ -7,6 +7,7 @@ public interface IFormulaPricingPolicyResolver
 {
     Task<ResolvedFormulaPricingPolicy?> GetPublishedAsync(
         Guid companyId,
+        Guid categoryId,
         FormulaPricingProfile profile,
         string currency,
         CancellationToken cancellationToken);

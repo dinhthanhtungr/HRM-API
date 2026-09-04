@@ -39,7 +39,7 @@ The database stores only the relative path in `AttachmentModel.StoragePath`.
 Example:
 
 ```text
-attachments/collection-id/Photo/20260623090000000_file.jpg
+collections/collection-id/Photo/20260623090000000_file.jpg
 ```
 
 The physical root folder is configured in `HRM.Api/appsettings.json`:
@@ -51,7 +51,10 @@ The physical root folder is configured in `HRM.Api/appsettings.json`:
 }
 ```
 
-Keep old data compatible by pointing `Storage:RootPath` to the old file root. Existing relative paths in the database should continue to work.
+New collection attachments are stored below `collections/`. Internal Mail attachments use
+`collections/internal-mail/`. Keep old data compatible by pointing `Storage:RootPath` to the
+old file root: existing relative paths already stored in the database (including legacy
+`attachments/...` paths) continue to be read from their recorded location.
 
 ## API Routes
 

@@ -75,6 +75,8 @@ namespace HRM.Domain.Enums.Notifications
         ComplaintInitialDecision = 45,
         ComplaintFinalDecision = 46,
         SampleRequestCustomerFeedbackRecorded = 47,
-        QuotationPricingApproved = 48
+        QuotationPricingApproved = 48,
+        SampleRequestFormulaApproved = 49,
+        QuotationPricingExpired = 50
     }
 }

@@ -26,6 +26,11 @@ namespace HRM.Infrastructure.DatabaseContext.Configurations.CustomerSchema
                 .IsRequired();
 
             entity.Property(x => x.ContactName).HasColumnType("citext");
+            entity.Property(x => x.ContactPhone)
+                .HasColumnType("citext")
+                .HasMaxLength(50);
+            entity.Property(x => x.CustomerAddressSnapshot)
+                .HasColumnType("text");
 
             entity.Property(x => x.Status)
                 .HasConversion<int>()
@@ -48,6 +53,8 @@ namespace HRM.Infrastructure.DatabaseContext.Configurations.CustomerSchema
 
             entity.Property(x => x.Version).HasDefaultValue(1);
             entity.Property(x => x.IsActive).HasDefaultValue(true);
+            entity.Property(x => x.UpdatedDate).IsConcurrencyToken();
+            entity.Property(x => x.UpdatedDate).IsConcurrencyToken();
 
             entity.HasIndex(x => new { x.CompanyId, x.ExternalId, x.Version })
                 .IsUnique()

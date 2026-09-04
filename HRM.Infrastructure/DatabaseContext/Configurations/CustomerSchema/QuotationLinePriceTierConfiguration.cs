@@ -33,7 +33,18 @@ public sealed class QuotationLinePriceTierConfiguration
         entity.Property(x => x.MinInclusive).HasColumnName("MinInclusive").HasDefaultValue(true);
         entity.Property(x => x.MaxInclusive).HasColumnName("MaxInclusive").HasDefaultValue(true);
         entity.Property(x => x.UnitPrice).HasColumnName("UnitPrice").HasPrecision(18, 6).IsRequired();
+        entity.Property(x => x.CommissionAmount)
+            .HasColumnName("CommissionAmount")
+            .HasPrecision(18, 6)
+            .HasDefaultValue(0m)
+            .IsRequired();
+        entity.Property(x => x.CustomerUnitPrice)
+            .HasColumnName("CustomerUnitPrice")
+            .HasPrecision(18, 6)
+            .HasDefaultValue(0m)
+            .IsRequired();
         entity.Property(x => x.SortOrder).HasColumnName("SortOrder").HasDefaultValue(0);
+        entity.Property(x => x.IsActive).HasColumnName("IsActive").HasDefaultValue(true);
 
         entity.HasIndex(x => x.QuotationLineId)
             .HasDatabaseName("IX_QuotationLinePriceTiers_QuotationLineId");

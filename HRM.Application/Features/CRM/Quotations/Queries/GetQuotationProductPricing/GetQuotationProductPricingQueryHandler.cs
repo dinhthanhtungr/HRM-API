@@ -1,11 +1,9 @@
-using HRM.Application.Abstractions.Security;
 using HRM.Application.Abstractions.Persistence.CRM.CustomerCare;
-using HRM.Application.Commons.Authorization;
 using HRM.Application.Commons.Models;
+using HRM.Application.Features.CRM.CustomerCare.Visibility;
 using HRM.Application.Features.CRM.Quotations.Dtos;
 using HRM.Application.Features.CRM.Quotations.Services;
 using MediatR;
-using HRM.Domain.Enums.CustomerEnum;
 using Microsoft.EntityFrameworkCore;
 
 namespace HRM.Application.Features.CRM.Quotations.Queries.GetQuotationProductPricing;
@@ -15,141 +13,152 @@ namespace HRM.Application.Features.CRM.Quotations.Queries.GetQuotationProductPri
 /// </summary>
 internal sealed class GetQuotationProductPricingQueryHandler
     : IRequestHandler<GetQuotationProductPricingQuery,
-        OperationResult<QuotationResolvedProductPricingDto>>
+        OperationResult<QuotationProductPricingLinePreviewDto>>
 {
-    private readonly ICurrentUser _currentUser;
     private readonly ICRMReadDbContext _dbContext;
-    private readonly QuotationCurrentPricingResolver _pricingResolver;
+    private readonly ICustomerVisibilityService _visibilityService;
+    private readonly QuotationProductTierPricingResolver _tierPricingResolver;
+    private readonly QuotationManualPricingTemplateResolver _manualPricingResolver;
 
     public GetQuotationProductPricingQueryHandler(
-        ICurrentUser currentUser,
         ICRMReadDbContext dbContext,
-        QuotationCurrentPricingResolver pricingResolver)
+        ICustomerVisibilityService visibilityService,
+        QuotationProductTierPricingResolver tierPricingResolver,
+        QuotationManualPricingTemplateResolver manualPricingResolver)
     {
-        _currentUser = currentUser;
         _dbContext = dbContext;
-        _pricingResolver = pricingResolver;
+        _visibilityService = visibilityService;
+        _tierPricingResolver = tierPricingResolver;
+        _manualPricingResolver = manualPricingResolver;
     }
 
-    public async Task<OperationResult<QuotationResolvedProductPricingDto>> Handle(
+    public async Task<OperationResult<QuotationProductPricingLinePreviewDto>> Handle(
         GetQuotationProductPricingQuery request,
         CancellationToken cancellationToken)
     {
         if (request.ProductId == Guid.Empty)
         {
-            return OperationResult<QuotationResolvedProductPricingDto>.Fail(
+            return OperationResult<QuotationProductPricingLinePreviewDto>.Fail(
                 "ProductId is required.");
-        }
-
-        if (_currentUser.CompanyId is not { } companyId || companyId == Guid.Empty)
-        {
-            return OperationResult<QuotationResolvedProductPricingDto>.Fail(
-                "Current user does not have a company context.");
         }
 
         var normalizedCurrency = QuotationRules.TrimToNull(request.Currency);
         if (normalizedCurrency is null)
         {
-            return OperationResult<QuotationResolvedProductPricingDto>.Fail(
+            return OperationResult<QuotationProductPricingLinePreviewDto>.Fail(
                 "Currency is required.");
         }
 
         var currency = normalizedCurrency.ToUpperInvariant();
         if (currency.Length > QuotationRules.MaximumCurrencyLength)
         {
-            return OperationResult<QuotationResolvedProductPricingDto>.Fail(
+            return OperationResult<QuotationProductPricingLinePreviewDto>.Fail(
                 $"Currency cannot exceed {QuotationRules.MaximumCurrencyLength} characters.");
         }
 
-        var approved = await _dbContext.ProductPricingVersions
-            .AsNoTracking()
-            .Include(x => x.Product)
-            .Include(x => x.SourceFormula)
-            .Include(x => x.SourceManufacturingFormula)
-            .Include(x => x.PriceTiers)
-            .Where(x =>
-                x.CompanyId == companyId &&
-                x.ProductId == request.ProductId &&
-                x.Currency == currency &&
-                x.Status == ProductPricingStatus.Approved &&
-                x.IsActive)
-            .OrderByDescending(x => x.Version)
-            .FirstOrDefaultAsync(cancellationToken);
-
-        var resolvedByProductId = await _pricingResolver.ResolveAsync(
-            [request.ProductId],
-            companyId,
-            currency,
-            cancellationToken);
-        if (!resolvedByProductId.TryGetValue(request.ProductId, out var current))
+        if (request.CustomerId == Guid.Empty)
         {
-            return OperationResult<QuotationResolvedProductPricingDto>.Fail(
+            return OperationResult<QuotationProductPricingLinePreviewDto>.Fail(
+                "CustomerId is invalid.");
+        }
+
+        var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+        var product = await _dbContext.Products
+            .AsNoTracking()
+            .Where(x =>
+                x.ProductId == request.ProductId &&
+                x.CompanyId == scope.CompanyId &&
+                x.IsActive)
+            .Select(x => new
+            {
+                ProductCode = x.ColourCode ?? x.Code ?? string.Empty,
+                ProductName = x.Name ?? string.Empty,
+                Unit = x.Unit ?? string.Empty,
+                x.ColourCode,
+                x.Code,
+                x.Additive,
+                x.CategoryId
+            })
+            .FirstOrDefaultAsync(cancellationToken);
+        if (product is null)
+        {
+            return OperationResult<QuotationProductPricingLinePreviewDto>.Fail(
                 "Product was not found in the current company.");
         }
 
-        var canViewSensitivePricing =
-            _currentUser.IsInRole(ApplicationRoles.President) ||
-            _currentUser.IsInRole(ApplicationRoles.Developer);
-
-        return OperationResult<QuotationResolvedProductPricingDto>.Ok(
-            new QuotationResolvedProductPricingDto
+        if (request.CustomerId.HasValue)
+        {
+            var customerIsVisible = await _visibilityService
+                .ApplyCustomerVisibility(_dbContext.Customers.AsNoTracking(), scope)
+                .AnyAsync(x => x.CustomerId == request.CustomerId.Value, cancellationToken);
+            if (!customerIsVisible)
             {
-                PricingStatus = current.PricingStatus,
-                ProductId = current.ProductId,
-                ProductCode = current.ProductCode,
-                ProductName = current.ProductName,
-                ProductPricingVersionId = approved?.ProductPricingVersionId,
-                ProductPricingVersion = approved?.Version,
-                Currency = currency,
-                ProductPricingStatus = approved?.Status,
-                CanApplyToQuotation = approved is not null && approved.PriceTiers.Count > 0,
-                ApprovedPriceTiers = approved?.PriceTiers
-                    .OrderBy(x => x.SortOrder)
-                    .Select(x => new ProductPricingTierDto
-                    {
-                        ProductPricingTierId = x.ProductPricingTierId,
-                        QuantityRangeLabel = x.QuantityRangeLabel,
-                        MinQuantity = x.MinQuantity,
-                        MaxQuantity = x.MaxQuantity,
-                        MinInclusive = x.MinInclusive,
-                        MaxInclusive = x.MaxInclusive,
-                        UnitPrice = x.UnitPrice,
-                        SortOrder = x.SortOrder
-                    }).ToArray() ?? [],
-                PricingSourceType = approved is null
-                    ? null
-                    : approved.SourceManufacturingFormulaId.HasValue
-                        ? ProductPricingSourceType.ManufacturingFormula
-                        : ProductPricingSourceType.Formula,
-                PricingSourceId = approved?.SourceManufacturingFormulaId ??
-                    approved?.SourceFormulaId,
-                FormulaId = approved?.SourceFormulaId ?? current.FormulaId,
-                FormulaExternalId = approved?.FormulaExternalIdSnapshot ?? current.FormulaExternalId ?? string.Empty,
-                FormulaName = approved?.SourceManufacturingFormula?.Name ??
-                    approved?.SourceFormula?.Name ??
-                    current.FormulaName ??
-                    string.Empty,
-                FormulaSelectionSource = current.FormulaSelectionSource,
-                RealtimeMaterialCost = canViewSensitivePricing
-                    ? current.RealtimeMaterialCost.MaterialCost
-                    : null,
-                IsRealtimeMaterialCostComplete = canViewSensitivePricing
-                    ? current.RealtimeMaterialCost.IsComplete
-                    : null,
-                MissingMaterialPriceCount = canViewSensitivePricing
-                    ? current.RealtimeMaterialCost.MissingPriceCount
-                    : null,
-                ManufacturingCost = canViewSensitivePricing
-                    ? current.ManufacturingCost
-                    : null,
-                StandardSellingPrice = current.StandardSellingPrice,
-                ProfitMarginRate = canViewSensitivePricing
-                    ? current.Pricing?.ProfitMarginRate
-                    : null,
-                PricingUpdatedDate = canViewSensitivePricing
-                    ? approved?.UpdatedDate ?? approved?.CreatedDate ?? current.PricingUpdatedDate
-                    : null,
-                Pricing = canViewSensitivePricing ? current.Pricing : null
-            });
+                return OperationResult<QuotationProductPricingLinePreviewDto>.Fail(
+                    "Customer was not found or is outside your visibility scope.");
+            }
+        }
+
+        var visibleQuotations = _visibilityService.ApplyQuotationVisibility(
+            _dbContext.Quotations.AsNoTracking(),
+            _dbContext.Customers.AsNoTracking(),
+            scope);
+        var referencesByProduct = await _tierPricingResolver.ResolveAsync(
+            [request.ProductId],
+            scope.CompanyId,
+            currency,
+            request.CustomerId,
+            null,
+            visibleQuotations,
+            cancellationToken);
+        if (!referencesByProduct.TryGetValue(request.ProductId, out var references))
+        {
+            return OperationResult<QuotationProductPricingLinePreviewDto>.Fail(
+                "Product was not found in the current company.");
+        }
+
+        var hasApprovedPricing = references.ApprovedPricing is { PriceTiers.Count: > 0 };
+        var hasSystemPricing = references.SystemCalculatedPricing is { PriceTiers.Count: > 0 };
+        var manualPricing = hasApprovedPricing || hasSystemPricing
+            ? null
+            : await _manualPricingResolver.ResolveAsync(
+                request.ProductId,
+                scope.CompanyId,
+                product.CategoryId,
+                product.ColourCode,
+                product.Code,
+                product.Additive,
+                currency,
+                cancellationToken);
+        var availability = hasApprovedPricing
+            ? HRM.Domain.Enums.CustomerEnum.QuotationPricingAvailability.ApprovedPricingAvailable
+            : hasSystemPricing
+                ? HRM.Domain.Enums.CustomerEnum.QuotationPricingAvailability.SystemCalculatedAvailable
+                : references.LatestQuotedPricing is { PriceTiers.Count: > 0 }
+                    ? HRM.Domain.Enums.CustomerEnum.QuotationPricingAvailability.LatestQuotedPriceOnly
+                    : manualPricing!.Availability;
+        var warningCode = hasApprovedPricing || hasSystemPricing
+            ? null
+            : references.LatestQuotedPricing is { PriceTiers.Count: > 0 }
+                ? "LATEST_QUOTED_PRICE_ONLY"
+                : manualPricing!.WarningCode;
+        var warningMessage = hasApprovedPricing || hasSystemPricing
+            ? null
+            : references.LatestQuotedPricing is { PriceTiers.Count: > 0 }
+                ? "Only a previous customer quotation is available. Enter and confirm the price for this quotation."
+                : manualPricing!.WarningMessage;
+
+        return OperationResult<QuotationProductPricingLinePreviewDto>.Ok(
+            QuotationProductPricingPreviewMapper.Map(
+                request.ProductId,
+                product.ProductCode,
+                product.ProductName,
+                product.Unit,
+                currency,
+                references,
+                availability,
+                manualPricing?.CanUseManualCustomerPrice ?? true,
+                warningCode,
+                warningMessage,
+                manualPricing?.PriceTiers ?? []));
     }
 }

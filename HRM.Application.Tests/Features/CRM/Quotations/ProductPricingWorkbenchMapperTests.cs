@@ -1,3 +1,4 @@
+using HRM.Application.Commons.Pricing.Dtos;
 using HRM.Application.Commons.Pricing.Helpers;
 using HRM.Application.Commons.Pricing.Models;
 using HRM.Application.Features.CRM.Quotations.Dtos;
@@ -27,7 +28,7 @@ public sealed class ProductPricingWorkbenchMapperTests
             SourceId = Guid.NewGuid(),
             MaterialCostSnapshot = 100m,
             ManufacturingCost = 10m,
-            StandardSellingPrice = 143m,
+            StandardSellingPrice = 140m,
             Status = ProductPricingStatus.Draft,
             Version = 1,
             CreatedDate = new DateTime(2026, 8, 18)
@@ -82,7 +83,11 @@ public sealed class ProductPricingWorkbenchMapperTests
         Assert.Equal(100m, result.StoredMaterialCostSnapshot);
         Assert.Equal(20m, result.MaterialCostDifference);
         Assert.Equal(20m, result.MaterialCostDifferencePercent);
-        Assert.Equal(143m, result.StandardSellingPrice);
+        Assert.Equal(140m, result.StandardSellingPrice);
+        Assert.Equal(143m, result.RealtimeStandardSellingPrice);
+        Assert.Equal(3m, result.StandardSellingPriceDifference);
+        Assert.Equal(2.1429m, result.StandardSellingPriceDifferencePercent);
+        Assert.True(result.HasRealtimePriceComparison);
         Assert.Equal(10m, result.ProfitMarginRate);
         Assert.Equal(1, result.WaitingQuotationCount);
         Assert.Equal(ProductPricingLookupStatus.Draft, result.PricingStatus);
@@ -120,6 +125,48 @@ public sealed class ProductPricingWorkbenchMapperTests
         Assert.Equal(0, result.WaitingQuotationCount);
         Assert.Null(result.LatestRequestedAt);
         Assert.Equal(ProductPricingLookupStatus.Approved, result.PricingStatus);
+        Assert.False(result.HasRealtimePriceComparison);
+    }
+
+    [Fact]
+    public void MapSummary_UsesApprovedVersionValuesBeforeRealtimePreview()
+    {
+        var productId = Guid.NewGuid();
+        var approved = new PricingVersionRow
+        {
+            ProductPricingVersionId = Guid.NewGuid(),
+            ProductId = productId,
+            ManufacturingCost = 20_000m,
+            StandardSellingPrice = 80_000m,
+            ProfitMarginRate = 13.0231m,
+            Status = ProductPricingStatus.Approved,
+            Version = 1,
+            CreatedDate = new DateTime(2026, 9, 4)
+        };
+        var source = new ProductPricingSourceOptionDto
+        {
+            SourceType = ProductPricingSourceType.Formula,
+            SourceId = Guid.NewGuid(),
+            Pricing = new FormulaPriceCalculationDto
+            {
+                ManufacturingCost = 20_000m,
+                StandardSellingPrice = 70_782m,
+                ProfitMarginRate = 0m
+            }
+        };
+
+        var result = ProductPricingWorkbenchMapper.MapSummary(
+            new ProductRow { ProductId = productId },
+            "VND",
+            draft: null,
+            approved,
+            source,
+            requests: []);
+
+        Assert.Equal(20_000m, result.ManufacturingCost);
+        Assert.Equal(80_000m, result.StandardSellingPrice);
+        Assert.Equal(13.0231m, result.ProfitMarginRate);
+        Assert.Equal(70_782m, result.RealtimeStandardSellingPrice);
     }
 
     [Fact]

@@ -1,5 +1,6 @@
 using HRM.Application.Features.CRM.Quotations.Dtos;
 using HRM.Application.Features.CRM.Quotations.Services;
+using HRM.Domain.Entities.CustomerSchema;
 using HRM.Domain.Enums.CustomerEnum;
 
 namespace HRM.Application.Tests.Features.CRM.Quotations;
@@ -40,15 +41,37 @@ public sealed class FormulaPricingPolicyRulesTests
     public void PublishValidation_RequiresDraftVersionEffectiveDateAndTiers()
     {
         Assert.Null(FormulaPricingPolicyRules.ValidatePublish(
-            FormulaPricingPolicyStatus.Draft, 2, DateTime.UtcNow, 1));
+            FormulaPricingPolicyStatus.Draft, 2, DateTime.Now, 1));
         Assert.NotNull(FormulaPricingPolicyRules.ValidatePublish(
-            FormulaPricingPolicyStatus.Published, 2, DateTime.UtcNow, 1));
+            FormulaPricingPolicyStatus.Published, 2, DateTime.Now, 1));
         Assert.NotNull(FormulaPricingPolicyRules.ValidatePublish(
-            FormulaPricingPolicyStatus.Draft, 0, DateTime.UtcNow, 1));
+            FormulaPricingPolicyStatus.Draft, 0, DateTime.Now, 1));
         Assert.Equal(3, FormulaPricingPolicyRules.GetNextVersion(2));
     }
 
     [Fact]
     public void MissingPolicy_UsesStableErrorCode()
         => Assert.Equal("PricingPolicyMissing", FormulaPricingPolicyRules.PricingPolicyMissing);
+
+    [Fact]
+    public void ToDto_MissingPriceOffset_ReturnsZeroAndKeepsManualPriceFlag()
+    {
+        var policy = new FormulaPricingPolicy
+        {
+            Tiers =
+            [
+                new FormulaPricingPolicyTier
+                {
+                    QuantityRangeLabel = "Manual",
+                    PriceOffset = null,
+                    IsActive = true
+                }
+            ]
+        };
+
+        var tier = Assert.Single(FormulaPricingPolicyRules.ToDto(policy).Tiers);
+
+        Assert.Equal(0m, tier.PriceOffset);
+        Assert.True(tier.RequiresManualPrice);
+    }
 }

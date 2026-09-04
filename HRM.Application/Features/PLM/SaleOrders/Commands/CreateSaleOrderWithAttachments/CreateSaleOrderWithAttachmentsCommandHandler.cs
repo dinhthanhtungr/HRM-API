@@ -16,7 +16,7 @@ using Microsoft.Extensions.Logging;
 namespace HRM.Application.Features.PLM.SaleOrders.Commands.CreateSaleOrderWithAttachments;
 
 /// <summary>
-/// Tạo SaleOrder và upload PO trong một transaction database. Chỉ Sale thường ngoài AC/HN
+/// Tạo SaleOrder và upload PO trong một transaction database. Nhóm duyệt và Sale thường ngoài AC/HN
 /// được tự động duyệt và tạo MFG sau khi upload thành công.
 /// Bất kỳ bước nào lỗi đều rollback SaleOrder; file vật lý đã upload được cleanup theo cơ chế bù trừ.
 /// </summary>

@@ -80,7 +80,8 @@ internal sealed class UpdateFormulaStatusCommandHandler
 
         if (FormulaConcurrencyRules.HasExpectedUpdatedDateConflict(
                 command.Request.ExpectedUpdatedDate,
-                formula.UpdatedDate))
+                formula.UpdatedDate,
+                formula.CreatedDate))
         {
             return OperationResult<FormulaWriteResultDto>.Fail("Formula was changed by another user. Please reload before saving.");
         }
@@ -99,10 +100,57 @@ internal sealed class UpdateFormulaStatusCommandHandler
         }
 
         var now = DateTime.Now;
+
+        try
+        {
+            FormulaWriteService.ValidateStepOfProduct(command.Request.StepOfProduct);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return OperationResult<FormulaWriteResultDto>.Fail(ex.Message);
+        }
+
+        if (command.Request.FormulaUpdate is not null)
+        {
+            if (command.Request.FormulaUpdate.ExpectedUpdatedDate is { } nestedExpectedUpdatedDate &&
+                nestedExpectedUpdatedDate != command.Request.ExpectedUpdatedDate)
+            {
+                return OperationResult<FormulaWriteResultDto>.Fail(
+                    "FormulaUpdate.ExpectedUpdatedDate must match ExpectedUpdatedDate.");
+            }
+
+            if (command.Request.FormulaUpdate.StepOfProduct is { } nestedStepOfProduct &&
+                command.Request.StepOfProduct is { } stepOfProduct &&
+                nestedStepOfProduct != stepOfProduct)
+            {
+                return OperationResult<FormulaWriteResultDto>.Fail(
+                    "FormulaUpdate.StepOfProduct must match StepOfProduct.");
+            }
+
+            try
+            {
+                await _formulaWriteService.ApplyFormulaUpdateAsync(
+                    formula,
+                    command.Request.FormulaUpdate,
+                    companyId,
+                    employeeId,
+                    now,
+                    cancellationToken);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return OperationResult<FormulaWriteResultDto>.Fail(ex.Message);
+            }
+        }
+
         IReadOnlyList<FormulaWriteService.SampleRequestSampleSentTarget> sampleSentTargets = [];
         Guid? sampleRequestSampleTrialId = null;
 
         formula.Status = targetStatus.ToString();
+        if (command.Request.StepOfProduct.HasValue)
+        {
+            formula.StepOfProduct = command.Request.StepOfProduct.Value;
+        }
         formula.UpdatedBy = employeeId;
         formula.UpdatedDate = now;
 
@@ -204,6 +252,26 @@ internal sealed class UpdateFormulaStatusCommandHandler
                         sampleSentTargets.Count,
                         sampleRequestSampleTrialId),
                     $"Updated formula status successfully, but could not send sample-sent notification: {sendResult.Message}");
+            }
+        }
+
+        if (targetStatus == FormulaStatus.Approved &&
+            command.Request.SampleRequestId is { } sampleRequestId &&
+            sampleRequestId != Guid.Empty)
+        {
+            var approvedMessageResult = await SendFormulaApprovedReferencePriceMessageAsync(
+                sampleRequestId,
+                formula.ProductId,
+                companyId,
+                formula.ExternalId,
+                formula.Product.ColourCode,
+                cancellationToken);
+
+            if (!approvedMessageResult.Success)
+            {
+                return OperationResult<FormulaWriteResultDto>.Ok(
+                    FormulaWriteService.ToResult(formula),
+                    $"Updated formula status successfully, but could not send formula-approved notification: {approvedMessageResult.Message}");
             }
         }
 
@@ -309,6 +377,51 @@ internal sealed class UpdateFormulaStatusCommandHandler
             Message = $"Công thức {formulaExternalId} của yêu cầu phối mẫu {sampleRequestExternalId} đã hoàn thành, sẵn sàng cho lên đơn hàng.",
             TopicOverride = TopicNotifications.SampleRequestFormulaCompleted,
             TitleOverride = "Công thức hoàn thành, sẵn sàng cho báo giá"
+        }, cancellationToken);
+    }
+
+    private async Task<OperationResult<SendInternalMessageResultDto>> SendFormulaApprovedReferencePriceMessageAsync(
+        Guid sampleRequestId,
+        Guid formulaProductId,
+        Guid companyId,
+        string formulaExternalId,
+        string? colourCode,
+        CancellationToken cancellationToken)
+    {
+        var sampleRequest = await _dbContext.SampleRequests
+            .AsNoTracking()
+            .Where(x =>
+                x.SampleRequestId == sampleRequestId &&
+                x.CompanyId == companyId &&
+                x.ProductId == formulaProductId &&
+                x.IsActive)
+            .Select(x => new { x.SampleRequestId, x.ExternalId })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (sampleRequest is null)
+        {
+            return OperationResult<SendInternalMessageResultDto>.Fail(
+                "Sample request was not found or does not belong to the formula product.");
+        }
+
+        var normalizedColourCode = colourCode?.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedColourCode))
+        {
+            return OperationResult<SendInternalMessageResultDto>.Fail(
+                "Formula product must have a colour code before sending the reference-price notification.");
+        }
+
+        var priceLookupLink = "/crm/quotations/product-pricing-options?keyword=" +
+            Uri.EscapeDataString(normalizedColourCode);
+
+        return await _sender.Send(new SendSampleRequestMessageCommand
+        {
+            SampleRequestId = sampleRequest.SampleRequestId,
+            Type = SampleRequestNotificationType.GeneralMessage,
+            Message = $"Công thức {formulaExternalId} của yêu cầu phối mẫu {sampleRequest.ExternalId} đã được Lab xác nhận. Hệ thống đã có giá tham khảo theo mã màu {normalizedColourCode}; bấm thông báo để tra cứu giá sản phẩm.",
+            TopicOverride = TopicNotifications.SampleRequestFormulaApproved,
+            TitleOverride = "Công thức đã xác nhận, có giá tham khảo",
+            LinkOverride = priceLookupLink
         }, cancellationToken);
     }
 }

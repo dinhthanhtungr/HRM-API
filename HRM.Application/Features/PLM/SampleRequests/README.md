@@ -1,5 +1,29 @@
 # Sample Requests
 
+## Product category options
+
+## Lookup cho Sale Order
+
+`GET /api/v1/plm/sample-requests/lookup` giữ nguyên hành vi lookup thông thường. Khi dropdown được gọi từ màn tạo Sale Order, FE truyền `forSaleOrder=true`; backend khi đó chỉ trả Sample Request có `status` là `SampleSent` hoặc `Completed`. Nếu request có `customerId`, lookup dùng tập customer gồm customer đang chọn **và** customer nội bộ `KH_VIETAUS`; do đó mọi Sale có thể chọn sản phẩm từ Sample Request nội bộ cùng lúc với sản phẩm của customer đang lập đơn. Các filter `isActive`, keyword và `status` vẫn cùng áp dụng; keyword vẫn phải khớp record như lookup thông thường. Nếu `status` là trạng thái khác hai giá trị trên thì kết quả là danh sách rỗng.
+
+`GET /api/v1/plm/sample-requests/form-options` only returns the active canonical product categories of the current company. Legacy categories remain in the database for historical records and are intentionally omitted from this form lookup.
+
+| Code | Display name |
+| --- | --- |
+| `CMP` | Compound |
+| `CMB` | Color masterbatch |
+| `AMB` | Additive masterbatch |
+| `PIG` | Bột màu |
+| `VRG` | Hạt nhựa nguyên sinh |
+| `ADD` | Phụ gia |
+| `GCO` | Gia công |
+
+Each option contains `value` (the category ID), `code` (the stable canonical code), and `displayName`. FE must use `value` when creating or updating a product, and may use `code` for labels or rules. The API does not migrate or delete legacy category records.
+
+Create and patch requests validate `categoryId` against the same canonical codes and the current company. A legacy category remains visible on an existing record when the request does not change `categoryId`; it cannot be selected for a new product, a category change, or a product reassignment.
+
+`POST /api/v1/plm/sample-requests/products/migrate-categories?dryRun=true` is restricted to `PLM.ProductTechnicalInfo.Edit` and considers active Products across every company. Each Product is assigned only to the canonical category (`CMP`, `CMB`, `AMB`, `ADD`, or `PIG`) belonging to that same Product's company; the API fails without writing if any company with active Products does not have exactly one active category for each of those codes. `dryRun` defaults to `true`: no database data is changed and the response returns totals plus the first 100 candidate Products (`previewItems`, with `matchedBy`). Optional `targetCategoryCode=CMP|CMB|AMB|ADD|PIG` limits preview and `dryRun=false` execution to one target category, so each group can be reviewed independently. Only an explicit `dryRun=false` applies the rule to the Products currently matching at execution time; its response contains the same bounded preview. Rules are evaluated in this order: legacy category `Compound` or a `ColourCode` ending in `C` moves to `CMP`; a Product name normalized by removing accents, normalizing Unicode and collapsing spaces, then containing `BOT MAU`, moves to `PIG`; a `ColourCode` ending in `D` also moves to `PIG` unless the normalized Product name contains `BOT PHU GIA`, `PHU GIA`, or `HAT NHUA PHU GIA`; legacy category `Hạt màu` moves to `CMB`, as does a normalized Product name containing `HAT MAU` or `HAT NHUA MAU` when its `ColourCode` ends in a non-letter, `U`, or `A`. `CMB` excludes names containing `HAT PHU GIA`, `COMPOUND`, `BOT MAU`, or `BOT PHU GIA`. A normalized Product name containing `HAT PHU GIA` or `HAT NHUA PHU GIA` moves to `AMB`. A normalized Product name containing `BOT PHU GIA` moves to `ADD`; a `ColourCode` ending in `D` also moves to `ADD` when its normalized Product name contains `PHU GIA`. Otherwise, a `ColourCode` ending in a letter other than `C` moves to `AMB` unless its normalized Product name contains `MAU` or `BOT PHU GIA`.
+
 ## Sample trial report
 
 Dialog **Phản hồi khách hàng/Ghi chú phản hồi** dùng composer `POST /api/v1/plm/sample-requests/{sampleRequestId}/sample-trials/{trialId}/customer-feedback`. Endpoint chỉ dành cho Sale, bắt buộc `idempotencyKey`, tự resolve customer từ Trial và trong một transaction vừa cập nhật phản hồi Trial vừa tạo CRM interaction/reference `SampleTrial/trialId` cùng follow-up task tùy chọn. Contract đầy đủ nằm trong `SampleRequestSampleTrials.README.md`.
@@ -8,7 +32,9 @@ Khi Lab gửi mẫu, message trong Notification Hub trả thêm `sampleReceiptAc
 
 Ngày Sale nhận mẫu được lưu vào `Trial.RequestReceivedDate` đã có sẵn. Action chuyển Trial từ `SampleSent` sang `WaitingCustomerFeedback` và dùng `UpdatedBy/UpdatedDate` để audit; không bổ sung cột database mới.
 
-`GET /api/v1/plm/sample-requests/sample-trials` trả danh sách phân trang để FE dựng bảng theo dõi Lab giống báo cáo Excel. Query dùng Sample Request visible làm nguồn và left join trial: hồ sơ chưa có trial vẫn xuất hiện một dòng với `hasTrial = false`; hồ sơ có nhiều trial trả mỗi trial một dòng. Endpoint hỗ trợ keyword, khoảng ngày, Sample Request, customer, trial status, customer reply status và sorting. Dữ liệu luôn đi qua company/customer visibility; `additiveRate` và `labNote` trả `null` nếu current user không có quyền xem thông tin kỹ thuật PLM.
+`GET /api/v1/plm/sample-requests/sample-trials` trả danh sách phân trang theo từng Sample Request. Mỗi Sample Request chỉ trả một dòng/card và gắn Trial active mới nhất theo `TrialNo`; hồ sơ chưa có Trial vẫn xuất hiện với `hasTrial = false`. `trialCount` và `hasPreviousTrials` cho FE biết có thể mở lịch sử hay không. `reportType=All` (và không truyền `reportType`) trả mọi Sample Request active trong company/customer visibility, không loại theo trạng thái workflow. `CompletedSamples` lấy Sample Request `Completed` có Trial mới nhất `Approved`, lọc/sắp theo `CustomerReplyDate`; `WaitingCustomerFeedback` lấy Trial mới nhất đang chờ và lọc/sắp theo `RequestReceivedDate`. Lịch sử được tải lười bằng `GET /api/v1/plm/sample-requests/{sampleRequestId}/sample-trials`, trả các Trial active giảm dần theo `TrialNo`. Dữ liệu luôn loại khách nội bộ `KH_VIETAUS`; `additiveRate` và `labNote` trả `null` nếu current user không có quyền xem thông tin kỹ thuật PLM.
+
+Mỗi dòng luôn trả `requestDeliveryDate` (ngày Sale yêu cầu có mẫu) và `expectedDeliveryDate` (ngày dự kiến có mẫu) từ Sample Request, kể cả khi `hasTrial = false`. Hai field này khác `requestReceivedDate`, là ngày Lab/Sale ghi nhận nhận mẫu của một Trial và chỉ có khi Trial tồn tại. FE tạo mới qua `POST /api/v1/plm/sample-requests` hoặc chỉnh qua `PATCH /api/v1/plm/sample-requests/{sampleRequestId}` bằng cùng hai field camelCase; PATCH có thể xóa từng ngày qua `clearFields` với mã `sample_request.request_delivery_date` hoặc `sample_request.expected_delivery_date`.
 
 Các query keyword Sample Request hỗ trợ mã TP của chính yêu cầu, tên/mã màu Product và mã VU Formula liên quan.
 Riêng danh sách trial còn tìm theo VU gắn trên Trial.
@@ -30,6 +56,8 @@ SampleRequest.AttachmentCollectionId -> AttachmentModel
 
 The response includes `attachments` with `url`, `downloadUrl`, and `isImage`. It does not include file bytes, base64, or physical storage paths.
 
+Với conversation InternalMail liên kết Sample Request, endpoint attachment của conversation cũng trả các tệp gốc này trong cùng danh sách với `source = "SampleRequest"`. Đây là metadata/read view, không sao chép attachment và không bao gồm tệp Formula.
+
 Frontend image preview should use:
 
 ```html
@@ -46,6 +74,12 @@ Sample request detail is loaded by id:
 GET /api/v1/plm/sample-requests/{sampleRequestId}
 ```
 
+`formulaLookups[]` là danh sách công thức phát triển active cùng Product để FE dựng
+dropdown công thức khách hàng chọn. Mỗi phần tử trả `formulaId`, `externalId`, `name`,
+`status` dạng tên enum và `totalPrice`; `totalPrice` là `null` khi người dùng không có
+quyền xem giá. FE dùng `status` để chỉ cho chọn các trạng thái hợp lệ và có thể hợp nhất
+danh sách này với endpoint `/api/v1/plm/formulas/lookup` khi tìm kiếm/phân trang.
+
 Create a sample request:
 
 ```http
@@ -53,6 +87,8 @@ POST /api/v1/plm/sample-requests
 ```
 
 After a sample request is created, backend automatically creates an InternalMail message for the sample request thread and publishes a notification to Lab recipients, except for internal sample requests. FE may send `initialLabMessage` so Sale can review/edit the message content before submit. If `initialLabMessage` is blank, backend falls back to a generated summary from the key Sale-entered sample request and product fields. The message uses `SampleRequestNotificationType.GeneralMessage`, title `Yêu cầu phối mẫu mới`, the default sample request message topic, and does not expose extra sensitive payload beyond the normal message payload.
+
+Product data in the create, detail and patch contracts includes `grs` (boolean; omitted on create defaults to `false`) and `grsConsumerType` (nullable enum: `0 = PostConsumer`, `1 = PreConsumer`). `grsConsumerType` may be cleared only through PATCH `clearFields: ["product.grs_consumer_type"]`.
 
 Internal sample requests do not need an InternalMail thread or notification. Backend suppresses SampleRequest message sending when `SampleRequest.RequestType` is an internal value (`private`, `Nội bộ`, `Noi bo`, `Internal`, including common space/underscore/hyphen variants) or when the customer is the internal customer `KH_VIETAUS`. The suppress rule is enforced in `SendSampleRequestMessageCommandHandler`, so create, direct patch notification, data-change/formula-change message flows, sample-sent/completed/cancelled lifecycle messages and other SampleRequest message calls no-op before creating a conversation or publishing a notification. FE should hide the recipient/message confirmation step for these cases; if FE still submits message fields, BE returns success with empty ids and no side effect.
 
@@ -62,10 +98,11 @@ Patch a sample request:
 PATCH /api/v1/plm/sample-requests/{sampleRequestId}
 ```
 
-Đa số field trên màn hình dùng PATCH trực tiếp rồi báo Lab. Riêng ba tiêu chuẩn `product.food_safety`,
-`product.rohs_standard`, `product.reach_standard` do Sale/Leader đề xuất bắt buộc đi qua luồng Lab
-duyệt; PATCH trực tiếp (kể cả `clearFields`) bị từ chối. Người thuộc
-`ApplicationRoleSets.PLM.ProductTechnicalEditors` vẫn có thể sửa trực tiếp:
+Hiện mode mặc định là `DirectNotify`: toàn bộ Product field có trong PATCH contract, gồm
+`product.food_safety`, `product.rohs_standard` và `product.reach_standard`, được lưu trực tiếp rồi báo
+Lab. `data-change-requests` vẫn được giữ như legacy approval flow; khi mode đổi sang
+`RequireLabApproval`, PATCH trực tiếp (kể cả `clearFields`) của ba field này sẽ bị từ chối với người
+không thuộc `ApplicationRoleSets.PLM.ProductTechnicalEditors`:
 
 ```http
 POST /api/v1/plm/sample-requests/{sampleRequestId}/data-change-requests
@@ -78,6 +115,9 @@ POST /api/v1/plm/sample-requests/{sampleRequestId}/data-change-requests/{message
 ```
 
 Request tạo đề xuất chỉ nhận mã field ổn định và giá trị mới. Backend tự đọc giá trị cũ từ
+Sample Request để hiển thị/audit proposal. Tạm thời, lúc Lab duyệt backend không chặn proposal chỉ vì
+giá trị hiện tại đã khác `OldValue`; giá trị đề xuất sẽ ghi đè giá trị hiện tại. Các kiểm tra company,
+quyền duyệt, participant của conversation, field đang pending và validation payload vẫn giữ nguyên.
 `Product`, không tin giá trị cũ do FE gửi:
 
 ```json
@@ -106,10 +146,10 @@ Request quyết định:
 ```
 
 `fieldCodes` rỗng nghĩa là xử lý toàn bộ field còn `Pending`. `Reject` bắt buộc có `reason`.
-Lab không gửi lại giá trị mới; backend lấy đúng proposal trong message gốc. Khi approve, backend
-kiểm tra giá trị hiện tại vẫn bằng giá trị cũ lúc Sale gửi rồi tái sử dụng `PatchSampleRequestCommand`
-để áp dụng. Nếu dữ liệu đã đổi, quyết định bị chặn và FE phải reload. Reject chỉ cập nhật trạng thái
-proposal và gửi phản hồi, không patch dữ liệu nghiệp vụ.
+Lab không gửi lại giá trị mới; backend lấy đúng proposal trong message gốc rồi tái sử dụng
+`PatchSampleRequestCommand` để áp dụng. Trong thời gian proposal đang chờ, quyết định duyệt sẽ áp dụng
+giá trị đề xuất lên dữ liệu hiện tại; Reject chỉ cập nhật trạng thái proposal và gửi phản hồi, không patch
+dữ liệu nghiệp vụ.
 
 Mỗi quyết định tạo một reply trong cùng `InternalConversation` và notification cho người Sale đã gửi.
 Message gốc lưu trạng thái từng field (`Pending`, `Approved`, `Rejected`) trong `PayloadJson`; không có
@@ -138,18 +178,26 @@ Read change history for one sample request:
 GET /api/v1/plm/sample-requests/{sampleRequestId}/history
 ```
 
+Response gồm ba phần phục vụ hai chế độ xem lịch sử: `latestChange` là lần thay đổi
+mới nhất; `fields[]` là lịch sử đã tổng hợp theo `source + fieldName` (giá trị ban đầu,
+giá trị hiện tại, số lần thay đổi và lần mới nhất); `timeline[]` là từng lần lưu có chi
+tiết cũ/mới. Với field `FormulaId`, API query Formula trong cùng company và trả giá trị
+hiển thị `ExternalId - Name` ở `oldValue`/`newValue`, không trả GUID cho FE.
+
 `PATCH /api/v1/plm/sample-requests/{sampleRequestId}` trực tiếp ghi audit cho các field thay đổi của `SampleRequests`
 và `Products` với reason `SampleRequestDirectPatch`. Luồng duyệt đề xuất thay đổi dữ liệu vẫn dùng reason
 `SampleRequestDataChangeApproval`. Handler chỉ ghi audit theo một nhánh (`IsDataChangeApproval` hoặc PATCH trực tiếp),
 và helper audit tự bỏ qua khi không có field thật sự thay đổi, nên một lần lưu không tạo audit trùng cho cùng source.
+Các thay đổi `Products.GRS` và `Products.GRSConsumerType` cũng được lưu old/new trong cùng audit timeline.
 
-After FE directly patches `sample_request.*` or whitelisted `product.*` fields that do not need Lab approval, FE can notify Lab with:
+Sau khi FE PATCH trực tiếp các field whitelist `sample_request.*` hoặc `product.*`, FE có thể báo Lab qua:
 
 ```http
 POST /api/v1/plm/sample-requests/{sampleRequestId}/direct-patch-notifications
 ```
 
-This endpoint does not update business data. It only creates an InternalMail message in the active SampleRequest conversation and publishes a notification after the PATCH has already succeeded. The request must include `idempotencyKey`, `message`, optional `recipientEmployeeIds`, and `changes[]`. `changes[].fieldCode` only accepts direct-notify field codes from the whitelist; it explicitly excludes `product.food_safety`, `product.rohs_standard`, and `product.reach_standard` because those fields use the Lab approval flow.
+Endpoint này không cập nhật dữ liệu nghiệp vụ. Nó chỉ tạo InternalMail trong conversation Sample Request hiện có và publish notification sau khi PATCH thành công. Request phải có `idempotencyKey`, `message`, `recipientEmployeeIds` tùy chọn và `changes[]`. `changes[].fieldCode` chỉ nhận field trong direct-notify whitelist. Hiện mode mặc định là `DirectNotify`, nên whitelist gồm cả `product.food_safety`, `product.rohs_standard` và `product.reach_standard`.
+Khi PATCH đổi loại sản phẩm, FE dùng field code `product.category_id` trong `changes[]`.
 
 ```json
 {
@@ -218,6 +266,8 @@ product.light_condition
 product.visual_test
 product.return_sample
 product.is_recycle
+product.grs
+product.grs_consumer_type
 product.weight
 product.unit
 product.other_comment
@@ -230,11 +280,12 @@ The history endpoint treats the sample request and its product detail as one bus
 ```text
 TableName = SampleRequests, RecordId = SampleRequest.SampleRequestId
 TableName = Products,       RecordId = SampleRequest.ProductId
+TableName = Attachments,    RecordId = SampleRequest.SampleRequestId
 ```
 
-Rows with the same `CorrelationId` are grouped into one timeline item so a single save operation can show both `SampleRequests` fields and `Products` fields together. Each changed field keeps `details[].source` so the frontend can still show whether the field came from `SampleRequests` or `Products`. Detail, history, and messages are scoped with `ICustomerVisibilityService.ApplySampleRequestVisibility`; users cannot read a sample request by id unless the request belongs to a customer in their current visibility scope.
+Rows with the same `CorrelationId` are grouped into one timeline item so a single save operation can show both `SampleRequests` fields and `Products` fields together. Each changed field keeps `details[].source` so the frontend can still show whether the field came from `SampleRequests`, `Products`, or `Attachments`. Uploading an attachment creates an `Attachments` audit row with `FileName: null -> file name`; deleting it records `FileName: file name -> null`. Audit snapshots retain `attachmentId` and slot for traceability but never include storage paths or file bytes. Detail, history, and messages are scoped with `ICustomerVisibilityService.ApplySampleRequestVisibility`; users cannot read a sample request by id unless the request belongs to a customer in their current visibility scope.
 
-History is also filtered by PLM field visibility. Users outside `ApplicationRoleSets.PLM.ProductTechnicalEditors` do not receive restricted `Products` technical fields such as `Requirement`, `LabComment`, `Procedure`, technical rates, standards, tests, and internal product comments. Audit rows remain stored fully in `Audit.AuditLogs`; only the API response is filtered, and a timeline card with no visible details is omitted.
+History is also filtered by PLM field visibility. Users outside `ApplicationRoleSets.PLM.ProductTechnicalEditors` do not receive the `Products` history details `ColourName` (Tên màu) and `Additive` (Phụ gia); all other changed fields remain visible. Audit rows remain stored fully in `Audit.AuditLogs`; only the API response is filtered, and a timeline card with no visible details is omitted.
 
 `POST` creates a new attachment collection automatically. File upload still uses the attachment endpoints.
 
@@ -358,6 +409,8 @@ Formula đề xuất.Status = Rejected khi Sale từ chối, hoặc Cancelled kh
 
 Mỗi hành động `gửi mẫu`, `chọn công thức hoàn thành`, `yêu cầu cập nhật công thức`, `chấp nhận`, `từ chối` và `hủy yêu cầu` phải tạo message trong cùng Sample Request conversation và publish notification cho các participant liên quan. Không tạo conversation/group mới cho các sự kiện này.
 
+Mọi lần `SampleRequest.Status` thực sự đổi trong lifecycle này đều ghi `AuditLog` cùng transaction với thao tác nghiệp vụ. Audit lưu `Status` cũ/mới, `ChangedBy`, `ChangedAt` và reason ổn định: `FormulaSampleSent`, `FormulaCustomerApproved`, `FormulaUpdateRequested`, `FormulaUpdateApproved`, `FormulaUpdateRejected`, `FormulaUpdateCancelled`, `SampleTrialCustomerFeedback` hoặc `CustomerCareSampleTrialInteraction`. PATCH vẫn dùng audit thay đổi field tổng quát hiện có và không ghi thêm status audit thứ hai cho cùng lần PATCH.
+
 Các API formula-change dùng message payload, không tạo bảng/cột request riêng:
 
 ```http
@@ -467,9 +520,18 @@ message InternalMail topic `SampleRequestSampleSent` với nội dung có giờ 
 Khi Sample Request đang `SampleSent`, PATCH Sample Request có thể gửi `formulaId` để xác nhận khách đã chấp nhận
 công thức của Trial pending mới nhất. Shortcut này chỉ dành cho `ApplicationRoleSets.PLM.FormulaSelectors`, vẫn kiểm tra
 company/customer scope và `expectedUpdatedDate`. Formula phải thuộc đúng product, đang active, có status `SampleSent`
-và phải khớp Trial `SampleSent`/`WaitingCustomerFeedback` mới nhất. Backend mặc định
+và phải khớp Trial `SampleSent`/`WaitingCustomerFeedback`/`PriceQuote` mới nhất. Backend mặc định
 `CustomerReplyStatus = APPROVED`, cập nhật Trial `Approved`, Formula `Completed`, chọn Formula cho product và chuyển
-Sample Request sang `Completed` trong cùng `SaveChanges`. FE nên mở dialog xác nhận rõ side effect trước khi gửi PATCH.
+Sample Request sang `Completed` trong cùng `SaveChanges`.
+
+Với dữ liệu legacy không có bất kỳ Trial active nào, cùng shortcut này tự tạo Trial kế tiếp (`TrialNo = max + 1`) gắn
+Formula được chọn, lưu snapshot customer/product/Formula và duyệt Trial ngay trong cùng transaction. Trial fallback được
+ghi nhận tương đương luồng đã gửi–đã nhận–khách duyệt: `SentDate` lấy từ `SampleRequest.SendDate`, fallback sang
+`RealDeliveryDate`, rồi mới là thời điểm chốt Formula; `SentByEmployeeId` chỉ kế thừa từ `SampleRequest.SendBy` nếu có;
+`RequestReceivedDate`, `FinishedDate`, `CustomerReplyStatus = APPROVED`, `CustomerReplyDate` và người xác nhận là thời điểm/
+Sale đang chốt. `DeliveredSampleQuantityKg` không được suy diễn vì không có dữ liệu giao thực tế. Fallback không áp dụng nếu
+Request đã có Trial active ở trạng thái khác, nhằm không bỏ qua lifecycle đang tồn tại. FE nên mở dialog xác nhận rõ side effect
+trước khi gửi PATCH.
 
 Payload xác nhận công thức hoàn thành:
 
@@ -515,7 +577,11 @@ AttachmentFileHelper.BuildUrl(...)
 
 ## Data Change Field Contract
 
-`POST /api/v1/plm/sample-requests/{sampleRequestId}/data-change-requests` supports stable field codes from `SampleRequestDataChangeFieldCatalog`. FE bắt buộc dùng flow này khi Sale/Leader đổi `product.food_safety`, `product.rohs_standard` hoặc `product.reach_standard`; các field khác chỉ dùng khi nghiệp vụ yêu cầu approval. Với thay đổi chỉ cần báo Lab, dùng `PATCH` rồi `direct-patch-notifications`.
+`POST /api/v1/plm/sample-requests/{sampleRequestId}/data-change-requests` vẫn hỗ trợ stable field codes từ `SampleRequestDataChangeFieldCatalog` như legacy approval flow. Hiện `SampleRequestLabApprovalRules.CurrentMode` là `DirectNotify`: Sale PATCH trực tiếp tất cả Product field trong contract, rồi gọi `direct-patch-notifications` để báo Lab. Khi cần bật lại chờ Lab duyệt, đổi mode sang `RequireLabApproval`; endpoint, command, handler, action card và decision endpoint của data-change-requests vẫn được giữ nguyên để FE dùng lại.
+
+Catalog cũng nhận `product.grs` và `product.grs_consumer_type`; enum chỉ nhận số `0` (`PostConsumer`) hoặc `1` (`PreConsumer`).
+
+Người dùng có thể PATCH, tạo yêu cầu thay đổi, và gửi thông báo sau khi PATCH khi Sample Request nằm trong customer visibility hiện tại của họ. Quyền không phụ thuộc role, `CreatedBy`, hoặc `ManagerBy`; rule mode ở trên quyết định PATCH direct hay yêu cầu duyệt.
 
 Sample request fields currently supported:
 
@@ -543,15 +609,17 @@ Date fields must be sent as valid date strings. Number/date fields require a con
 
 `GetSampleRequestSummary` applies `CustomerVisibilityService.ApplySampleRequestVisibility` before search, filters, sorting, and paging. Results are scoped to the current user's company and customer visibility; `companyId` can only narrow results inside that current company.
 
-For `LabUser`, Sample Request visibility includes the internal customer `KH_VIETAUS` (`CustomerVisibilityConstants.RestrictedCustomerId`) so `/api/v1/plm/sample-requests/summary` and other Sample Request read APIs can show internal sample requests to Lab. This exception applies to Sample Request visibility only; sale order and production order dashboard sources keep their own internal-customer exclusion rules.
+For `LabUser`, Sample Request visibility includes the internal customer `KH_VIETAUS` (`CustomerVisibilityConstants.RestrictedCustomerId`) so `/api/v1/plm/sample-requests/summary` and other Sample Request read APIs can show internal sample requests to Lab. On `/api/v1/plm/sample-requests/summary`, `ACUser` also receives the full current-company Sample Request scope, including `KH_VIETAUS`, matching Lab's list visibility. The accounting exception is limited to this summary endpoint; it does not grant broader CRM, detail, history, or update access. Sale order and production order dashboard sources keep their own internal-customer exclusion rules.
+
+Với user bị giới hạn theo phạm vi Sales, `/summary` mặc định không trả Sample Request của khách nội bộ `KH_VIETAUS`. Khi request có `keyword`, riêng query này cho phép khách nội bộ tham gia tập tìm kiếm rồi áp dụng đầy đủ điều kiện keyword; vì vậy user có thể tìm bằng `KH_VIETAUS` hoặc thông tin khác của record nhưng không nhận toàn bộ hồ sơ nội bộ nếu chúng không khớp keyword. Company scope vẫn luôn được giữ nguyên. Quy tắc ngoại lệ chỉ áp dụng cho danh sách tìm kiếm `/summary`, không tự mở quyền đọc detail, history hoặc update Sample Request nội bộ.
 
 ## Message Recipients
 
-All Sample Request thread message types resolve default recipients through `SampleRequestRecipientResolver`. Static role/group rules live in `SampleRequestRecipientRules`. The only locked required recipients are active employees in roles `President` and `LabAdmin`. Default leader recipients are active leaders (`MemberInGroup.IsAdmin = true`) in the current company and are resolved by stable product category `ExternalId`:
+All Sample Request thread message types resolve default recipients through `SampleRequestRecipientResolver`. Static role/group rules live in `SampleRequestRecipientRules`. Locked required recipients are active employees in roles `President` and `LabAdmin`, plus the active account with username `qaqcad01` in the current company. Khi sender có role `SaleUser`, mọi leader active (`MemberInGroup.IsAdmin = true`) trong chính group active của sender cũng là required recipient (`source = sales_group_leader`); rule group-scoped này không dùng role `Leader` toàn công ty, loại sender và tự bỏ trùng. Default leader recipients cho Lab là active leaders trong current company và được resolved theo stable product category `ExternalId`:
 
-- `PC` (Compound) -> `QAQC.RD` and `QAQC.MAU`.
-- `PMA` (Masterbatch), `PPG` (Phụ gia) -> `QAQC.RD`.
-- `PHM` (Hạt màu), `PBM` (Bột màu), `PDM` (Dry mix) -> `QAQC.MAU`.
+- `CMP` (Compound), `PMA` (Masterbatch), `PPG` (Phụ gia), `AMB`, `VRG`, and `ADD` -> `QAQC.RD`.
+- `PHM` (Hạt màu), `PBM` (Bột màu), `PDM` (Dry mix), `CMB`, and `PIG` -> `QAQC.MAU`.
+- `GCO` (Gia công) -> `QAQC.RD` and `QAQC.MAU`.
 - `PKH`, `PTP`, `PMS`, `PPB`, or unknown/unmapped category -> fallback `QAQC.RD` and `QAQC.MAU`.
 
 Regular `LabUser` employees are not required recipients unless FE/user adds them or they already belong to the existing conversation. For an existing conversation, preview returns every active participant and the sample request manager, except the current sender, as locked selected recipients because real send always keeps them in the thread participant set. This keeps `selectedRecipients` aligned with the people who will actually receive the message.
@@ -604,7 +672,7 @@ Direct patch notification preview uses the same resolver:
 }
 ```
 
-The response contains `requiredRecipients`, `suggestedRecipients`, and `selectedRecipients`. `President`/`LabAdmin` users are locked required recipients. For an existing thread, active participants and the sample request manager are also locked, except the current sender. Category-matched QAQC leaders are returned as default, unlocked recipients and are selected by default on the first preview. FE may remove or add these optional recipients, then submit the selected optional ids back through:
+The response contains `requiredRecipients`, `suggestedRecipients`, and `selectedRecipients`. `President`/`LabAdmin`, account `qaqcad01`, and active Sales-group leaders of a `SaleUser` sender are locked required recipients. For an existing thread, active participants and the sample request manager are also locked, except the current sender. Category-matched QAQC leaders are returned as default, unlocked recipients and are selected by default on the first preview. FE may remove or add these optional recipients, then submit the selected optional ids back through:
 
 ```text
 CreateSampleRequestCommand.InitialLabRecipientEmployeeIds
@@ -613,9 +681,30 @@ CreateSampleRequestDirectPatchNotificationCommand.RecipientEmployeeIds
 SendSampleRequestMessageCommand.ExtraRecipientEmployeeIds
 ```
 
-BE still validates all submitted recipient employee ids against the current company and active employees, and only adds locked `President`/`LabAdmin` recipients when FE does not send them. Existing active conversation participants remain participants so the history is not hidden from them.
+BE still validates all submitted recipient employee ids against the current company and active employees, and always resolves locked `President`/`LabAdmin` plus the current Sale sender's same-group leaders when FE does not send them. Existing active conversation participants remain participants so the history is not hidden from them.
 
 For the initial preview, FE omits `selectedRecipientEmployeeIds` so category-matched leaders are selected by default. After the user edits the recipient list, FE sends the current optional ids; sending an empty array explicitly removes every optional default recipient.
+
+### Silent watchers when creating a Sample Request
+
+Preview request accepts `selectedSilentWatcherEmployeeIds`; response returns the validated people in
+`selectedSilentWatchers` and `canAddSilentWatchers`. FE submits that same selection in
+`CreateSampleRequestCommand.initialLabSilentWatcherEmployeeIds` when creating the Sample Request.
+
+Each silent watcher is added to the new Sample Request conversation with `Role = Watcher` and `IsMuted = true`.
+They can read the thread and may unmute it later through their own conversation preference. While muted, the initial
+message and later thread messages still appear in their Notification Hub as already-read items, but do not create an
+unread badge, SignalR event or Web Push alert. A silent watcher must
+be active in the current company, cannot be the current creator, and cannot also be in the normal recipient list.
+The initial Sample Request message uses the selected watcher ids directly, so it also creates their Hub item before
+the new conversation participants have been persisted. The same rule applies to initial normal recipients; subsequent
+messages also resolve the persisted, unmuted conversation participants.
+When `selectedSilentWatcherEmployeeIds` is omitted on the first preview, all active `LabUser` and `LabAdmin`
+employees absent from `requiredRecipients`, `suggestedRecipients` and `selectedRecipients` are selected as default
+silent watchers. Sending an explicit empty array lets FE remove those optional defaults.
+The create command applies the same fallback when `initialLabSilentWatcherEmployeeIds` is omitted, so an older FE
+that has not yet sent the field still adds the default Lab watchers. An explicit `[]` remains an intentional choice
+to add none.
 
 ## Conversation Subject Sync
 
@@ -680,3 +769,40 @@ PatchSampleRequestCommandHandler: PATCH trực tiếp product name/colour code v
 ```
 
 Luồng approve data-change đang dùng `DeferSaveChanges = true` nên không tự gửi message start-processing trong `PatchSampleRequestCommandHandler`, để tránh side effect lồng khi xử lý decision.
+
+## Yêu cầu báo giá từ Sample Request
+
+Hai vị trí FE là báo cáo gửi mẫu và màn Formula dùng chung một nghiệp vụ:
+
+```http
+POST /api/v1/plm/sample-requests/{sampleRequestId}/price-quote-requests
+Content-Type: application/json
+
+{
+  "formulaId": "guid-or-null",
+  "message": "Ghi chú tùy chọn, tối đa 1000 ký tự",
+  "isUrgent": false
+}
+```
+
+`formulaId` là tùy chọn. Backend resolve nguồn theo thứ tự: Formula FE chỉ định, Formula của active trial có
+`TrialNo` lớn nhất, rồi `SampleRequest.FormulaId`. Nếu cả ba không có Formula active đúng company/product,
+yêu cầu vẫn được gửi ở cấp Product với `formulaSelectionSource = ProductOnly`; backend không tự chọn một Formula
+bất kỳ khác của Product. Sample Request `New` hoặc `Cancelled` không được gửi yêu cầu báo giá.
+
+Message được ghi vào conversation active hiện có với `RelatedType = SampleRequest` và
+`RelatedId = sampleRequestId`; thao tác không tạo Quotation và không đổi trạng thái Sample Request. Người nhận là
+toàn bộ employee active có role `President` trong cùng company; sender được thêm vào thread nhưng bị loại khỏi
+notification của chính mình. Rule private/internal của `SampleRequestMessageRules` vẫn được áp dụng.
+
+Response dùng contract `SendInternalMessageResultDto`, gồm `conversationId`, `messageId`, `notificationId`.
+Payload message/notification có `contentType = SampleRequestPriceQuoteRequested` và block
+`priceQuoteRequest` chứa Sample Request, Product, Formula đã resolve và action
+`SampleRequest.OpenPriceQuote`. Action parameters gồm `sampleRequestId`, `sampleRequestExternalId`, `productId`,
+`productCode`, `formulaId`; FE tự ánh xạ action code sang route của client. Payload không chứa giá, cost hoặc margin; recipient đọc
+dữ liệu giá hiện hành tại API pricing. Topic được tái sử dụng là `SampleRequestPriceQuoteRequested = 23`,
+`topicCode = plm.sample_request.price_quote.requested`, category `sample_request`, event group `quotation`.
+
+Tab Báo giá trong Notification Hub lấy conversation từ
+`GET /api/v1/internal-mail/conversations?relatedType=SampleRequest&eventGroupCode=quotation`, không dùng notification
+feed làm nguồn thread. Cách này giữ yêu cầu trong tab của cả sender dù sender không nhận self-notification.

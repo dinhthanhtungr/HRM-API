@@ -280,6 +280,8 @@ của SampleTrial vẫn nên đi qua API PLM/SampleRequest chuyên trách hoặc
 loại `SampleTrial`, tạo `CustomerInteractionReference` primary tới `SampleRequestSampleTrial`, đồng thời cập nhật
 phản hồi khách trên trial tương ứng. Nếu có `nextFollowUpDate`, API vẫn tạo follow-up `WorkTask` giống interaction thường.
 API luôn validate customer visibility, contact thuộc customer và trial thuộc đúng customer/company trước khi ghi.
+Nếu phản hồi này làm đổi `SampleRequest.Status`, cùng transaction còn tạo `AuditLog` lưu status cũ/mới, actor,
+thời điểm và reason `CustomerCareSampleTrialInteraction`; không đổi status thì không thêm audit dòng thừa.
 
 Route PLM `POST /api/v1/plm/sample-requests/{sampleRequestId}/sample-trials/{trialId}/customer-feedback` là contract ưu tiên cho dialog mở từ Trial. Route tự resolve customer từ Trial, chỉ cho nhóm Sale, bắt buộc `idempotencyKey` và cho phép chọn `interactionType`. Một lần `SaveChangesAsync` cập nhật phản hồi Trial, tạo `CustomerInteraction`, tạo reference primary `SampleTrial/trialId` và tạo follow-up task tùy chọn. Vì toàn bộ mutation dùng cùng CRM write context, lỗi ở bất kỳ phần nào làm transaction rollback, không để Trial hoặc CRM interaction bị lưu riêng lẻ. Sau khi lưu thành công, composer gửi message/notification tiếng Việt trong conversation Sample Request với topic `SampleRequestCustomerFeedbackRecorded`; Sample Request private/KH_VIETAUS vẫn không tạo message theo rule chung.
 

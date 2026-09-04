@@ -9,6 +9,11 @@ internal static class QuotationRules
     public const int MaximumLineCount = 500;
     public const int MaximumPriceTierCountPerLine = 100;
     public const int MaximumQuantityRangeLabelLength = 50;
+    public const int MaximumTermCount = 20;
+    public const int MaximumTermLabelLength = 200;
+    public const int MaximumTermValueLength = 1000;
+    public const int MaximumContactPhoneLength = 50;
+    public const int MaximumCustomerAddressLength = 1000;
     private const int MoneyScale = 6;
 
     public static string? TrimToNull(string? value)
@@ -26,8 +31,9 @@ internal static class QuotationRules
 
     public static void RecalculateTotals(Quotation quotation)
     {
-        var subTotal = quotation.Lines.Sum(line => line.Quantity * line.UnitPrice);
-        var discountAmount = quotation.Lines.Sum(line =>
+        var activeLines = quotation.Lines.Where(line => line.IsActive);
+        var subTotal = activeLines.Sum(line => line.Quantity * line.UnitPrice);
+        var discountAmount = activeLines.Sum(line =>
             line.Quantity * line.UnitPrice * line.DiscountPercent / 100m);
 
         quotation.SubTotal = Round(subTotal);

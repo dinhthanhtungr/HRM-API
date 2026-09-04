@@ -120,6 +120,7 @@ internal sealed class GetSaleOrderTimelineQueryHandler
             {
                 MerchandiseOrderId = x.MerchandiseOrderId,
                 ExternalId = x.ExternalId,
+                PONo = x.PONo,
                 CreatedName = x.CreatedByNavigation!.FullName,
                 Status = x.Status,
                 CreatedDate = x.CreateDate,
@@ -165,6 +166,7 @@ internal sealed class GetSaleOrderTimelineQueryHandler
             .ToListAsync(cancellationToken);
 
         ApplyEffectivePause(items, now);
+        ApplyVatInclusiveTotalPrices(items);
         var orderIds = items.Select(x => x.MerchandiseOrderId).ToArray();
         var logs = await BuildLogQuery()
             .Where(x => orderIds.Contains(x.SourceId))
@@ -225,6 +227,23 @@ internal sealed class GetSaleOrderTimelineQueryHandler
                 (!from.HasValue || order.CreateDate >= from.Value) &&
                 (!toExclusive.HasValue || order.CreateDate < toExclusive.Value))
         };
+    }
+
+    private static void ApplyVatInclusiveTotalPrices(IReadOnlyCollection<SaleOrderTimelineCardDto> items)
+    {
+        foreach (var item in items)
+        {
+            if (!item.TotalPrice.HasValue)
+            {
+                continue;
+            }
+
+            var vatRate = item.Vat ?? 0m;
+            item.TotalPrice = decimal.Round(
+                item.TotalPrice.Value * (1m + vatRate / 100m),
+                2,
+                MidpointRounding.AwayFromZero);
+        }
     }
 
     private IQueryable<TimelineItemDto> BuildLogQuery()

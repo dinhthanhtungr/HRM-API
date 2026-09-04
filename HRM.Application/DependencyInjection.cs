@@ -52,11 +52,18 @@ public static class DependencyInjection
         services.AddScoped<ProductPricingSourceQueryService>();
         services.AddScoped<ProductPricingRequestQueryService>();
         services.AddScoped<ProductPricingApprovalNotificationService>();
+        services.AddScoped<QuotationPricingApprovalStateService>();
+        services.AddScoped<IQuotationPricingExpiryReminderProcessor, QuotationPricingExpiryReminderProcessor>();
         services.AddScoped<ProductPricingSourceValidator>();
         services.AddScoped<FormulaPricingPolicyProvider>();
         services.AddScoped<IFormulaPricingPolicyResolver>(provider =>
             provider.GetRequiredService<FormulaPricingPolicyProvider>());
         services.AddScoped<FormulaPricingEngine>();
+        services.AddScoped<ApprovedProductPricingTierReader>();
+        services.AddScoped<SystemCalculatedProductPricingTierResolver>();
+        services.AddScoped<LatestQuotationPricingTierReader>();
+        services.AddScoped<QuotationProductTierPricingResolver>();
+        services.AddScoped<QuotationManualPricingTemplateResolver>();
         services.AddScoped<QuotationTierPriceReferenceService>();
         services.AddScoped<QuotationConversationSubjectService>();
         services.AddScoped<DraftQuotationProductSnapshotSyncService>();

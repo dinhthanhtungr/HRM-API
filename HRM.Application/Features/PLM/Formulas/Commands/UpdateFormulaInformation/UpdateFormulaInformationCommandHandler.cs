@@ -66,42 +66,25 @@ internal sealed class UpdateFormulaInformationCommandHandler
 
             if (FormulaConcurrencyRules.HasExpectedUpdatedDateConflict(
                     command.Request.ExpectedUpdatedDate,
-                    formula.UpdatedDate))
+                    formula.UpdatedDate,
+                    formula.CreatedDate))
             {
                 return OperationResult<FormulaWriteResultDto>.Fail("Formula was changed by another user. Please reload before saving.");
             }
 
-            if (command.Request.ProductId is { } productId && productId != Guid.Empty)
-            {
-                var product = await _formulaWriteService.LoadProductAsync(
-                    companyId,
-                    productId,
-                    cancellationToken);
-                formula.ProductId = product.ProductId;
-            }
-
-            formula.ExternalId = await _formulaWriteService.ResolveExternalIdAsync(
-                companyId,
-                command.Request.ExternalId,
-                formula.FormulaId,
-                cancellationToken);
-            formula.Name = FormulaWriteService.NormalizeRequiredName(command.Request.Name);
-            formula.Note = NormalizeOptionalText(command.Request.Note);
-            formula.EffectiveDate = command.Request.EffectiveDate;
-            formula.IsSelect = command.Request.IsSelect ?? formula.IsSelect;
-            formula.UpdatedBy = employeeId;
-            formula.UpdatedDate = DateTime.Now;
-
-            await _formulaWriteService.ReplaceMaterialsAsync(
+            var now = DateTime.Now;
+            await _formulaWriteService.ApplyFormulaUpdateAsync(
                 formula,
-                command.Request.Materials,
+                command.Request,
                 companyId,
+                employeeId,
+                now,
                 cancellationToken);
 
             await _formulaVersionService.SaveSnapshotAsync(
                 formula,
                 employeeId,
-                formula.UpdatedDate!.Value,
+                now,
                 "Updated formula information",
                 force: false,
                 cancellationToken);
@@ -119,11 +102,6 @@ internal sealed class UpdateFormulaInformationCommandHandler
             return OperationResult<FormulaWriteResultDto>.Fail(
                 "Formula version was created concurrently. Reload and try again.");
         }
-    }
-
-    private static string? NormalizeOptionalText(string? value)
-    {
-        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 
 }

@@ -6,4 +6,5 @@ internal sealed class SampleRequestSampleTrialReportRow
 {
     public SampleRequest SampleRequest { get; set; } = null!;
     public SampleRequestSampleTrial? Trial { get; set; }
+    public int? TrialCount { get; set; }
 }

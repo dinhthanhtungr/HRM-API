@@ -1,5 +1,6 @@
 using HRM.Domain.Entities.CompanySchema;
 using HRM.Domain.Entities.HrSchema;
+using HRM.Domain.Entities.MaterialSchema;
 using HRM.Domain.Enums.CustomerEnum;
 using HRM.Domain.Enums.Formulas;
 
@@ -9,6 +10,7 @@ public sealed class FormulaPricingPolicy
 {
     public Guid FormulaPricingPolicyId { get; set; }
     public Guid CompanyId { get; set; }
+    public Guid? CategoryId { get; set; }
     public FormulaPricingProfile Profile { get; set; }
     public string Currency { get; set; } = "VND";
     public string Name { get; set; } = string.Empty;
@@ -19,6 +21,7 @@ public sealed class FormulaPricingPolicy
     public decimal RoundingIncrement { get; set; } = 1m;
     public FormulaPricingPolicyStatus Status { get; set; } = FormulaPricingPolicyStatus.Draft;
     public DateTime? EffectiveFrom { get; set; }
+    public int? PriceValidityDays { get; set; }
     public Guid? PublishedBy { get; set; }
     public DateTime? PublishedAt { get; set; }
     public bool IsActive { get; set; } = true;
@@ -28,6 +31,7 @@ public sealed class FormulaPricingPolicy
     public DateTime? UpdatedDate { get; set; }
 
     public Company Company { get; set; } = null!;
+    public Category? Category { get; set; }
     public Employee CreatedByNavigation { get; set; } = null!;
     public Employee? UpdatedByNavigation { get; set; }
     public Employee? PublishedByNavigation { get; set; }

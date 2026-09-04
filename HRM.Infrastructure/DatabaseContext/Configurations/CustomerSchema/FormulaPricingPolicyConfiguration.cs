@@ -11,8 +11,8 @@ public sealed class FormulaPricingPolicyConfiguration : IEntityTypeConfiguration
     {
         entity.ToTable("FormulaPricingPolicies", "Customer");
         entity.HasKey(x => x.FormulaPricingPolicyId).HasName("PK_FormulaPricingPolicies");
-        entity.Property(x => x.FormulaPricingPolicyId).ValueGeneratedOnAdd()
-            .HasDefaultValueSql("gen_random_uuid()");
+        entity.Property(x => x.FormulaPricingPolicyId).ValueGeneratedOnAdd().HasDefaultValueSql("gen_random_uuid()");
+        entity.Property(x => x.CategoryId).IsRequired(false);
         entity.Property(x => x.Profile).HasConversion<int>();
         entity.Property(x => x.Currency).HasColumnType("citext").HasMaxLength(10)
             .HasDefaultValue("VND").IsRequired();
@@ -21,18 +21,51 @@ public sealed class FormulaPricingPolicyConfiguration : IEntityTypeConfiguration
         entity.Property(x => x.DefaultProfitMarginRate).HasPrecision(9, 4);
         entity.Property(x => x.RoundingRule).HasConversion<int>();
         entity.Property(x => x.RoundingIncrement).HasPrecision(22, 6);
-        entity.Property(x => x.Status).HasConversion<int>()
-            .HasDefaultValue(FormulaPricingPolicyStatus.Draft);
+        entity.Property(x => x.Status).HasConversion<int>().HasDefaultValue(FormulaPricingPolicyStatus.Draft);
         entity.Property(x => x.Version).HasDefaultValue(1);
         entity.Property(x => x.IsActive).HasDefaultValue(true);
+        entity.Property(x => x.PriceValidityDays).HasDefaultValue(1);
 
-        entity.HasIndex(x => new { x.CompanyId, x.Profile, x.Currency, x.Version })
-            .IsUnique().HasDatabaseName("UX_FormulaPricingPolicies_Company_Profile_Currency_Version");
-        entity.HasIndex(x => new { x.CompanyId, x.Profile, x.Currency, x.Status, x.IsActive })
-            .HasDatabaseName("IX_FormulaPricingPolicies_Current");
+        // Policy riêng cho một category
+        entity.HasIndex(x => new
+        { x.CompanyId, x.CategoryId, x.Profile, x.Currency, x.Version })
+            .IsUnique()
+            .HasFilter("\"CategoryId\" IS NOT NULL")
+            .HasDatabaseName("UX_FormulaPricingPolicies_Category_Profile_Currency_Version");
+
+        // Policy chung: CategoryId = null
+        entity.HasIndex(x => new
+        { x.CompanyId, x.Profile, x.Currency, x.Version })
+            .IsUnique()
+            .HasFilter("\"CategoryId\" IS NULL")
+            .HasDatabaseName("UX_FormulaPricingPolicies_General_Profile_Currency_Version");
+
+        entity.HasIndex(x => x.CategoryId)
+            .HasDatabaseName("IX_FormulaPricingPolicies_CategoryId");
+
+        // Tăng tốc lookup policy theo category
+        entity.HasIndex(x => new
+        { x.CompanyId, x.CategoryId, x.Profile, x.Currency, x.Status, x.IsActive })
+            .HasDatabaseName("IX_FormulaPricingPolicies_Category_Profile_Currency_Status_Active");
+
+        // Mỗi category chỉ có một Draft hoặc Published cho từng Profile + Currency
+        entity.HasIndex(x => new
+        { x.CompanyId, x.CategoryId, x.Profile, x.Currency, x.Status })
+            .IsUnique()
+            .HasFilter("\"CategoryId\" IS NOT NULL AND \"Status\" IN (0, 10) AND \"IsActive\" = TRUE")
+            .HasDatabaseName("UX_FormulaPricingPolicies_Category_Active_DraftOrPublished");
+
+        // Policy chung: CategoryId = null
+        entity.HasIndex(x => new
+        { x.CompanyId, x.Profile, x.Currency, x.Status })
+            .IsUnique()
+            .HasFilter("\"CategoryId\" IS NULL AND \"Status\" IN (0, 10) AND \"IsActive\" = TRUE")
+            .HasDatabaseName("UX_FormulaPricingPolicies_General_Active_DraftOrPublished");
 
         entity.HasOne(x => x.Company).WithMany().HasForeignKey(x => x.CompanyId)
             .OnDelete(DeleteBehavior.Restrict).HasConstraintName("FK_FormulaPricingPolicies_Company");
+        entity.HasOne(x => x.Category).WithMany().HasForeignKey(x => x.CategoryId)
+            .OnDelete(DeleteBehavior.Restrict).HasConstraintName("FK_FormulaPricingPolicies_Category");
         entity.HasOne(x => x.CreatedByNavigation).WithMany().HasForeignKey(x => x.CreatedBy)
             .OnDelete(DeleteBehavior.Restrict).HasConstraintName("FK_FormulaPricingPolicies_CreatedBy");
         entity.HasOne(x => x.UpdatedByNavigation).WithMany().HasForeignKey(x => x.UpdatedBy)

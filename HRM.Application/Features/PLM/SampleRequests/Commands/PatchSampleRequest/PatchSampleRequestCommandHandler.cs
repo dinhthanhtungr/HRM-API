@@ -78,6 +78,7 @@ internal sealed class PatchSampleRequestCommandHandler
         "product.light_condition",
         "product.visual_test",
         "product.return_sample",
+        "product.grs_consumer_type",
         "product.weight",
         "product.unit",
         "product.other_comment"
@@ -125,28 +126,27 @@ internal sealed class PatchSampleRequestCommandHandler
         }
 
         var clearFields = NormalizeClearFields(request.ClearFields);
+        if (request.GRSConsumerType.HasValue && !Enum.IsDefined(request.GRSConsumerType.Value))
+        {
+            return OperationResult<Guid>.Fail("GRSConsumerType is invalid.");
+        }
+
         var clearValidationError = ValidateClearFields(request, clearFields);
         if (clearValidationError is not null)
         {
             return OperationResult<Guid>.Fail(clearValidationError);
         }
 
-        var sampleRequest = await _dbContext.SampleRequests
-            .FirstOrDefaultAsync(
-                x =>
-                    x.SampleRequestId == request.SampleRequestId &&
-                    x.CompanyId == companyId.Value &&
-                    x.IsActive,
-                cancellationToken);
+        var sampleRequestVisibilityScope = await _visibilityService.BuildScopeAsync(cancellationToken);
+        var sampleRequest = await _visibilityService.ApplySampleRequestVisibility(
+                _dbContext.SampleRequests.Where(x => x.SampleRequestId == request.SampleRequestId),
+                _dbContext.Customers.AsNoTracking(),
+                sampleRequestVisibilityScope)
+            .FirstOrDefaultAsync(cancellationToken);
 
         if (sampleRequest is null)
         {
             return OperationResult<Guid>.Fail("Sample request was not found.");
-        }
-
-        if (ShouldPatchProduct(request) && !CanPatchProductDirectly(_currentUser, sampleRequest))
-        {
-            return OperationResult<Guid>.Fail("You are not allowed to update product information directly for this sample request.");
         }
 
         if (!request.IsDataChangeApproval &&
@@ -205,17 +205,23 @@ internal sealed class PatchSampleRequestCommandHandler
 
         if (request.ProductId is { } productId && productId != Guid.Empty)
         {
-            var productExists = await _dbContext.Products
+            var productCategoryExternalId = await _dbContext.Products
                 .AsNoTracking()
-                .AnyAsync(x =>
+                .Where(x =>
                     x.ProductId == productId &&
                     x.CompanyId == companyId.Value &&
-                    x.IsActive,
-                    cancellationToken);
+                    x.IsActive)
+                .Select(x => x.Category!.ExternalId)
+                .FirstOrDefaultAsync(cancellationToken);
 
-            if (!productExists)
+            if (productCategoryExternalId is null)
             {
                 return OperationResult<Guid>.Fail("Product does not exist or is inactive.");
+            }
+
+            if (!SampleRequestProductCategoryRules.IsCanonical(productCategoryExternalId))
+            {
+                return OperationResult<Guid>.Fail("Bạn đang chọn loại sản phẩm củ.");
             }
 
             sampleRequest.ProductId = productId;
@@ -278,9 +284,41 @@ internal sealed class PatchSampleRequestCommandHandler
                         x.SampleRequestId == sampleRequest.SampleRequestId &&
                         x.IsActive &&
                         (x.Status == SampleTrialStatus.SampleSent ||
-                         x.Status == SampleTrialStatus.WaitingCustomerFeedback))
+                        x.Status == SampleTrialStatus.WaitingCustomerFeedback ||
+                        x.Status == SampleTrialStatus.PriceQuote))
                     .OrderByDescending(x => x.TrialNo)
                     .FirstOrDefaultAsync(cancellationToken);
+
+                if (acceptedSampleTrial is null)
+                {
+                    var hasActiveTrial = await _dbContext.SampleRequestSampleTrials
+                        .AsNoTracking()
+                        .AnyAsync(
+                            x => x.SampleRequestId == sampleRequest.SampleRequestId && x.IsActive,
+                            cancellationToken);
+
+                    if (!hasActiveTrial)
+                    {
+                        acceptanceProductFormulas = await _dbContext.Formulas
+                            .Where(x =>
+                                x.ProductId == sampleRequest.ProductId &&
+                                x.CompanyId == companyId.Value &&
+                                x.IsActive)
+                            .ToListAsync(cancellationToken);
+
+                        var selectedFormula = acceptanceProductFormulas
+                            .First(x => x.FormulaId == formulaId);
+                        acceptedSampleTrial = await CreateApprovedTrialForMissingHistoryAsync(
+                            sampleRequest,
+                            selectedFormula,
+                            _currentUser.EmployeeId.Value,
+                            auditChangedAt: DateTime.Now,
+                            cancellationToken);
+                        await _dbContext.SampleRequestSampleTrials.AddAsync(
+                            acceptedSampleTrial,
+                            cancellationToken);
+                    }
+                }
 
                 var approvalValidationError = SampleRequestSampleTrialApprovalRules.Validate(
                     acceptedSampleTrial,
@@ -290,7 +328,7 @@ internal sealed class PatchSampleRequestCommandHandler
                     return OperationResult<Guid>.Fail(approvalValidationError);
                 }
 
-                acceptanceProductFormulas = await _dbContext.Formulas
+                acceptanceProductFormulas ??= await _dbContext.Formulas
                     .Where(x =>
                         x.ProductId == sampleRequest.ProductId &&
                         x.CompanyId == companyId.Value &&
@@ -343,6 +381,24 @@ internal sealed class PatchSampleRequestCommandHandler
             if (product is null)
             {
                 return OperationResult<Guid>.Fail("Product does not exist or is inactive.");
+            }
+
+            if (request.CategoryId is { } categoryId && categoryId != Guid.Empty)
+            {
+                var categoryExternalId = await _dbContext.Categories
+                    .AsNoTracking()
+                    .Where(x =>
+                        x.CategoryId == categoryId &&
+                        x.CompanyId == companyId.Value &&
+                        x.IsActive == true &&
+                        x.Types == "Product")
+                    .Select(x => x.ExternalId)
+                    .FirstOrDefaultAsync(cancellationToken);
+
+                if (!SampleRequestProductCategoryRules.IsCanonical(categoryExternalId))
+                {
+                    return OperationResult<Guid>.Fail("Bạn đang chọn loại sản phẩm củ.");
+                }
             }
 
             var oldProductSnapshot = SampleRequestDataChangeAuditHelper.BuildProductAuditSnapshot(product);
@@ -575,6 +631,67 @@ internal sealed class PatchSampleRequestCommandHandler
             "Updated sample request successfully.");
     }
 
+    /// <summary>
+    /// Một số SampleRequest legacy đã được chuyển sang SampleSent nhưng chưa từng có Trial.
+    /// Khi Sale xác nhận Formula mà không còn Trial active, tạo record hoàn tất để giữ đầy đủ
+    /// dấu vết Lab đã gửi mẫu, Sale đã nhận mẫu và khách đã duyệt; ApplyApproved tiếp tục chạy
+    /// cùng rule với Trial thông thường trong transaction hiện tại.
+    /// </summary>
+    private async Task<SampleRequestSampleTrial> CreateApprovedTrialForMissingHistoryAsync(
+        SampleRequest sampleRequest,
+        Formula selectedFormula,
+        Guid employeeId,
+        DateTime auditChangedAt,
+        CancellationToken cancellationToken)
+    {
+        var sentDate = sampleRequest.SendDate ?? sampleRequest.RealDeliveryDate ?? auditChangedAt;
+        var snapshots = await _dbContext.SampleRequests
+            .AsNoTracking()
+            .Where(x => x.SampleRequestId == sampleRequest.SampleRequestId)
+            .Select(x => new
+            {
+                CustomerName = x.Customer.CustomerName,
+                ProductName = x.Product.Name,
+                x.Product.ColourCode,
+                CategoryName = x.Product.Category != null ? x.Product.Category.Name : null
+            })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var nextTrialNo = (await _dbContext.SampleRequestSampleTrials
+            .Where(x => x.SampleRequestId == sampleRequest.SampleRequestId)
+            .Select(x => (int?)x.TrialNo)
+            .MaxAsync(cancellationToken) ?? 0) + 1;
+
+        return new SampleRequestSampleTrial
+        {
+            SampleRequestSampleTrialId = Guid.CreateVersion7(),
+            SampleRequestId = sampleRequest.SampleRequestId,
+            FormulaId = selectedFormula.FormulaId,
+            Formula = selectedFormula,
+            TrialNo = nextTrialNo,
+            // ApplyApproved chuyển trial này sang Approved ngay trong cùng transaction.
+            Status = SampleTrialStatus.WaitingCustomerFeedback,
+            CustomerNameSnapshot = snapshots?.CustomerName,
+            SampleRequestExternalIdSnapshot = sampleRequest.ExternalId,
+            ProductNameSnapshot = snapshots?.ProductName,
+            ColourCodeSnapshot = snapshots?.ColourCode,
+            CategoryNameSnapshot = snapshots?.CategoryName,
+            BatchNo = selectedFormula.ExternalId,
+            // Dữ liệu legacy không có Trial: kế thừa mốc gửi có sẵn của Sample Request.
+            // Nếu hồ sơ cũng thiếu mốc này, timestamp chốt Formula là mốc duy nhất có thể truy vết.
+            SentDate = sentDate,
+            SentByEmployeeId = sampleRequest.SendBy,
+            RequestReceivedDate = auditChangedAt,
+            FinishedDate = auditChangedAt,
+            CustomerReplyNote = "Khách hàng đã xác nhận hoàn thành mẫu khi Sale chốt công thức.",
+            CreatedBy = employeeId,
+            CreatedDate = auditChangedAt,
+            UpdatedBy = employeeId,
+            UpdatedDate = auditChangedAt,
+            IsActive = true
+        };
+    }
+
     private static void ApplySampleRequestPatch(
         SampleRequest sampleRequest,
         PatchSampleRequestCommand request)
@@ -738,6 +855,8 @@ internal sealed class PatchSampleRequestCommandHandler
             PatchNullableIfHasValue(request.ReturnSample, () => product.ReturnSample, value => product.ReturnSample = value);
         }
         PatchHelper.SetIfHasValue(request.IsRecycle, () => product.IsRecycle, value => product.IsRecycle = value);
+        PatchHelper.SetIfHasValue(request.GRS, () => product.GRS, value => product.GRS = value);
+        PatchNullableIfHasValue(request.GRSConsumerType, () => product.GRSConsumerType, value => product.GRSConsumerType = value);
         PatchTrimmedIfPresent(request.ProductOtherComment, () => product.OtherComment, value => product.OtherComment = value);
         PatchHelper.SetGuidIfValid(request.CategoryId, () => product.CategoryId, value => product.CategoryId = value);
         if (!request.IsDataChangeApproval || request.Weight.HasValue)
@@ -997,6 +1116,8 @@ internal sealed class PatchSampleRequestCommandHandler
             "product.light_condition" => request.LightCondition is not null,
             "product.visual_test" => request.VisualTest is not null,
             "product.return_sample" => request.ReturnSample.HasValue,
+            "product.grs" => request.GRS.HasValue,
+            "product.grs_consumer_type" => request.GRSConsumerType.HasValue,
             "product.weight" => request.Weight.HasValue,
             "product.unit" => request.Unit is not null,
             "product.other_comment" => request.ProductOtherComment is not null,
@@ -1153,6 +1274,9 @@ internal sealed class PatchSampleRequestCommandHandler
                 case "product.return_sample":
                     PatchHelper.SetNullable<bool>(null, () => product.ReturnSample, value => product.ReturnSample = value);
                     break;
+                case "product.grs_consumer_type":
+                    PatchHelper.SetNullable<GRSConsumerType>(null, () => product.GRSConsumerType, value => product.GRSConsumerType = value);
+                    break;
                 case "product.weight":
                     PatchHelper.SetNullable<double>(null, () => product.Weight, value => product.Weight = value);
                     break;
@@ -1201,6 +1325,8 @@ internal sealed class PatchSampleRequestCommandHandler
             request.RecycleRate.HasValue ||
             request.TaicalRate.HasValue ||
             request.IsRecycle.HasValue ||
+            request.GRS.HasValue ||
+            request.GRSConsumerType.HasValue ||
             request.CategoryId.HasValue ||
             request.Weight.HasValue ||
             request.Unit is not null ||
@@ -1213,23 +1339,4 @@ internal sealed class PatchSampleRequestCommandHandler
             .Any(ProductClearFields.Contains);
     }
 
-    private static bool CanPatchProductDirectly(
-        ICurrentUser currentUser,
-        SampleRequest sampleRequest)
-    {
-        if (currentUser.IsInAnyRole(ApplicationRoleSets.PLM.ProductTechnicalEditors))
-        {
-            return true;
-        }
-
-        var employeeId = currentUser.EmployeeId;
-        return employeeId.HasValue &&
-            employeeId.Value != Guid.Empty &&
-            SampleRequestDataChangeAuthorization.CanRequest(currentUser) &&
-            SampleRequestDataChangeAuthorization.CanRequestFor(
-                currentUser,
-                employeeId.Value,
-                sampleRequest.ManagerBy,
-                sampleRequest.CreatedBy);
-    }
 }

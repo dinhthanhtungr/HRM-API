@@ -144,9 +144,9 @@ internal sealed class UpdateMaterialSupplierPriceCommandHandler
 
     private static string? ValidateRequest(UpdateMaterialSupplierPriceRequest request)
     {
-        if (request.NewPrice <= 0m)
+        if (request.NewPrice < 0m)
         {
-            return "NewPrice must be greater than zero.";
+            return "NewPrice cannot be negative.";
         }
 
         if (request.NewPrice > MaxSupportedPrice)

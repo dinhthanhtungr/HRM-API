@@ -10,6 +10,10 @@ public sealed class GetSampleRequestLookupQuery : IRequest<IReadOnlyList<SampleR
     public Guid? SampleRequestId { get; init; }
     public string? Keyword { get; init; }
     public string? Status { get; init; }
+    /// <summary>
+    /// Chỉ dùng cho dropdown lập SaleOrder; giới hạn Sample Request ở SampleSent hoặc Completed.
+    /// </summary>
+    public bool ForSaleOrder { get; init; }
     public bool? IsActive { get; init; } = true;
     public int Take { get; init; } = 20;
 

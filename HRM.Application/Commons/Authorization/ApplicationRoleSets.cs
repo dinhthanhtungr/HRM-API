@@ -155,6 +155,17 @@ public static class ApplicationRoleSets
 
     public static class PLM
     {
+        public static readonly string[] SampleRequestPriceQuoteRequesters =
+        [
+            ApplicationRoles.Sales.SaleUser,
+            ApplicationRoles.Leader,
+            ApplicationRoles.Lab.LabUser,
+            ApplicationRoles.Lab.LabAdmin,
+            ApplicationRoles.Admin,
+            ApplicationRoles.Developer,
+            ApplicationRoles.President
+        ];
+
         public static readonly string[] ComplaintCreators =
         [
             ApplicationRoles.Sales.SaleUser,

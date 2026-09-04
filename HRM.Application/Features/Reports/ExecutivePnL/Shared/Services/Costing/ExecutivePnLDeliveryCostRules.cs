@@ -1,7 +1,7 @@
 namespace HRM.Application.Features.Reports.ExecutivePnL.Shared.Services.Costing;
 
 /// <summary>
-/// Ưu tiên cost snapshot của các lot đã chuẩn hóa; legacy amount chỉ dùng khi detail chưa có lot consumption active.
+/// Ưu tiên cost snapshot hợp lệ của các lot đã chuẩn hóa; nếu snapshot lịch sử bằng 0 thì dùng nguồn fallback.
 /// </summary>
 internal static class ExecutivePnLDeliveryCostRules
 {
@@ -9,5 +9,7 @@ internal static class ExecutivePnLDeliveryCostRules
         bool hasNormalizedLots,
         decimal lotCostSnapshotAmount,
         decimal legacyCostAmount)
-        => hasNormalizedLots ? lotCostSnapshotAmount : legacyCostAmount;
+        => hasNormalizedLots && lotCostSnapshotAmount > 0m
+            ? lotCostSnapshotAmount
+            : legacyCostAmount;
 }

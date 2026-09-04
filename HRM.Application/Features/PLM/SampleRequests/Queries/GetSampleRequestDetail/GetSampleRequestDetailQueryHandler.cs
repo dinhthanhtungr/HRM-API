@@ -131,6 +131,8 @@ internal sealed class GetSampleRequestDetailQueryHandler
                     VisualTest = x.Product.VisualTest,
                     ReturnSample = x.Product.ReturnSample,
                     IsRecycle = x.Product.IsRecycle,
+                    GRS = x.Product.GRS,
+                    GRSConsumerType = x.Product.GRSConsumerType,
                     OtherComment = x.Product.OtherComment
                 }
             })
@@ -152,6 +154,7 @@ internal sealed class GetSampleRequestDetailQueryHandler
                 FormulaId = x.FormulaId,
                 ExternalId = x.ExternalId,
                 Name = x.Name,
+                Status = x.Status,
                 TotalPrice = canViewFormulaPrices ? x.TotalPrice : null
             })
             .ToListAsync(cancellationToken);

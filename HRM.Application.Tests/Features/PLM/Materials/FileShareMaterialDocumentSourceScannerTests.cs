@@ -55,6 +55,44 @@ public sealed class FileShareMaterialDocumentSourceScannerTests
         }
     }
 
+    [Fact]
+    public async Task Scanner_ScansAndReopensFilesFromMultipleConfiguredRoots()
+    {
+        var firstRoot = Path.Combine(Path.GetTempPath(), $"hrm-material-document-test-{Guid.NewGuid():N}");
+        var secondRoot = Path.Combine(Path.GetTempPath(), $"hrm-material-document-test-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(firstRoot);
+        Directory.CreateDirectory(secondRoot);
+
+        try
+        {
+            await File.WriteAllBytesAsync(Path.Combine(firstRoot, "TDS_NVL_NH_430.pdf"), [1]);
+            await File.WriteAllBytesAsync(Path.Combine(secondRoot, "MSDS_NVL_BM_642.pdf"), [2, 3]);
+            var scanner = new FileShareMaterialDocumentSourceScanner(
+                Options.Create(new MaterialDocumentImportOptions
+                {
+                    SourceRoots = [firstRoot, secondRoot],
+                    AllowedExtensions = [".pdf"]
+                }));
+
+            var scan = await scanner.ScanAsync();
+
+            Assert.Equal(2, scan.Files.Count);
+            var secondFile = Assert.Single(
+                scan.Files,
+                x => x.RelativePath.StartsWith("1/", StringComparison.Ordinal));
+            var content = await scanner.OpenReadAsync(secondFile.RelativePath);
+            await using var stream = content.Stream;
+
+            Assert.Equal("MSDS_NVL_BM_642.pdf", content.FileName);
+            Assert.Equal(2, content.Length);
+        }
+        finally
+        {
+            Directory.Delete(firstRoot, recursive: true);
+            Directory.Delete(secondRoot, recursive: true);
+        }
+    }
+
     private static FileShareMaterialDocumentSourceScanner CreateScanner(string root)
     {
         return new FileShareMaterialDocumentSourceScanner(

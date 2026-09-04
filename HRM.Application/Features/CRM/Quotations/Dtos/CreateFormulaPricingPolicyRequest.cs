@@ -6,6 +6,8 @@ namespace HRM.Application.Features.CRM.Quotations.Dtos;
 
 public sealed class CreateFormulaPricingPolicyRequest
 {
+    public Guid? CategoryId { get; init; }
+
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public FormulaPricingProfile Profile { get; init; }
 
@@ -19,5 +21,6 @@ public sealed class CreateFormulaPricingPolicyRequest
 
     public decimal RoundingIncrement { get; init; }
     public DateTime EffectiveFrom { get; init; }
+    public int? PriceValidityDays { get; init; }
     public IReadOnlyList<FormulaPricingPolicyTierRequest> Tiers { get; init; } = [];
 }

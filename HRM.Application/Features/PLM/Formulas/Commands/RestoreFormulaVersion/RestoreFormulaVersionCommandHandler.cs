@@ -53,7 +53,8 @@ internal sealed class RestoreFormulaVersionCommandHandler
 
         if (FormulaConcurrencyRules.HasExpectedUpdatedDateConflict(
                 command.Request.ExpectedUpdatedDate,
-                formula.UpdatedDate))
+                formula.UpdatedDate,
+                formula.CreatedDate))
         {
             return OperationResult<FormulaVersionActionResultDto>.Fail(
                 "Formula was changed by another user. Please reload before restoring.");

@@ -20,6 +20,10 @@ public sealed class NotificationDto
     public string? PayloadJson { get; set; }
     public NotificationContextDto? Context { get; internal set; }
     public Guid? ConversationId { get; internal set; }
+    /// <summary>
+    /// Tiêu đề conversation hiện tại mà employee đang được phép xem. FE dùng field này làm title canonical khi gom feed theo thread.
+    /// </summary>
+    public string? ConversationTitle { get; internal set; }
     public Guid? MessageId { get; internal set; }
     public DateTime CreatedDate { get; set; }
     public Guid CompanyId { get; set; }

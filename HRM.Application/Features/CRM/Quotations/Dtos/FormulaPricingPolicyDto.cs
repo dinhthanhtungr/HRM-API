@@ -7,6 +7,7 @@ namespace HRM.Application.Features.CRM.Quotations.Dtos;
 public sealed class FormulaPricingPolicyDto
 {
     public Guid FormulaPricingPolicyId { get; init; }
+    public Guid? CategoryId { get; init; }
 
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public FormulaPricingProfile Profile { get; init; }
@@ -26,6 +27,8 @@ public sealed class FormulaPricingPolicyDto
     public FormulaPricingPolicyStatus Status { get; init; }
 
     public DateTime? EffectiveFrom { get; init; }
+    public int? PriceValidityDays { get; init; }
+    public DateTime? PriceExpiresAt { get; init; }
     public DateTime? PublishedAt { get; init; }
     public DateTime? UpdatedDate { get; init; }
     public IReadOnlyList<FormulaPricingPolicyTierDto> Tiers { get; init; } = [];

@@ -17,7 +17,8 @@ internal static class FormulaPricingPolicyRules
         decimal defaultProfitMarginRate,
         FormulaPricingRoundingRule roundingRule,
         decimal roundingIncrement,
-        DateTime effectiveFrom)
+        DateTime effectiveFrom,
+        int? priceValidityDays)
     {
         if (string.IsNullOrWhiteSpace(name) || name.Trim().Length > 150)
             return "Policy name is required and is limited to 150 characters.";
@@ -29,6 +30,8 @@ internal static class FormulaPricingPolicyRules
             return "Default profit margin rate must be between 0 and 100.";
         if (!Enum.IsDefined(roundingRule) || roundingIncrement <= 0m)
             return "A valid rounding rule and positive rounding increment are required.";
+        if (priceValidityDays is <= 0)
+            return "PriceValidityDays must be greater than zero when provided.";
         return effectiveFrom == default
             ? "EffectiveFrom is required."
             : null;
@@ -97,7 +100,8 @@ internal static class FormulaPricingPolicyRules
                 MinInclusive = x.MinInclusive,
                 MaxInclusive = x.MaxInclusive,
                 PriceOffset = x.PriceOffset,
-                SortOrder = x.SortOrder
+                SortOrder = x.SortOrder,
+                IsActive = x.IsActive
             }).ToArray());
     }
 
@@ -107,13 +111,14 @@ internal static class FormulaPricingPolicyRules
         policy.DefaultProfitMarginRate,
         policy.RoundingRule,
         policy.RoundingIncrement,
-        policy.Tiers.OrderBy(x => x.SortOrder).Select(x => new FormulaPricingPolicyTierDefinition(
+        policy.Tiers.Where(x => x.IsActive).OrderBy(x => x.SortOrder).Select(x => new FormulaPricingPolicyTierDefinition(
             x.QuantityRangeLabel, x.MinQuantity, x.MaxQuantity, x.MinInclusive,
             x.MaxInclusive, x.PriceOffset, x.SortOrder)).ToArray());
 
     public static FormulaPricingPolicyDto ToDto(FormulaPricingPolicy policy) => new()
     {
         FormulaPricingPolicyId = policy.FormulaPricingPolicyId,
+        CategoryId = policy.CategoryId,
         Profile = policy.Profile,
         Currency = policy.Currency,
         Name = policy.Name,
@@ -124,6 +129,10 @@ internal static class FormulaPricingPolicyRules
         RoundingIncrement = policy.RoundingIncrement,
         Status = policy.Status,
         EffectiveFrom = policy.EffectiveFrom,
+        PriceValidityDays = policy.PriceValidityDays,
+        PriceExpiresAt = policy.PriceValidityDays.HasValue && policy.EffectiveFrom.HasValue
+            ? policy.EffectiveFrom.Value.AddDays(policy.PriceValidityDays.Value)
+            : null,
         PublishedAt = policy.PublishedAt,
         UpdatedDate = policy.UpdatedDate,
         Tiers = policy.Tiers.OrderBy(x => x.SortOrder).Select(x => new FormulaPricingPolicyTierDto
@@ -134,7 +143,9 @@ internal static class FormulaPricingPolicyRules
             MaxQuantity = x.MaxQuantity,
             MinInclusive = x.MinInclusive,
             MaxInclusive = x.MaxInclusive,
-            PriceOffset = x.PriceOffset,
+            PriceOffset = x.PriceOffset ?? 0m,
+            RequiresManualPrice = !x.PriceOffset.HasValue,
+            IsActive = x.IsActive,
             SortOrder = x.SortOrder
         }).ToArray()
     };

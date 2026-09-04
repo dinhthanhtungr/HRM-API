@@ -16,6 +16,7 @@ using HRM.Application.Abstractions.Persistence.Warehouse;
 using HRM.Application.Abstractions.Persistence.Work;
 using HRM.Infrastructure.DatabaseContext.ApplicationDbs;
 using HRM.Infrastructure.Documents.Pdfs;
+using HRM.Infrastructure.Documents.Excels;
 using HRM.Infrastructure.Services.Pricing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -49,6 +50,7 @@ internal static class PersistenceDependencyInjection
         services.AddSingleton<IManufacturingVUFormulaPdfRenderer, ManufacturingVUFormulaPdfRenderer>();
         services.AddSingleton<IComplaintReportPdfRenderer, ComplaintReportPdfRenderer>();
         services.AddSingleton<IProductInspectionPdfRenderer, ProductInspectionPdfRenderer>();
+        services.AddSingleton<IFormulaMaterialsExcelRenderer, FormulaMaterialsExcelRenderer>();
 
         services.AddDbContext<ApplicationDbContext>(options =>
         {

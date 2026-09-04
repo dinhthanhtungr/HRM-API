@@ -236,7 +236,7 @@ internal sealed class AttachmentService : IAttachmentService
 
     private static string BuildRelativeFolder(Guid collectionId, AttachmentSlot slot)
     {
-        return Path.Combine("attachments", collectionId.ToString("N"), slot.ToString()).Replace('\\', '/');
+        return Path.Combine("collections", collectionId.ToString("N"), slot.ToString()).Replace('\\', '/');
     }
 
     private static AttachmentDto ToDto(AttachmentModel attachment)

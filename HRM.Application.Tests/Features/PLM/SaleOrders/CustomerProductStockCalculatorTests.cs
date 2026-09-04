@@ -33,7 +33,7 @@ public sealed class CustomerProductStockCalculatorTests
     {
         var formulaId = Guid.NewGuid();
         var result = CustomerProductStockCalculator.Calculate(
-            [new(formulaId, "VA26080002", Guid.NewGuid(), "MFG26080002", DateTime.UtcNow)],
+            [new(formulaId, "VA26080002", Guid.NewGuid(), "MFG26080002", DateTime.Now)],
             new Dictionary<Guid, int> { [formulaId] = 1 },
             [new(1, "TP.1", null, "VA26080002", 50m)],
             [new("VA26080002", 5m)]);
@@ -49,7 +49,7 @@ public sealed class CustomerProductStockCalculatorTests
     {
         var formulaId = Guid.NewGuid();
         var result = CustomerProductStockCalculator.Calculate(
-            [new(formulaId, "VA-SHARED", Guid.NewGuid(), "MFG26080003", DateTime.UtcNow)],
+            [new(formulaId, "VA-SHARED", Guid.NewGuid(), "MFG26080003", DateTime.Now)],
             new Dictionary<Guid, int> { [formulaId] = 2 },
             [new(1, "TP.1", "VA-SHARED", "BATCH-03", 80m)],
             []);

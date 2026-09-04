@@ -7,6 +7,7 @@ namespace HRM.Application.Commons.Pricing.Models;
 public sealed class PricingEngineRequest
 {
     public Guid CompanyId { get; init; }
+    public Guid CategoryId { get; init; }
     public Guid? ProductId { get; init; }
     public Guid? SourceId { get; init; }
     public string? SourceType { get; init; }

@@ -8,7 +8,8 @@ public sealed class FormulaPricingPolicyTierDto
     public decimal? MaxQuantity { get; init; }
     public bool MinInclusive { get; init; }
     public bool MaxInclusive { get; init; }
-    public decimal? PriceOffset { get; init; }
-    public bool RequiresManualPrice => !PriceOffset.HasValue;
+    public decimal PriceOffset { get; init; }
+    public bool RequiresManualPrice { get; init; }
+    public bool IsActive { get; init; }
     public int SortOrder { get; init; }
 }

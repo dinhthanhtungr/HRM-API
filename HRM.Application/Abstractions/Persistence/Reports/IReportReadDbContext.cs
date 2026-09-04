@@ -5,6 +5,9 @@ using HRM.Domain.Entities.ManufacturingSchema;
 using HRM.Domain.Entities.MaterialSchema;
 using HRM.Domain.Entities.OrderSchema;
 using HRM.Domain.Entities.SampleRequestSchema;
+using HRM.Domain.Entities.WarehouseSchema;
+using HRM.Domain.Entities.InventorySchema;
+using HRM.Domain.Entities.WeightMixingSchema;
 using HRM.Domain.Identity;
 using Microsoft.EntityFrameworkCore;
 using CompanyGroup = HRM.Domain.Entities.CompanySchema.Group;
@@ -20,12 +23,14 @@ namespace HRM.Application.Abstractions.Persistence.Reports
 
         // ==================== Manufacturing ====================
         DbSet<MfgProductionOrder> MfgProductionOrders { get; }
+        DbSet<MfgOrderPO> MfgOrderPOs { get; }
         DbSet<ManufacturingFormulaMaterial> ManufacturingFormulaMaterials { get; }
         DbSet<ManufacturingFormula> ManufacturingFormulas { get; }
         DbSet<ManufacturingFormulaVersion> ManufacturingFormulaVersions { get; }
         DbSet<ManufacturingFormulaVersionItem> ManufacturingFormulaVersionItems { get; }
         DbSet<ProductionSelectVersion> ProductionSelectVersions { get; }
-        DbSet<MfgOrderPO> MfgOrderPOs { get; }
+
+        DbSet<FormulaMaterial> FormulaMaterials { get; }
 
         // ==================== SampleRequest ====================
         DbSet<Product> Products { get; }
@@ -35,6 +40,15 @@ namespace HRM.Application.Abstractions.Persistence.Reports
         DbSet<DeliveryOrder> DeliveryOrders { get; }
         DbSet<DeliveryOrderDetail> DeliveryOrderDetails { get; }
         DbSet<DeliveryOrderDetailLotConsumption> DeliveryOrderDetailLotConsumptions { get; }
+
+        // ==================== Warehouse costing ====================
+        DbSet<OperationMaterialBuffer> OperationMaterialBuffers { get; }
+        DbSet<ProductionOutputReceiptSource> ProductionOutputReceiptSources { get; }
+        DbSet<WeighCostAllocation> WeighCostAllocations { get; }
+        DbSet<InventoryStockLedger> InventoryStockLedgers { get; }
+        DbSet<WeighEvent> WeighEvents { get; }
+        DbSet<WeighVAMaterial> WeighVAMaterials { get; }
+        DbSet<WeighVA> WeighVAs { get; }
 
         // ==================== Energy ====================
         DbSet<Meter> Meters { get; }

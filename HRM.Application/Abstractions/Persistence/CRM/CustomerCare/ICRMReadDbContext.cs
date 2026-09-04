@@ -3,6 +3,7 @@ using HRM.Domain.Entities.CustomerSchema;
 using HRM.Domain.Entities.DeliverySchema;
 using HRM.Domain.Entities.HrSchema;
 using HRM.Domain.Entities.OrderSchema;
+using HRM.Domain.Entities.MaterialSchema;
 using HRM.Domain.Entities.SampleRequestSchema;
 using HRM.Domain.Entities.WorkTaskSchema;
 using Microsoft.EntityFrameworkCore;
@@ -25,11 +26,13 @@ public interface ICRMReadDbContext
     DbSet<Quotation> Quotations { get; }
     DbSet<QuotationLine> QuotationLines { get; }
     DbSet<QuotationLinePriceTier> QuotationLinePriceTiers { get; }
+    DbSet<QuotationTerm> QuotationTerms { get; }
     DbSet<QuotationStatusHistory> QuotationStatusHistories { get; }
     DbSet<ProductPricingVersion> ProductPricingVersions { get; }
     DbSet<ProductPricingTier> ProductPricingTiers { get; }
     DbSet<FormulaPricingPolicy> FormulaPricingPolicies { get; }
     DbSet<FormulaPricingPolicyTier> FormulaPricingPolicyTiers { get; }
+    DbSet<Category> Categories { get; }
     DbSet<Product> Products { get; }
     DbSet<SampleRequest> SampleRequests { get; }
     DbSet<SampleRequestSampleTrial> SampleRequestSampleTrials { get; }

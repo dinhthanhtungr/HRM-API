@@ -20,6 +20,7 @@ public sealed class FormulaPricingPolicyTierConfiguration : IEntityTypeConfigura
         entity.Property(x => x.MaxInclusive).HasDefaultValue(true);
         entity.Property(x => x.PriceOffset).HasPrecision(22, 6);
         entity.Property(x => x.SortOrder).HasDefaultValue(0);
+        entity.Property(x => x.IsActive).HasDefaultValue(true);
         entity.HasIndex(x => new { x.FormulaPricingPolicyId, x.SortOrder })
             .IsUnique().HasDatabaseName("UX_FormulaPricingPolicyTiers_Policy_SortOrder");
     }

@@ -73,7 +73,7 @@ public sealed class PricingReadContractConsistencyTests
     private sealed class EmptyPolicyResolver : IFormulaPricingPolicyResolver
     {
         public Task<ResolvedFormulaPricingPolicy?> GetPublishedAsync(
-            Guid companyId, FormulaPricingProfile profile, string currency,
+            Guid companyId, Guid categoryId, FormulaPricingProfile profile, string currency,
             CancellationToken cancellationToken) => Task.FromResult<ResolvedFormulaPricingPolicy?>(null);
 
         public Task<IReadOnlyDictionary<FormulaPricingPolicyLookupKey, ResolvedFormulaPricingPolicy>>
@@ -96,6 +96,11 @@ public sealed class PricingReadContractConsistencyTests
 
         public Task<Dictionary<PriceItemKey, LatestItemPriceDto>> LoadLatestItemPriceInfoDictAsync(
             IEnumerable<PriceItemRequest> items, CancellationToken cancellationToken = default)
+            => Task.FromResult(new Dictionary<PriceItemKey, LatestItemPriceDto>());
+
+        public Task<Dictionary<PriceItemKey, LatestItemPriceDto>> LoadLatestPricingItemPriceInfoDictAsync(
+            Guid companyId, string currency, IEnumerable<PriceItemRequest> items,
+            CancellationToken cancellationToken = default)
             => Task.FromResult(new Dictionary<PriceItemKey, LatestItemPriceDto>());
     }
 }

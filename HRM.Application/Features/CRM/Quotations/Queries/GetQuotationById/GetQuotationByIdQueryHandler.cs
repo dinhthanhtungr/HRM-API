@@ -3,6 +3,7 @@ using HRM.Application.Commons.Models;
 using HRM.Application.Features.CRM.CustomerCare.Visibility;
 using HRM.Application.Features.CRM.Quotations.Dtos;
 using HRM.Application.Features.CRM.Quotations.Services;
+using HRM.Domain.Enums.CustomerEnum;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using System;
@@ -55,6 +56,8 @@ namespace HRM.Application.Features.CRM.Quotations.Queries.GetQuotationById
                     CustomerName = x.Customer.CustomerName,
                     ContactId = x.ContactId,
                     ContactName = x.ContactName,
+                    ContactPhone = x.ContactPhone,
+                    CustomerAddressSnapshot = x.CustomerAddressSnapshot,
                     SaleEmployeeId = x.SaleEmployeeId,
                     SaleEmployeeName = x.SaleEmployee.FullName,
                     Status = x.Status,
@@ -71,10 +74,26 @@ namespace HRM.Application.Features.CRM.Quotations.Queries.GetQuotationById
                     PaymentTerms = x.PaymentTerms,
                     DeliveryTerms = x.DeliveryTerms,
                     Note = x.Note,
+                    Terms = x.Terms
+                        .Where(term => term.IsActive)
+                        .OrderBy(term => term.SortOrder)
+                        .ThenBy(term => term.QuotationTermId)
+                        .Select(term => new QuotationTermDto
+                        {
+                            QuotationTermId = term.QuotationTermId,
+                            LabelVi = term.LabelVi,
+                            LabelEn = term.LabelEn,
+                            ValueVi = term.ValueVi,
+                            ValueEn = term.ValueEn,
+                            SortOrder = term.SortOrder,
+                            IsActive = term.IsActive
+                        })
+                        .ToList(),
                     Version = x.Version,
                     CreatedDate = x.CreatedDate,
                     UpdatedDate = x.UpdatedDate,
                     Lines = x.Lines
+                        .Where(line => line.IsActive)
                         .OrderBy(line => line.SortOrder)
                         .ThenBy(line => line.QuotationLineId)
                         .Select(line => new QuotationLineDto
@@ -93,14 +112,14 @@ namespace HRM.Application.Features.CRM.Quotations.Queries.GetQuotationById
                                 pricing.CompanyId == x.CompanyId &&
                                 pricing.ProductId == line.ProductId &&
                                 pricing.Currency == x.Currency &&
-                                pricing.Status == HRM.Domain.Enums.CustomerEnum.ProductPricingStatus.Approved &&
+                                pricing.Status == ProductPricingStatus.Approved &&
                                 pricing.IsActive),
                             HasNewerPricingVersion = line.ProductPricingVersion != null &&
                                 _dbContext.ProductPricingVersions.Any(pricing =>
                                     pricing.CompanyId == x.CompanyId &&
                                     pricing.ProductId == line.ProductId &&
                                     pricing.Currency == x.Currency &&
-                                    pricing.Status == HRM.Domain.Enums.CustomerEnum.ProductPricingStatus.Approved &&
+                                    pricing.Status == ProductPricingStatus.Approved &&
                                     pricing.IsActive &&
                                     pricing.Version > line.ProductPricingVersion.Version),
                             ProductExternalId = line.ProductExternalIdSnapshot,
@@ -113,16 +132,20 @@ namespace HRM.Application.Features.CRM.Quotations.Queries.GetQuotationById
                             LineTotal = line.LineTotal,
                             PriceTiers = line.PriceTiers
                                 .OrderBy(tier => tier.SortOrder)
-                                .ThenBy(tier => tier.QuotationLinePriceTierId)
                                 .Select(tier => new QuotationLinePriceTierDto
                                 {
                                     QuotationLinePriceTierId = tier.QuotationLinePriceTierId,
+                                    IsSnapshot = true,
+                                    IsActive = tier.IsActive,
+                                    RequiresManualPrice = false,
                                     QuantityRangeLabel = tier.QuantityRangeLabel,
                                     MinQuantity = tier.MinQuantity,
                                     MaxQuantity = tier.MaxQuantity,
                                     MinInclusive = tier.MinInclusive,
                                     MaxInclusive = tier.MaxInclusive,
                                     UnitPrice = tier.UnitPrice,
+                                    CommissionAmount = tier.CommissionAmount,
+                                    CustomerUnitPrice = tier.CustomerUnitPrice,
                                     SortOrder = tier.SortOrder
                                 })
                                 .ToList(),

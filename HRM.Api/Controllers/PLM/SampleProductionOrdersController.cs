@@ -4,6 +4,7 @@ using HRM.Application.Features.PLM.ManufacturingVUFormulas.Commands.CreateManufa
 using HRM.Application.Features.PLM.ManufacturingVUFormulas.Commands.PatchManufacturingVUFormula;
 using HRM.Application.Features.PLM.ManufacturingVUFormulas.Dtos;
 using HRM.Application.Features.PLM.ManufacturingVUFormulas.Queries.ExportManufacturingVUFormulaPdf;
+using HRM.Application.Features.PLM.ManufacturingVUFormulas.Queries.GetManufacturingVUFormulaPrefill;
 using HRM.Application.Features.PLM.ManufacturingVUFormulas.Queries.GetManufacturingVUFormulaById;
 using HRM.Application.Features.PLM.ManufacturingVUFormulas.Queries.GetManufacturingVUFormulas;
 using MediatR;
@@ -45,6 +46,22 @@ public sealed class SampleProductionOrdersController : ControllerBase
     {
         var result = await _sender.Send(
             new GetManufacturingVUFormulaByIdQuery(manufacturingVUFormulaId),
+            cancellationToken);
+
+        return result.Success ? Ok(result.Data) : NotFound(result);
+    }
+
+    /// <summary>
+    /// Lấy dữ liệu điền trước form tạo lệnh chỉ từ FormulaId.
+    /// </summary>
+    [HttpGet("formula-prefill/{formulaId:guid}")]
+    [Authorize(Policy = PlmPolicies.ManageSampleProductionOrders)]
+    public async Task<IActionResult> GetFormulaPrefill(
+        Guid formulaId,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(
+            new GetManufacturingVUFormulaPrefillQuery(formulaId),
             cancellationToken);
 
         return result.Success ? Ok(result.Data) : NotFound(result);

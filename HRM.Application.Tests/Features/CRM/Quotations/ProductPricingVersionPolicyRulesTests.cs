@@ -13,6 +13,22 @@ namespace HRM.Application.Tests.Features.CRM.Quotations;
 public sealed class ProductPricingVersionPolicyRulesTests
 {
     [Fact]
+    public void Calculate_MissingMaterialCost_UsesZeroInsteadOfBlocking()
+    {
+        var calculation = ProductPricingVersionPolicyRules.Calculate(
+            PolicyDefinition(),
+            realtimeMaterialCost: null,
+            manufacturingCost: null,
+            standardSellingPrice: null,
+            profitMarginRate: null,
+            changedField: null);
+
+        Assert.True(calculation.Success);
+        Assert.Equal(0m, calculation.Data!.MaterialCost);
+        Assert.Equal(10m, calculation.Data.ManufacturingCost);
+    }
+
+    [Fact]
     public void Create_UsesRealtimeSnapshotAndPolicyGeneratedTiers()
     {
         var calculation = ProductPricingVersionPolicyRules.Calculate(
@@ -65,7 +81,7 @@ public sealed class ProductPricingVersionPolicyRulesTests
             {
                 CompanyId = Guid.NewGuid(),
                 Currency = "VND",
-                Product = new Product { FormulaPricingProfile = FormulaPricingProfile.Powder }
+                Product = new Product { ColourCode = "POWDER" }
             },
             now);
 
@@ -181,6 +197,11 @@ public sealed class ProductPricingVersionPolicyRulesTests
             FormulaPricingPolicy = policy,
             CompanyId = policy.CompanyId,
             Currency = policy.Currency,
-            Product = new Product { FormulaPricingProfile = policy.Profile }
+            Product = new Product
+            {
+                ColourCode = policy.Profile == FormulaPricingProfile.Compound
+                    ? "COMPOUND-C"
+                    : "POWDER"
+            }
         };
 }

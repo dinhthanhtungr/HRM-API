@@ -13,7 +13,10 @@ internal static class ProductPricingWorkbenchMapper
         PricingVersionRow? draft,
         PricingVersionRow? approved,
         ProductPricingSourceOptionDto? source,
-        IReadOnlyList<ProductPricingRequestRow> requests)
+        IReadOnlyList<ProductPricingRequestRow> requests,
+        IReadOnlyList<ProductPricingWorkbenchCustomerContextDto>? relatedCustomers = null,
+        ProductPricingHealthResult? health = null,
+        DateTime? now = null)
     {
         var storedPricing = draft ?? approved;
         var effectivePricing = BuildEffectivePricing(storedPricing, source);
@@ -31,8 +34,36 @@ internal static class ProductPricingWorkbenchMapper
                 4,
                 MidpointRounding.AwayFromZero)
             : null;
+        var storedStandardSellingPrice = storedPricing?.StandardSellingPrice;
+        var realtimeStandardSellingPrice = effectivePricing?.StandardSellingPrice ??
+            source?.StandardSellingPrice;
+        var hasRealtimePriceComparison = storedStandardSellingPrice is > 0m &&
+            realtimeStandardSellingPrice.HasValue;
+        decimal? standardSellingPriceDifference = hasRealtimePriceComparison
+            ? decimal.Round(
+                realtimeStandardSellingPrice!.Value - storedStandardSellingPrice!.Value,
+                6,
+                MidpointRounding.AwayFromZero)
+            : null;
+        decimal? standardSellingPriceDifferencePercent = hasRealtimePriceComparison
+            ? decimal.Round(
+                standardSellingPriceDifference!.Value / storedStandardSellingPrice!.Value * 100m,
+                4,
+                MidpointRounding.AwayFromZero)
+            : null;
         var hasApproved = approved is not null;
         IReadOnlyList<ProductPricingRequestRow> waitingRequests = hasApproved ? [] : requests;
+
+        DateTime? expiresAt = approved?.ApprovedAt.HasValue == true && approved.PriceValidityDays is > 0
+            ? approved.ApprovedAt.Value.AddDays(approved.PriceValidityDays.Value)
+            : null;
+        var today = (now ?? DateTime.Now).Date;
+        int? remainingDays = expiresAt.HasValue
+            ? Math.Max(0, (int)Math.Ceiling((expiresAt.Value.Date - today).TotalDays))
+            : null;
+        int? overdueDays = expiresAt.HasValue && expiresAt.Value.Date < today
+            ? (int)Math.Floor((today - expiresAt.Value.Date).TotalDays)
+            : null;
 
         return new ProductPricingWorkbenchItemDto
         {
@@ -50,6 +81,9 @@ internal static class ProductPricingWorkbenchMapper
                         ? ProductPricingLookupStatus.Draft
                         : ProductPricingLookupStatus.NoEligibleSource,
             IsSystemCalculatedDraft = storedPricing is null && source is not null,
+            PricingHealthStatus = health?.Status ?? ProductPricingHealthStatus.Unknown,
+            RequiresPricingAction = health?.RequiresPricingAction ?? false,
+            PricingReviewDueDate = health?.PricingReviewDueDate,
             WaitingQuotationCount = waitingRequests
                 .Select(x => x.QuotationId)
                 .Distinct()
@@ -57,6 +91,7 @@ internal static class ProductPricingWorkbenchMapper
             LatestRequestedAt = waitingRequests.Count == 0
                 ? null
                 : waitingRequests.Max(x => x.RequestedAt),
+            RelatedCustomers = relatedCustomers ?? [],
             SourceType = source?.SourceType ?? storedPricing?.SourceType,
             SourceId = source?.SourceId ?? storedPricing?.SourceId,
             SourceExternalId = source?.ExternalId ?? storedPricing?.SourceExternalId,
@@ -70,22 +105,31 @@ internal static class ProductPricingWorkbenchMapper
             StoredMaterialCostSnapshot = storedMaterialCost,
             MaterialCostDifference = difference,
             MaterialCostDifferencePercent = differencePercent,
-            ManufacturingCost = effectivePricing?.ManufacturingCost ??
-                storedPricing?.ManufacturingCost ??
+            // The drawer's three editable values must come from one persisted version
+            // together. Realtime pricing remains a comparison/preview only.
+            ManufacturingCost = storedPricing?.ManufacturingCost ??
+                effectivePricing?.ManufacturingCost ??
                 source?.ManufacturingCost,
             UsedDefaultManufacturingCost = effectivePricing?.UsedDefaultManufacturingCost ??
                 source?.UsedDefaultManufacturingCost == true,
-            StandardSellingPrice = effectivePricing?.StandardSellingPrice ??
-                storedPricing?.StandardSellingPrice ??
-                source?.StandardSellingPrice,
-            ProfitMarginRate = effectivePricing?.ProfitMarginRate ??
-                storedPricing?.ProfitMarginRate ??
+            StandardSellingPrice = storedStandardSellingPrice ?? realtimeStandardSellingPrice,
+            RealtimeStandardSellingPrice = realtimeStandardSellingPrice,
+            StandardSellingPriceDifference = standardSellingPriceDifference,
+            StandardSellingPriceDifferencePercent = standardSellingPriceDifferencePercent,
+            HasRealtimePriceComparison = hasRealtimePriceComparison,
+            ProfitMarginRate = storedPricing?.ProfitMarginRate ??
+                effectivePricing?.ProfitMarginRate ??
                 source?.ProfitMarginRate,
             DraftPricingVersionId = draft?.ProductPricingVersionId,
             ApprovedPricingVersionId = approved?.ProductPricingVersionId,
             PricingUpdatedDate = storedPricing?.UpdatedDate ??
                 storedPricing?.CreatedDate ??
-                source?.UpdatedDate
+                source?.UpdatedDate,
+            PriceConfirmedAt = approved?.ApprovedAt,
+            PriceExpiresAt = expiresAt,
+            RemainingValidityDays = remainingDays,
+            OverdueDays = overdueDays,
+            IsPriceExpired = expiresAt.HasValue ? expiresAt.Value.Date < today : null
         };
     }
 

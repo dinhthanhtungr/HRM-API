@@ -12,7 +12,29 @@ public sealed class SampleRequestHistoryDto
     public DateTime ChangedAt { get; init; }
     public string? Reason { get; init; }
     public Guid? CorrelationId { get; init; }
-    public IReadOnlyList<SampleRequestHistoryDetailDto> Details { get; init; } = [];
+    public IReadOnlyList<SampleRequestHistoryDetailDto> Details { get; set; } = [];
+}
+
+/// <summary>
+/// Read model cho màn hình lịch sử thay đổi của một yêu cầu phối mẫu.
+/// Timeline giữ từng lần lưu, còn Fields được tổng hợp để dựng chế độ xem theo trường.
+/// </summary>
+public sealed class SampleRequestHistoryResponseDto
+{
+    public SampleRequestHistoryDto? LatestChange { get; init; }
+    public IReadOnlyList<SampleRequestHistoryFieldDto> Fields { get; init; } = [];
+    public IReadOnlyList<SampleRequestHistoryDto> Timeline { get; init; } = [];
+}
+
+public sealed class SampleRequestHistoryFieldDto
+{
+    public string Source { get; init; } = string.Empty;
+    public string FieldName { get; init; } = string.Empty;
+    public string? InitialValue { get; init; }
+    public string? CurrentValue { get; init; }
+    public int ChangeCount { get; init; }
+    public DateTime LastChangedAt { get; init; }
+    public string? LastChangedByName { get; init; }
 }
 
 public sealed class SampleRequestHistoryDetailDto

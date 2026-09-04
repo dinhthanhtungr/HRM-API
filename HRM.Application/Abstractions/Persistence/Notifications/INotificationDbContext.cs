@@ -1,4 +1,5 @@
 using HRM.Domain.Entities.HrSchema;
+using HRM.Domain.Entities.InternalMailSchema;
 using HRM.Domain.Entities.Notifications;
 using HRM.Domain.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -20,6 +21,10 @@ public interface INotificationDbContext
     DbSet<OutboxMessage> OutboxMessages { get; }
 
     DbSet<WebPushSubscription> WebPushSubscriptions { get; }
+
+    DbSet<InternalConversation> InternalConversations { get; }
+
+    DbSet<InternalConversationParticipant> InternalConversationParticipants { get; }
 
     DbSet<Employee> Employees { get; }
 

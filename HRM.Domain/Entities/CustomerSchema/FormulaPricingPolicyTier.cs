@@ -11,6 +11,6 @@ public sealed class FormulaPricingPolicyTier
     public bool MaxInclusive { get; set; } = true;
     public decimal? PriceOffset { get; set; }
     public int SortOrder { get; set; }
-
+    public bool IsActive { get; set; } = true;
     public FormulaPricingPolicy FormulaPricingPolicy { get; set; } = null!;
 }

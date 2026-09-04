@@ -69,7 +69,8 @@ internal static class ProductPricingVersionRules
                 request.MinInclusive,
                 request.MaxInclusive,
                 request.UnitPrice,
-                request.SortOrder));
+                request.SortOrder,
+                request.IsActive));
         }
 
         if (normalized.Select(x => x.SortOrder).Distinct().Count() != normalized.Count)
@@ -79,6 +80,7 @@ internal static class ProductPricingVersionRules
         }
 
         var byRange = normalized
+            .Where(x => x.IsActive)
             .OrderBy(x => x.MinQuantity.HasValue ? 1 : 0)
             .ThenBy(x => x.MinQuantity)
             .ToArray();
@@ -103,7 +105,8 @@ internal static class ProductPricingVersionRules
                 MinInclusive = x.MinInclusive,
                 MaxInclusive = x.MaxInclusive,
                 UnitPrice = x.UnitPrice,
-                SortOrder = x.SortOrder
+                SortOrder = x.SortOrder,
+                IsActive = x.IsActive
             })
             .ToArray();
 
@@ -168,5 +171,6 @@ internal static class ProductPricingVersionRules
         bool MinInclusive,
         bool MaxInclusive,
         decimal UnitPrice,
-        int SortOrder);
+        int SortOrder,
+        bool IsActive);
 }

@@ -20,5 +20,6 @@ public interface ISampleRequestAttachmentService
     Task DeleteAsync(
         Guid sampleRequestId,
         Guid attachmentId,
+        Guid? deletedBy,
         CancellationToken cancellationToken = default);
 }

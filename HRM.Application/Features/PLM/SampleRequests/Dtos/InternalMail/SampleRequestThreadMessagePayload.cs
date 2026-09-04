@@ -1,6 +1,7 @@
 using HRM.Application.Features.PLM.SampleRequests.DataChangeRequests;
 using HRM.Application.Features.PLM.SampleRequests.DirectPatchNotifications;
 using HRM.Application.Features.PLM.SampleRequests.FormulaChangeRequests;
+using HRM.Application.Features.PLM.SampleRequests.PriceQuoteRequests;
 using HRM.Application.Features.PLM.SampleRequests.SampleReceiptConfirmations;
 
 namespace HRM.Application.Features.PLM.SampleRequests.Dtos.InternalMail;
@@ -36,4 +37,6 @@ internal sealed class SampleRequestThreadMessagePayload
     public SampleRequestDirectPatchNotificationPayload? DirectPatchNotification { get; set; }
 
     public SampleReceiptActionPayload? SampleReceiptAction { get; set; }
+
+    public SampleRequestPriceQuotePayload? PriceQuoteRequest { get; set; }
 }

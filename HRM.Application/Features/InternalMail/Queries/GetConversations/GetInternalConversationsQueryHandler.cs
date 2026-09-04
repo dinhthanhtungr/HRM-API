@@ -2,6 +2,7 @@ using HRM.Application.Abstractions.Persistence.InternalMail;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Pagination;
 using HRM.Application.Features.InternalMail.Dtos;
+using HRM.Application.Features.PLM.SampleRequests.PriceQuoteRequests;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -41,6 +42,21 @@ internal sealed class GetInternalConversationsQueryHandler
         if (request.RelatedType.HasValue)
         {
             query = query.Where(x => x.Conversation.RelatedType == request.RelatedType.Value);
+        }
+
+        if (request.NormalizedEventGroupCode is { } eventGroupCode)
+        {
+            if (eventGroupCode != "quotation")
+            {
+                throw new ArgumentException(
+                    $"Internal Mail conversation filtering does not support eventGroupCode '{request.EventGroupCode}'.");
+            }
+
+            var payloadMarker = $$"""{"contentType":"{{SampleRequestPriceQuotePayloadTypes.Request}}"}""";
+            query = query.Where(x => x.Conversation.Messages.Any(message =>
+                !message.IsDeleted &&
+                message.PayloadJson != null &&
+                EF.Functions.JsonContains(message.PayloadJson, payloadMarker)));
         }
 
         if (request.UnreadOnly)

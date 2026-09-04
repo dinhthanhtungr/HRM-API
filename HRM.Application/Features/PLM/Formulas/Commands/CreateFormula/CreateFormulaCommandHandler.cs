@@ -52,6 +52,8 @@ internal sealed class CreateFormulaCommandHandler
                 return OperationResult<FormulaWriteResultDto>.Fail("ProductId is required.");
             }
 
+            FormulaWriteService.ValidateStepOfProduct(request.StepOfProduct);
+
             var product = await _formulaWriteService.LoadProductAsync(
                 companyId,
                 request.ProductId.Value,
@@ -73,6 +75,7 @@ internal sealed class CreateFormulaCommandHandler
                     cancellationToken),
                 ProductId = product.ProductId,
                 Status = FormulaStatus.Draft.ToString(),
+                StepOfProduct = request.StepOfProduct,
                 TotalPrice = 0m,
                 EffectiveDate = request.EffectiveDate,
                 IsSelect = request.IsSelect ?? false,

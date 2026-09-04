@@ -12,6 +12,6 @@ public sealed class ProductPricingTier
     public bool MaxInclusive { get; set; } = true;
     public decimal UnitPrice { get; set; }
     public int SortOrder { get; set; }
-
+    public bool IsActive { get; set; } = true;
     public ProductPricingVersion ProductPricingVersion { get; set; } = null!;
 }

@@ -11,6 +11,7 @@ namespace HRM.Application.Features.PLM.Formulas.Queries.GetFormulaById
     public sealed class GetFormulaByIdQuery : IRequest<FormulaInformationDto?>
     {
         public Guid FormulaId { get; set; }
-        public string Currency { get; set; } = string.Empty;
+        // Formula detail uses the system pricing currency; FE does not supply it.
+        public string Currency { get; set; } = "VND";
     }
 }

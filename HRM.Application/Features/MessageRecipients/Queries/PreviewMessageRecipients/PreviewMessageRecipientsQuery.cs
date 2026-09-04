@@ -18,4 +18,6 @@ public sealed class PreviewMessageRecipientsQuery
     public Guid? DraftCategoryId { get; set; }
     // null means first preview and lets the feature select optional defaults; [] means user removed them all.
     public IReadOnlyList<Guid>? SelectedRecipientEmployeeIds { get; set; }
+    // Employees selected as thread watchers. They can read the thread but do not receive its notifications by default.
+    public IReadOnlyList<Guid>? SelectedSilentWatcherEmployeeIds { get; set; }
 }

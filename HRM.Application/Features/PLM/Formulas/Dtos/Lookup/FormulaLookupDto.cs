@@ -5,6 +5,7 @@ namespace HRM.Application.Features.PLM.Formulas.Dtos.Lookup;
 public sealed class FormulaLookupDto
 {
     public Guid FormulaId { get; set; }
+    public string ColorCode { get; set; } = string.Empty;
     public FormulaSource SourceType { get; set; }
     public string ExternalId { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;

@@ -1,7 +1,6 @@
 using HRM.Application.Commons.Models;
 using HRM.Application.Features.CRM.Quotations.Dtos;
 using HRM.Domain.Entities.CustomerSchema;
-using HRM.Domain.Enums.CustomerEnum;
 
 namespace HRM.Application.Features.CRM.Quotations.Services;
 
@@ -9,32 +8,15 @@ internal static class QuotationPriceTierBuilder
 {
     public static OperationResult<QuotationLinePricing> Build(
         Guid quotationLineId,
-        QuotationLinePriceMode priceMode,
         decimal quantity,
-        decimal fixedUnitPrice,
         IReadOnlyList<QuotationLinePriceTierRequest>? requests,
-        string fieldPath,
-        bool allowMissingPrice = false)
+        string fieldPath)
     {
-        if (!Enum.IsDefined(priceMode))
-        {
-            return OperationResult<QuotationLinePricing>.Fail($"{fieldPath}.priceMode is invalid.");
-        }
-
         requests ??= [];
-        if (priceMode != QuotationLinePriceMode.Tiered)
-        {
-            return OperationResult<QuotationLinePricing>.Fail(
-                $"{fieldPath}.priceMode must be Tiered.");
-        }
-
         if (requests.Count == 0)
         {
-            return allowMissingPrice
-                ? OperationResult<QuotationLinePricing>.Ok(
-                    new QuotationLinePricing(0m, []))
-                : OperationResult<QuotationLinePricing>.Fail(
-                    $"{fieldPath}.priceTiers must contain at least one tier for Tiered pricing.");
+            return OperationResult<QuotationLinePricing>.Fail(
+                $"{fieldPath}.priceTiers must contain at least one active tier.");
         }
 
         if (requests.Count > QuotationRules.MaximumPriceTierCountPerLine)
@@ -56,11 +38,11 @@ internal static class QuotationPriceTierBuilder
                     $"{QuotationRules.MaximumQuantityRangeLabelLength} characters.");
             }
 
-            if (request.UnitPrice < 0m || request.SortOrder < 0 ||
+            if (request.UnitPrice < 0m || request.CommissionAmount < 0m || request.SortOrder < 0 ||
                 request.MinQuantity is < 0m || request.MaxQuantity is < 0m)
             {
                 return OperationResult<QuotationLinePricing>.Fail(
-                    $"{fieldPath}.priceTiers[{index}] must have a non-negative unitPrice and no negative values.");
+                    $"{fieldPath}.priceTiers[{index}] must have non-negative unitPrice, commissionAmount and quantity values.");
             }
 
             if (request.MinQuantity.HasValue && request.MaxQuantity.HasValue &&
@@ -79,7 +61,9 @@ internal static class QuotationPriceTierBuilder
                 request.MinInclusive,
                 request.MaxInclusive,
                 request.UnitPrice,
-                request.SortOrder));
+                request.CommissionAmount,
+                request.SortOrder,
+                request.IsActive));
         }
 
         if (normalized.Select(x => x.SortOrder).Distinct().Count() != normalized.Count)
@@ -88,7 +72,13 @@ internal static class QuotationPriceTierBuilder
                 $"{fieldPath}.priceTiers must have unique sortOrder values.");
         }
 
-        var byRange = normalized
+        var activeTiers = normalized.Where(x => x.IsActive).ToArray();
+        if (activeTiers.Length == 0)
+        {
+            return OperationResult<QuotationLinePricing>.Fail(
+                $"{fieldPath}.priceTiers must contain at least one active tier.");
+        }
+        var byRange = activeTiers
             .OrderBy(x => x.MinQuantity.HasValue ? 1 : 0)
             .ThenBy(x => x.MinQuantity)
             .ToArray();
@@ -102,31 +92,32 @@ internal static class QuotationPriceTierBuilder
             }
         }
 
-        var matchedTiers = normalized.Where(x => Contains(x, quantity)).ToArray();
-        if (matchedTiers.Length != 1)
-        {
-            return OperationResult<QuotationLinePricing>.Fail(
-                $"{fieldPath}.priceTiers must contain exactly one tier matching quantity {quantity}.");
-        }
+        var effectiveTier = activeTiers.FirstOrDefault(x => Contains(x, quantity)) ??
+            activeTiers.MinBy(x => x.SortOrder)!;
 
         var entities = normalized
             .OrderBy(x => x.SortOrder)
-            .Select(x => new QuotationLinePriceTier
+            .Select(x =>
             {
-                QuotationLinePriceTierId = Guid.CreateVersion7(),
-                QuotationLineId = quotationLineId,
-                QuantityRangeLabel = x.QuantityRangeLabel,
-                MinQuantity = x.MinQuantity,
-                MaxQuantity = x.MaxQuantity,
-                MinInclusive = x.MinInclusive,
-                MaxInclusive = x.MaxInclusive,
-                UnitPrice = x.UnitPrice,
-                SortOrder = x.SortOrder
+                var tier = new QuotationLinePriceTier
+                {
+                    QuotationLinePriceTierId = Guid.CreateVersion7(),
+                    QuotationLineId = quotationLineId,
+                    QuantityRangeLabel = x.QuantityRangeLabel,
+                    MinQuantity = x.MinQuantity,
+                    MaxQuantity = x.MaxQuantity,
+                    MinInclusive = x.MinInclusive,
+                    MaxInclusive = x.MaxInclusive,
+                    SortOrder = x.SortOrder,
+                    IsActive = x.IsActive
+                };
+                tier.SetPrices(x.UnitPrice, x.CommissionAmount);
+                return tier;
             })
             .ToList();
 
         return OperationResult<QuotationLinePricing>.Ok(
-            new QuotationLinePricing(matchedTiers[0].UnitPrice, entities));
+            new QuotationLinePricing(effectiveTier.UnitPrice, entities));
     }
 
     private static bool Contains(NormalizedTier tier, decimal quantity)
@@ -164,7 +155,9 @@ internal static class QuotationPriceTierBuilder
         bool MinInclusive,
         bool MaxInclusive,
         decimal UnitPrice,
-        int SortOrder);
+        decimal CommissionAmount,
+        int SortOrder,
+        bool IsActive);
 }
 
 internal sealed record QuotationLinePricing(

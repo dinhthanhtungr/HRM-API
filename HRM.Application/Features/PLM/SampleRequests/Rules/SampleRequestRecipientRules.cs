@@ -13,6 +13,17 @@ public static class SampleRequestRecipientRules
         ApplicationRoles.Lab.LabAdmin
     };
 
+    public static readonly IReadOnlyList<string> RequiredMessageRecipientUserNames = new[]
+    {
+        "qaqcad01"
+    };
+
+    public static readonly IReadOnlyList<string> SilentWatcherRoleNames = new[]
+    {
+        ApplicationRoles.Lab.LabUser,
+        ApplicationRoles.Lab.LabAdmin
+    };
+
     public static readonly IReadOnlyList<string> RequiredLeaderGroupTypes = new[]
     {
         RdGroupType,
@@ -25,9 +36,10 @@ public static class SampleRequestRecipientRules
 
         return normalized switch
         {
-            "PC" => new[] { RdGroupType, ColorGroupType },
-            "PMA" or "PPG" => new[] { RdGroupType },
-            "PHM" or "PBM" or "PDM" => new[] { ColorGroupType },
+            //"PC" or "CMP" => new[] { RdGroupType, ColorGroupType },
+            "GCO" => new[] { RdGroupType, ColorGroupType },
+            "PMA" or "PPG" or "AMB" or "VRG" or "ADD" or "CMP" => new[] { RdGroupType },
+            "PHM" or "PBM" or "PDM" or "CMB" or "PIG" => new[] { ColorGroupType },
             _ => RequiredLeaderGroupTypes
         };
     }

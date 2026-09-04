@@ -89,9 +89,6 @@ internal sealed class UpdateProductPricingVersionCommandHandler
             return OperationResult<ProductPricingVersionDto>.Fail(
                 ProductPricingVersionPolicyRules.RebaseConflict(
                     "The source now resolves to a different pricing policy"));
-        if (!sourceResult.Data.IsMaterialCostComplete)
-            return OperationResult<ProductPricingVersionDto>.Fail("MaterialPriceMissing");
-
         var changedField = ProductPricingVersionRules.ResolveChangedField(
             command.Request.ChangedField,
             entity.ManufacturingCost,

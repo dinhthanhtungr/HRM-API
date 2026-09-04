@@ -51,30 +51,35 @@ internal sealed class FileShareMaterialDocumentSourceScanner
         var sourceLabel = string.IsNullOrWhiteSpace(_options.SourceLabel)
             ? "TDS/MSDS NVL"
             : _options.SourceLabel.Trim();
-        if (string.IsNullOrWhiteSpace(_options.SourceRoot))
+        var configuredSourceRoots = GetConfiguredSourceRoots();
+        if (configuredSourceRoots.Count == 0)
         {
-            return Unavailable(sourceLabel, false, "source_root_not_configured");
+            return Unavailable(sourceLabel, false, "source_roots_not_configured");
         }
 
-        string sourceRoot;
-        try
+        var sourceRoots = new List<string>(configuredSourceRoots.Count);
+        foreach (var configuredSourceRoot in configuredSourceRoots)
         {
-            if (!Path.IsPathFullyQualified(_options.SourceRoot))
+            try
             {
-                return Unavailable(sourceLabel, true, "source_root_must_be_absolute");
+                if (!Path.IsPathFullyQualified(configuredSourceRoot))
+                {
+                    return Unavailable(sourceLabel, true, "source_root_must_be_absolute");
+                }
+
+                var sourceRoot = Path.GetFullPath(configuredSourceRoot);
+                if (!Directory.Exists(sourceRoot))
+                {
+                    return Unavailable(sourceLabel, true, "source_root_not_found");
+                }
+
+                sourceRoots.Add(sourceRoot);
             }
-
-            sourceRoot = Path.GetFullPath(_options.SourceRoot);
-        }
-        catch (Exception exception) when (
-            exception is ArgumentException or NotSupportedException or PathTooLongException)
-        {
-            return Unavailable(sourceLabel, true, "source_root_invalid");
-        }
-
-        if (!Directory.Exists(sourceRoot))
-        {
-            return Unavailable(sourceLabel, true, "source_root_not_found");
+            catch (Exception exception) when (
+                exception is ArgumentException or NotSupportedException or PathTooLongException)
+            {
+                return Unavailable(sourceLabel, true, "source_root_invalid");
+            }
         }
 
         var allowedExtensions = (_options.AllowedExtensions ?? [])
@@ -94,26 +99,30 @@ internal sealed class FileShareMaterialDocumentSourceScanner
                 AttributesToSkip = FileAttributes.ReparsePoint | FileAttributes.System
             };
 
-            foreach (var path in Directory.EnumerateFiles(sourceRoot, "*", enumerationOptions))
+            for (var sourceIndex = 0; sourceIndex < sourceRoots.Count; sourceIndex++)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                if (allowedExtensions.Count > 0 &&
-                    !allowedExtensions.Contains(Path.GetExtension(path)))
+                var sourceRoot = sourceRoots[sourceIndex];
+                foreach (var path in Directory.EnumerateFiles(sourceRoot, "*", enumerationOptions))
                 {
-                    continue;
-                }
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (allowedExtensions.Count > 0 &&
+                        !allowedExtensions.Contains(Path.GetExtension(path)))
+                    {
+                        continue;
+                    }
 
-                if (files.Count == maxFiles)
-                {
-                    return Available(sourceLabel, true, files);
-                }
+                    if (files.Count == maxFiles)
+                    {
+                        return Available(sourceLabel, true, files);
+                    }
 
-                var info = new FileInfo(path);
-                files.Add(new MaterialDocumentSourceFile(
-                    Path.GetRelativePath(sourceRoot, path).Replace('\\', '/'),
-                    info.Name,
-                    info.Length,
-                    info.LastWriteTime));
+                    var relativePath = Path.GetRelativePath(sourceRoot, path).Replace('\\', '/');
+                    files.Add(new MaterialDocumentSourceFile(
+                        sourceRoots.Count == 1 ? relativePath : $"{sourceIndex}/{relativePath}",
+                        new FileInfo(path).Name,
+                        new FileInfo(path).Length,
+                        new FileInfo(path).LastWriteTime));
+                }
             }
 
             return Available(sourceLabel, false, files);
@@ -136,16 +145,37 @@ internal sealed class FileShareMaterialDocumentSourceScanner
 
     private string ResolveSourceFilePath(string relativePath)
     {
-        if (string.IsNullOrWhiteSpace(_options.SourceRoot) ||
-            string.IsNullOrWhiteSpace(relativePath) ||
+        if (string.IsNullOrWhiteSpace(relativePath) ||
             Path.IsPathFullyQualified(relativePath))
         {
             throw new InvalidOperationException("Material document source path is invalid.");
         }
 
-        var root = Path.GetFullPath(_options.SourceRoot);
+        var sourceRoots = GetConfiguredSourceRoots();
+        if (sourceRoots.Count == 0)
+        {
+            throw new InvalidOperationException("Material document source path is invalid.");
+        }
+
+        var sourceIndex = 0;
+        var sourceRelativePath = relativePath.Replace('\\', '/');
+        if (sourceRoots.Count > 1)
+        {
+            var separatorIndex = sourceRelativePath.IndexOf('/');
+            if (separatorIndex <= 0 ||
+                !int.TryParse(sourceRelativePath[..separatorIndex], out sourceIndex) ||
+                sourceIndex < 0 ||
+                sourceIndex >= sourceRoots.Count)
+            {
+                throw new InvalidOperationException("Material document source path is invalid.");
+            }
+
+            sourceRelativePath = sourceRelativePath[(separatorIndex + 1)..];
+        }
+
+        var root = Path.GetFullPath(sourceRoots[sourceIndex]);
         var rootPrefix = Path.TrimEndingDirectorySeparator(root) + Path.DirectorySeparatorChar;
-        var fullPath = Path.GetFullPath(Path.Combine(root, relativePath));
+        var fullPath = Path.GetFullPath(Path.Combine(root, sourceRelativePath));
         if (!fullPath.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException("Material document source path escapes the configured root.");
@@ -162,6 +192,24 @@ internal sealed class FileShareMaterialDocumentSourceScanner
         }
 
         return fullPath;
+    }
+
+    private IReadOnlyList<string> GetConfiguredSourceRoots()
+    {
+        var sourceRoots = (_options.SourceRoots ?? [])
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (sourceRoots.Count > 0)
+        {
+            return sourceRoots;
+        }
+
+        return string.IsNullOrWhiteSpace(_options.SourceRoot)
+            ? []
+            : [_options.SourceRoot.Trim()];
     }
 
     private static string GetContentType(string path)

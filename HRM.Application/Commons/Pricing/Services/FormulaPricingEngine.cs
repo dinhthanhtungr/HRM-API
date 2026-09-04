@@ -19,16 +19,16 @@ public sealed class FormulaPricingEngine(
         PricingEngineRequest request,
         CancellationToken cancellationToken)
     {
-        if (request.CompanyId == Guid.Empty || request.Profile is not { } profile ||
+        if (request.CompanyId == Guid.Empty || request.CategoryId == Guid.Empty || request.Profile is not { } profile ||
             !Enum.IsDefined(profile) || string.IsNullOrWhiteSpace(request.Currency))
             return OperationResult<PricingEngineResult>.Fail("PricingEngineInvalidRequest");
         if (request.MaterialCost < 0m || request.ManufacturingCostOverride < 0m ||
-            request.StandardSellingPrice < 0m || request.ProfitMarginRate is < 0m or > 100m ||
+            request.StandardSellingPrice < 0m || request.ProfitMarginRate < 0m ||
             (request.ChangedField.HasValue && !Enum.IsDefined(request.ChangedField.Value)))
             return OperationResult<PricingEngineResult>.Fail("PricingEngineInvalidRange");
 
         var key = new FormulaPricingPolicyLookupKey(
-            request.CompanyId, profile, request.Currency.Trim().ToUpperInvariant());
+            request.CompanyId, request.CategoryId, profile, request.Currency.Trim().ToUpperInvariant());
         var policies = await policyResolver.GetPublishedBatchAsync([key], cancellationToken);
         if (!policies.TryGetValue(key, out var policy))
             return OperationResult<PricingEngineResult>.Fail("PricingPolicyMissing");
@@ -44,7 +44,7 @@ public sealed class FormulaPricingEngine(
     {
         var profile = request.Profile!.Value;
         var currency = request.Currency.Trim().ToUpperInvariant();
-        if (!realtime.IsComplete || !realtime.MaterialCost.HasValue)
+        if (!realtime.MaterialCost.HasValue)
             return OperationResult<PricingEngineResult>.Ok(new PricingEngineResult
             {
                 FormulaPricingPolicyId = policy.FormulaPricingPolicyId,
@@ -80,7 +80,8 @@ public sealed class FormulaPricingEngine(
             ProductId = request.ProductId,
             SourceId = request.SourceId,
             SourceType = request.SourceType,
-            IsMaterialCostComplete = true,
+            IsMaterialCostComplete = realtime.IsComplete,
+            MissingMaterialPriceCount = realtime.MissingPriceCount,
             MaterialCost = calculation.MaterialCost,
             ManufacturingCost = calculation.ManufacturingCost,
             CostBase = calculation.CostBase,
@@ -108,8 +109,8 @@ public sealed class FormulaPricingEngine(
             MaterialId = item.ItemType is ItemType.Material or ItemType.MaterialFailure ? item.ItemId : null,
             ProductId = item.ItemType is ItemType.Product or ItemType.ProductFailure ? item.ItemId : null
         });
-        var prices = await materialPriceQueryService.LoadLatestItemPriceInfoDictAsync(
-            priceItems, cancellationToken);
+        var prices = await materialPriceQueryService.LoadLatestPricingItemPriceInfoDictAsync(
+            request.CompanyId, request.Currency, priceItems, cancellationToken);
         return FormulaRealtimeMaterialCostCalculator.Calculate(request.MaterialItems, prices);
     }
 }

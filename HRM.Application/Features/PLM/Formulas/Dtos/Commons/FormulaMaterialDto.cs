@@ -18,6 +18,14 @@ namespace HRM.Application.Features.PLM.Formulas.Dtos.Commons
         public Guid? CategoryId { get; set; }
         public decimal Quantity { get; set; }
 
+        public LatestPriceSource Price { get; set; } = new();
+        public decimal PriceTotal { get; set; }
+        public bool HasLatestPrice { get; set; }
+        public decimal? LatestUnitPrice { get; set; }
+        public decimal? LatestTotalPrice { get; set; }
+        public DateTime? LatestPriceDate { get; set; }
+        public LatestPriceSourceType LatestPriceSource { get; set; } = LatestPriceSourceType.Unknown;
+
         public string? MaterialNameSnapshot { get; set; }
         public string? MaterialExternalIdSnapshot { get; set; }
     }

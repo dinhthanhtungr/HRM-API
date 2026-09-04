@@ -1,6 +1,7 @@
 ﻿using HRM.Domain.Entities;
 using HRM.Domain.Entities.AttachmentSchema;
 using HRM.Domain.Entities.AuditSchema;
+using HRM.Domain.Entities.BomSchema;
 using HRM.Domain.Entities.CompanySchema;
 using HRM.Domain.Entities.CustomerSchema;
 using HRM.Domain.Entities.DeliverySchema;
@@ -19,6 +20,15 @@ namespace HRM.Application.Abstractions.Persistence.PLM
     public interface IPLMDbContext
     {
         DbSet<Company> Companies { get; }
+
+        // ==================== BOM ====================
+        DbSet<BomDefinition> BomDefinitions { get; }
+        DbSet<BomVersion> BomVersions { get; }
+        DbSet<BomVersionItem> BomVersionItems { get; }
+        DbSet<ManufacturingBomStage> ManufacturingBomStages { get; }
+        DbSet<ManufacturingLossType> ManufacturingLossTypes { get; }
+        DbSet<ManufacturingBomLossRule> ManufacturingBomLossRules { get; }
+        DbSet<ProductStandardBomVersion> ProductStandardBomVersions { get; }
         //DbSet<Customer> customers { get; }
         //DbSet<CustomerAssignment> customerAssignments { get; }
         //DbSet<CustomerClaim> customerClaims { get; }

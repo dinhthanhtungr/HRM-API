@@ -72,12 +72,27 @@ internal sealed class NotificationService : INotificationService
         await _dbContext.Notifications.AddAsync(notification, cancellationToken);
 
         var targetUserIds = NormalizeIds(request.TargetUserIds);
+        var silentUserIds = NormalizeIds(request.SilentUserIds)
+            .Where(x => !targetUserIds.Contains(x))
+            .ToArray();
         var targetRoles = NormalizeRoles(request.TargetRoles);
         var targetTeamIds = NormalizeIds(request.TargetTeamIds);
 
         // Recipient lưu lại ý định gửi ban đầu để audit/debug.
         // Việc user có thấy trong inbox hay không được quyết định bởi NotificationUserState bên dưới.
         foreach (var userId in targetUserIds)
+        {
+            await _dbContext.NotificationRecipients.AddAsync(new NotificationRecipient
+            {
+                Id = Guid.CreateVersion7(),
+                NotificationId = notification.Id,
+                TargetUserId = userId
+            }, cancellationToken);
+        }
+
+        // Silent recipient vẫn là người nhận hợp lệ của notification (để audit và thấy trong Hub),
+        // chỉ khác là không được phát realtime/Web Push.
+        foreach (var userId in silentUserIds)
         {
             await _dbContext.NotificationRecipients.AddAsync(new NotificationRecipient
             {
@@ -112,6 +127,14 @@ internal sealed class NotificationService : INotificationService
             targetUserIds,
             targetRoles,
             cancellationToken);
+        var resolvedSilentEmployeeIds = await ResolveEmployeeIdsAsync(
+            companyId,
+            silentUserIds,
+            Array.Empty<string>(),
+            cancellationToken);
+        var resolvedSilentEmployeeIdSet = resolvedSilentEmployeeIds
+            .Where(x => !resolvedEmployeeIds.Contains(x))
+            .ToHashSet();
 
         // Tạo sẵn một dòng state cho mỗi nhân viên để query feed/unread đơn giản và nhanh.
         foreach (var employeeId in resolvedEmployeeIds)
@@ -122,6 +145,19 @@ internal sealed class NotificationService : INotificationService
                 UserId = employeeId,
                 IsRead = false,
                 ReadDate = null,
+                IsArchived = false
+            }, cancellationToken);
+        }
+
+        // Silent recipients vẫn đọc được ở feed nhưng không tăng unread/badge và không có realtime/push.
+        foreach (var employeeId in resolvedSilentEmployeeIdSet)
+        {
+            await _dbContext.NotificationUserStates.AddAsync(new NotificationUserState
+            {
+                NotificationId = notification.Id,
+                UserId = employeeId,
+                IsRead = true,
+                ReadDate = now,
                 IsArchived = false
             }, cancellationToken);
         }
@@ -149,7 +185,8 @@ internal sealed class NotificationService : INotificationService
                 Type = NotificationOutboxTypes.WebPush,
                 PayloadJson = JsonSerializer.Serialize(new WebPushOutboxPayload
                 {
-                    NotificationId = notification.Id
+                    NotificationId = notification.Id,
+                    TargetEmployeeIds = resolvedEmployeeIds
                 }),
                 CreatedAt = now
             }, cancellationToken);
@@ -235,7 +272,53 @@ internal sealed class NotificationService : INotificationService
             NotificationPayloadPresentation.Apply(item);
         }
 
+        await ApplyConversationTitlesAsync(items, companyId, employeeId, cancellationToken);
+
         return items;
+    }
+
+    private async Task ApplyConversationTitlesAsync(
+        IReadOnlyCollection<NotificationDto> notifications,
+        Guid companyId,
+        Guid employeeId,
+        CancellationToken cancellationToken)
+    {
+        var conversationIds = notifications
+            .Select(x => x.ConversationId)
+            .OfType<Guid>()
+            .Where(x => x != Guid.Empty)
+            .Distinct()
+            .ToArray();
+
+        if (conversationIds.Length == 0)
+        {
+            return;
+        }
+
+        // Xác minh participant/current company trước khi trả subject hiện tại của thread.
+        var titles = await _dbContext.InternalConversationParticipants
+            .AsNoTracking()
+            .Where(x =>
+                x.EmployeeId == employeeId &&
+                x.IsActive &&
+                conversationIds.Contains(x.InternalConversationId) &&
+                x.Conversation.CompanyId == companyId &&
+                x.Conversation.IsActive)
+            .Select(x => new
+            {
+                x.InternalConversationId,
+                x.Conversation.Subject
+            })
+            .ToDictionaryAsync(x => x.InternalConversationId, x => x.Subject, cancellationToken);
+
+        foreach (var notification in notifications)
+        {
+            if (notification.ConversationId is { } conversationId &&
+                titles.TryGetValue(conversationId, out var title))
+            {
+                notification.ConversationTitle = title;
+            }
+        }
     }
 
     public async Task<int> GetUnreadCountAsync(CancellationToken cancellationToken = default)

@@ -61,6 +61,11 @@ Là hộp thư và trạng thái riêng của từng employee:
 User chỉ xem được notification qua API khi có `NotificationUserState` tương ứng và state chưa
 archive. Vì vậy, biết `notificationId` không đồng nghĩa với việc được phép đọc notification.
 
+Một InternalMail participant có thể là `Watcher` với `IsMuted = true`: họ vẫn được phép đọc thread theo quyền
+participant. Khi publish message mới, handler đưa họ vào `SilentUserIds`: backend vẫn tạo `NotificationUserState`
+đã đọc để notification hiện trong Notification Hub, nhưng không đưa họ vào SignalR/Web Push và không làm tăng unread
+badge. Đây phù hợp với người chỉ cần theo dõi thread; họ có thể tự unmute để nhận cảnh báo mới về sau.
+
 ### OutboxMessage
 
 Là hàng đợi chuyển phát side effect:
@@ -117,10 +122,10 @@ await notificationService.PublishAsync(new PublishNotificationRequest
 2. Tạo `Notification`.
 3. Chuẩn hóa target user/role/team và loại giá trị trùng.
 4. Tạo `NotificationRecipient` để lưu ý định gửi.
-5. Resolve target user và role thành các `EmployeeId` active trong cùng company.
-6. Tạo một `NotificationUserState` cho mỗi employee thực tế được nhận.
-7. Tạo outbox `InAppPush` cho SignalR.
-8. Nếu Web Push được bật và có người nhận, tạo thêm outbox `WebPush`.
+5. Resolve normal target và silent target thành các `EmployeeId` active trong cùng company.
+6. Tạo `NotificationUserState` unread cho normal recipient; silent recipient có state đã đọc để vẫn thấy trong Hub.
+7. Tạo outbox `InAppPush` cho SignalR chỉ với normal recipient.
+8. Nếu Web Push được bật và có normal recipient, tạo thêm outbox `WebPush` chỉ cho các employee đó.
 9. Lưu toàn bộ thay đổi bằng `SaveChangesAsync`.
 
 `TargetTeamIds` hiện được lưu recipient nhưng chưa được resolve thành employee trong
@@ -168,8 +173,9 @@ POST /api/v1/web-push/subscriptions/unsubscribe
 
 1. Đọc outbox `WebPush` chưa xử lý.
 2. Lấy Notification theo `notificationId`.
-3. Tìm các `NotificationUserState` chưa archive.
-4. Tìm subscription active của đúng employee và company.
+3. Tìm các `NotificationUserState` chưa archive thuộc danh sách employee trong Web Push outbox.
+4. Tìm subscription active của đúng employee và company. Payload outbox cũ chưa có danh sách này vẫn tương thích
+   và dùng toàn bộ state chưa archive như trước.
 5. Gửi payload tối thiểu qua `IWebPushSender`.
 6. Cập nhật success/failure cho từng subscription.
 7. Nếu push service trả `404` hoặc `410`, đặt subscription hết hạn thành inactive.
@@ -223,8 +229,11 @@ Notification có `CreatedDate` trước `20/07/2026 00:00:00` luôn được tr�
 hiện trong `legacy_data`; các category nghiệp vụ khác chỉ chứa dữ liệu từ mốc này trở đi. Quy tắc chỉ áp
 dụng trên response và truy vấn API, không thay đổi `Topic`, `TopicCode` hoặc dữ liệu đã lưu trong database.
 
-Response feed/detail trả `topic`, `topicCode`, `categoryCode`, `eventGroupCode`, `context`, `conversationId` và
-`messageId`. `TopicNotifications` được lưu dạng
+Response feed/detail trả `topic`, `topicCode`, `categoryCode`, `eventGroupCode`, `context`, `conversationId`,
+`conversationTitle` và `messageId`. Khi notification gắn một conversation mà current employee vẫn là participant
+active cùng company, `conversationTitle` là subject hiện tại của thread; FE dùng đây làm title canonical khi render
+feed đã lọc theo category/event group. `context.aggregateCode` vẫn là mã nghiệp vụ ngắn, không thay thế title.
+`TopicNotifications` được lưu dạng
 `int` trong database, các giá trị hiện có được khóa bằng số explicit và chỉ được append giá trị mới ở cuối.
 Frontend dùng `categoryCode` cho menu nghiệp vụ, `eventGroupCode` cho filter con và `topicCode` cho icon, màu,
 điều hướng, action cụ thể. `NotificationTopicCatalog` là nguồn duy nhất chứa mapping các code này và
@@ -257,7 +266,15 @@ SampleRequestDirectPatchNotified    = 43 -> plm.sample_request.direct_patch.noti
 CustomerAiSummaryAutomationStatus   = 44 -> dev.customer.ai_summary.automation_status   -> system/automation
 SampleRequestCustomerFeedbackRecorded = 47 -> plm.sample_request.customer_feedback.recorded -> sample_request/sample
 QuotationPricingApproved             = 48 -> crm.quotation.pricing.approved             -> quotation/pricing
+SampleRequestFormulaApproved         = 49 -> plm.sample_request.formula.approved         -> sample_request/formula
+QuotationPricingExpired              = 50 -> crm.quotation.pricing.expired              -> quotation/pricing-alert
 ```
+
+`SampleRequestFormulaApproved` được phát sau khi Lab xác nhận Formula trong ngữ cảnh một Sample Request.
+Notification dùng link `/crm/quotations/product-pricing-options?keyword={ColourCode}` để mở tra cứu giá theo
+mã màu. Payload chỉ giữ metadata của thread/Sample Request; không chứa material cost, giá sản xuất, giá bán
+hoặc margin. Recipient được resolve theo participant hiện có, manager và required recipient của Sample Request;
+SignalR/Web Push tiếp tục nhận notification qua outbox chung, không có kênh realtime riêng.
 
 `SampleRequestUpdateRequested = 25`, `SampleRequestUpdateApproved = 27` và
 `SampleRequestUpdateRejected = 28` vẫn giữ nguyên mapping cũ nhưng không còn được dùng cho luồng data-change mới.
@@ -283,13 +300,27 @@ Payload còn có `action.code = Quotation.OpenPricingOptions` và `action.parame
 `quotationExternalId`. `Notification.Link` để trống; từng client ánh xạ action nghiệp vụ sang route riêng.
 
 `QuotationPricingApproved` được publish bởi `ApproveProductPricingVersionCommandHandler` sau khi version giá đã
-được lưu `Approved`. Handler tìm từng báo giá `Draft` active cùng company, currency và có line thuộc sản phẩm vừa
-duyệt; mỗi Sale phụ trách active cùng company nhận một notification cho từng báo giá, trừ khi chính Sale đó là
+được lưu `Approved`. Handler reconcile các báo giá `PendingApproval` cùng company/currency trước, tự snapshot và
+chuyển báo giá sang `Approved` nếu mọi line đã đủ giá. Sau đó mỗi Sale phụ trách active cùng company nhận một
+notification cho từng báo giá bị ảnh hưởng, trừ khi chính Sale đó là người duyệt.
 người duyệt. Payload không chứa material cost, manufacturing cost hoặc margin; chỉ chứa quotation id/code,
-product id/code, pricing version id/version và `action.code = Quotation.Open`. Topic có
+product id/code, pricing version id/version, `quotationStatus`, `isQuotationPricingComplete` và
+`action.code = Quotation.Open`. Topic có
 `categoryCode = quotation`, `eventGroupCode = pricing`, `topicCode = crm.quotation.pricing.approved`.
 Notification vẫn đi qua `INotificationService.PublishAsync`, vì vậy SignalR/Web Push tiếp tục dùng outbox chung;
-module Quotation không gọi realtime channel trực tiếp và không tạo thêm InternalMail message cho sự kiện này.
+module Quotation không gọi realtime channel trực tiếp và không tạo thêm InternalMail message cho sự kiện này. Khi
+báo giá đã có conversation active cùng `CompanyId + RelatedType=Quotation + RelatedId=quotationId`, notification
+được gắn `conversationId` để Hub gom với thread; nếu chưa có conversation, backend không tạo thread giả.
+
+`QuotationPricingExpired` được `QuotationPricingExpiryReminderWorker` publish khi giá chuẩn đã duyệt quá
+`Features:Quotations:ApprovedPricingReviewAfterDays` và vẫn được một quotation `Approved` chưa gửi dùng. Worker
+chuyển báo giá về `PendingApproval`, ghi history, giữ snapshot cũ, tạo action message trong conversation rồi publish
+topic `crm.quotation.pricing.expired` với
+`categoryCode = quotation`, `eventGroupCode = pricing-alert`, severity `Warning`. Payload camelCase chứa quotation,
+product, product pricing version, `pricingReviewDueDate`, `quotationStatus`, `conversationId`, `messageId` và action
+`Quotation.OpenPricingWorkspace`; không chứa cost, margin hoặc tiers. Người nhận gồm sale phụ trách, leader sale
+group, President và Developer active cùng company. Vì publish qua `INotificationService`, SignalR/Web Push outbox,
+inbox state và recipient audit dùng hoàn toàn cơ chế chuẩn.
 
 Tin nhắn trả lời trong InternalMail conversation có `RelatedType = Quotation` publish
 `QuotationMessageCreated`, thay vì topic chung `InternalMailMessageCreated`. Payload notification liên kết thread
@@ -356,6 +387,15 @@ Topic không đổi: `SampleRequestSampleSent = 37`, `topicCode = plm.sample_req
 
 Khi Sale xác nhận, backend cập nhật Trial và payload của `InternalMessage` sang `Confirmed`. Luồng xác nhận không publish notification mới và không thay đổi SignalR/Web Push/outbox; FE dùng response hoặc tải lại thread để lấy trạng thái action mới nhất.
 
+## Sample Request Sales-group leader recipients
+
+Khi current sender có role `SaleUser`, `SampleRequestRecipientResolver` bổ sung toàn bộ leader active
+(`MemberInGroup.IsAdmin = true`) trong đúng group active chứa sender thành recipient thường với
+`source = sales_group_leader`. Rule luôn lọc company, active membership/employee, loại sender và gộp id trùng;
+không dùng role `Leader` toàn công ty. Rule được áp dụng ở preview lẫn `SendSampleRequestMessageCommandHandler`,
+nên leader trở thành participant và nhận notification theo topic Sample Request hiện hữu. Không thêm topic, payload,
+SignalR hay Web Push channel mới: publish tiếp tục đi qua `INotificationService.PublishAsync` và outbox chuẩn.
+
 ## Complaint decision topics
 
 - `ComplaintInitialDecision = 45`: topic code `plm.complaint.initial_decision`, `sales_order/complaint`.
@@ -364,3 +404,15 @@ Khi Sale xác nhận, backend cập nhật Trial và payload của `InternalMess
 Complaint decision notifications are published through `INotificationService.PublishAsync`. Initial decisions target the Sale employee who created the complaint. Final decisions target the creator, active CAPA assignees and the effectiveness verifier, excluding the current decision actor. `NotificationService` filters inactive and wrong-company employees while resolving inbox states.
 
 The notification payload only contains complaint id, status, decision, resolution and optional handling-order id. It contains no customer content, root cause, lot data, price or attachment. SignalR/Web Push behavior is unchanged: the existing outbox only signals the notification id and FE reloads feed/detail APIs.
+
+## Sample Request price quote request
+
+`POST /api/v1/plm/sample-requests/{sampleRequestId}/price-quote-requests` tái sử dụng topic append-only
+`SampleRequestPriceQuoteRequested = 23` (`plm.sample_request.price_quote.requested`, category `sample_request`,
+event group `quotation`). Recipient là employee active có global role `President` trong đúng company; current sender
+không nhận notification của chính mình nhưng vẫn là participant của conversation.
+
+Payload có `contentType = SampleRequestPriceQuoteRequested`, `conversationId`, `messageId`, `sampleRequestId`,
+external id và `priceQuoteRequest` gồm Product cùng Formula đã resolve. Payload không chứa material cost,
+manufacturing cost, selling price, margin hoặc tier. Notification tiếp tục đi qua
+`INotificationService.PublishAsync`; SignalR và Web Push dùng outbox hiện hữu, không có channel hoặc worker mới.

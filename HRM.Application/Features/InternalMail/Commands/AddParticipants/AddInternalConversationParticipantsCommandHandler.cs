@@ -49,19 +49,18 @@ internal sealed class AddInternalConversationParticipantsCommandHandler
             return OperationResult.Fail("Current employee or company is invalid.");
         }
 
-        var actorIsOwner = await _dbContext.InternalConversationParticipants
+        var actorIsParticipant = await _dbContext.InternalConversationParticipants
             .AsNoTracking()
             .AnyAsync(x =>
                 x.InternalConversationId == request.ConversationId &&
                 x.EmployeeId == actorId.Value &&
                 x.IsActive &&
-                x.Role == InternalConversationParticipantRole.Owner &&
                 x.Conversation.CompanyId == companyId.Value &&
                 x.Conversation.IsActive,
                 cancellationToken);
-        if (!actorIsOwner)
+        if (!actorIsParticipant)
         {
-            return OperationResult.Fail("Only the conversation owner can add participants.");
+            return OperationResult.Fail("Only active conversation participants can add participants.");
         }
 
         var validEmployeeIds = await _dbContext.Employees

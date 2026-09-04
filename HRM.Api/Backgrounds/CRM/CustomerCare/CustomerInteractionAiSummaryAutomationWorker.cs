@@ -2,7 +2,7 @@ using HRM.Application.Features.CRM.InteractionSummaries.Services.Automation;
 using HRM.Application.Abstractions.Commons.Time;
 using Microsoft.Extensions.Options;
 
-namespace HRM.Api.Backgrounds;
+namespace HRM.Api.Backgrounds.CRM.CustomerCare;
 
 /// <summary>
 /// Kích hoạt quét AI summary CRM theo chu kỳ cấu hình. Rule chọn customer, cache và gọi AI

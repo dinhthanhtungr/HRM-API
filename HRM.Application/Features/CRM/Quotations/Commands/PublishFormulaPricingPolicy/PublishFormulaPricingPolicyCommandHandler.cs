@@ -43,7 +43,7 @@ internal sealed class PublishFormulaPricingPolicyCommandHandler(
                 "Pricing policy was not found or is outside the current company.");
         }
 
-        var lockKey = $"{companyId:N}:{policy.Profile}:{policy.Currency}";
+        var lockKey = $"{companyId:N}:{policy.CategoryId:N}:{policy.Profile}:{policy.Currency}";
         using var lease = await mutationLock.AcquireAsync(lockKey, cancellationToken);
 
         var trackedPolicy = await dbContext.FormulaPricingPolicies
@@ -54,23 +54,13 @@ internal sealed class PublishFormulaPricingPolicyCommandHandler(
                 x.CompanyId == companyId &&
                 x.IsActive,
                 cancellationToken);
-        var publishError = FormulaPricingPolicyRules.ValidatePublish(
-            trackedPolicy.Status,
-            trackedPolicy.Version,
-            trackedPolicy.EffectiveFrom,
-            trackedPolicy.Tiers.Count);
-        if (publishError is not null)
+        if (trackedPolicy.Version <= 0 ||
+            !trackedPolicy.EffectiveFrom.HasValue ||
+            trackedPolicy.EffectiveFrom.Value == default ||
+            !trackedPolicy.Tiers.Any(x => x.IsActive))
         {
-            return OperationResult<FormulaPricingPolicyDto>.Fail(publishError);
-        }
-
-        var conflict = OptimisticConcurrencyHelper.ValidateExpectedUpdatedDate(
-            command.Request.ExpectedUpdatedDate,
-            trackedPolicy.UpdatedDate,
-            "Pricing policy");
-        if (conflict is not null)
-        {
-            return OperationResult<FormulaPricingPolicyDto>.Fail(conflict);
+            return OperationResult<FormulaPricingPolicyDto>.Fail(
+                "A pricing policy needs an effective date and at least one active tier before publishing.");
         }
 
         var now = dateTimeProvider.Now;
@@ -79,6 +69,7 @@ internal sealed class PublishFormulaPricingPolicyCommandHandler(
             .Where(x =>
                 x.FormulaPricingPolicyId != trackedPolicy.FormulaPricingPolicyId &&
                 x.CompanyId == companyId &&
+                x.CategoryId == trackedPolicy.CategoryId &&
                 x.Profile == trackedPolicy.Profile &&
                 x.Currency == trackedPolicy.Currency &&
                 x.Status == FormulaPricingPolicyStatus.Published &&

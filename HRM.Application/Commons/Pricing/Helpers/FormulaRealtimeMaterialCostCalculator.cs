@@ -17,7 +17,7 @@ public static class FormulaRealtimeMaterialCostCalculator
         }
 
         var total = 0m;
-        var missingPriceCount = 0;
+        var missingOrZeroPriceCount = 0;
 
         foreach (var item in itemList)
         {
@@ -30,19 +30,21 @@ public static class FormulaRealtimeMaterialCostCalculator
 
             if (!hasPrice)
             {
-                missingPriceCount++;
+                missingOrZeroPriceCount++;
                 continue;
             }
 
             total += item.Quantity * latestPrice!.CurrentPrice;
+            if (latestPrice.CurrentPrice == 0m)
+            {
+                missingOrZeroPriceCount++;
+            }
         }
 
-        return missingPriceCount == 0
-            ? new FormulaRealtimeMaterialCostResult(
-                PricingRoundingRules.RoundCalculatedPrice(total),
-                true,
-                0)
-            : new FormulaRealtimeMaterialCostResult(null, false, missingPriceCount);
+        return new FormulaRealtimeMaterialCostResult(
+            PricingRoundingRules.RoundCalculatedPrice(total),
+            missingOrZeroPriceCount == 0,
+            missingOrZeroPriceCount);
     }
 
     public static ItemType NormalizeItemType(ItemType itemType)

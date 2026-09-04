@@ -1,5 +1,6 @@
 using HRM.Application.Abstractions.Persistence.CRM.CustomerCare;
 using HRM.Application.Abstractions.Persistence.InternalMail;
+using HRM.Application.Commons.Rules;
 using HRM.Application.Features.CRM.CustomerCare.Visibility;
 using HRM.Domain.Enums.CustomerEnum;
 using HRM.Domain.Enums.InternalMailEnums;
@@ -71,10 +72,10 @@ internal sealed class ProductPricingRequestQueryService
             .Where(x =>
                 x.CompanyId == companyId &&
                 x.IsActive &&
-                x.Status == QuotationStatus.Draft &&
+                x.Status == QuotationStatus.PendingApproval &&
                 x.Currency == currency &&
                 quotationIds.Contains(x.QuotationId))
-            .SelectMany(x => x.Lines.Select(line => new ProductPricingRequestRow
+            .SelectMany(x => x.Lines.Where(line => line.IsActive).Select(line => new ProductPricingRequestRow
             {
                 ProductId = line.ProductId,
                 QuotationId = x.QuotationId,
@@ -101,6 +102,67 @@ internal sealed class ProductPricingRequestQueryService
 
         return rows;
     }
+
+    /// <summary>
+    /// Lấy toàn bộ khách hàng liên quan đến sản phẩm qua Sample Request hoặc quotation active.
+    /// Visibility của từng nguồn vẫn được áp dụng trước khi trả dữ liệu.
+    /// </summary>
+    public async Task<IReadOnlyList<ProductPricingRelatedCustomerRow>> LoadRelatedCustomersAsync(
+        Guid companyId,
+        IReadOnlyCollection<Guid> productIds,
+        CancellationToken cancellationToken)
+    {
+        if (productIds.Count == 0)
+        {
+            return [];
+        }
+
+        var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+        var quotationRows = await _visibilityService
+            .ApplyQuotationVisibility(
+                _crmDbContext.Quotations.AsNoTracking(),
+                _crmDbContext.Customers.AsNoTracking(),
+                scope)
+            .Where(x =>
+                x.CompanyId == companyId &&
+                x.IsActive &&
+                x.Customer.ExternalId != InternalCustomerRules.InternalCustomerExternalId &&
+                x.Lines.Any(line => line.IsActive && productIds.Contains(line.ProductId)))
+            .SelectMany(x => x.Lines
+                .Where(line => line.IsActive && productIds.Contains(line.ProductId))
+                .Select(line => new ProductPricingRelatedCustomerRow
+                {
+                    ProductId = line.ProductId,
+                    RelatedDocumentId = x.QuotationId,
+                    CustomerId = x.CustomerId,
+                    CustomerExternalId = x.Customer.ExternalId,
+                    CustomerName = x.Customer.CustomerName,
+                    RelatedDate = x.UpdatedDate ?? x.CreatedDate
+                }))
+            .ToListAsync(cancellationToken);
+
+        var sampleRequestRows = await _visibilityService
+            .ApplySampleRequestVisibility(
+                _crmDbContext.SampleRequests.AsNoTracking(),
+                _crmDbContext.Customers.AsNoTracking(),
+                scope)
+            .Where(x =>
+                x.CompanyId == companyId &&
+                x.Customer.ExternalId != InternalCustomerRules.InternalCustomerExternalId &&
+                productIds.Contains(x.ProductId))
+            .Select(x => new ProductPricingRelatedCustomerRow
+            {
+                ProductId = x.ProductId,
+                RelatedDocumentId = x.SampleRequestId,
+                CustomerId = x.CustomerId,
+                CustomerExternalId = x.Customer.ExternalId,
+                CustomerName = x.Customer.CustomerName,
+                RelatedDate = x.UpdatedDate ?? x.CreatedDate
+            })
+            .ToListAsync(cancellationToken);
+
+        return [.. quotationRows, .. sampleRequestRows];
+    }
 }
 
 internal sealed class ProductPricingRequestRow
@@ -116,4 +178,14 @@ internal sealed class ProductPricingRequestRow
     public decimal Quantity { get; init; }
     public string Unit { get; init; } = string.Empty;
     public DateTime RequestedAt { get; set; }
+}
+
+internal sealed class ProductPricingRelatedCustomerRow
+{
+    public Guid ProductId { get; init; }
+    public Guid RelatedDocumentId { get; init; }
+    public Guid CustomerId { get; init; }
+    public string CustomerExternalId { get; init; } = string.Empty;
+    public string CustomerName { get; init; } = string.Empty;
+    public DateTime RelatedDate { get; init; }
 }

@@ -26,6 +26,8 @@ public sealed class ProductPricingWorkbenchSortingTests
         var result = GetProductPricingWorkbenchQueryHandler.ApplySorting(
             [olderSampleProduct, requestedProduct, newestSampleProduct],
             requests,
+            new Dictionary<Guid, IReadOnlyList<PricingVersionRow>>(),
+            new DateTime(2026, 8, 21),
             new GetProductPricingWorkbenchQuery());
 
         Assert.Equal(
@@ -61,6 +63,8 @@ public sealed class ProductPricingWorkbenchSortingTests
         var result = GetProductPricingWorkbenchQueryHandler.ApplySorting(
             [olderRequest, newerRequest],
             requests,
+            new Dictionary<Guid, IReadOnlyList<PricingVersionRow>>(),
+            new DateTime(2026, 8, 21),
             new GetProductPricingWorkbenchQuery());
 
         Assert.Equal(

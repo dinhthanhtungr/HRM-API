@@ -2,6 +2,7 @@ using HRM.Domain.Entities.AttachmentSchema;
 using HRM.Domain.Entities.CompanySchema;
 using HRM.Domain.Entities.HrSchema;
 using HRM.Domain.Entities.InternalMailSchema;
+using HRM.Domain.Entities.SampleRequestSchema;
 using HRM.Domain.Identity;
 using Microsoft.EntityFrameworkCore;
 
@@ -20,6 +21,7 @@ public interface IInternalMailDbContext
     DbSet<InternalMessageReadState> InternalMessageReadStates { get; }
     DbSet<AttachmentCollection> AttachmentCollections { get; }
     DbSet<AttachmentModel> AttachmentModels { get; }
+    DbSet<SampleRequest> SampleRequests { get; }
     DbSet<Employee> Employees { get; }
     DbSet<Group> Groups { get; }
     DbSet<MemberInGroup> MemberInGroups { get; }

@@ -71,7 +71,8 @@ internal sealed class GetQuotationPricingWorkspaceQueryHandler
                 "Quotation was not found or is outside your visibility scope.");
         }
 
-        var productIds = quotation.Lines
+        var activeQuotationLines = quotation.Lines.Where(x => x.IsActive).ToArray();
+        var productIds = activeQuotationLines
             .Select(x => x.ProductId)
             .Distinct()
             .ToArray();
@@ -94,7 +95,7 @@ internal sealed class GetQuotationPricingWorkspaceQueryHandler
             pricingVersions,
             ProductPricingStatus.Approved);
 
-        var lines = quotation.Lines
+        var lines = activeQuotationLines
             .OrderBy(x => x.SortOrder)
             .ThenBy(x => x.QuotationLineId)
             .Select(line => MapLine(
@@ -167,20 +168,22 @@ internal sealed class GetQuotationPricingWorkspaceQueryHandler
         ProductPricingVersion? approved,
         IReadOnlyList<ProductPricingSourceOptionDto> sources)
     {
+        var activeAppliedTiers = line.PriceTiers.Where(x => x.IsActive).ToArray();
         var hasAppliedPricing = line.ProductPricingVersionId.HasValue &&
-            line.PriceTiers.Count > 0;
+            activeAppliedTiers.Length > 0;
         var storedPricing = draft ?? approved;
         var selectedSource = storedPricing is null
             ? sources.FirstOrDefault()
             : FindSelectedSource(storedPricing, sources);
         var effectivePricing = BuildEffectivePricing(storedPricing, selectedSource);
         var storedTiers = storedPricing?.PriceTiers
+            .Where(x => x.IsActive)
             .OrderBy(x => x.SortOrder)
             .ThenBy(x => x.ProductPricingTierId)
             .ToArray() ?? [];
         var state = QuotationPricingWorkspaceRules.ResolveState(
             line.ProductPricingVersionId,
-            line.PriceTiers.Count,
+            activeAppliedTiers.Length,
             approved is not null,
             draft is not null,
             sources.Count > 0);
@@ -200,18 +203,23 @@ internal sealed class GetQuotationPricingWorkspaceQueryHandler
             HasNewerApprovedPricing = hasAppliedPricing &&
                 approved is not null &&
                 approved.ProductPricingVersionId != line.ProductPricingVersionId,
-            AppliedPriceTiers = line.PriceTiers
+            AppliedPriceTiers = activeAppliedTiers
                 .OrderBy(x => x.SortOrder)
                 .ThenBy(x => x.QuotationLinePriceTierId)
                 .Select(x => new QuotationLinePriceTierDto
                 {
                     QuotationLinePriceTierId = x.QuotationLinePriceTierId,
+                    IsSnapshot = true,
+                    IsActive = true,
+                    RequiresManualPrice = false,
                     QuantityRangeLabel = x.QuantityRangeLabel,
                     MinQuantity = x.MinQuantity,
                     MaxQuantity = x.MaxQuantity,
                     MinInclusive = x.MinInclusive,
                     MaxInclusive = x.MaxInclusive,
                     UnitPrice = x.UnitPrice,
+                    CommissionAmount = x.CommissionAmount,
+                    CustomerUnitPrice = x.CustomerUnitPrice,
                     SortOrder = x.SortOrder
                 })
                 .ToArray(),

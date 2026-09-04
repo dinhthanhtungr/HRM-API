@@ -21,11 +21,20 @@ internal sealed class ExecutivePnLCustomerReader
         int topN,
         CancellationToken cancellationToken)
     {
-        return await DeliveryRevenueQuery.Create(
+        var revenueLines = await DeliveryRevenueQuery.Create(
                 _dbContext.DeliveryOrderDetails.AsNoTracking(),
                 filter.FromMonth,
                 filter.RangeEnd,
                 filter.CompanyId)
+            .ToListAsync(cancellationToken);
+
+        var costSources = await ExecutivePnLDeliveryCostResolver.LoadAsync(
+            _dbContext,
+            revenueLines,
+            filter.CompanyId,
+            cancellationToken);
+
+        return revenueLines
             .GroupBy(x => new
             {
                 Key = x.CustomerId,
@@ -36,13 +45,10 @@ internal sealed class ExecutivePnLCustomerReader
                 Key = g.Key.Key.ToString(),
                 Label = g.Key.Label,
                 Revenue = g.Sum(x => x.RevenueAmountVnd),
-                CostOfSales = g.Sum(x => ExecutivePnLDeliveryCostRules.ResolveAmount(
-                    x.HasNormalizedLots,
-                    x.LotCostSnapshotAmount,
-                    x.BaseCostAmount))
+                CostOfSales = g.Sum(x => ExecutivePnLDeliveryCostResolver.ResolveAmount(x, costSources))
             })
             .OrderByDescending(x => x.Revenue)
             .Take(topN)
-            .ToListAsync(cancellationToken);
+            .ToList();
     }
 }

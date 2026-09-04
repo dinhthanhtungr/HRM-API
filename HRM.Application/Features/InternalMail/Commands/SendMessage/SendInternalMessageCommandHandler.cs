@@ -274,7 +274,7 @@ internal sealed class SendInternalMessageCommandHandler
             AttachmentCollectionId = collectionId
         }, cancellationToken);
 
-        var relativeFolder = $"attachments/internal-mail/{collectionId:N}";
+        var relativeFolder = $"collections/internal-mail/{collectionId:N}";
         foreach (var file in attachments)
         {
             var storagePath = await _fileStorage.SaveAsync(

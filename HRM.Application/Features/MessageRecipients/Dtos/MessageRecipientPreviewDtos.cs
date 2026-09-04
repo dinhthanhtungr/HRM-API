@@ -7,7 +7,9 @@ public sealed class MessageRecipientPreviewDto
     public IReadOnlyList<MessageRecipientDto> RequiredRecipients { get; set; } = Array.Empty<MessageRecipientDto>();
     public IReadOnlyList<MessageRecipientDto> SuggestedRecipients { get; set; } = Array.Empty<MessageRecipientDto>();
     public IReadOnlyList<MessageRecipientDto> SelectedRecipients { get; set; } = Array.Empty<MessageRecipientDto>();
+    public IReadOnlyList<MessageRecipientDto> SelectedSilentWatchers { get; set; } = Array.Empty<MessageRecipientDto>();
     public bool CanAddRecipients { get; set; } = true;
+    public bool CanAddSilentWatchers { get; set; } = true;
     public bool CanRemoveSuggestedRecipients { get; set; } = true;
 }
 

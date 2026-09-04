@@ -3,10 +3,12 @@ using HRM.Application.Abstractions.Persistence.PLM;
 using HRM.Application.Features.PLM.Formulas.Commands.UpdateFormulaStatus;
 using HRM.Application.Features.PLM.Formulas.Dtos.Commons;
 using HRM.Application.Features.PLM.SampleRequests.Rules;
+using HRM.Application.Features.PLM.SampleRequests.DataChangeRequests;
 using HRM.Application.Features.PLM.SampleRequests.SampleTrials;
 using HRM.Domain.Entities.SampleRequestSchema;
 using HRM.Domain.Enums.Category;
 using HRM.Domain.Enums.Formulas;
+using HRM.Domain.Enums.Manufacturings;
 using HRM.Domain.Enums.Products;
 using HRM.Domain.Enums.SampleRequests;
 using Microsoft.EntityFrameworkCore;
@@ -168,6 +170,50 @@ internal sealed class FormulaWriteService
         formula.TotalPrice = requests.Sum(x => RoundPrice(x.Quantity * (x.UnitPrice ?? 0m)));
     }
 
+    /// <summary>
+    /// Applies the editable Formula fields and optional material replacement without saving.
+    /// The caller owns the transaction and creates any required Formula version afterwards.
+    /// </summary>
+    public async Task ApplyFormulaUpdateAsync(
+        Formula formula,
+        UpsertFormulaRequest request,
+        Guid companyId,
+        Guid employeeId,
+        DateTime now,
+        CancellationToken cancellationToken)
+    {
+        if (request.ProductId is { } productId && productId != Guid.Empty)
+        {
+            var product = await LoadProductAsync(companyId, productId, cancellationToken);
+            formula.ProductId = product.ProductId;
+            formula.Product = product;
+        }
+
+        formula.ExternalId = await ResolveExternalIdAsync(
+            companyId,
+            request.ExternalId,
+            formula.FormulaId,
+            cancellationToken);
+        formula.Name = NormalizeRequiredName(request.Name);
+        formula.Note = TrimToNull(request.Note);
+        ValidateStepOfProduct(request.StepOfProduct);
+        formula.StepOfProduct = request.StepOfProduct;
+        formula.EffectiveDate = request.EffectiveDate;
+        formula.IsSelect = request.IsSelect ?? formula.IsSelect;
+        formula.UpdatedBy = employeeId;
+        formula.UpdatedDate = now;
+
+        await ReplaceMaterialsAsync(formula, request.Materials, companyId, cancellationToken);
+    }
+
+    public static void ValidateStepOfProduct(StepOfProduct? stepOfProduct)
+    {
+        if (stepOfProduct.HasValue && !Enum.IsDefined(stepOfProduct.Value))
+        {
+            throw new InvalidOperationException("StepOfProduct is invalid.");
+        }
+    }
+
     public async Task<IReadOnlyList<SampleRequestSampleSentTarget>> MarkSampleRequestsAsSampleSentAsync(
         Guid formulaId,
         Guid formulaProductId,
@@ -196,11 +242,20 @@ internal sealed class FormulaWriteService
 
         foreach (var sampleRequest in sampleRequests)
         {
+            var oldStatus = sampleRequest.Status;
             SampleRequestStatusTransitionRules.MarkSampleSent(sampleRequest);
             sampleRequest.SendBy = sentByEmployeeId;
             sampleRequest.SendDate = sentDate;
             sampleRequest.UpdatedBy = employeeId;
             sampleRequest.UpdatedDate = now;
+            await SampleRequestDataChangeAuditHelper.AddStatusTransitionAuditIfChangedAsync(
+                _dbContext.AuditLogs,
+                sampleRequest,
+                oldStatus,
+                employeeId,
+                now,
+                "FormulaSampleSent",
+                cancellationToken);
         }
 
         return sampleRequests
@@ -285,10 +340,19 @@ internal sealed class FormulaWriteService
 
         foreach (var sampleRequest in sampleRequests)
         {
+            var oldStatus = sampleRequest.Status;
             sampleRequest.FormulaId = formulaId;
             SampleRequestStatusTransitionRules.MarkCustomerApproved(sampleRequest);
             sampleRequest.UpdatedBy = employeeId;
             sampleRequest.UpdatedDate = now;
+            await SampleRequestDataChangeAuditHelper.AddStatusTransitionAuditIfChangedAsync(
+                _dbContext.AuditLogs,
+                sampleRequest,
+                oldStatus,
+                employeeId,
+                now,
+                "FormulaCustomerApproved",
+                cancellationToken);
         }
 
         var productFormulas = await _dbContext.Formulas
@@ -376,8 +440,7 @@ internal sealed class FormulaWriteService
     {
         ValidateMaterialRequest(request);
 
-        var lineNo = request.LineNo > 0 ? request.LineNo : fallbackLineNo;
-
+        var lineNo = fallbackLineNo;
         var unitPrice = RoundPrice(request.UnitPrice ?? 0m);
         var quantity = RoundQuantity(request.Quantity);
         var totalPrice = RoundPrice(quantity * unitPrice);

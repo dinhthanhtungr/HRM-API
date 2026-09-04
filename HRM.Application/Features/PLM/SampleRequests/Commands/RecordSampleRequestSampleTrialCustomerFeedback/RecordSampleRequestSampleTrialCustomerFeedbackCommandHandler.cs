@@ -7,6 +7,7 @@ using HRM.Application.Features.CRM.CustomerCare.Visibility;
 using HRM.Application.Features.InternalMail.Dtos;
 using HRM.Application.Features.PLM.SampleRequests.Commands.SendSampleRequestMessage;
 using HRM.Application.Features.PLM.SampleRequests.Rules;
+using HRM.Application.Features.PLM.SampleRequests.DataChangeRequests;
 using HRM.Application.Features.PLM.SampleRequests.SampleTrials;
 using HRM.Domain.Enums.Notifications;
 using HRM.Domain.Enums.SampleRequests;
@@ -133,6 +134,7 @@ internal sealed class RecordSampleRequestSampleTrialCustomerFeedbackCommandHandl
         }
 
         var now = _dateTimeProvider.Now;
+        var oldSampleRequestStatus = sampleRequest.Status;
         var replyDate = request.CustomerReplyDate ?? now;
         trial.Status = request.Status;
         trial.CustomerReplyStatus = replyStatus;
@@ -173,6 +175,14 @@ internal sealed class RecordSampleRequestSampleTrialCustomerFeedbackCommandHandl
 
         sampleRequest.UpdatedBy = employeeId;
         sampleRequest.UpdatedDate = now;
+        await SampleRequestDataChangeAuditHelper.AddStatusTransitionAuditIfChangedAsync(
+            _dbContext.AuditLogs,
+            sampleRequest,
+            oldSampleRequestStatus,
+            employeeId,
+            now,
+            "SampleTrialCustomerFeedback",
+            cancellationToken);
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         var messageResult = await SendFeedbackMessageAsync(

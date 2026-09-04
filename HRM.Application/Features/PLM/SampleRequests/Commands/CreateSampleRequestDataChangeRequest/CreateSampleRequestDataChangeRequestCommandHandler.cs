@@ -2,6 +2,7 @@ using HRM.Application.Abstractions.Persistence.PLM;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Models;
 using HRM.Application.Features.InternalMail.Dtos;
+using HRM.Application.Features.CRM.CustomerCare.Visibility;
 using HRM.Application.Features.PLM.SampleRequests.Commands.SendSampleRequestMessage;
 using HRM.Application.Features.PLM.SampleRequests.DataChangeRequests;
 using HRM.Domain.Enums.SampleRequests;
@@ -19,15 +20,18 @@ internal sealed class CreateSampleRequestDataChangeRequestCommandHandler
 
     private readonly IPLMWriteDbContext _dbContext;
     private readonly ICurrentUser _currentUser;
+    private readonly ICustomerVisibilityService _visibilityService;
     private readonly ISender _sender;
 
     public CreateSampleRequestDataChangeRequestCommandHandler(
         IPLMWriteDbContext dbContext,
         ICurrentUser currentUser,
+        ICustomerVisibilityService visibilityService,
         ISender sender)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
+        _visibilityService = visibilityService;
         _sender = sender;
     }
 
@@ -35,11 +39,6 @@ internal sealed class CreateSampleRequestDataChangeRequestCommandHandler
         CreateSampleRequestDataChangeRequestCommand request,
         CancellationToken cancellationToken)
     {
-        if (!SampleRequestDataChangeAuthorization.CanRequest(_currentUser))
-        {
-            return OperationResult<SendInternalMessageResultDto>.Fail("You are not allowed to request technical data changes.");
-        }
-
         var employeeId = _currentUser.EmployeeId;
         var companyId = _currentUser.CompanyId;
         if (request.SampleRequestId == Guid.Empty ||
@@ -68,27 +67,19 @@ internal sealed class CreateSampleRequestDataChangeRequestCommandHandler
             return OperationResult<SendInternalMessageResultDto>.Fail("Field codes must be valid and unique.");
         }
 
-        var sampleRequest = await _dbContext.SampleRequests
-            .Include(x => x.Product)
-            .AsNoTracking()
-            .Where(x =>
-                x.SampleRequestId == request.SampleRequestId &&
-                x.CompanyId == companyId.Value &&
-                x.IsActive)
+        var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+        var sampleRequest = await _visibilityService.ApplySampleRequestVisibility(
+                _dbContext.SampleRequests
+                    .Include(x => x.Product)
+                    .Where(x => x.SampleRequestId == request.SampleRequestId)
+                    .AsNoTracking(),
+                _dbContext.Customers.AsNoTracking(),
+                scope)
             .FirstOrDefaultAsync(cancellationToken);
 
         if (sampleRequest is null || !sampleRequest.Product.IsActive || sampleRequest.Product.CompanyId != companyId.Value)
         {
             return OperationResult<SendInternalMessageResultDto>.Fail("Sample request or product was not found.");
-        }
-
-        if (!SampleRequestDataChangeAuthorization.CanRequestFor(
-                _currentUser,
-                employeeId.Value,
-                sampleRequest.ManagerBy,
-                sampleRequest.CreatedBy))
-        {
-            return OperationResult<SendInternalMessageResultDto>.Fail("You are not allowed to request changes for this sample request.");
         }
 
         var proposals = new List<SampleRequestDataChangeFieldPayload>(request.Changes.Count);

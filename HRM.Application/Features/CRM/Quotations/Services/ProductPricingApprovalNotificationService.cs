@@ -1,10 +1,12 @@
 using System.Text.Json;
 using HRM.Application.Abstractions.Persistence.CRM.CustomerCare;
+using HRM.Application.Abstractions.Persistence.InternalMail;
 using HRM.Application.Features.CRM.Quotations.Dtos;
 using HRM.Application.Features.Notifications.Dtos;
 using HRM.Application.Features.Notifications.Services;
 using HRM.Domain.Entities.CustomerSchema;
 using HRM.Domain.Enums.CustomerEnum;
+using HRM.Domain.Enums.InternalMailEnums;
 using HRM.Domain.Enums.Notifications;
 using Microsoft.EntityFrameworkCore;
 
@@ -16,13 +18,16 @@ internal sealed class ProductPricingApprovalNotificationService
         new(JsonSerializerDefaults.Web);
 
     private readonly ICRMWriteDbContext _dbContext;
+    private readonly IInternalMailDbContext _internalMailDbContext;
     private readonly INotificationService _notificationService;
 
     public ProductPricingApprovalNotificationService(
         ICRMWriteDbContext dbContext,
+        IInternalMailDbContext internalMailDbContext,
         INotificationService notificationService)
     {
         _dbContext = dbContext;
+        _internalMailDbContext = internalMailDbContext;
         _notificationService = notificationService;
     }
 
@@ -37,7 +42,10 @@ internal sealed class ProductPricingApprovalNotificationService
             .Where(quotation =>
                 quotation.CompanyId == companyId &&
                 quotation.IsActive &&
-                quotation.Status == QuotationStatus.Draft &&
+                (quotation.Status == QuotationStatus.PendingApproval ||
+                    (quotation.Status == QuotationStatus.Approved &&
+                     quotation.Lines.Any(line =>
+                         line.ProductPricingVersionId == pricingVersion.ProductPricingVersionId))) &&
                 quotation.Currency == pricingVersion.Currency &&
                 quotation.SaleEmployeeId != approvedByEmployeeId &&
                 quotation.SaleEmployee.IsActive &&
@@ -46,13 +54,33 @@ internal sealed class ProductPricingApprovalNotificationService
             .Select(quotation => new WaitingQuotationTarget(
                 quotation.QuotationId,
                 quotation.ExternalId,
-                quotation.SaleEmployeeId))
+                quotation.SaleEmployeeId,
+                quotation.Status))
             .Distinct()
             .ToListAsync(cancellationToken);
         if (targets.Count == 0)
         {
             return;
         }
+
+        var quotationIds = targets.Select(target => target.QuotationId).ToArray();
+        var conversationByQuotationId = (await _internalMailDbContext.InternalConversations
+                .AsNoTracking()
+                .Where(conversation =>
+                    conversation.CompanyId == companyId &&
+                    conversation.IsActive &&
+                    conversation.RelatedType == InternalMailRelatedType.Quotation &&
+                    conversation.RelatedId.HasValue &&
+                    quotationIds.Contains(conversation.RelatedId.Value))
+                .OrderByDescending(conversation => conversation.LastMessageAt)
+                .Select(conversation => new
+                {
+                    QuotationId = conversation.RelatedId!.Value,
+                    ConversationId = conversation.InternalConversationId
+                })
+                .ToListAsync(cancellationToken))
+            .GroupBy(conversation => conversation.QuotationId)
+            .ToDictionary(group => group.Key, group => group.First().ConversationId);
 
         var actorName = await _dbContext.Employees
             .AsNoTracking()
@@ -72,6 +100,11 @@ internal sealed class ProductPricingApprovalNotificationService
 
         foreach (var target in targets)
         {
+            Guid? conversationId = conversationByQuotationId.TryGetValue(
+                target.QuotationId,
+                out var existingConversationId)
+                    ? existingConversationId
+                    : null;
             var payload = new QuotationPricingApprovedNotificationPayload
             {
                 QuotationId = target.QuotationId,
@@ -80,6 +113,8 @@ internal sealed class ProductPricingApprovalNotificationService
                 ProductCode = productCode,
                 ProductPricingVersionId = pricingVersion.ProductPricingVersionId,
                 ProductPricingVersion = pricingVersion.Version,
+                QuotationStatus = target.QuotationStatus,
+                IsQuotationPricingComplete = target.QuotationStatus == QuotationStatus.Approved,
                 Action = new QuotationPricingApprovedActionDto
                 {
                     Parameters = new QuotationPricingApprovedActionParametersDto
@@ -103,6 +138,7 @@ internal sealed class ProductPricingApprovalNotificationService
                     Link = null,
                     AggregateId = target.QuotationId,
                     AggregateCode = target.QuotationExternalId,
+                    ConversationId = conversationId,
                     PayloadJson = JsonSerializer.Serialize(payload, PayloadJsonOptions),
                     TargetUserIds = [target.SaleEmployeeId]
                 },
@@ -113,5 +149,6 @@ internal sealed class ProductPricingApprovalNotificationService
     private sealed record WaitingQuotationTarget(
         Guid QuotationId,
         string QuotationExternalId,
-        Guid SaleEmployeeId);
+        Guid SaleEmployeeId,
+        QuotationStatus QuotationStatus);
 }

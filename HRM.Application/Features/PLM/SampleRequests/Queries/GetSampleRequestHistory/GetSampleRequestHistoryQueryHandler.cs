@@ -10,39 +10,18 @@ using Microsoft.EntityFrameworkCore;
 namespace HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestHistory;
 
 internal sealed class GetSampleRequestHistoryQueryHandler
-    : IRequestHandler<GetSampleRequestHistoryQuery, IReadOnlyList<SampleRequestHistoryDto>?>
+    : IRequestHandler<GetSampleRequestHistoryQuery, SampleRequestHistoryResponseDto?>
 {
     private const string SampleRequestsSchema = "SampleRequests";
     private const string SampleRequestsTable = "SampleRequests";
     private const string ProductsTable = "Products";
+    private const string AttachmentsTable = "Attachments";
 
-    private static readonly IReadOnlySet<string> RestrictedProductTechnicalFields = new HashSet<string>(
+    private static readonly IReadOnlySet<string> RestrictedProductHistoryFields = new HashSet<string>(
         StringComparer.OrdinalIgnoreCase)
     {
-        "Requirement",
+        "ColourName",
         "Additive",
-        "UsageRate",
-        "DeltaE",
-        "ExpiryType",
-        "StorageCondition",
-        "LabComment",
-        "Procedure",
-        "RecycleRate",
-        "TaicalRate",
-        "Application",
-        "ProductUsage",
-        "PolymerMatchedIn",
-        "EndUser",
-        "FoodSafety",
-        "RohsStandard",
-        "ReachStandard",
-        "MaxTemp",
-        "WeatherResistance",
-        "LightCondition",
-        "VisualTest",
-        "ReturnSample",
-        "IsRecycle",
-        "OtherComment"
     };
 
     private readonly IPLMReadDbContext _dbContext;
@@ -59,7 +38,7 @@ internal sealed class GetSampleRequestHistoryQueryHandler
         _visibilityService = visibilityService;
     }
 
-    public async Task<IReadOnlyList<SampleRequestHistoryDto>?> Handle(
+    public async Task<SampleRequestHistoryResponseDto?> Handle(
         GetSampleRequestHistoryQuery request,
         CancellationToken cancellationToken)
     {
@@ -95,7 +74,8 @@ internal sealed class GetSampleRequestHistoryQueryHandler
             .Where(x => x.SchemaName == SampleRequestsSchema
                 && (x.CompanyId == sampleRequest.CompanyId || x.CompanyId == null)
                 && ((x.TableName == SampleRequestsTable && x.RecordId == sampleRequest.SampleRequestId)
-                    || (x.TableName == ProductsTable && x.RecordId == sampleRequest.ProductId)))
+                    || (x.TableName == ProductsTable && x.RecordId == sampleRequest.ProductId)
+                    || (x.TableName == AttachmentsTable && x.RecordId == sampleRequest.SampleRequestId)))
             .OrderByDescending(x => x.ChangedAt)
             .ThenByDescending(x => x.AuditLogId)
             .ToListAsync(cancellationToken);
@@ -121,7 +101,7 @@ internal sealed class GetSampleRequestHistoryQueryHandler
 
         var canViewProductTechnicalInfo = _fieldVisibility.CanViewProductTechnicalInfo();
 
-        return auditLogs
+        var timeline = auditLogs
             .GroupBy(x => x.CorrelationId ?? x.AuditLogId)
             .Select(x => ToDto(
                 request.SampleRequestId,
@@ -131,6 +111,113 @@ internal sealed class GetSampleRequestHistoryQueryHandler
             .Where(x => x.Details.Count > 0)
             .OrderByDescending(x => x.ChangedAt)
             .ThenByDescending(x => x.AuditLogId)
+            .ToList();
+
+        await ResolveFormulaDisplayValuesAsync(timeline, sampleRequest.CompanyId, cancellationToken);
+
+        return new SampleRequestHistoryResponseDto
+        {
+            LatestChange = timeline.FirstOrDefault(),
+            Fields = BuildFieldHistory(timeline),
+            Timeline = timeline
+        };
+    }
+
+    private async Task ResolveFormulaDisplayValuesAsync(
+        IReadOnlyList<SampleRequestHistoryDto> timeline,
+        Guid? companyId,
+        CancellationToken cancellationToken)
+    {
+        var formulaIds = timeline
+            .SelectMany(x => x.Details)
+            .Where(x => string.Equals(x.FieldName, "FormulaId", StringComparison.OrdinalIgnoreCase))
+            .SelectMany(x => new[] { x.OldValue, x.NewValue })
+            .Where(x => Guid.TryParse(x, out _))
+            .Select(x => Guid.Parse(x!))
+            .Distinct()
+            .ToList();
+
+        if (formulaIds.Count == 0)
+        {
+            return;
+        }
+
+        var formulaDisplayById = await _dbContext.Formulas
+            .AsNoTracking()
+            .Where(x => formulaIds.Contains(x.FormulaId) && x.CompanyId == companyId)
+            .Select(x => new { x.FormulaId, x.ExternalId, x.Name })
+            .ToDictionaryAsync(
+                x => x.FormulaId,
+                x => string.IsNullOrWhiteSpace(x.Name) ? x.ExternalId : $"{x.ExternalId} - {x.Name}",
+                cancellationToken);
+
+        foreach (var entry in timeline)
+        {
+            entry.Details = entry.Details
+                .Select(detail => ResolveFormulaDisplayValue(detail, formulaDisplayById))
+                .ToList();
+        }
+    }
+
+    private static SampleRequestHistoryDetailDto ResolveFormulaDisplayValue(
+        SampleRequestHistoryDetailDto detail,
+        IReadOnlyDictionary<Guid, string> formulaDisplayById)
+    {
+        if (!string.Equals(detail.FieldName, "FormulaId", StringComparison.OrdinalIgnoreCase))
+        {
+            return detail;
+        }
+
+        return new SampleRequestHistoryDetailDto
+        {
+            Source = detail.Source,
+            FieldName = detail.FieldName,
+            OldValue = ResolveFormulaDisplayValue(detail.OldValue, formulaDisplayById),
+            NewValue = ResolveFormulaDisplayValue(detail.NewValue, formulaDisplayById)
+        };
+    }
+
+    private static string? ResolveFormulaDisplayValue(
+        string? value,
+        IReadOnlyDictionary<Guid, string> formulaDisplayById)
+    {
+        if (value is null || !Guid.TryParse(value, out var formulaId))
+        {
+            return value;
+        }
+
+        return formulaDisplayById.TryGetValue(formulaId, out var displayValue)
+            ? displayValue
+            : "Công thức không còn tồn tại";
+    }
+
+    private static IReadOnlyList<SampleRequestHistoryFieldDto> BuildFieldHistory(
+        IReadOnlyList<SampleRequestHistoryDto> timeline)
+    {
+        return timeline
+            .SelectMany(entry => entry.Details.Select(detail => new { Entry = entry, Detail = detail }))
+            .GroupBy(x => new { x.Detail.Source, x.Detail.FieldName })
+            .Select(group =>
+            {
+                var changes = group
+                    .OrderBy(x => x.Entry.ChangedAt)
+                    .ThenBy(x => x.Entry.AuditLogId)
+                    .ToList();
+                var latest = changes[^1];
+
+                return new SampleRequestHistoryFieldDto
+                {
+                    Source = group.Key.Source,
+                    FieldName = group.Key.FieldName,
+                    InitialValue = changes[0].Detail.OldValue,
+                    CurrentValue = latest.Detail.NewValue,
+                    ChangeCount = changes.Count,
+                    LastChangedAt = latest.Entry.ChangedAt,
+                    LastChangedByName = latest.Entry.ChangedByName
+                };
+            })
+            .OrderByDescending(x => x.LastChangedAt)
+            .ThenBy(x => x.FieldName, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
 
@@ -192,7 +279,7 @@ internal sealed class GetSampleRequestHistoryQueryHandler
         }
 
         return !string.Equals(detail.Source, ProductsTable, StringComparison.OrdinalIgnoreCase) ||
-            !RestrictedProductTechnicalFields.Contains(detail.FieldName);
+            !RestrictedProductHistoryFields.Contains(detail.FieldName);
     }
 
     private static IReadOnlyList<SampleRequestHistoryDetailDto> BuildDetails(AuditLog auditLog)

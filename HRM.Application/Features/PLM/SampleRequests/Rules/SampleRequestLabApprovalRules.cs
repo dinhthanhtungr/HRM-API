@@ -3,7 +3,8 @@ using HRM.Application.Features.PLM.SampleRequests.Commands.PatchSampleRequest;
 namespace HRM.Application.Features.PLM.SampleRequests.Rules;
 
 /// <summary>
-/// Các field kỹ thuật Sale chỉ được đề xuất; dữ liệu chỉ đổi sau khi Lab duyệt.
+/// Giữ danh mục field từng cần Lab duyệt và quyết định luồng mặc định cho PATCH trực tiếp.
+/// Endpoint data-change-requests vẫn hỗ trợ đầy đủ ở cả hai mode để có thể dùng lại approval flow.
 /// </summary>
 internal static class SampleRequestLabApprovalRules
 {
@@ -19,13 +20,21 @@ internal static class SampleRequestLabApprovalRules
         ReachStandard
     };
 
+    // Hiện tại Sale lưu trực tiếp và báo Lab. Đổi sang RequireLabApproval khi cần bật lại flow cũ.
+    public static SampleRequestProductChangeMode CurrentMode => SampleRequestProductChangeMode.DirectNotify;
+
     public static bool RequiresLabApproval(PatchSampleRequestCommand request)
     {
-        return request.FoodSafety.HasValue ||
+        return CurrentMode == SampleRequestProductChangeMode.RequireLabApproval &&
+            (request.FoodSafety.HasValue ||
             request.RohsStandard.HasValue ||
             request.ReachStandard.HasValue ||
-            request.ClearFields?.Any(IsRequiredApprovalField) == true;
+            request.ClearFields?.Any(IsRequiredApprovalField) == true);
     }
+
+    public static bool RequiresLabApprovalForCurrentMode(string? fieldCode)
+        => CurrentMode == SampleRequestProductChangeMode.RequireLabApproval &&
+            IsRequiredApprovalField(fieldCode);
 
     public static bool IsRequiredApprovalField(string? fieldCode)
         => !string.IsNullOrWhiteSpace(fieldCode) &&

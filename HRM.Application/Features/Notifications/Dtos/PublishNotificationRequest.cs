@@ -40,6 +40,11 @@ public sealed class PublishNotificationRequest
 
     public IReadOnlyCollection<Guid>? TargetUserIds { get; set; }
 
+    /// <summary>
+    /// Người được thấy notification trong feed nhưng không nhận SignalR/Web Push. State của họ được tạo sẵn ở trạng thái đã đọc.
+    /// </summary>
+    public IReadOnlyCollection<Guid>? SilentUserIds { get; set; }
+
     public IReadOnlyCollection<string>? TargetRoles { get; set; }
 
     public IReadOnlyCollection<Guid>? TargetTeamIds { get; set; }

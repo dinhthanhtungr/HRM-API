@@ -23,11 +23,20 @@ internal sealed class ExecutivePnLTrendReader
         ExecutivePnLFilter filter,
         CancellationToken cancellationToken)
     {
-        return await DeliveryRevenueQuery.Create(
+        var revenueLines = await DeliveryRevenueQuery.Create(
                 _dbContext.DeliveryOrderDetails.AsNoTracking(),
                 filter.FromMonth,
                 filter.RangeEnd,
                 filter.CompanyId)
+            .ToListAsync(cancellationToken);
+
+        var costSources = await ExecutivePnLDeliveryCostResolver.LoadAsync(
+            _dbContext,
+            revenueLines,
+            filter.CompanyId,
+            cancellationToken);
+
+        return revenueLines
             .GroupBy(x => new
             {
                 x.RevenueDate.Year,
@@ -38,13 +47,10 @@ internal sealed class ExecutivePnLTrendReader
                 Year = g.Key.Year,
                 Month = g.Key.Month,
                 Revenue = g.Sum(x => x.RevenueAmountVnd),
-                CostOfSales = g.Sum(x => ExecutivePnLDeliveryCostRules.ResolveAmount(
-                    x.HasNormalizedLots,
-                    x.LotCostSnapshotAmount,
-                    x.BaseCostAmount))
+                CostOfSales = g.Sum(x => ExecutivePnLDeliveryCostResolver.ResolveAmount(x, costSources))
             })
             .OrderBy(x => x.Year)
             .ThenBy(x => x.Month)
-            .ToListAsync(cancellationToken);
+            .ToList();
     }
 }
