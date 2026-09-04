@@ -16,6 +16,8 @@ Feature lưu dữ liệu dùng để hiển thị và in phiếu Color Chip củ
 
 - `GET /api/v1/plm/color-chip-records/{colorChipRecordId}`: lấy record theo id.
 - `GET /api/v1/plm/color-chip-records/by-product/{productId}`: lấy record active mới nhất của Product.
+- `GET /api/v1/plm/color-chip-records/by-product/{productId}/pdf`: xem hoặc tải PDF Color Chip.
+- `GET /api/v1/plm/color-chip-records/product/{productId}/print-pdf`: alias giữ suffix route in của hệ thống cũ.
 - `POST /api/v1/plm/color-chip-records`: tạo record; nếu Product đã có record active thì trả lỗi và FE dùng PATCH.
 - `PATCH /api/v1/plm/color-chip-records/{colorChipRecordId}`: cập nhật từng phần.
 
@@ -58,8 +60,24 @@ trả id link, Formula id, mã và tên hiện tại của Formula.
 `formStyle` hỗ trợ đầy đủ mã layout cũ: `Chips2`, `Chips3`, `ChipsTanPhu`, `Chips2_NonStandard`,
 `ChipsTanPhuBacNinh`, `Chips5Options` và `ChipsTanPhuBacNinh3Thresholds`.
 
-`note` là ghi chú lưu cùng hồ sơ; `printNote` là nội dung dành cho bản in. API hiện cung cấp đầy đủ read-model để
-FE/template in sử dụng, chưa thêm endpoint render PDF hoặc copy các renderer QuestPDF cũ.
+`note` là ghi chú lưu cùng hồ sơ; `printNote` là nội dung dành cho bản in. Thêm `?download=true` để tải file;
+mặc định endpoint trả PDF inline để xem/in trên trình duyệt.
+
+## PDF compatibility
+
+PDF giữ nguyên model, quy tắc lấy dữ liệu và source renderer QuestPDF của hệ thống cũ. Mapping layout:
+
+- `Chips2`, `Chips2_NonStandard`: portrait.
+- `Chips3` và giá trị fallback: landscape.
+- `ChipsTanPhu`: Tân Phú và để trống `StandardText` như code cũ.
+- `ChipsTanPhuBacNinh`: Tân Phú Bắc Ninh.
+- `Chips5Options`: 5 options.
+- `ChipsTanPhuBacNinh3Thresholds`: 3 thresholds.
+
+Nguồn dữ liệu vẫn chọn Sample Request active mới nhất để lấy khách hàng và Color Chip Record active mới nhất theo
+`CreatedDate`. Batch, prepared-by, resin và ngày in giữ nguyên fallback cũ. Logo VietAus/LongGiang/AChau là cùng
+binary asset với project cũ; chỉ đổi cách resolve path sang `Assets/Pdf` của kiến trúc mới. Query bổ sung company
+scope và endpoint yêu cầu đăng nhập.
 
 ## PATCH semantics
 

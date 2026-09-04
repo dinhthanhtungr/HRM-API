@@ -3,6 +3,7 @@ using HRM.Application.Features.PLM.ColorChipRecords.Commands.CreateColorChipReco
 using HRM.Application.Features.PLM.ColorChipRecords.Commands.PatchColorChipRecord;
 using HRM.Application.Features.PLM.ColorChipRecords.Queries.GetColorChipRecordById;
 using HRM.Application.Features.PLM.ColorChipRecords.Queries.GetColorChipRecordByProductId;
+using HRM.Application.Features.PLM.ColorChipRecords.Queries.ExportColorChipRecordPdf;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -37,6 +38,32 @@ public sealed class ColorChipRecordsController : ControllerBase
             new GetColorChipRecordByProductIdQuery(productId),
             cancellationToken);
         return result is null ? NotFound() : Ok(result);
+    }
+
+    [HttpGet("by-product/{productId:guid}/pdf")]
+    [HttpGet("product/{productId:guid}/print-pdf")]
+    public async Task<IActionResult> ExportPdf(
+        Guid productId,
+        [FromQuery] bool download,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(
+            new ExportColorChipRecordPdfQuery(productId),
+            cancellationToken);
+
+        if (!result.Success || result.Data is null)
+        {
+            return NotFound(result);
+        }
+
+        if (download)
+        {
+            return File(result.Data.Content, result.Data.ContentType, result.Data.FileName);
+        }
+
+        Response.Headers.ContentDisposition =
+            $"inline; filename*=UTF-8''{Uri.EscapeDataString(result.Data.FileName)}";
+        return File(result.Data.Content, result.Data.ContentType);
     }
 
     [HttpPost]
