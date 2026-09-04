@@ -119,12 +119,6 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.MarkQuotationSent
                 return OperationResult.Ok("Quotation was already marked as sent.");
             }
 
-            if (quotation.SaleEmployeeId != scope.EmployeeId)
-            {
-                return OperationResult.Fail(
-                    "Only the assigned sale employee can mark this quotation as sent.");
-            }
-
             if (!QuotationWorkflowRules.CanMarkSent(quotation.Status))
             {
                 return OperationResult.Fail(

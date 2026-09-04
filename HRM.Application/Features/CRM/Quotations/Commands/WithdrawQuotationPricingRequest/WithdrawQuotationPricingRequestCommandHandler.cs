@@ -79,12 +79,6 @@ internal sealed class WithdrawQuotationPricingRequestCommandHandler
                 "Quotation was not found or is outside your visibility scope.");
         }
 
-        if (quotation.SaleEmployeeId != scope.EmployeeId)
-        {
-            return OperationResult<QuotationStatusTransitionDto>.Fail(
-                "Only the assigned sale employee can withdraw the pricing request.");
-        }
-
         if (!QuotationWorkflowRules.CanWithdrawPricingRequest(quotation.Status))
         {
             return OperationResult<QuotationStatusTransitionDto>.Fail(

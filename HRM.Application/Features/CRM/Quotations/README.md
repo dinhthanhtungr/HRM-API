@@ -235,7 +235,7 @@ Endpoint này chỉ sửa header:
 - Danh sách `terms` tùy chỉnh.
 - Ghi chú.
 
-Ở `Draft` có thể sửa toàn bộ các field trên. Ở `PendingApproval` và `Approved`, chỉ Sale phụ trách được sửa contact,
+Ở `Draft` có thể sửa toàn bộ các field trên. Ở `PendingApproval` và `Approved`, người dùng nhìn thấy khách hàng theo CRM visibility được sửa contact,
 `validUntil`, VAT, payment/delivery terms và note. Customer, currency, exchange rate và quotation date bị khóa;
 product/line/source vẫn chỉ sửa được ở `Draft`. `Sent` không cho PATCH.
 
@@ -338,7 +338,7 @@ Gọi sau khi nhân viên đã thực sự gửi báo giá cho khách hàng bằ
 
 Backend:
 
-- Chỉ Sale phụ trách được gọi. Cho phép `Draft`, `PendingApproval` hoặc `Approved` chuyển sang `Sent`.
+- Người dùng nhìn thấy khách hàng theo CRM visibility được gọi. Cho phép `Draft`, `PendingApproval` hoặc `Approved` chuyển sang `Sent`.
 - Ghi `SentDate`.
 - Thêm `QuotationStatusHistory`.
 - Có thể lưu note từ request.
@@ -349,7 +349,7 @@ Gọi lại với báo giá đã `Sent` là idempotent: không tạo thêm histo
 
 ### 5.5.1. Gửi yêu cầu và tự hoàn tất duyệt giá
 
-`POST /api/v1/crm/quotations/{quotationId}/request` chỉ nhận báo giá `Draft` có line active và do Sale phụ trách.
+`POST /api/v1/crm/quotations/{quotationId}/request` chỉ nhận báo giá `Draft` có line active và nằm trong CRM visibility của người gọi.
 Backend chuyển sang `PendingApproval`, ghi history, tạo action message/topic `QuotationRequested`, sau đó kiểm tra
 ngay mọi line. Một line đủ điều kiện khi có `ProductPricingVersion` active, `Approved`, cùng company/product/currency,
 `StandardSellingPrice > 0`, có tier active không âm và chưa quá hạn rà soát. Khi toàn bộ line đủ, backend snapshot
@@ -378,7 +378,7 @@ luôn là token persist mới nhất, không phải thời gian notification.
 ### 5.5.2. Sửa tier gửi khách và thu hồi
 
 `PUT /api/v1/crm/quotations/{quotationId}/customer-price-tiers` nhận báo giá `PendingApproval` hoặc `Approved` và
-chỉ Sale phụ trách được gọi. Sale có thể chuẩn bị rồi gửi giá khách trong lúc President/Developer tiếp tục xử lý
+cho phép người dùng nhìn thấy khách hàng theo CRM visibility thao tác. Sale có thể chuẩn bị rồi gửi giá khách trong lúc President/Developer tiếp tục xử lý
 giá chuẩn nội bộ; trạng thái giá chuẩn không chặn `mark-sent`.
 Request gồm `expectedUpdatedDate` và các line `{ quotationLineId, priceTiers, note }`. Endpoint chỉ thay snapshot
 tier gửi khách/note, giữ nguyên product và `ProductPricingVersionId`, validate khoảng không chồng lấn và giá `>= 0`,
@@ -415,8 +415,10 @@ không thuộc request contract. `note = null` hoặc chuỗi trắng xóa note
 của line vì đây là PUT contract đầy đủ cho line được gửi. Các line không xuất hiện trong request được giữ nguyên.
 
 `POST /api/v1/crm/quotations/{quotationId}/withdraw-pricing-request` nhận `expectedUpdatedDate` và `reason` bắt buộc,
-tối đa 500 ký tự. Sale phụ trách được chuyển `PendingApproval` hoặc `Approved` về `Draft`; snapshot cũ được giữ để
+tối đa 500 ký tự. Người dùng nhìn thấy khách hàng theo CRM visibility được chuyển `PendingApproval` hoặc `Approved` về `Draft`; snapshot cũ được giữ để
 tham khảo. Backend ghi history và system message trong thread. `Sent` không thể thu hồi.
+
+Quyền mutation của các endpoint trên dùng cùng CRM customer visibility với list/detail: Sale thường chỉ thao tác trên khách hàng trong scope của mình, leader thao tác trong các group mình quản lý, còn user có full customer view như Sale Admin, President hoặc Developer thao tác trên mọi khách hàng cùng công ty. Không endpoint nào trong nhóm này còn bắt buộc người gọi phải trùng `Quotation.SaleEmployeeId`.
 
 ```json
 {

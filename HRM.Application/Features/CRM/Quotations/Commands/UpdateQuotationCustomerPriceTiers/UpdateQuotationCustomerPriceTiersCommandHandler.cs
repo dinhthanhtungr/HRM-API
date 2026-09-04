@@ -76,12 +76,6 @@ internal sealed class UpdateQuotationCustomerPriceTiersCommandHandler
                 "Quotation was not found or is outside your visibility scope.");
         }
 
-        if (quotation.SaleEmployeeId != scope.EmployeeId)
-        {
-            return OperationResult<QuotationTotalsDto>.Fail(
-                "Only the assigned sale employee can edit customer price tiers.");
-        }
-
         if (!QuotationWorkflowRules.CanEditCustomerPricing(quotation.Status))
         {
             return OperationResult<QuotationTotalsDto>.Fail(

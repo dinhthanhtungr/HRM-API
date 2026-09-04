@@ -115,12 +115,6 @@ internal sealed class RequestQuotationCommandHandler
                 "Only a draft quotation can request pricing.");
         }
 
-        if (quotation.SaleEmployeeId != scope.EmployeeId)
-        {
-            return OperationResult<RequestQuotationResultDto>.Fail(
-                "Only the assigned sale employee can request quotation pricing.");
-        }
-
         if (quotation.ActiveLineCount == 0)
         {
             return OperationResult<RequestQuotationResultDto>.Fail(

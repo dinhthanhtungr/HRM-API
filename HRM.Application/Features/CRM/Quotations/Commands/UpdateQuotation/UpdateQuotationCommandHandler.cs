@@ -144,12 +144,6 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.UpdateQuotation
 
             if (quotation.Status is QuotationStatus.PendingApproval or QuotationStatus.Approved)
             {
-                if (quotation.SaleEmployeeId != scope.EmployeeId)
-                {
-                    return OperationResult<QuotationTotalsDto>.Fail(
-                        "Only the assigned sale employee can update approved quotation terms.");
-                }
-
                 if (request.CustomerId.HasValue ||
                     request.Currency is not null ||
                     request.ExchangeRate.HasValue ||
