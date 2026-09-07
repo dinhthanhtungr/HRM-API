@@ -9,6 +9,7 @@ internal static class SampleReceiptConfirmationRules
     private static readonly string[] ConfirmerRoles =
     [
         ApplicationRoles.Sales.SaleUser,
+        ApplicationRoles.Sales.SaleAdmin,
         ApplicationRoles.Developer,
         ApplicationRoles.President
     ];
@@ -16,7 +17,13 @@ internal static class SampleReceiptConfirmationRules
     private static readonly TimeSpan FutureClockTolerance = TimeSpan.FromMinutes(5);
 
     public static bool CanConfirm(ICurrentUser currentUser)
-        => currentUser.IsInAnyRole(ConfirmerRoles);
+        => CanConfirm(currentUser, isSampleRequestTeamLeader: false);
+
+    /// <summary>
+    /// Trưởng nhóm chỉ được phép khi đã qua customer/sample-request visibility của đúng hồ sơ.
+    /// </summary>
+    public static bool CanConfirm(ICurrentUser currentUser, bool isSampleRequestTeamLeader)
+        => isSampleRequestTeamLeader || currentUser.IsInAnyRole(ConfirmerRoles);
 
     public static DateTime ResolveReceivedDate(DateTime? requestedDate, DateTime now)
         => requestedDate ?? now;

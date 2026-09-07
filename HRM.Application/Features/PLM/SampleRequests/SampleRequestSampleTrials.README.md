@@ -42,7 +42,7 @@ POST /api/v1/plm/sample-requests/{sampleRequestId}/sample-trials/{trialId}/confi
 
 `sampleReceivedDate` là tùy chọn; không gửi hoặc gửi `null` thì backend dùng `IDateTimeProvider.Now`. Sale có thể chọn lại ngày/giờ trước khi bấm xác nhận. Ngày tương lai vượt quá sai số đồng hồ 5 phút bị từ chối. Action chỉ áp dụng cho Trial `SampleSent` hoặc `WaitingCustomerFeedback`.
 
-Chỉ `ApplicationRoleSets.PLM.FormulaSelectors` (Sale/Leader và super user) được xác nhận. Backend kiểm tra company, customer visibility, Trial thuộc đúng Sample Request và `messageId` đúng message có action của Trial để tránh IDOR. Lần gọi lại trả kết quả đã xác nhận và không ghi nhận lần thứ hai.
+SaleUser, SaleAdmin, Developer, President và trưởng nhóm Sale (`MemberInGroups.IsAdmin`) có thể xác nhận. Trưởng nhóm chỉ được phép với Sample Request nằm trong team/customer visibility của chính họ. Backend kiểm tra company, customer visibility, Trial thuộc đúng Sample Request và `messageId` đúng message có action của Trial để tránh IDOR. Lần gọi lại trả kết quả đã xác nhận và không ghi nhận lần thứ hai.
 
 Ngày Sale chọn được lưu trực tiếp vào `Trial.RequestReceivedDate`, là field ngày nhận mẫu đã có sẵn. Backend đồng thời chuyển `Trial.Status` sang `WaitingCustomerFeedback`; `UpdatedBy/UpdatedDate` ghi nhận người và thời điểm thực hiện action.
 

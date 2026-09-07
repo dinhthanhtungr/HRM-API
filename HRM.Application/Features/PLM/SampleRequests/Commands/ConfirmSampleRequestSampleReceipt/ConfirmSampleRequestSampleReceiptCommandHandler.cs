@@ -52,18 +52,20 @@ internal sealed class ConfirmSampleRequestSampleReceiptCommandHandler
                 "SampleRequestId, SampleRequestSampleTrialId or MessageId is invalid.");
         }
 
-        if (!SampleReceiptConfirmationRules.CanConfirm(_currentUser))
-        {
-            return OperationResult<SampleReceiptConfirmationDto>.Fail(
-                "You are not allowed to confirm sample receipt.");
-        }
-
         if (_currentUser.EmployeeId is not { } employeeId || employeeId == Guid.Empty)
         {
             return OperationResult<SampleReceiptConfirmationDto>.Fail("Current employee is invalid.");
         }
 
         var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+        if (!SampleReceiptConfirmationRules.CanConfirm(
+                _currentUser,
+                scope.LeaderGroupIds.Count > 0))
+        {
+            return OperationResult<SampleReceiptConfirmationDto>.Fail(
+                "You are not allowed to confirm sample receipt.");
+        }
+
         var visibleSampleRequests = _visibilityService.ApplySampleRequestVisibility(
             _dbContext.SampleRequests.AsQueryable(),
             _dbContext.Customers.AsNoTracking(),

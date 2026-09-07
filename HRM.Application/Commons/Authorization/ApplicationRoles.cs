@@ -18,6 +18,7 @@ namespace HRM.Application.Commons.Authorization
         public static class Sales
         {
             public const string SaleUser = "SaleUser";
+            public const string SaleAdmin = "SaleAdmin";
             public const string CustomerViewAll = "CustomerViewAll";
             public const string PriceView = "PriceView";
         }

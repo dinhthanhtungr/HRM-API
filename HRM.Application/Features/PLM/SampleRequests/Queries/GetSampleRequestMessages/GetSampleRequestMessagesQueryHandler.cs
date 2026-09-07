@@ -116,7 +116,9 @@ internal sealed class GetSampleRequestMessagesQueryHandler
 
         var canDecideDataChange = SampleRequestDataChangeAuthorization.CanApprove(_currentUser);
         var canDecideFormulaChange = SampleRequestFormulaChangeAuthorization.CanApproveOrReject(_currentUser);
-        var canConfirmSampleReceipt = SampleReceiptConfirmationRules.CanConfirm(_currentUser);
+        var canConfirmSampleReceipt = SampleReceiptConfirmationRules.CanConfirm(
+            _currentUser,
+            scope.LeaderGroupIds.Count > 0);
 
         return rows
             .Select(row => ToDto(

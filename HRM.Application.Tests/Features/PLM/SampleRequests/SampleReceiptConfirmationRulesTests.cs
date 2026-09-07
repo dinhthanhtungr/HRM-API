@@ -11,6 +11,7 @@ public sealed class SampleReceiptConfirmationRulesTests
     [InlineData(ApplicationRoles.Sales.SaleUser)]
     [InlineData(ApplicationRoles.Developer)]
     [InlineData(ApplicationRoles.President)]
+    [InlineData(ApplicationRoles.Sales.SaleAdmin)]
     public void CanConfirm_AllowsOnlyConfiguredRoles(string role)
         => Assert.True(SampleReceiptConfirmationRules.CanConfirm(new CurrentUser(role)));
 
@@ -20,6 +21,15 @@ public sealed class SampleReceiptConfirmationRulesTests
     [InlineData(ApplicationRoles.Admin)]
     public void CanConfirm_RejectsOtherRoles(string role)
         => Assert.False(SampleReceiptConfirmationRules.CanConfirm(new CurrentUser(role)));
+
+    [Fact]
+    public void CanConfirm_AllowsOnlyTeamLeaderThroughScopedOverload()
+    {
+        var teamLeader = new CurrentUser(ApplicationRoles.User);
+
+        Assert.True(SampleReceiptConfirmationRules.CanConfirm(teamLeader, isSampleRequestTeamLeader: true));
+        Assert.False(SampleReceiptConfirmationRules.CanConfirm(teamLeader, isSampleRequestTeamLeader: false));
+    }
 
     [Fact]
     public void ResolveReceivedDate_DefaultsToBackendNow()
