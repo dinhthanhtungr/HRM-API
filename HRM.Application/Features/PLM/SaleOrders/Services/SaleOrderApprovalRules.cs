@@ -5,7 +5,7 @@ namespace HRM.Application.Features.PLM.SaleOrders.Services;
 
 /// <summary>
 /// Nhóm duyệt đơn và Sale thường được tự động duyệt chỉ khi tạo kèm PO.
-/// HN không tự duyệt chỉ bằng role SaleUser.
+/// AC/HN không tự duyệt chỉ bằng role SaleUser.
 /// </summary>
 internal static class SaleOrderApprovalRules
 {
@@ -20,6 +20,7 @@ internal static class SaleOrderApprovalRules
         }
 
         return currentUser.IsInRole(ApplicationRoles.Sales.SaleUser) &&
+               !currentUser.IsInRole(ApplicationRoles.Sales.ACUser) &&
                !currentUser.IsInRole(ApplicationRoles.Accounting.HNUser) &&
                !CanApprove(currentUser);
     }
