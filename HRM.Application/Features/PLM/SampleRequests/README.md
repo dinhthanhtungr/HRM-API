@@ -4,7 +4,7 @@
 
 ## Lookup cho Sale Order
 
-`GET /api/v1/plm/sample-requests/lookup` giữ nguyên hành vi lookup thông thường. Khi dropdown được gọi từ màn tạo Sale Order, FE truyền `forSaleOrder=true`; backend khi đó chỉ trả Sample Request có `status` là `SampleSent` hoặc `Completed`. Nếu request có `customerId`, lookup dùng tập customer gồm customer đang chọn **và** customer nội bộ `KH_VIETAUS`; do đó mọi Sale có thể chọn sản phẩm từ Sample Request nội bộ cùng lúc với sản phẩm của customer đang lập đơn. Các filter `isActive`, keyword và `status` vẫn cùng áp dụng; keyword vẫn phải khớp record như lookup thông thường. Nếu `status` là trạng thái khác hai giá trị trên thì kết quả là danh sách rỗng.
+`GET /api/v1/plm/sample-requests/lookup` giữ nguyên hành vi lookup thông thường. Khi dropdown được gọi từ màn tạo Sale Order, FE truyền `forSaleOrder=true`; backend luôn khóa dữ liệu về `CompanyId` của user hiện tại và chỉ trả Sample Request có `status` là `SampleSent` hoặc `Completed`. `customerId` là bắt buộc trong mode này: chưa chọn customer thì trả mảng rỗng. Với customer thường, lookup dùng tập customer gồm customer đang chọn **và** customer nội bộ `KH_VIETAUS`. Riêng khi customer đang chọn có `ExternalId = KH_VIETAUS`, backend trả Sample Request hợp lệ của **mọi customer trong cùng company**. Rule được BE tự nhận diện từ customer đã lưu, không tin một cờ FE gửi lên. Mỗi item có thêm `formulaId`/`formulaExternalId`: ưu tiên Formula đang chọn trên Sample Request, nếu chưa có thì lấy Formula active của Trial active mới nhất; FE dùng hai field này để điền Formula cho dòng Sale Order và disable item nếu `formulaId = null`. Các filter `isActive`, keyword và `status` vẫn cùng áp dụng; keyword vẫn phải khớp record như lookup thông thường. Nếu `status` là trạng thái khác hai giá trị trên thì kết quả là danh sách rỗng.
 
 `GET /api/v1/plm/sample-requests/form-options` only returns the active canonical product categories of the current company. Legacy categories remain in the database for historical records and are intentionally omitted from this form lookup.
 
@@ -32,7 +32,7 @@ Khi Lab gửi mẫu, message trong Notification Hub trả thêm `sampleReceiptAc
 
 Ngày Sale nhận mẫu được lưu vào `Trial.RequestReceivedDate` đã có sẵn. Action chuyển Trial từ `SampleSent` sang `WaitingCustomerFeedback` và dùng `UpdatedBy/UpdatedDate` để audit; không bổ sung cột database mới.
 
-`GET /api/v1/plm/sample-requests/sample-trials` trả danh sách phân trang theo từng Sample Request. Mỗi Sample Request chỉ trả một dòng/card và gắn Trial active mới nhất theo `TrialNo`; hồ sơ chưa có Trial vẫn xuất hiện với `hasTrial = false`. `trialCount` và `hasPreviousTrials` cho FE biết có thể mở lịch sử hay không. `reportType=All` (và không truyền `reportType`) trả mọi Sample Request active trong company/customer visibility, không loại theo trạng thái workflow. `CompletedSamples` lấy Sample Request `Completed` có Trial mới nhất `Approved`, lọc/sắp theo `CustomerReplyDate`; `WaitingCustomerFeedback` lấy Trial mới nhất đang chờ và lọc/sắp theo `RequestReceivedDate`. Lịch sử được tải lười bằng `GET /api/v1/plm/sample-requests/{sampleRequestId}/sample-trials`, trả các Trial active giảm dần theo `TrialNo`. Dữ liệu luôn loại khách nội bộ `KH_VIETAUS`; `additiveRate` và `labNote` trả `null` nếu current user không có quyền xem thông tin kỹ thuật PLM.
+`GET /api/v1/plm/sample-requests/sample-trials` trả danh sách phân trang theo từng Sample Request. Mỗi Sample Request chỉ trả một dòng/card và gắn Trial active mới nhất theo `TrialNo`; hồ sơ chưa có Trial vẫn xuất hiện với `hasTrial = false`. `trialCount` và `hasPreviousTrials` cho FE biết có thể mở lịch sử hay không. `reportType=All` (và không truyền `reportType`) trả mọi Sample Request active trong company/customer visibility, không loại theo trạng thái workflow. `CompletedSamples` lấy Sample Request `Completed` có Trial mới nhất `Approved`, lọc/sắp theo `CustomerReplyDate`; `WaitingCustomerFeedback` là hàng đợi theo dõi gồm Trial `SampleSent` chưa có `RequestReceivedDate` (**Chờ Sale nhận mẫu**, luôn xếp trước, sắp theo `SentDate`) và Trial `WaitingCustomerFeedback` đã nhận mẫu (**Chờ phản hồi khách hàng**, sắp theo `RequestReceivedDate`). FE dùng `status` để hiển thị đúng nhãn từng nhóm. Lịch sử được tải lười bằng `GET /api/v1/plm/sample-requests/{sampleRequestId}/sample-trials`, trả các Trial active giảm dần theo `TrialNo`. Dữ liệu luôn loại khách nội bộ `KH_VIETAUS`; `additiveRate` và `labNote` trả `null` nếu current user không có quyền xem thông tin kỹ thuật PLM.
 
 Mỗi dòng luôn trả `requestDeliveryDate` (ngày Sale yêu cầu có mẫu) và `expectedDeliveryDate` (ngày dự kiến có mẫu) từ Sample Request, kể cả khi `hasTrial = false`. Hai field này khác `requestReceivedDate`, là ngày Lab/Sale ghi nhận nhận mẫu của một Trial và chỉ có khi Trial tồn tại. FE tạo mới qua `POST /api/v1/plm/sample-requests` hoặc chỉnh qua `PATCH /api/v1/plm/sample-requests/{sampleRequestId}` bằng cùng hai field camelCase; PATCH có thể xóa từng ngày qua `clearFields` với mã `sample_request.request_delivery_date` hoặc `sample_request.expected_delivery_date`.
 
@@ -97,6 +97,10 @@ Patch a sample request:
 ```http
 PATCH /api/v1/plm/sample-requests/{sampleRequestId}
 ```
+
+Trong response detail, `technicalRequirement.otherComment` (ô **Yêu cầu bổ sung**) lấy từ
+`SampleRequest.OtherComment`; đây cũng là nơi PATCH field `otherComment` lưu dữ liệu. Không dùng
+`Product.OtherComment` cho field này.
 
 Hiện mode mặc định là `DirectNotify`: toàn bộ Product field có trong PATCH contract, gồm
 `product.food_safety`, `product.rohs_standard` và `product.reach_standard`, được lưu trực tiếp rồi báo
@@ -188,6 +192,8 @@ hiển thị `ExternalId - Name` ở `oldValue`/`newValue`, không trả GUID ch
 và `Products` với reason `SampleRequestDirectPatch`. Luồng duyệt đề xuất thay đổi dữ liệu vẫn dùng reason
 `SampleRequestDataChangeApproval`. Handler chỉ ghi audit theo một nhánh (`IsDataChangeApproval` hoặc PATCH trực tiếp),
 và helper audit tự bỏ qua khi không có field thật sự thay đổi, nên một lần lưu không tạo audit trùng cho cùng source.
+Các field thuộc `SampleRequests` như `package`, `bagWeight`, `expectedQuantity`, `expectedPrice`, các mốc ngày,
+`additionalComment` và `saleComment` được persist trực tiếp cùng AuditLog; không chờ Lab xác nhận.
 Các thay đổi `Products.GRS` và `Products.GRSConsumerType` cũng được lưu old/new trong cùng audit timeline.
 
 Sau khi FE PATCH trực tiếp các field whitelist `sample_request.*` hoặc `product.*`, FE có thể báo Lab qua:
@@ -398,6 +404,13 @@ SampleRequest.FormulaId = Formula đề xuất
 SampleRequest.Status = Completed
 Formula đề xuất.Status = Completed
 ```
+
+Ngoài action `decision`, Sale/role `FormulaSelectors` có thể chốt ngay từ màn Sample Request bằng
+`PATCH /api/v1/plm/sample-requests/{sampleRequestId}` với `formulaId` đúng Formula đang được đề xuất khi
+`status = FormulaUpdateRequested`. Đây là shortcut xác nhận: backend kiểm tra Formula cùng Product và khớp
+Formula trong yêu cầu pending, chuyển Sample Request và Formula đề xuất sang `Completed`, chọn Formula đó cho
+Product, đánh dấu message payload là `Approved` và gửi message công thức hoàn thành. PATCH không được dùng để
+chốt một Formula khác với Formula của yêu cầu pending.
 
 Sale từ chối hoặc Lab hủy yêu cầu:
 

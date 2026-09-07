@@ -132,6 +132,39 @@ public sealed class SampleRequestSampleTrialReportQueryRulesTests
         Assert.Same(inRange, Assert.Single(result));
     }
 
+    [Fact]
+    public void WaitingCustomerFeedback_IncludesUnreceivedSentSamplesBeforeCustomerFeedbackQueue()
+    {
+        var awaitingSaleReceipt = CreateRow(
+            SampleRequestStatus.SampleSent,
+            SampleTrialStatus.SampleSent,
+            sentDate: new DateTime(2026, 9, 1));
+        var awaitingCustomerFeedback = CreateRow(
+            SampleRequestStatus.SampleSent,
+            SampleTrialStatus.WaitingCustomerFeedback,
+            requestReceivedDate: new DateTime(2026, 9, 3),
+            customerReplyStatus: "WAITING");
+        var receivedButStillSent = CreateRow(
+            SampleRequestStatus.SampleSent,
+            SampleTrialStatus.SampleSent,
+            sentDate: new DateTime(2026, 9, 4),
+            requestReceivedDate: new DateTime(2026, 9, 4));
+
+        var filtered = ApplyReportType(
+            [awaitingCustomerFeedback, receivedButStillSent, awaitingSaleReceipt],
+            SampleTrialReportType.WaitingCustomerFeedback);
+        var sorted = SampleRequestSampleTrialReportQueryRules
+            .ApplySorting(
+                filtered.AsQueryable(),
+                new GetSampleRequestSampleTrialsQuery
+                {
+                    ReportType = SampleTrialReportType.WaitingCustomerFeedback
+                })
+            .ToList();
+
+        Assert.Equal([awaitingSaleReceipt, awaitingCustomerFeedback], sorted);
+    }
+
     private static List<SampleRequestSampleTrialReportRow> ApplyReportType(
         IEnumerable<SampleRequestSampleTrialReportRow> rows,
         SampleTrialReportType reportType)
@@ -147,6 +180,7 @@ public sealed class SampleRequestSampleTrialReportQueryRulesTests
         DateTime? sampleRequestCreatedDate = null,
         DateTime? customerReplyDate = null,
         DateTime? requestReceivedDate = null,
+        DateTime? sentDate = null,
         DateTime? finishedDate = null,
         string? customerReplyStatus = null)
         => new()
@@ -163,6 +197,7 @@ public sealed class SampleRequestSampleTrialReportQueryRulesTests
                 CustomerReplyDate = customerReplyDate,
                 CustomerReplyStatus = customerReplyStatus,
                 RequestReceivedDate = requestReceivedDate,
+                SentDate = sentDate,
                 FinishedDate = finishedDate,
                 CreatedDate = sampleRequestCreatedDate ?? new DateTime(2026, 1, 1),
                 IsActive = true

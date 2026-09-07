@@ -198,11 +198,16 @@ trạng thái workflow. Mỗi Sample Request vẫn chỉ gắn Trial active mớ
 
 - `CompletedSamples`: Sample Request `Completed` và Trial mới nhất có trạng thái `Approved`; không phụ thuộc
   `FinishedDate`. Danh sách sắp theo `CustomerReplyDate` giảm dần, fallback `UpdatedDate` rồi `CreatedDate` cho dữ liệu cũ.
-- `WaitingCustomerFeedback`: Trial mới nhất có `RequestReceivedDate`, trạng thái `WaitingCustomerFeedback` và
-  `CustomerReplyStatus` đang rỗng hoặc `WAITING`. Danh sách sắp theo `RequestReceivedDate` giảm dần.
+- `WaitingCustomerFeedback`: là hàng đợi cần Sale theo dõi trước khi có kết quả cuối. Danh sách gồm hai nhóm:
+  1. Trial `SampleSent` chưa có `RequestReceivedDate` (**Chờ Sale nhận mẫu**), luôn xếp trên;
+  2. Trial `WaitingCustomerFeedback` đã có `RequestReceivedDate` và `CustomerReplyStatus` đang rỗng hoặc `WAITING`
+     (**Chờ phản hồi khách hàng**).
+  Mỗi nhóm sắp giảm dần theo ngày gửi mẫu hoặc ngày Sale nhận mẫu tương ứng. FE phải dựa vào `status` để map đúng
+  nhãn của từng dòng, không gộp cả hai thành một trạng thái workflow.
 
 `fromDate` và `toDate` dùng mốc ngày theo loại báo cáo: `CompletedSamples` lọc `CustomerReplyDate`,
-`WaitingCustomerFeedback` lọc `RequestReceivedDate`, còn `All`/không truyền `reportType` lọc
+`WaitingCustomerFeedback` lọc `SentDate` với nhóm chờ Sale nhận mẫu và `RequestReceivedDate` với nhóm chờ phản hồi
+khách hàng, còn `All`/không truyền `reportType` lọc
 `SampleRequest.CreatedDate`. `toDate` bao gồm trọn ngày.
 
 `sampleRequestCreatedToDate` luôn lọc độc lập theo `SampleRequest.CreatedDate`, bất kể loại báo cáo.

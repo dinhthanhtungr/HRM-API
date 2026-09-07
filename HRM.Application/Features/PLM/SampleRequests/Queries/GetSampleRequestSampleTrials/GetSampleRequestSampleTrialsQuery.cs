@@ -26,7 +26,8 @@ public sealed class GetSampleRequestSampleTrialsQuery
     public Guid? CustomerId { get; init; }
     /// <summary>
     /// Inclusive report-date lower bound. CompletedSamples uses CustomerReplyDate,
-    /// WaitingCustomerFeedback uses RequestReceivedDate, and All uses SampleRequest.CreatedDate.
+    /// WaitingCustomerFeedback uses SentDate while awaiting Sale receipt and RequestReceivedDate
+    /// once the sample is waiting for customer feedback. All uses SampleRequest.CreatedDate.
     /// </summary>
     public DateTime? FromDate { get; init; }
     /// <summary>

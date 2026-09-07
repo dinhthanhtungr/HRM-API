@@ -22,11 +22,13 @@ internal static class SampleRequestSampleTrialReportQueryRules
                 x.SampleRequest.Status == SampleRequestStatus.Completed.ToString()),
             SampleTrialReportType.WaitingCustomerFeedback => query.Where(x =>
                 x.Trial != null &&
-                x.Trial.RequestReceivedDate.HasValue &&
-                x.Trial.Status == SampleTrialStatus.WaitingCustomerFeedback &&
-                (x.Trial.CustomerReplyStatus == null ||
-                 x.Trial.CustomerReplyStatus == string.Empty ||
-                 x.Trial.CustomerReplyStatus == "WAITING")),
+                ((x.Trial.Status == SampleTrialStatus.SampleSent &&
+                  !x.Trial.RequestReceivedDate.HasValue) ||
+                 (x.Trial.Status == SampleTrialStatus.WaitingCustomerFeedback &&
+                  x.Trial.RequestReceivedDate.HasValue &&
+                  (x.Trial.CustomerReplyStatus == null ||
+                   x.Trial.CustomerReplyStatus == string.Empty ||
+                   x.Trial.CustomerReplyStatus == "WAITING")))),
             _ => query
         };
     }
@@ -86,13 +88,19 @@ internal static class SampleRequestSampleTrialReportQueryRules
             if (fromInclusive.HasValue)
             {
                 query = query.Where(x =>
-                    x.Trial != null && x.Trial.RequestReceivedDate >= fromInclusive.Value);
+                    x.Trial != null &&
+                    (x.Trial.Status == SampleTrialStatus.SampleSent
+                        ? x.Trial.SentDate >= fromInclusive.Value
+                        : x.Trial.RequestReceivedDate >= fromInclusive.Value));
             }
 
             if (toExclusive.HasValue)
             {
                 query = query.Where(x =>
-                    x.Trial != null && x.Trial.RequestReceivedDate < toExclusive.Value);
+                    x.Trial != null &&
+                    (x.Trial.Status == SampleTrialStatus.SampleSent
+                        ? x.Trial.SentDate < toExclusive.Value
+                        : x.Trial.RequestReceivedDate < toExclusive.Value));
             }
 
             return query;
@@ -127,8 +135,12 @@ internal static class SampleRequestSampleTrialReportQueryRules
                     ? x.Trial.CustomerReplyDate ?? x.Trial.UpdatedDate ?? x.Trial.CreatedDate
                     : x.SampleRequest.CreatedDate),
             SampleTrialReportType.WaitingCustomerFeedback => query.OrderByDescending(x =>
+                x.Trial != null && x.Trial.Status == SampleTrialStatus.SampleSent)
+                .ThenByDescending(x =>
                 x.Trial != null
-                    ? x.Trial.RequestReceivedDate ?? x.Trial.UpdatedDate ?? x.Trial.CreatedDate
+                    ? x.Trial.Status == SampleTrialStatus.SampleSent
+                        ? x.Trial.SentDate ?? x.Trial.UpdatedDate ?? x.Trial.CreatedDate
+                        : x.Trial.RequestReceivedDate ?? x.Trial.UpdatedDate ?? x.Trial.CreatedDate
                     : x.SampleRequest.CreatedDate),
             _ => query.OrderByDescending(x => x.SampleRequest.CreatedDate)
         };
