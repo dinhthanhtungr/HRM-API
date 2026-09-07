@@ -22,6 +22,11 @@ public sealed class SaleOrderApprovalRulesTests
         => Assert.False(SaleOrderApprovalRules.CanAutoApproveOnCreate(
             new CurrentUser(ApplicationRoles.Sales.SaleUser, role)));
 
+    [Fact]
+    public void CanAutoApproveOnCreate_RejectsACUserEvenWithAnApproverRole()
+        => Assert.False(SaleOrderApprovalRules.CanAutoApproveOnCreate(
+            new CurrentUser(ApplicationRoles.Sales.ACUser, ApplicationRoles.Admin)));
+
     private sealed class CurrentUser(params string[] roles) : ICurrentUser
     {
         public bool IsAuthenticated => true;

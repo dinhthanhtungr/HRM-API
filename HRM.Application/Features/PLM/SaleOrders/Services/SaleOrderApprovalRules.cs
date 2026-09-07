@@ -14,13 +14,17 @@ internal static class SaleOrderApprovalRules
 
     public static bool CanAutoApproveOnCreate(ICurrentUser currentUser)
     {
+        if (currentUser.IsInRole(ApplicationRoles.Sales.ACUser))
+        {
+            return false;
+        }
+
         if (CanApprove(currentUser))
         {
             return true;
         }
 
         return currentUser.IsInRole(ApplicationRoles.Sales.SaleUser) &&
-               !currentUser.IsInRole(ApplicationRoles.Sales.ACUser) &&
                !currentUser.IsInRole(ApplicationRoles.Accounting.HNUser) &&
                !CanApprove(currentUser);
     }
