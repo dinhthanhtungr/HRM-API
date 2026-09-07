@@ -79,12 +79,12 @@ internal sealed class GetQuotationPricingWorkspaceQueryHandler
         var pricingVersions = await LoadPricingVersionsAsync(
             productIds,
             companyId,
-            quotation.Currency,
+            ProductPricingSourceRules.StandardPricingCurrency,
             cancellationToken);
         var sourcesByProduct = await _sourceQueryService.LoadAsync(
             productIds,
             companyId,
-            quotation.Currency,
+            ProductPricingSourceRules.StandardPricingCurrency,
             includeSensitivePricing: true,
             cancellationToken: cancellationToken);
 
@@ -115,6 +115,7 @@ internal sealed class GetQuotationPricingWorkspaceQueryHandler
                 SaleEmployeeId = quotation.SaleEmployeeId,
                 SaleEmployeeName = quotation.SaleEmployee.FullName,
                 Currency = quotation.Currency,
+                StandardPricingCurrency = ProductPricingSourceRules.StandardPricingCurrency,
                 QuotationDate = quotation.QuotationDate,
                 Status = quotation.Status,
                 Lines = lines

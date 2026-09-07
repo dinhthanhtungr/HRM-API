@@ -13,6 +13,7 @@ public sealed class QuotationPricingWorkspaceDto
     public Guid SaleEmployeeId { get; init; }
     public string SaleEmployeeName { get; init; } = string.Empty;
     public string Currency { get; init; } = string.Empty;
+    public string StandardPricingCurrency { get; init; } = string.Empty;
     public DateTime QuotationDate { get; init; }
 
     [JsonConverter(typeof(JsonStringEnumConverter))]

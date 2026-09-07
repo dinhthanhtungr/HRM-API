@@ -46,6 +46,11 @@ internal sealed class GetSaleOrderTimelineQueryHandler
             query = query.Where(x => x.MerchandiseOrderId == id);
         }
 
+        if (request.CustomerId is { } customerId && customerId != Guid.Empty)
+        {
+            query = query.Where(x => x.CustomerId == customerId);
+        }
+
         if (request.NormalizedKeyword is { } keyword)
         {
             query = query.Where(x =>
@@ -53,7 +58,11 @@ internal sealed class GetSaleOrderTimelineQueryHandler
                 x.CustomerNameSnapshot.Contains(keyword) ||
                 x.CustomerExternalIdSnapshot.Contains(keyword) ||
                 x.CreatedByNavigation!.FullName.Contains(keyword) ||
-                x.MerchandiseOrderDetails.Any(detail => detail.ProductExternalIdSnapshot.Contains(keyword)));
+                x.MerchandiseOrderDetails.Any(detail =>
+                    detail.Product != null &&
+                    ((detail.Product.ColourCode ?? string.Empty).Contains(keyword) ||
+                     (detail.Product.Name ?? string.Empty).Contains(keyword) ||
+                     (detail.Product.Code ?? string.Empty).Contains(keyword))));
         }
 
         var now = _dateTimeProvider.Now;

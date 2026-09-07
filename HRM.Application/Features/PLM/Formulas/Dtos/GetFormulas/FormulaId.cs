@@ -9,6 +9,7 @@ namespace HRM.Application.Features.PLM.Formulas.Dtos.GetFormulas
         public string Name { get; set; } = string.Empty;
         public string Status { get; set; } = string.Empty;
         public string Note { get; set; } = string.Empty;
+        public string? CreatedByName { get; set; }
         public decimal? Price { get; set; }
         public int ItemCount { get; set; }
         public DateTime? LastDateUse { get; set; }

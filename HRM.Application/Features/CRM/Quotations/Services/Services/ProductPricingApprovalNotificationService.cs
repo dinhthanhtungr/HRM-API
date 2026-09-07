@@ -37,6 +37,11 @@ internal sealed class ProductPricingApprovalNotificationService
         Guid approvedByEmployeeId,
         CancellationToken cancellationToken)
     {
+        if (!QuotationPricingCurrencyConverter.IsStandardPricingCurrency(pricingVersion.Currency))
+        {
+            return;
+        }
+
         var targets = await _dbContext.Quotations
             .AsNoTracking()
             .Where(quotation =>
@@ -46,7 +51,6 @@ internal sealed class ProductPricingApprovalNotificationService
                     (quotation.Status == QuotationStatus.Approved &&
                      quotation.Lines.Any(line =>
                          line.ProductPricingVersionId == pricingVersion.ProductPricingVersionId))) &&
-                quotation.Currency == pricingVersion.Currency &&
                 quotation.SaleEmployeeId != approvedByEmployeeId &&
                 quotation.SaleEmployee.IsActive &&
                 quotation.SaleEmployee.CompanyId == companyId &&

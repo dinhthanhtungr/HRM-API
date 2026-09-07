@@ -40,6 +40,7 @@ internal sealed class ApprovedProductPricingTierReader
                 ProductId = x.ProductId,
                 Version = x.Version,
                 Status = x.Status,
+                Currency = x.Currency,
                 ApprovedAt = x.ApprovedAt,
                 StandardSellingPrice = x.StandardSellingPrice,
                 PriceDate = x.ApprovedAt ?? x.UpdatedDate ?? x.CreatedDate,
@@ -111,6 +112,7 @@ internal sealed class ApprovedProductPricingTierReader
                 x.Status,
                 x.ApprovedAt,
                 x.StandardSellingPrice,
+                x.Currency,
                 x.SourceType,
                 x.SourceId,
                 x.SourceExternalId,
@@ -124,6 +126,7 @@ internal sealed class ApprovedProductPricingTierReader
         public Guid ProductId { get; init; }
         public int Version { get; init; }
         public ProductPricingStatus Status { get; init; }
+        public string Currency { get; init; } = string.Empty;
         public DateTime? ApprovedAt { get; init; }
         public decimal? StandardSellingPrice { get; init; }
         public DateTime PriceDate { get; init; }

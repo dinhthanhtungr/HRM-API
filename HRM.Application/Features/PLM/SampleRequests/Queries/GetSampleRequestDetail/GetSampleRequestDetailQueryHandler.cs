@@ -133,7 +133,7 @@ internal sealed class GetSampleRequestDetailQueryHandler
                     IsRecycle = x.Product.IsRecycle,
                     GRS = x.Product.GRS,
                     GRSConsumerType = x.Product.GRSConsumerType,
-                    OtherComment = x.Product.OtherComment
+                    OtherComment = x.OtherComment
                 }
             })
             .FirstOrDefaultAsync(cancellationToken);

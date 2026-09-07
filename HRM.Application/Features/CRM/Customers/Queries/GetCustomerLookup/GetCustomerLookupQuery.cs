@@ -15,5 +15,9 @@ public sealed class GetCustomerLookupQuery
     public Guid? CustomerId { get; init; }
     public LeadStatus? LeadStatus { get; init; }
     public string? CurrentCrmStatus { get; init; }
+    /// <summary>
+    /// Chỉ dùng tại dropdown tạo Sale Order để thêm KH_VIETAUS vào customer scope thông thường.
+    /// </summary>
+    public bool IncludeInternalForSaleOrder { get; init; }
     public bool? IsActive { get; init; } = true;
 }

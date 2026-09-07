@@ -11,7 +11,8 @@ internal static class QuotationPricingSnapshotFactory
         Guid quotationLineId,
         Guid companyId,
         Guid productId,
-        string currency,
+        string quotationCurrency,
+        decimal exchangeRate,
         decimal quantity,
         ProductPricingVersion approvedVersion,
         string fieldPath)
@@ -21,11 +22,19 @@ internal static class QuotationPricingSnapshotFactory
             approvedVersion.CompanyId != companyId ||
             approvedVersion.ProductId != productId ||
             approvedVersion.StandardSellingPrice is null or < 0m ||
-            !string.Equals(approvedVersion.Currency, currency, StringComparison.OrdinalIgnoreCase))
+            !QuotationPricingCurrencyConverter.IsStandardPricingCurrency(approvedVersion.Currency))
         {
             return OperationResult<QuotationLinePricing>.Fail(
                 $"{fieldPath}.productPricingVersionId must reference an active approved version " +
-                "for the same company, product, and currency.");
+                "for the same company, product, and VND standard pricing.");
+        }
+
+        if (!QuotationPricingCurrencyConverter.TryValidateQuotationCurrency(
+                quotationCurrency,
+                exchangeRate,
+                out var currencyError))
+        {
+            return OperationResult<QuotationLinePricing>.Fail(currencyError!);
         }
 
         var tiers = approvedVersion.PriceTiers
@@ -38,7 +47,10 @@ internal static class QuotationPricingSnapshotFactory
                 MaxQuantity = x.MaxQuantity,
                 MinInclusive = x.MinInclusive,
                 MaxInclusive = x.MaxInclusive,
-                UnitPrice = x.UnitPrice,
+                UnitPrice = QuotationPricingCurrencyConverter.ConvertFromStandardPricing(
+                    x.UnitPrice,
+                    quotationCurrency,
+                    exchangeRate),
                 CommissionAmount = 0m,
                 SortOrder = x.SortOrder
             })
@@ -56,7 +68,10 @@ internal static class QuotationPricingSnapshotFactory
 
         return OperationResult<QuotationLinePricing>.Ok(
             new QuotationLinePricing(
-                approvedVersion.StandardSellingPrice.Value,
+                QuotationPricingCurrencyConverter.ConvertFromStandardPricing(
+                    approvedVersion.StandardSellingPrice.Value,
+                    quotationCurrency,
+                    exchangeRate),
                 tierResult.Data.PriceTiers));
     }
 }

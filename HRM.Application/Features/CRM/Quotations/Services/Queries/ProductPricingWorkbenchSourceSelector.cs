@@ -1,6 +1,5 @@
 using HRM.Application.Features.CRM.Quotations.Dtos;
 using HRM.Domain.Enums.CustomerEnum;
-using HRM.Domain.Enums.Products;
 
 namespace HRM.Application.Features.CRM.Quotations.Services;
 
@@ -9,11 +8,12 @@ internal static class ProductPricingWorkbenchSourceSelector
     public static ProductPricingSourceOptionDto? ChooseFallback(
         IReadOnlyList<ProductPricingSourceOptionDto> sources)
         => sources
-            .OrderByDescending(x =>
-                x.SourceType == ProductPricingSourceType.Formula &&
-                x.Status == FormulaStatus.Approved.ToString())
+            // All items here have already passed the eligible-source rule.  For a
+            // fallback calculation, use the most recently changed eligible source;
+            // Approved must not outrank a newer SampleSent or Completed formula.
+            .OrderByDescending(x => x.UpdatedDate)
             .ThenByDescending(x => x.IsCustomerSelected)
-            .ThenByDescending(x => x.UpdatedDate)
+            .ThenBy(x => x.SourceType)
             .ThenBy(x => x.ExternalId)
             .FirstOrDefault();
 }

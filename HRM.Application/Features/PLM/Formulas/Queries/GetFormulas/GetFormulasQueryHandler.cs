@@ -119,7 +119,9 @@ namespace HRM.Application.Features.PLM.Formulas.Queries.GetFormulas
                 {
                     Id = x.ManufacturingFormulaId!.Value,
                     ExternalId = x.ManufacturingFormula!.ExternalId,
-                    
+                    CreatedByName = x.ManufacturingFormula.CreatedByNavigation != null
+                        ? x.ManufacturingFormula.CreatedByNavigation.FullName
+                        : null,
                     Note = x.ManufacturingFormula.Note,
                     Price = canViewFormulaPrices ? x.ManufacturingFormula.TotalPrice : null,
                     ItemCount = x.ManufacturingFormula.ManufacturingFormulaMaterials.Count(m => m.IsActive),
@@ -137,6 +139,7 @@ namespace HRM.Application.Features.PLM.Formulas.Queries.GetFormulas
                 {
                     Id = x.Id,
                     ExternalId = x.ExternalId,
+                    CreatedByName = x.CreatedByName,
                     Note = x.Note ?? string.Empty,
                     Price = x.Price,
                     ItemCount = x.ItemCount,
@@ -195,6 +198,9 @@ namespace HRM.Application.Features.PLM.Formulas.Queries.GetFormulas
                     Id = x.FormulaId,
                     ExternalId = x.ExternalId,
                     Name = x.Name,  
+                    CreatedByName = x.CreatedByNavigation != null
+                        ? x.CreatedByNavigation.FullName
+                        : null,
                     Note = x.Note ?? string.Empty,
                     Status = x.Status,
                     Price = canViewFormulaPrices ? x.TotalPrice : null,
@@ -246,6 +252,9 @@ namespace HRM.Application.Features.PLM.Formulas.Queries.GetFormulas
                 {
                     Id = x.ManufacturingFormulaId!.Value,
                     ExternalId = x.ManufacturingFormula!.ExternalId,
+                    CreatedByName = x.ManufacturingFormula.CreatedByNavigation != null
+                        ? x.ManufacturingFormula.CreatedByNavigation.FullName
+                        : null,
                     Note = x.ManufacturingFormula.Note,
                     Price = canViewFormulaPrices ? x.ManufacturingFormula.TotalPrice : null,
                     ItemCount = x.ManufacturingFormula.ManufacturingFormulaMaterials.Count(m => m.IsActive),
@@ -264,6 +273,7 @@ namespace HRM.Application.Features.PLM.Formulas.Queries.GetFormulas
                 {
                     Id = x.Id,
                     ExternalId = x.ExternalId,
+                    CreatedByName = x.CreatedByName,
                     Note = x.Note ?? string.Empty,
                     Price = x.Price,
                     ItemCount = x.ItemCount,

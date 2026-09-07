@@ -7,6 +7,7 @@ using HRM.Application.Commons.Rules;
 using HRM.Application.Features.CRM.CustomerCare.Visibility;
 using HRM.Application.Features.CRM.Quotations.Dtos;
 using HRM.Application.Features.CRM.Quotations.Services;
+using HRM.Domain.Enums.Category;
 using HRM.Domain.Enums.CustomerEnum;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -61,16 +62,18 @@ internal sealed class GetProductPricingWorkbenchQueryHandler
         var canManagePricing = ProductPricingAccessRules.CanManage(_currentUser);
         var companyId = _currentUser.CompanyId!.Value;
         var now = _dateTimeProvider.Now;
+        var hasKeyword = request.NormalizedKeyword is not null;
         var productQuery = _dbContext.Products
             .AsNoTracking()
             .Where(x =>
                 x.IsActive &&
                 x.CompanyId == companyId &&
-                !x.SampleRequests.Any(sampleRequest =>
-                    sampleRequest.IsActive &&
-                    sampleRequest.CompanyId == companyId &&
-                    sampleRequest.Customer.ExternalId ==
-                        InternalCustomerRules.InternalCustomerExternalId));
+                (hasKeyword ||
+                 !x.SampleRequests.Any(sampleRequest =>
+                     sampleRequest.IsActive &&
+                     sampleRequest.CompanyId == companyId &&
+                     sampleRequest.Customer.ExternalId ==
+                         InternalCustomerRules.InternalCustomerExternalId)));
 
         if (!canManagePricing)
         {
@@ -140,19 +143,30 @@ internal sealed class GetProductPricingWorkbenchQueryHandler
             .ToDictionary(x => x.Key, x => (IReadOnlyList<PricingVersionRow>)x.ToArray());
         var requests = await _requestQueryService.LoadAsync(
             companyId,
-            request.NormalizedCurrency,
             productIds: null,
             cancellationToken);
         var requestsByProduct = requests
             .GroupBy(x => x.ProductId)
             .ToDictionary(x => x.Key, x => (IReadOnlyList<ProductPricingRequestRow>)x.ToArray());
+
+        // Tạm thời tắt nhánh tìm trực tiếp theo mã BBG để đối chiếu với luồng keyword cũ.
+        // Khi bật lại, thay bằng lời gọi LoadQuotationKeywordProductIdsAsync bên dưới.
+        var quotationKeywordProductIds = (IReadOnlySet<Guid>)new HashSet<Guid>();
+        const bool isQuotationKeyword = false;
+        // var quotationKeywordProductIds = await LoadQuotationKeywordProductIdsAsync(
+        //     companyId,
+        //     request.NormalizedKeyword,
+        //     cancellationToken);
+        // var isQuotationKeyword = IsQuotationExternalIdKeyword(request.NormalizedKeyword);
+
         var pendingRequestsByProduct = requestsByProduct
             .Where(x => !(versionsByProduct.GetValueOrDefault(x.Key) ?? [])
                 .Any(version => version.Status == ProductPricingStatus.Approved))
             .ToDictionary(x => x.Key, x => x.Value);
 
         var filtered = products
-            .Where(product => MatchesView(
+            .Where(product => (isQuotationKeyword && quotationKeywordProductIds.Contains(product.ProductId))
+                || MatchesView(
                 request.View,
                 product.HasEligiblePricingSource,
                 versionsByProduct.GetValueOrDefault(product.ProductId) ?? [],
@@ -161,8 +175,10 @@ internal sealed class GetProductPricingWorkbenchQueryHandler
                 product,
                 versionsByProduct.GetValueOrDefault(product.ProductId) ?? [],
                 requestsByProduct.GetValueOrDefault(product.ProductId) ?? [],
+                quotationKeywordProductIds,
                 request.NormalizedKeyword))
             .ToArray();
+
         var ordered = ApplySorting(
             filtered,
             pendingRequestsByProduct,
@@ -197,20 +213,14 @@ internal sealed class GetProductPricingWorkbenchQueryHandler
                 x.SourceType!.Value,
                 x.SourceId!.Value))
             .ToArray();
-        var storedSources = await _sourceQueryService.LoadSelectedAsync(
-            storedSelections,
-            companyId,
-            request.NormalizedCurrency,
-            cancellationToken);
+        var storedSources = await LoadSelectedSourcesAsync(
+            storedSelections, companyId, request.NormalizedCurrency, cancellationToken);
         var productsWithoutStoredPricing = currentByProduct
             .Where(x => x.Value.Preferred is null)
             .Select(x => x.Key)
             .ToArray();
-        var fallbackSources = await _sourceQueryService.LoadAsync(
-            productsWithoutStoredPricing,
-            companyId,
-            request.NormalizedCurrency,
-            cancellationToken);
+        var fallbackSources = await LoadFallbackSourcesAsync(
+            productsWithoutStoredPricing, companyId, request.NormalizedCurrency, cancellationToken);
         var relatedCustomersByProduct = ProductPricingAccessRules.CanViewWorkbench(_currentUser)
             ? await LoadRelatedCustomersAsync(
                 companyId,
@@ -300,6 +310,35 @@ internal sealed class GetProductPricingWorkbenchQueryHandler
             })
             .ToListAsync(cancellationToken);
 
+    private async Task<IReadOnlySet<Guid>> LoadQuotationKeywordProductIdsAsync(
+        Guid companyId,
+        string? keyword,
+        CancellationToken cancellationToken)
+    {
+        if (!IsQuotationExternalIdKeyword(keyword))
+        {
+            return new HashSet<Guid>();
+        }
+
+        var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+        var productIds = await _visibilityService
+            .ApplyQuotationVisibility(
+                _dbContext.Quotations.AsNoTracking(),
+                _dbContext.Customers.AsNoTracking(),
+                scope)
+            .Where(quotation =>
+                quotation.CompanyId == companyId &&
+                quotation.IsActive &&
+                quotation.ExternalId.StartsWith(keyword!))
+            .SelectMany(quotation => quotation.Lines
+                .Where(line => line.IsActive)
+                .Select(line => line.ProductId))
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        return productIds.ToHashSet();
+    }
+
     private async Task<IReadOnlyDictionary<Guid, IReadOnlyList<ProductPricingWorkbenchCustomerContextDto>>>
         LoadRelatedCustomersAsync(
             Guid companyId,
@@ -333,6 +372,7 @@ internal sealed class GetProductPricingWorkbenchQueryHandler
                 GeneratedAt = x.AiGeneratedDate ?? x.UpdatedDate ?? x.CreatedDate
             })
             .ToListAsync(cancellationToken);
+
         var summaryByCustomer = latestSummaries
             .GroupBy(x => x.CustomerId)
             .ToDictionary(x => x.Key, x => x.First());
@@ -376,6 +416,28 @@ internal sealed class GetProductPricingWorkbenchQueryHandler
                     .ToArray());
     }
 
+    private async Task<IReadOnlyDictionary<ProductPricingSourceSelection, ProductPricingSourceOptionDto>>
+        LoadSelectedSourcesAsync(
+            IReadOnlyCollection<ProductPricingSourceSelection> selections,
+            Guid companyId,
+            string currency,
+            CancellationToken cancellationToken)
+    {
+        return await _sourceQueryService.LoadSelectedAsync(
+            selections, companyId, currency, cancellationToken);
+    }
+
+    private async Task<IReadOnlyDictionary<Guid, IReadOnlyList<ProductPricingSourceOptionDto>>>
+        LoadFallbackSourcesAsync(
+            IReadOnlyCollection<Guid> productIds,
+            Guid companyId,
+            string currency,
+            CancellationToken cancellationToken)
+    {
+        return await _sourceQueryService.LoadAsync(
+            productIds, companyId, currency, cancellationToken);
+    }
+
     private static bool MatchesView(
         ProductPricingWorkbenchView view,
         bool hasEligiblePricingSource,
@@ -399,6 +461,7 @@ internal sealed class GetProductPricingWorkbenchQueryHandler
         ProductRow product,
         IReadOnlyList<PricingVersionRow> versions,
         IReadOnlyList<ProductPricingRequestRow> requests,
+        IReadOnlySet<Guid> quotationKeywordProductIds,
         string? keyword)
     {
         if (keyword is null)
@@ -408,6 +471,7 @@ internal sealed class GetProductPricingWorkbenchQueryHandler
 
         return product.ProductCode.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
             product.ProductName.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
+            quotationKeywordProductIds.Contains(product.ProductId) ||
             versions.Any(x =>
                 x.SourceExternalId?.Contains(keyword, StringComparison.OrdinalIgnoreCase) == true) ||
             requests.Any(x =>
@@ -415,6 +479,9 @@ internal sealed class GetProductPricingWorkbenchQueryHandler
                 x.CustomerExternalId.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
                 x.CustomerName.Contains(keyword, StringComparison.OrdinalIgnoreCase));
     }
+
+    private static bool IsQuotationExternalIdKeyword(string? keyword)
+        => keyword?.StartsWith(DocumentPrefix.BBG.ToString(), StringComparison.OrdinalIgnoreCase) == true;
 
     internal static ProductRow[] ApplySorting(
         IReadOnlyCollection<ProductRow> products,
@@ -565,6 +632,14 @@ internal sealed class GetProductPricingWorkbenchQueryHandler
         if (currency.Length is 0 or > QuotationRules.MaximumCurrencyLength)
         {
             return $"Currency is required and cannot exceed {QuotationRules.MaximumCurrencyLength} characters.";
+        }
+
+        if (!string.Equals(
+                currency,
+                GetProductPricingWorkbenchQuery.StandardPricingCurrency,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return "Product standard pricing is managed in VND only.";
         }
 
         return Enum.IsDefined(view) ? null : "View is invalid.";

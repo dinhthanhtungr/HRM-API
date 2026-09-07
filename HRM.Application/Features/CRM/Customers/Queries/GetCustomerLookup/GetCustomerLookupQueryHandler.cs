@@ -3,6 +3,7 @@ using HRM.Application.Commons.Pagination;
 using HRM.Application.Features.CRM.CustomerCare.Queries.GetCustomers;
 using HRM.Application.Features.CRM.CustomerCare.Visibility;
 using HRM.Application.Features.CRM.Customers.Dtos.GetCustomerLookup;
+using HRM.Application.Commons.Rules;
 using HRM.Domain.Entities.CustomerSchema;
 using HRM.Domain.Enums.CustomerEnum;
 using MediatR;
@@ -35,7 +36,15 @@ internal sealed class GetCustomerLookupQueryHandler
             .AsNoTracking()
             .AsQueryable();
 
-        query = _visibilityService.ApplyCustomerVisibility(query, scope);
+        var visibleCustomerIds = _visibilityService.ApplyCustomerVisibility(query, scope)
+            .Select(x => x.CustomerId);
+        query = request.IncludeInternalForSaleOrder
+            ? query.Where(x =>
+                x.CompanyId == scope.CompanyId &&
+                x.IsActive == true &&
+                (visibleCustomerIds.Contains(x.CustomerId) ||
+                 x.ExternalId == InternalCustomerRules.InternalCustomerExternalId))
+            : query.Where(x => visibleCustomerIds.Contains(x.CustomerId));
 
         if (request.CompanyId is { } companyId && companyId != Guid.Empty)
         {

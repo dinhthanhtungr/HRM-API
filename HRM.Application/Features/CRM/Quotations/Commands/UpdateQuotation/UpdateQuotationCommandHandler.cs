@@ -142,17 +142,17 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.UpdateQuotation
                     $"CustomerAddressSnapshot cannot exceed {QuotationRules.MaximumCustomerAddressLength} characters.");
             }
 
-            if (quotation.Status is QuotationStatus.PendingApproval or QuotationStatus.Approved)
-            {
-                if (request.CustomerId.HasValue ||
-                    request.Currency is not null ||
-                    request.ExchangeRate.HasValue ||
-                    request.QuotationDate.HasValue)
-                {
-                    return OperationResult<QuotationTotalsDto>.Fail(
-                        "Customer, currency, exchange rate and quotation date cannot be changed after pricing approval. Withdraw the pricing request first.");
-                }
-            }
+            //if (quotation.Status is QuotationStatus.PendingApproval or QuotationStatus.Approved)
+            //{
+            //    if (request.CustomerId.HasValue ||
+            //        request.Currency is not null ||
+            //        request.ExchangeRate.HasValue ||
+            //        request.QuotationDate.HasValue)
+            //    {
+            //        return OperationResult<QuotationTotalsDto>.Fail(
+            //            "Customer, currency, exchange rate and quotation date cannot be changed after pricing approval. Withdraw the pricing request first.");
+            //    }
+            //}
 
             var concurrencyError = OptimisticConcurrencyHelper.ValidateExpectedUpdatedDate(
                 request.ExpectedUpdatedDate,

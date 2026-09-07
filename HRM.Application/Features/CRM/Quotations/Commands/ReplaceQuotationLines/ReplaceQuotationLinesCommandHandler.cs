@@ -126,6 +126,7 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.ReplaceQuotationLines
                 scope.CompanyId,
                 quotation.CustomerId,
                 quotation.Currency,
+                quotation.ExchangeRate,
                 command.Request.Lines,
                 cancellationToken);
             if (!lineResult.Success || lineResult.Data is null)

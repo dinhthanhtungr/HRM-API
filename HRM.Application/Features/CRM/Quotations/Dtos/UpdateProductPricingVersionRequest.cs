@@ -10,6 +10,7 @@ public sealed class UpdateProductPricingVersionRequest
     public decimal? ManufacturingCost { get; init; }
     public decimal? StandardSellingPrice { get; init; }
     public decimal? ProfitMarginRate { get; init; }
+    public string? Note { get; init; }
 
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public ProductPricingChangedField? ChangedField { get; init; }

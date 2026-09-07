@@ -91,18 +91,44 @@ internal sealed class SaleOrderCreationService
             })
             .ToListAsync(cancellationToken);
         var formulaById = formulaRows.ToDictionary(x => x.FormulaId);
-        var completedSampleRequestFormulaProductPairs = (await _dbContext.SampleRequests
+        var isInternalSaleOrder = await _dbContext.Customers
+            .AsNoTracking()
+            .AnyAsync(x =>
+                x.CustomerId == request.CustomerId &&
+                x.CompanyId == companyId &&
+                x.IsActive == true &&
+                x.ExternalId == PLMCustomerRules.InternalCustomerExternalId,
+                cancellationToken);
+        var eligibleSampleRequestStatuses = isInternalSaleOrder
+            ? new[]
+            {
+                SampleRequestStatus.SampleSent.ToString(),
+                SampleRequestStatus.Completed.ToString()
+            }
+            : new[] { SampleRequestStatus.Completed.ToString() };
+        var eligibleSampleRequests = _dbContext.SampleRequests
             .AsNoTracking()
             .Where(x =>
                 x.CompanyId == companyId &&
-                (x.CustomerId == request.CustomerId ||
+                (isInternalSaleOrder ||
+                 x.CustomerId == request.CustomerId ||
                  x.Customer.ExternalId == PLMCustomerRules.InternalCustomerExternalId) &&
                 x.IsActive &&
-                x.FormulaId.HasValue &&
-                detailFormulaIds.Contains(x.FormulaId.Value) &&
-                x.Status == SampleRequestStatus.Completed.ToString())
+                eligibleSampleRequestStatuses.Contains(x.Status));
+        var eligibleSampleRequestFormulaProductPairs = (await eligibleSampleRequests
+            .Where(x => x.FormulaId.HasValue && detailFormulaIds.Contains(x.FormulaId.Value))
             .Select(x => new { FormulaId = x.FormulaId!.Value, x.ProductId })
             .ToListAsync(cancellationToken))
+            .Concat(await _dbContext.SampleRequestSampleTrials
+                .AsNoTracking()
+                .Where(x =>
+                    x.IsActive &&
+                    x.FormulaId.HasValue &&
+                    detailFormulaIds.Contains(x.FormulaId.Value) &&
+                    eligibleSampleRequests.Any(sampleRequest =>
+                        sampleRequest.SampleRequestId == x.SampleRequestId))
+                .Select(x => new { FormulaId = x.FormulaId!.Value, x.SampleRequest.ProductId })
+                .ToListAsync(cancellationToken))
             .Select(x => (x.FormulaId, x.ProductId))
             .ToHashSet();
 
@@ -120,10 +146,16 @@ internal sealed class SaleOrderCreationService
                     $"Công thức {formula.ExternalId} không thuộc sản phẩm của dòng đơn.");
             }
 
-            if (!completedSampleRequestFormulaProductPairs.Contains((detail.FormulaId, detail.ProductId)))
+            if (!eligibleSampleRequestFormulaProductPairs.Contains((detail.FormulaId, detail.ProductId)))
             {
+                var eligibilityScope = isInternalSaleOrder
+                    ? "của bất kỳ khách hàng nào"
+                    : "của khách hàng hoặc KH_VIETAUS";
+                var requiredStatus = isInternalSaleOrder
+                    ? "gửi mẫu hoặc hoàn thành"
+                    : "hoàn thành";
                 return OperationResult<MerchandiseOrder>.Fail(
-                    $"Công thức {formula.ExternalId} chưa được chốt trong Sample Request hoàn thành của khách hàng hoặc KH_VIETAUS, không thể lên đơn hàng.");
+                    $"Công thức {formula.ExternalId} chưa thuộc Sample Request {requiredStatus} {eligibilityScope}, không thể lên đơn hàng.");
             }
         }
 

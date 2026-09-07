@@ -30,6 +30,7 @@ public sealed class ProductPricingVersionDto
     public decimal? ManufacturingCost { get; init; }
     public decimal? StandardSellingPrice { get; init; }
     public decimal? ProfitMarginRate { get; init; }
+    public string? Note { get; init; }
 
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public ProductPricingStatus Status { get; init; }

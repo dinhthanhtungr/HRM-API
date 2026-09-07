@@ -5,6 +5,8 @@ namespace HRM.Application.Features.CRM.Quotations.Services;
 
 internal static class ProductPricingSourceRules
 {
+    public const string StandardPricingCurrency = "VND";
+
     public static readonly string[] EligibleFormulaStatuses =
     [
         FormulaStatus.Approved.ToString(),

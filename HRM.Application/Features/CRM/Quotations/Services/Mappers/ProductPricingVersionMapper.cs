@@ -42,6 +42,7 @@ internal static class ProductPricingVersionMapper
             ManufacturingCost = includeSensitivePricing ? entity.ManufacturingCost : null,
             StandardSellingPrice = entity.StandardSellingPrice,
             ProfitMarginRate = includeSensitivePricing ? entity.ProfitMarginRate : null,
+            Note = includeSensitivePricing ? entity.Note : null,
             Status = entity.Status,
             Version = entity.Version,
             CalculatedAt = entity.CalculatedAt,

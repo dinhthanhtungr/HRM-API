@@ -126,7 +126,7 @@ internal sealed class GetQuotationPricingQueueQueryHandler
                     !_crmDbContext.ProductPricingVersions.Any(pricing =>
                         pricing.CompanyId == companyId &&
                         pricing.ProductId == line.ProductId &&
-                        pricing.Currency == x.Currency &&
+                        pricing.Currency == ProductPricingSourceRules.StandardPricingCurrency &&
                         pricing.IsActive &&
                         pricing.Status == ProductPricingStatus.Approved))
             })

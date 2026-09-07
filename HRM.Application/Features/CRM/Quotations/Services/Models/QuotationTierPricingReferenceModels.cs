@@ -9,6 +9,7 @@ internal sealed record ApprovedProductTierPricingReference(
     ProductPricingStatus Status,
     DateTime? ApprovedAt,
     decimal? StandardSellingPrice,
+    string Currency,
     ProductPricingSourceType SourceType,
     Guid SourceId,
     string SourceExternalId,
@@ -20,6 +21,7 @@ internal sealed record SystemCalculatedTierPricingReference(
     string PricingStatus,
     DateTime CalculatedAt,
     decimal? StandardSellingPrice,
+    string Currency,
     ProductPricingSourceType? SourceType,
     Guid? SourceId,
     string SourceExternalId,
@@ -30,6 +32,7 @@ internal sealed record LatestQuotedTierPricingReference(
     Guid ProductId,
     Guid QuotationId,
     string QuotationExternalId,
+    string Currency,
     DateTime QuotationDate,
     DateTime SentDate,
     IReadOnlyList<QuotationTierPriceReference> PriceTiers);

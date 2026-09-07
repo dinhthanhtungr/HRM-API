@@ -61,6 +61,7 @@ internal sealed class SystemCalculatedProductPricingTierResolver
                 source.PricingStatus,
                 calculatedAt,
                 source.StandardSellingPrice,
+                currency,
                 source.SourceType,
                 source.SourceId,
                 source.ExternalId,

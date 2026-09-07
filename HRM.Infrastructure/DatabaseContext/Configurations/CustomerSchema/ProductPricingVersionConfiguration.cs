@@ -31,6 +31,9 @@ public sealed class ProductPricingVersionConfiguration
             .HasDefaultValue("VND")
             .IsRequired();
 
+        entity.Property(x => x.Note)
+            .HasColumnType("citext");
+
         entity.Property(x => x.MaterialCostSnapshot).HasPrecision(22, 6);
         entity.Property(x => x.ManufacturingCost).HasPrecision(22, 6);
         entity.Property(x => x.StandardSellingPrice).HasPrecision(22, 6);

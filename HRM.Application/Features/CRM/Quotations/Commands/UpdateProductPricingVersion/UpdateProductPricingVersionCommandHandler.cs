@@ -126,6 +126,7 @@ internal sealed class UpdateProductPricingVersionCommandHandler
         entity.ManufacturingCost = pricingResult.Data.ManufacturingCost;
         entity.StandardSellingPrice = pricingResult.Data.StandardSellingPrice;
         entity.ProfitMarginRate = pricingResult.Data.ProfitMarginRate;
+        entity.Note = QuotationRules.TrimToNull(command.Request.Note);
         entity.CalculatedAt = now;
         entity.UpdatedBy = employeeId;
         entity.UpdatedDate = now;

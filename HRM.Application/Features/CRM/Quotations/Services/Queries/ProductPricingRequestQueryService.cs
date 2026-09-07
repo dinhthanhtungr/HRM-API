@@ -29,7 +29,6 @@ internal sealed class ProductPricingRequestQueryService
 
     public async Task<IReadOnlyList<ProductPricingRequestRow>> LoadAsync(
         Guid companyId,
-        string currency,
         IReadOnlyCollection<Guid>? productIds,
         CancellationToken cancellationToken)
     {
@@ -72,8 +71,6 @@ internal sealed class ProductPricingRequestQueryService
             .Where(x =>
                 x.CompanyId == companyId &&
                 x.IsActive &&
-                x.Status == QuotationStatus.PendingApproval &&
-                x.Currency == currency &&
                 quotationIds.Contains(x.QuotationId))
             .SelectMany(x => x.Lines.Where(line => line.IsActive).Select(line => new ProductPricingRequestRow
             {

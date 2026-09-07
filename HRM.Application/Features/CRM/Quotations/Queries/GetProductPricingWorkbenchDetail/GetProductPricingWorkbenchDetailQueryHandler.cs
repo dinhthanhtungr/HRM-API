@@ -171,7 +171,6 @@ internal sealed class GetProductPricingWorkbenchDetailQueryHandler
 
         var requestRows = await _requestQueryService.LoadAsync(
             companyId,
-            request.NormalizedCurrency,
             [request.ProductId],
             cancellationToken);
         var draftRow = draft is null ? null : ToRow(draft);

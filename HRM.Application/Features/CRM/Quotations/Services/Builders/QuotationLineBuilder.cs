@@ -30,6 +30,7 @@ internal sealed class QuotationLineBuilder
         Guid companyId,
         Guid customerId,
         string currency,
+        decimal exchangeRate,
         IReadOnlyList<QuotationLineRequest> requests,
         CancellationToken cancellationToken)
     {
@@ -129,13 +130,13 @@ internal sealed class QuotationLineBuilder
                         "A published pricing policy is required before manual customer pricing can be saved.");
                 }
 
-                var tierError = QuotationManualPriceTierRules.Validate(
-                    request.PriceTiers,
-                    policy.Definition);
-                if (tierError is not null)
-                {
-                    return OperationResult<IReadOnlyList<QuotationLine>>.Fail(tierError);
-                }
+                //var tierError = QuotationManualPriceTierRules.Validate(
+                //    request.PriceTiers,
+                //    policy.Definition);
+                //if (tierError is not null)
+                //{
+                //    return OperationResult<IReadOnlyList<QuotationLine>>.Fail(tierError);
+                //}
             }
         }
 
@@ -150,7 +151,7 @@ internal sealed class QuotationLineBuilder
             .Where(x =>
                 pricingVersionIds.Contains(x.ProductPricingVersionId) &&
                 x.CompanyId == companyId &&
-                x.Currency == currency &&
+                x.Currency == ProductPricingSourceRules.StandardPricingCurrency &&
                 x.Status == HRM.Domain.Enums.CustomerEnum.ProductPricingStatus.Approved &&
                 x.IsActive)
             .ToDictionaryAsync(x => x.ProductPricingVersionId, cancellationToken);
@@ -162,7 +163,16 @@ internal sealed class QuotationLineBuilder
                  pricingVersion.StandardSellingPrice is null or < 0m)))
         {
             return OperationResult<IReadOnlyList<QuotationLine>>.Fail(
-                "One or more product pricing versions were not found, not approved, outside the current company/currency, or belong to another product.");
+                "One or more product pricing versions were not found, not approved, outside the current company/VND standard pricing, or belong to another product.");
+        }
+
+        if (pricingVersionIds.Length > 0 &&
+            !QuotationPricingCurrencyConverter.TryValidateQuotationCurrency(
+                currency,
+                exchangeRate,
+                out var currencyError))
+        {
+            return OperationResult<IReadOnlyList<QuotationLine>>.Fail(currencyError!);
         }
 
         var sampleRequestIds = requests
@@ -203,7 +213,10 @@ internal sealed class QuotationLineBuilder
             var unit = QuotationRules.TrimToNull(request.Unit) ?? QuotationRules.TrimToNull(product.Unit);
             var quotationLineId = Guid.CreateVersion7();
             var standardSellingPrice = request.ProductPricingVersionId.HasValue
-                ? pricingVersions[request.ProductPricingVersionId.Value].StandardSellingPrice!.Value
+                ? QuotationPricingCurrencyConverter.ConvertFromStandardPricing(
+                    pricingVersions[request.ProductPricingVersionId.Value].StandardSellingPrice!.Value,
+                    currency,
+                    exchangeRate)
                 : request.UnitPrice;
             var pricingResult = QuotationPriceTierBuilder.Build(
                 quotationLineId,

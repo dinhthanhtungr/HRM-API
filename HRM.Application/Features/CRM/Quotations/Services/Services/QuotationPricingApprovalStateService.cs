@@ -69,6 +69,15 @@ internal sealed class QuotationPricingApprovalStateService
         }
 
         var now = _dateTimeProvider.Now;
+        if (!QuotationPricingCurrencyConverter.TryValidateQuotationCurrency(
+                quotation.Currency,
+                quotation.ExchangeRate,
+                out var currencyError))
+        {
+            return new QuotationPricingApprovalStateResult(
+                false, quotation.Status, quotation.UpdatedDate, currencyError);
+        }
+
         var productIds = activeLines.Select(x => x.ProductId).Distinct().ToArray();
         var approvedVersions = await _dbContext.ProductPricingVersions
             .AsNoTracking()
@@ -76,7 +85,7 @@ internal sealed class QuotationPricingApprovalStateService
             .Where(x =>
                 x.CompanyId == companyId &&
                 productIds.Contains(x.ProductId) &&
-                x.Currency == quotation.Currency &&
+                x.Currency == ProductPricingSourceRules.StandardPricingCurrency &&
                 x.Status == ProductPricingStatus.Approved &&
                 x.IsActive &&
                 x.StandardSellingPrice > 0m)
@@ -124,7 +133,10 @@ internal sealed class QuotationPricingApprovalStateService
                 linePricing.Add(
                     line.QuotationLineId,
                     new ResolvedQuotationLinePricing(
-                        approvedVersion.StandardSellingPrice!.Value,
+                        QuotationPricingCurrencyConverter.ConvertFromStandardPricing(
+                            approvedVersion.StandardSellingPrice!.Value,
+                            quotation.Currency,
+                            quotation.ExchangeRate),
                         null));
                 continue;
             }
@@ -134,6 +146,7 @@ internal sealed class QuotationPricingApprovalStateService
                 companyId,
                 line.ProductId,
                 quotation.Currency,
+                quotation.ExchangeRate,
                 line.Quantity,
                 approvedVersion,
                 $"quotationLines[{line.QuotationLineId}]");

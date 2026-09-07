@@ -351,10 +351,12 @@ Gọi lại với báo giá đã `Sent` là idempotent: không tạo thêm histo
 
 `POST /api/v1/crm/quotations/{quotationId}/request` chỉ nhận báo giá `Draft` có line active và nằm trong CRM visibility của người gọi.
 Backend chuyển sang `PendingApproval`, ghi history, tạo action message/topic `QuotationRequested`, sau đó kiểm tra
-ngay mọi line. Một line đủ điều kiện khi có `ProductPricingVersion` active, `Approved`, cùng company/product/currency,
+ngay mọi line. Một line đủ điều kiện khi có `ProductPricingVersion` VND active, `Approved`, cùng company/product,
 `StandardSellingPrice > 0`, có tier active không âm và chưa quá hạn rà soát. Khi toàn bộ line đủ, backend snapshot
-version id và tính lại totals rồi chuyển báo giá sang `Approved` ngay. Tier Sale đã nhập trong lúc chờ được giữ làm
-giá thực gửi khách; nếu line chưa có tier hợp lệ, backend mới fallback snapshot tier từ bảng giá chuẩn.
+version id và tính lại totals rồi chuyển báo giá sang `Approved` ngay. Với quotation khác VND, backend đổi giá chuẩn
+và tier VND sang tiền tệ báo giá bằng `giá báo giá = giá VND / exchangeRate` trước khi snapshot. Tier Sale đã nhập
+trong lúc chờ được giữ làm giá thực gửi khách; nếu line chưa có tier hợp lệ, backend mới fallback snapshot tier từ
+bảng giá chuẩn đã quy đổi.
 
 Response bổ sung `quotationStatus` và `updatedDate`. Worker lifecycle chạy lại reconciliation theo giờ để phục hồi
 trường hợp side effect tức thời bị gián đoạn.
@@ -913,6 +915,8 @@ Giá nội bộ được tách khỏi công thức kỹ thuật và snapshot g�
 
 - `ProductPricingVersion` lưu một phiên bản giá của `Product + Currency`, có trạng thái
   `Draft`, `Approved`, `Superseded` hoặc `Cancelled`.
+- `Note` là ghi chú nội bộ tùy chọn cho từng version giá chuẩn. Chuỗi rỗng chỉ được lưu
+  là `null`; chỉ President/Developer nhận lại ghi chú đã lưu, Sale nhận `null`.
 - Nguồn ghi mới dùng đúng một cặp `sourceType + sourceId`: `Formula` hoặc `ManufacturingFormula`.
   `SourceFormulaId` và `SourceManufacturingFormulaId` là hai FK tương ứng. Các field nguồn cũ vẫn được giữ
   để đọc dữ liệu lịch sử, nhưng contract ghi mới không nhận chúng.
@@ -934,17 +938,23 @@ Giá nội bộ được tách khỏi công thức kỹ thuật và snapshot g�
 API quản lý bảng giá:
 
 - `GET /api/v1/crm/quotations/product-pricing-workbench?view=NeedsPricing&currency=VND`: danh sách
-  Product-centric cho President/Developer. Mỗi `Product + Currency` chỉ có một dòng. Mọi thứ tự sắp xếp đều
+  Product-centric cho President/Developer. Bảng giá chuẩn được quản lý bằng VND; không truyền `currency` cũng mặc định
+  là VND. Mỗi `Product + Currency` chỉ có một dòng. Mọi thứ tự sắp xếp đều
   ưu tiên sản phẩm thuộc báo giá đang yêu cầu định giá trước, tiếp theo là giá chuẩn đã hết hạn, rồi các giá chuẩn
   có ngày hết hạn gần nhất; `sortBy` của FE chỉ sắp xếp trong từng nhóm ưu tiên này. `view` nhận `NeedsPricing`, `Draft`, `Approved` hoặc `All`;
   mặc định là `All`.
+  Tiền tệ của quotation request không được dùng để lọc hàng đợi: mã BBG VND và USD đều có thể đưa Product vào
+  workbench, nhưng bản ghi giá chuẩn hiển thị và quản lý tại đây vẫn là VND.
   `President` và `Developer` nhận đầy đủ dữ liệu quản lý giá. `SaleUser` được phép đọc nhưng response bị giới hạn:
   danh sách giữ nguồn công thức cùng `sourceStatus`/`sourceIsEligible`, giá bán tiêu chuẩn, trạng thái bảng giá và số báo giá đang chờ; các field chi phí,
   margin, version id và ngày nội bộ trả `null`/giá trị mặc định. `canOpenPricingDetail = true` cho phép FE giữ thao
   tác mở drawer; `canManagePricing = false` chỉ khóa các thao tác ghi, duyệt và đổi nguồn.
   Có thể gửi `sortBy=createdDate&sortDirection=asc|desc` để đổi thứ tự này.
   `All` chỉ gồm sản phẩm có Formula/MFG Formula đủ điều kiện, đã có `ProductPricingVersion`, hoặc đang nằm trong
-  báo giá đã gửi yêu cầu định giá. Product cũ không có nguồn, không có lịch sử giá và không có yêu cầu sẽ bị ẩn;
+  báo giá đã gửi yêu cầu định giá. Khi không truyền `keyword`, workbench ẩn sản phẩm có Sample Request của khách nội bộ
+  `KH_VIETAUS`; khi người dùng chủ động tìm bằng `keyword`, các sản phẩm này được phép xuất hiện. Khi `keyword` bắt đầu bằng `BBG`, API cũng tìm trực tiếp các dòng active của
+  báo giá active bất kể tiền tệ mà người gọi có quyền xem, kể cả khi báo giá đã chuyển khỏi `PendingApproval`.
+  Product cũ không có nguồn, không có lịch sử giá và không có yêu cầu sẽ bị ẩn;
   sản phẩm đang được yêu cầu nhưng chưa có Formula vẫn được giữ để cảnh báo President.
 
   Với version `Approved` được tạo từ policy có `priceValidityDays`, response summary trả thêm
@@ -983,16 +993,25 @@ API quản lý bảng giá:
   có thể phân nhóm hoặc mở lookup theo đúng category đã dùng trong công thức.
 - `GET /api/v1/crm/quotations/product-pricing-versions?productId={id}&currency=VND`: xem lịch sử version.
 - `GET /api/v1/crm/quotations/products/{productId}/pricing-sources?currency=VND`: lấy Formula/MFG Formula đủ điều kiện;
-  chỉ President/Developer được gọi.
+  chỉ President/Developer được gọi. Khi backend cần tự chọn một nguồn fallback (chưa có version giá hoặc tính giá
+  realtime), mọi nguồn đã đủ điều kiện được xếp theo `UpdatedDate` mới nhất; không ưu tiên Formula `Approved`
+  hơn Formula `SampleSent` hoặc `Completed` mới hơn.
 - `POST /api/v1/crm/quotations/product-pricing-versions`: nguồn phải hợp lệ và có policy `Published` đúng
   company/profile/currency. Backend tự tải material cost realtime, bỏ qua `materialCostSnapshot` và
-  `calculatedAt` từ request, rồi tạo toàn bộ tier theo policy. Màn President gửi `approveImmediately=true`
-  để tạo và duyệt version trong cùng một lần ghi.
+  `calculatedAt` từ request, rồi tạo toàn bộ tier theo policy. Request có thể gửi `note` để lưu ghi chú
+  nội bộ. Màn President gửi `approveImmediately=true` để tạo và duyệt version trong cùng một lần ghi.
 - `PUT /api/v1/crm/quotations/product-pricing-versions/{id}`: sửa giá và tiers của một version `Draft`;
-  không được đổi nguồn hoặc policy. Backend luôn dùng đúng policy FK của Draft, không tự chuyển sang policy mới.
+  không được đổi nguồn hoặc policy. Có thể cập nhật `note`; không gửi hoặc gửi chuỗi rỗng thì ghi chú sẽ là
+  `null`. Backend luôn dùng đúng policy FK của Draft, không tự chuyển sang policy mới.
 - `POST /api/v1/crm/quotations/product-pricing-versions/{id}/approve`: duyệt version và chuyển version `Approved`
   trước đó của cùng `Product + Currency` sang `Superseded`. Backend tải lại material cost realtime và tính lần
   cuối bằng policy FK trước khi lưu snapshot/tiers và phát notification.
+
+Khi POST/PUT/approve không thể dùng nguồn giá đã chọn, API trả message tiếng Việt theo nguyên nhân thực tế trong
+phạm vi sản phẩm và công ty hiện tại: công thức hoặc sản phẩm đã ngừng hoạt động, công thức chưa đạt trạng thái
+được phép, công thức sản xuất chưa đến ngày hiệu lực/đã hết hiệu lực, hoặc chưa có phiên bản được phát hành.
+Nếu không tìm thấy nguồn trong phạm vi hiện tại, API chỉ trả lỗi không tìm thấy nguồn phù hợp, không tiết lộ dữ liệu
+của công ty khác.
 
 Draft có `FormulaPricingPolicyId = null`, policy đã `Superseded`, inactive, chưa hiệu lực hoặc không còn khớp
 company/profile/currency là read-only. PUT/approve trả HTTP `409 Conflict` với yêu cầu tạo/rebase thành version
@@ -1741,3 +1760,17 @@ bị lỗi, worker lần sau chỉ publish notification còn thiếu thay vì t�
 
 Cùng worker này cũng reconcile tối đa 100 báo giá `PendingApproval` mỗi lượt. Khi President/Developer duyệt version
 mới, handler vẫn reconcile ngay; worker chỉ là lớp phục hồi eventual consistency.
+## 16.1. Cấu trúc mới trong `Services/`
+
+Phần code nghiệp vụ trong `HRM.Application/Features/CRM/Quotations/Services` đã được gom theo nhóm để dễ bảo trì:
+
+- `Builders/`: tạo/đóng gói đối tượng trong flow báo giá.
+- `Mappers/`: chuyển đổi, ánh xạ model nội bộ.
+- `Queries/`: đọc dữ liệu, đọc nguồn giá, chọn source.
+- `Resolvers/`: xác định chiến lược/nguồn giá áp dụng.
+- `Rules/`: quy tắc nghiệp vụ và điều kiện kiểm tra thuần.
+- `Services/`: orchestration hoặc use case có side effect nhẹ.
+- `Validation/`: validator nghiệp vụ.
+- `Models/`: DTO/read-model nội bộ.
+
+Mỗi file đều giữ nguyên namespace `HRM.Application.Features.CRM.Quotations.Services` để tránh đổi hành vi cross file.

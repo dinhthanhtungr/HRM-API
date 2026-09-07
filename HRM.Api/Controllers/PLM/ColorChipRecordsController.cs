@@ -1,4 +1,6 @@
 using HRM.Application.Commons.Authorization.PLM;
+using HRM.Application.Commons.Concurrency;
+using HRM.Application.Commons.Models;
 using HRM.Application.Features.PLM.ColorChipRecords.Commands.CreateColorChipRecord;
 using HRM.Application.Features.PLM.ColorChipRecords.Commands.PatchColorChipRecord;
 using HRM.Application.Features.PLM.ColorChipRecords.Queries.GetColorChipRecordById;
@@ -90,6 +92,11 @@ public sealed class ColorChipRecordsController : ControllerBase
     {
         command.ColorChipRecordId = colorChipRecordId;
         var result = await _sender.Send(command, cancellationToken);
-        return result.Success ? Ok(result) : BadRequest(result);
+        return result.Success ? Ok(result) : MutationFailure(result);
     }
+
+    private ActionResult MutationFailure(OperationResult result)
+        => OptimisticConcurrencyHelper.IsConflictMessage(result.Message)
+            ? Conflict(result)
+            : BadRequest(result);
 }

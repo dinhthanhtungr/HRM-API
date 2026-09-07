@@ -128,7 +128,7 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.RefreshQuotationPrice
                 .Where(x =>
                     pricingVersionIds.Contains(x.ProductPricingVersionId) &&
                     x.CompanyId == scope.CompanyId &&
-                    x.Currency == quotation.Currency &&
+                    x.Currency == ProductPricingSourceRules.StandardPricingCurrency &&
                     x.Status == ProductPricingStatus.Approved &&
                     x.IsActive)
                 .ToDictionaryAsync(x => x.ProductPricingVersionId, cancellationToken);
@@ -151,6 +151,7 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.RefreshQuotationPrice
                     scope.CompanyId,
                     line.ProductId,
                     quotation.Currency,
+                    quotation.ExchangeRate,
                     line.Quantity,
                     pricingVersion,
                     $"lines[{index}]");

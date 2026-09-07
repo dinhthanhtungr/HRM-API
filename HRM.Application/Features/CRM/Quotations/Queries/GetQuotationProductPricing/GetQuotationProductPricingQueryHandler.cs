@@ -42,14 +42,15 @@ internal sealed class GetQuotationProductPricingQueryHandler
                 "ProductId is required.");
         }
 
-        var normalizedCurrency = QuotationRules.TrimToNull(request.Currency);
-        if (normalizedCurrency is null)
-        {
-            return OperationResult<QuotationProductPricingLinePreviewDto>.Fail(
-                "Currency is required.");
-        }
-
+        var normalizedCurrency = QuotationRules.TrimToNull(request.Currency) ?? "VND";
         var currency = normalizedCurrency.ToUpperInvariant();
+        //if (normalizedCurrency is null)
+        //{
+        //    return OperationResult<QuotationProductPricingLinePreviewDto>.Fail(
+        //        "Currency is required.");
+        //}
+
+        //var currency = normalizedCurrency.ToUpperInvariant();
         if (currency.Length > QuotationRules.MaximumCurrencyLength)
         {
             return OperationResult<QuotationProductPricingLinePreviewDto>.Fail(

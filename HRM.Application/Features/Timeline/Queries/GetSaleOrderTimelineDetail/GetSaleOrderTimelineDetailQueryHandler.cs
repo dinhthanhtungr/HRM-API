@@ -69,8 +69,8 @@ internal sealed class GetSaleOrderTimelineDetailQueryHandler
             .Select(x => new DetailRow(
                 x.MerchandiseOrderDetailId,
                 x.ProductId,
-                x.ProductExternalIdSnapshot,
-                x.ProductNameSnapshot,
+                x.Product.ColourCode ?? x.Product.Code ?? x.ProductExternalIdSnapshot,
+                x.Product.Name ?? x.ProductNameSnapshot,
                 x.UnitPriceAgreed,
                 x.DeliveryRequestDate,
                 x.ExpectedDeliveryDate,
@@ -211,8 +211,8 @@ internal sealed class GetSaleOrderTimelineDetailQueryHandler
             {
                 MerchandiseOrderDetailId = detail.MerchandiseOrderDetailId,
                 ExternalId = string.Join(", ", rowMfgs.Select(x => x.ExternalId).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct()),
-                ColourCode = detail.ProductExternalIdSnapshot,
-                ProductName = detail.ProductNameSnapshot,
+                ColourCode = detail.ProductCode,
+                ProductName = detail.ProductName,
                 UnitPrice = detail.UnitPrice,
                 RequestDate = detail.RequestDate,
                 ExpectedDate = rowMfgs.LastOrDefault()?.ExpectedDate,
@@ -256,8 +256,8 @@ internal sealed class GetSaleOrderTimelineDetailQueryHandler
     private sealed record DetailRow(
         Guid MerchandiseOrderDetailId,
         Guid ProductId,
-        string ProductExternalIdSnapshot,
-        string ProductNameSnapshot,
+        string ProductCode,
+        string ProductName,
         decimal UnitPrice,
         DateTime RequestDate,
         DateTime? ExpectedDate,

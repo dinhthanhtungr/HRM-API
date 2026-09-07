@@ -94,8 +94,10 @@ internal sealed class GetSaleOrderByIdQueryHandler
                     {
                         MerchandiseOrderDetailId = detail.MerchandiseOrderDetailId,
                         ProductId = detail.ProductId,
-                        ProductExternalIdSnapshot = detail.ProductExternalIdSnapshot,
-                        ProductNameSnapshot = detail.ProductNameSnapshot,
+                        ProductExternalIdSnapshot = detail.Product.ColourCode ??
+                                                    detail.Product.Code ??
+                                                    detail.ProductExternalIdSnapshot,
+                        ProductNameSnapshot = detail.Product.Name ?? detail.ProductNameSnapshot,
                         FormulaId = detail.FormulaId,
                         FormulaExternalIdSnapshot = detail.FormulaExternalIdSnapshot,
                         ExpectedQuantity = detail.ExpectedQuantity,

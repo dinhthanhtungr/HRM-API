@@ -13,6 +13,7 @@ namespace HRM.Application.Features.Timeline.Queries.GetSaleOrderTimeline;
 public sealed class GetSaleOrderTimelineQuery : PaginationQuery, IRequest<PagedResult<SaleOrderTimelineCardDto>>
 {
     public Guid? Id { get; init; }
+    public Guid? CustomerId { get; init; }
     public Guid? CreatedBy { get; init; }
     public Guid? CompanyId { get; init; }
     public EventType? EventType { get; init; }

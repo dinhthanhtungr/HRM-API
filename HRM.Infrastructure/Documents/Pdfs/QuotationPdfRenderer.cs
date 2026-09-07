@@ -62,13 +62,21 @@ internal sealed class QuotationPdfRenderer : IQuotationPdfRenderer
                     logo));
                 page.Content().Layers(layers =>
                 {
-                    if (quotation.Status == QuotationStatus.Draft)
+                    if (quotation.Status != QuotationStatus.Sent)
                     {
+                        var watermarkText = quotation.Status switch
+                        {
+                            QuotationStatus.Draft => "BẢN NHÁP / DRAFT",
+                            QuotationStatus.PendingApproval => "CHỜ DUYỆT / PENDING APPROVAL",
+                            QuotationStatus.Approved => "ĐÃ ĐỦ GIÁ CHUẨN / APPROVED",
+                            _ => "BÁO GIÁ / QUOTATION"
+                        };
+
                         layers.Layer()
                             .AlignCenter()
                             .AlignMiddle()
                             .Rotate(-35)
-                            .Text("BẢN NHÁP / DRAFT")
+                            .Text(watermarkText)
                             .FontSize(42)
                             .Bold()
                             .FontColor("#E5E7EB");

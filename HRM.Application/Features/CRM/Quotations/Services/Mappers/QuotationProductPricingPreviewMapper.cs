@@ -130,6 +130,7 @@ internal static class QuotationProductPricingPreviewMapper
                 Status = pricing.Status,
                 ApprovedAt = pricing.ApprovedAt,
                 StandardSellingPrice = pricing.StandardSellingPrice,
+                Currency = pricing.Currency,
                 SourceType = pricing.SourceType,
                 SourceId = pricing.SourceId,
                 SourceExternalId = pricing.SourceExternalId,
@@ -146,6 +147,7 @@ internal static class QuotationProductPricingPreviewMapper
                 PricingStatus = pricing.PricingStatus,
                 CalculatedAt = pricing.CalculatedAt,
                 StandardSellingPrice = pricing.StandardSellingPrice,
+                Currency = pricing.Currency,
                 SourceType = pricing.SourceType,
                 SourceId = pricing.SourceId,
                 SourceExternalId = pricing.SourceExternalId,
@@ -159,6 +161,7 @@ internal static class QuotationProductPricingPreviewMapper
             ? null
             : new QuotationLatestQuotedTierPricingDto
             {
+                Currency = pricing.Currency,
                 QuotationId = pricing.QuotationId,
                 QuotationExternalId = pricing.QuotationExternalId,
                 QuotationDate = pricing.QuotationDate,

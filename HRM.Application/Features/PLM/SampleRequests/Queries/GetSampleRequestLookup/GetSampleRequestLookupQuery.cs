@@ -12,6 +12,8 @@ public sealed class GetSampleRequestLookupQuery : IRequest<IReadOnlyList<SampleR
     public string? Status { get; init; }
     /// <summary>
     /// Chỉ dùng cho dropdown lập SaleOrder; giới hạn Sample Request ở SampleSent hoặc Completed.
+    /// Khi truyền CustomerId của khách ngoài, lookup trả TP thuộc khách đó và KH_VIETAUS.
+    /// Khi CustomerId là KH_VIETAUS, lookup trả các Sample Request hợp lệ của mọi khách trong công ty hiện tại.
     /// </summary>
     public bool ForSaleOrder { get; init; }
     public bool? IsActive { get; init; } = true;

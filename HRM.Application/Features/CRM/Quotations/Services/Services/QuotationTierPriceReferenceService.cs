@@ -5,6 +5,8 @@ namespace HRM.Application.Features.CRM.Quotations.Services;
 
 internal sealed class QuotationTierPriceReferenceService
 {
+    private const string PricingReferenceCurrency = "VND";
+
     private readonly QuotationProductTierPricingResolver _pricingResolver;
 
     public QuotationTierPriceReferenceService(
@@ -31,7 +33,7 @@ internal sealed class QuotationTierPriceReferenceService
         var referencesByProduct = await _pricingResolver.ResolveAsync(
             productIds,
             companyId,
-            detail.Currency,
+            PricingReferenceCurrency,
             detail.CustomerId,
             detail.QuotationId,
             visibleQuotations,

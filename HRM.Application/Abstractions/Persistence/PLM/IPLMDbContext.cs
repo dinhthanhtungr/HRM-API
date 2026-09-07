@@ -98,6 +98,8 @@ namespace HRM.Application.Abstractions.Persistence.PLM
         DbSet<Customer> Customers { get; }
         DbSet<CustomerAssignment> CustomerAssignments { get; }
         DbSet<CustomerClaim> CustomerClaims { get; }
+        DbSet<CustomerLabelHeader> CustomerLabelHeaders { get; }
+        DbSet<CustomerLabelDetail> CustomerLabelDetails { get; }
         DbSet<QuotationLine> QuotationLines { get; }
     }
 }

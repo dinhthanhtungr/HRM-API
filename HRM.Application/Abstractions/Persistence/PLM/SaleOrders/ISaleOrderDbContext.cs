@@ -41,6 +41,7 @@ public interface ISaleOrderDbContext
     DbSet<Product> Products { get; }
     DbSet<ProductStandardFormula> ProductStandardFormulas { get; }
     DbSet<SampleRequest> SampleRequests { get; }
+    DbSet<SampleRequestSampleTrial> SampleRequestSampleTrials { get; }
 
     Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default);
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);

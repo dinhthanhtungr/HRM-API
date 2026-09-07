@@ -52,6 +52,7 @@ public sealed class QuotationProductPricingLinePreviewDto
 
 public sealed class QuotationApprovedTierPricingDto
 {
+    public string Currency { get; init; } = string.Empty;
     public Guid ProductPricingVersionId { get; init; }
     public int Version { get; init; }
     public decimal? StandardSellingPrice { get; init; }
@@ -75,6 +76,7 @@ public sealed class QuotationSystemCalculatedTierPricingDto
     public string PricingStatus { get; init; } = string.Empty;
     public DateTime CalculatedAt { get; init; }
     public decimal? StandardSellingPrice { get; init; }
+    public string Currency { get; init; } = string.Empty;
 
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public ProductPricingSourceType? SourceType { get; init; }
@@ -87,6 +89,7 @@ public sealed class QuotationSystemCalculatedTierPricingDto
 
 public sealed class QuotationLatestQuotedTierPricingDto
 {
+    public string Currency { get; init; } = string.Empty;
     public Guid QuotationId { get; init; }
     public string QuotationExternalId { get; init; } = string.Empty;
     public DateTime QuotationDate { get; init; }

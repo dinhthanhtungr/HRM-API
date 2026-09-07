@@ -27,6 +27,7 @@ public sealed class ProductPricingVersion
     public decimal? ManufacturingCost { get; set; }
     public decimal? StandardSellingPrice { get; set; }
     public decimal? ProfitMarginRate { get; set; }
+    public string? Note { get; set; }
 
     public ProductPricingStatus Status { get; set; } = ProductPricingStatus.Draft;
     public int Version { get; set; } = 1;

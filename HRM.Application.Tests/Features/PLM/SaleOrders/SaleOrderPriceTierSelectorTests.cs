@@ -47,13 +47,14 @@ public sealed class SaleOrderPriceTierSelectorTests
         return new ResolvedProductTierPricingReferences(
             new ApprovedProductTierPricingReference(
                 Guid.NewGuid(), productId, 1, ProductPricingStatus.Approved,
-                new DateTime(2026, 9, 1), 110_000m,
+                new DateTime(2026, 9, 1), 110_000m, "VND",
                 ProductPricingSourceType.Formula, Guid.NewGuid(), "VU1", "F001", approvedTiers),
             new SystemCalculatedTierPricingReference(
-                productId, "Available", new DateTime(2026, 9, 2), 100_000m,
+                productId, "Available", new DateTime(2026, 9, 2), 100_000m, "VND",
                 ProductPricingSourceType.Formula, Guid.NewGuid(), "VU1", "F001", systemTiers),
             new LatestQuotedTierPricingReference(
-                productId, Guid.NewGuid(), "BBG1", new DateTime(2026, 8, 30),
+                productId, Guid.NewGuid(), "BBG1", "USD",
+                new DateTime(2026, 8, 30),
                 new DateTime(2026, 8, 31), latestTiers),
             QuotationDefaultPriceTierSource.ApprovedPricingVersion);
     }

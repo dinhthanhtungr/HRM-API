@@ -23,7 +23,7 @@ hay tài liệu này.
 | `Storage__PublicBaseUrl` | URL public nếu storage cần trả URL trực tiếp | Để trống khi không dùng | Không |
 | `Jwt__Issuer` | Issuer JWT, phải là URL API thật | `https://dvapi.vietaus.com` | Không |
 | `Jwt__Audience` | Audience JWT, thường là URL FE | `https://hrm.vietaus.com` | Không |
-| `Jwt__EXPIRATION_MINUTES` | Thời hạn access token (phút) | `300` | Không |
+| `Jwt__EXPIRATION_MINUTES` | Thời hạn access token (phút) | `3000` | Không |
 | `Jwt__Key` | Khóa ký JWT dài, ngẫu nhiên | Không hiển thị | Có |
 | `AllowedOrigins__0`, `AllowedOrigins__1`, ... | Danh sách origin FE được CORS cho phép | Mỗi biến là một origin đầy đủ | Không |
 

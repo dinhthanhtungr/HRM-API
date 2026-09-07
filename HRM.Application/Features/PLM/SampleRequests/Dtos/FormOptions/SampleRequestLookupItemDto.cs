@@ -12,5 +12,11 @@ public sealed class SampleRequestLookupItemDto
     public Guid ProductId { get; set; }
     public string? ProductCode { get; set; }
     public string? ProductName { get; set; }
+    /// <summary>
+    /// Formula có thể dùng khi lập Sale Order: Formula được chọn trên Sample Request,
+    /// hoặc Formula của Trial active mới nhất nếu request đang ở lifecycle gửi mẫu.
+    /// </summary>
+    public Guid? FormulaId { get; set; }
+    public string? FormulaExternalId { get; set; }
     public DateTime CreatedDate { get; set; }
 }

@@ -17,6 +17,8 @@ namespace HRM.Application.Features.CRM.Quotations.Queries.GetQuotationById
     internal sealed class GetQuotationByIdQueryHandler
         : IRequestHandler<GetQuotationByIdQuery, OperationResult<QuotationDetailDto>>
     {
+        private const string PricingReferenceCurrency = "VND";
+
         private readonly ICRMReadDbContext _dbContext;
         private readonly ICustomerVisibilityService _visibilityService;
         private readonly QuotationTierPriceReferenceService _tierPriceReferenceService;
@@ -111,14 +113,14 @@ namespace HRM.Application.Features.CRM.Quotations.Queries.GetQuotationById
                             HasApprovedPricingAvailable = _dbContext.ProductPricingVersions.Any(pricing =>
                                 pricing.CompanyId == x.CompanyId &&
                                 pricing.ProductId == line.ProductId &&
-                                pricing.Currency == x.Currency &&
+                                pricing.Currency == PricingReferenceCurrency &&
                                 pricing.Status == ProductPricingStatus.Approved &&
                                 pricing.IsActive),
                             HasNewerPricingVersion = line.ProductPricingVersion != null &&
                                 _dbContext.ProductPricingVersions.Any(pricing =>
                                     pricing.CompanyId == x.CompanyId &&
                                     pricing.ProductId == line.ProductId &&
-                                    pricing.Currency == x.Currency &&
+                                    pricing.Currency == PricingReferenceCurrency &&
                                     pricing.Status == ProductPricingStatus.Approved &&
                                     pricing.IsActive &&
                                     pricing.Version > line.ProductPricingVersion.Version),

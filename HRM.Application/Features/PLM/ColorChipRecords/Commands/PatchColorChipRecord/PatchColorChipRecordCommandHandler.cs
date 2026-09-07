@@ -2,6 +2,7 @@ using HRM.Application.Abstractions.Commons.Time;
 using HRM.Application.Abstractions.Persistence.PLM;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Models;
+using HRM.Application.Commons.Concurrency;
 using HRM.Application.Commons.Patching;
 using HRM.Application.Features.PLM.ColorChipRecords.Commands.CreateColorChipRecord;
 using HRM.Application.Features.PLM.ColorChipRecords.Dtos;
@@ -84,10 +85,14 @@ internal sealed class PatchColorChipRecordCommandHandler
                 "Color chip record was not found or is outside the current company.");
         }
 
-        if (request.ExpectedUpdatedDate.HasValue && entity.UpdatedDate != request.ExpectedUpdatedDate)
+        var concurrencyError = OptimisticConcurrencyHelper.ValidateExpectedUpdatedDateWithDatabasePrecision(
+            request.ExpectedUpdatedDate,
+            entity.UpdatedDate,
+            "Color chip record");
+        if (concurrencyError is not null)
         {
             return OperationResult<SaveColorChipRecordResultDto>.Fail(
-                "Color chip record was changed by another user. Reload before saving.");
+                concurrencyError);
         }
 
         if (request.DevelopmentFormulaIds is not null && formulaResult.Data is { } formulaId &&
@@ -101,14 +106,31 @@ internal sealed class PatchColorChipRecordCommandHandler
         changed |= ApplyClears(entity, clearFieldsResult.Data!);
         if (request.DevelopmentFormulaIds is not null)
         {
-            changed |= ApplyDevelopmentFormula(entity, formulaResult.Data);
+            changed |= ApplyDevelopmentFormula(
+                entity,
+                formulaResult.Data,
+                out var newDevelopmentFormulaLink);
+            if (newDevelopmentFormulaLink is not null)
+            {
+                _dbContext.ColorChipRecordDevelopmentFormulas.Add(newDevelopmentFormulaLink);
+            }
         }
 
         if (changed)
         {
             entity.UpdatedBy = employeeId;
             entity.UpdatedDate = _dateTimeProvider.Now;
-            await _dbContext.SaveChangesAsync(cancellationToken);
+            try
+            {
+                await _dbContext.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateConcurrencyException exception)
+            {
+                return OperationResult<SaveColorChipRecordResultDto>.Fail(
+                    OptimisticConcurrencyHelper.CreateConflictMessage(
+                        "Color chip record",
+                        exception));
+            }
         }
 
         return OperationResult<SaveColorChipRecordResultDto>.Ok(
@@ -174,8 +196,12 @@ internal sealed class PatchColorChipRecordCommandHandler
         return changed;
     }
 
-    private static bool ApplyDevelopmentFormula(ColorChipRecord entity, Guid? formulaId)
+    private static bool ApplyDevelopmentFormula(
+        ColorChipRecord entity,
+        Guid? formulaId,
+        out ColorChipRecordDevelopmentFormula? newLink)
     {
+        newLink = null;
         var changed = false;
         ColorChipRecordDevelopmentFormula? selectedLink = null;
         foreach (var link in entity.DevelopmentFormulas)
@@ -197,13 +223,14 @@ internal sealed class PatchColorChipRecordCommandHandler
 
         if (formulaId.HasValue && selectedLink is null)
         {
-            entity.DevelopmentFormulas.Add(new ColorChipRecordDevelopmentFormula
+            newLink = new ColorChipRecordDevelopmentFormula
             {
                 ColorChipRecordDevelopmentFormulaId = Guid.CreateVersion7(),
                 ColorChipRecordId = entity.ColorChipRecordId,
                 DevelopmentFormulaId = formulaId,
                 IsActive = true
-            });
+            };
+            entity.DevelopmentFormulas.Add(newLink);
             changed = true;
         }
 

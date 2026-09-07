@@ -80,20 +80,18 @@ internal sealed class GetSaleOrdersQueryHandler
                 x.ExternalId.Contains(keyword) ||
                 x.PONo.Contains(keyword) ||
                 x.MerchandiseOrderDetails.Any(d =>
-                    d.ProductExternalIdSnapshot.Contains(keyword) ||
-                    d.ProductNameSnapshot.Contains(keyword) ||
-                    (d.Product != null &&
-                        (
-                            (d.Product.ColourCode ?? string.Empty).Contains(keyword) ||
-                            (d.Product.Name ?? string.Empty).Contains(keyword) ||
-                            d.Product.SampleRequests.Any(sampleRequest =>
-                                sampleRequest.IsActive &&
-                                sampleRequest.CompanyId == companyId &&
-                                sampleRequest.ExternalId.Contains(keyword)) ||
-                            d.Product.Formulas.Any(formula =>
-                                formula.IsActive &&
-                                formula.CompanyId == companyId &&
-                                EF.Functions.ILike(formula.ExternalId, $"%{keyword}%")))) ||
+                    d.Product != null &&
+                    (
+                        (d.Product.ColourCode ?? string.Empty).Contains(keyword) ||
+                        (d.Product.Name ?? string.Empty).Contains(keyword) ||
+                        d.Product.SampleRequests.Any(sampleRequest =>
+                            sampleRequest.IsActive &&
+                            sampleRequest.CompanyId == companyId &&
+                            sampleRequest.ExternalId.Contains(keyword)) ||
+                        d.Product.Formulas.Any(formula =>
+                            formula.IsActive &&
+                            formula.CompanyId == companyId &&
+                            EF.Functions.ILike(formula.ExternalId, $"%{keyword}%"))) ||
                     EF.Functions.ILike(d.Formula.ExternalId, $"%{keyword}%")));
         }
 

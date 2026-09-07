@@ -1,4 +1,5 @@
 ﻿using HRM.Application.Abstractions.Persistence.PLM;
+using System.Text.Json;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Models;
 using HRM.Application.Commons.Patching;
@@ -9,11 +10,14 @@ using HRM.Application.Features.CRM.Quotations.Services;
 using HRM.Application.Features.PLM.SampleRequests.Commands;
 using HRM.Application.Features.PLM.SampleRequests.Commands.SendSampleRequestMessage;
 using HRM.Application.Features.PLM.SampleRequests.DataChangeRequests;
+using HRM.Application.Features.PLM.SampleRequests.Dtos.InternalMail;
+using HRM.Application.Features.PLM.SampleRequests.FormulaChangeRequests;
 using HRM.Application.Features.PLM.SampleRequests.Rules;
 using HRM.Application.Features.PLM.SampleRequests.Services;
 using HRM.Application.Features.PLM.SampleRequests.SampleTrials;
 using HRM.Domain.Enums.Notifications;
 using HRM.Domain.Entities.SampleRequestSchema;
+using HRM.Domain.Enums.InternalMailEnums;
 using HRM.Domain.Enums.Products;
 using HRM.Domain.Enums.SampleRequests;
 using MediatR;
@@ -26,6 +30,7 @@ internal sealed class PatchSampleRequestCommandHandler
 {
     private const string DataChangeApprovalAuditReason = "SampleRequestDataChangeApproval";
     private const string DirectPatchAuditReason = "SampleRequestDirectPatch";
+    private static readonly JsonSerializerOptions PayloadJsonOptions = new(JsonSerializerDefaults.Web);
 
     private static readonly IReadOnlySet<string> SampleRequestClearFields = new HashSet<string>(
         StringComparer.OrdinalIgnoreCase)
@@ -162,15 +167,24 @@ internal sealed class PatchSampleRequestCommandHandler
             requestedFormulaId != Guid.Empty &&
             IsStatus(sampleRequest.Status, SampleRequestStatus.SampleSent);
 
+        // Chọn Formula Lab vừa đề xuất là xác nhận cuối cùng khi hồ sơ đang chờ cập nhật Formula.
+        var acceptsFormulaUpdateByFormulaSelection =
+            request.FormulaId is { } formulaUpdateFormulaId &&
+            formulaUpdateFormulaId != Guid.Empty &&
+            IsStatus(sampleRequest.Status, SampleRequestStatus.FormulaUpdateRequested);
+
+        var acceptsFormulaBySelection =
+            acceptsSentSampleByFormulaSelection || acceptsFormulaUpdateByFormulaSelection;
+
         if (IsStatus(request.Status, SampleRequestStatus.SampleSent) ||
             (IsStatus(request.Status, SampleRequestStatus.Completed) &&
-             !acceptsSentSampleByFormulaSelection))
+             !acceptsFormulaBySelection))
         {
             return OperationResult<Guid>.Fail(
                 "Use the Formula send-sample action or sample-trial customer feedback action for this lifecycle status.");
         }
 
-        if (acceptsSentSampleByFormulaSelection &&
+        if (acceptsFormulaBySelection &&
             request.Status is not null &&
             !IsStatus(request.Status, SampleRequestStatus.Completed))
         {
@@ -251,7 +265,7 @@ internal sealed class PatchSampleRequestCommandHandler
                 return OperationResult<Guid>.Fail("Formula does not belong to this sample request product.");
             }
 
-            if (acceptsSentSampleByFormulaSelection)
+            if (acceptsFormulaBySelection)
             {
                 if (!_currentUser.IsInAnyRole(ApplicationRoleSets.PLM.FormulaSelectors))
                 {
@@ -278,62 +292,80 @@ internal sealed class PatchSampleRequestCommandHandler
                         "Sample request was not found or is outside your customer scope.");
                 }
 
-                acceptedSampleTrial = await _dbContext.SampleRequestSampleTrials
-                    .Include(x => x.Formula)
-                    .Where(x =>
-                        x.SampleRequestId == sampleRequest.SampleRequestId &&
-                        x.IsActive &&
-                        (x.Status == SampleTrialStatus.SampleSent ||
-                        x.Status == SampleTrialStatus.WaitingCustomerFeedback ||
-                        x.Status == SampleTrialStatus.PriceQuote))
-                    .OrderByDescending(x => x.TrialNo)
-                    .FirstOrDefaultAsync(cancellationToken);
-
-                if (acceptedSampleTrial is null)
+                if (acceptsFormulaUpdateByFormulaSelection)
                 {
-                    var hasActiveTrial = await _dbContext.SampleRequestSampleTrials
-                        .AsNoTracking()
-                        .AnyAsync(
-                            x => x.SampleRequestId == sampleRequest.SampleRequestId && x.IsActive,
-                            cancellationToken);
-
-                    if (!hasActiveTrial)
+                    var pendingFormulaUpdateValidationError = await ValidatePendingFormulaUpdateSelectionAsync(
+                        sampleRequest.SampleRequestId,
+                        companyId.Value,
+                        formulaId,
+                        cancellationToken);
+                    if (pendingFormulaUpdateValidationError is not null)
                     {
-                        acceptanceProductFormulas = await _dbContext.Formulas
-                            .Where(x =>
-                                x.ProductId == sampleRequest.ProductId &&
-                                x.CompanyId == companyId.Value &&
-                                x.IsActive)
-                            .ToListAsync(cancellationToken);
-
-                        var selectedFormula = acceptanceProductFormulas
-                            .First(x => x.FormulaId == formulaId);
-                        acceptedSampleTrial = await CreateApprovedTrialForMissingHistoryAsync(
-                            sampleRequest,
-                            selectedFormula,
-                            _currentUser.EmployeeId.Value,
-                            auditChangedAt: DateTime.Now,
-                            cancellationToken);
-                        await _dbContext.SampleRequestSampleTrials.AddAsync(
-                            acceptedSampleTrial,
-                            cancellationToken);
+                        return OperationResult<Guid>.Fail(pendingFormulaUpdateValidationError);
                     }
                 }
 
-                var approvalValidationError = SampleRequestSampleTrialApprovalRules.Validate(
-                    acceptedSampleTrial,
-                    formulaId);
-                if (approvalValidationError is not null)
+                // Chỉ luồng SampleSent cần tìm/tạo Trial để ghi nhận khách đã nhận và duyệt mẫu.
+                // FormulaUpdateRequested đã có request duyệt riêng nên chốt trực tiếp Formula đề xuất.
+                if (acceptsSentSampleByFormulaSelection)
                 {
-                    return OperationResult<Guid>.Fail(approvalValidationError);
-                }
+                    acceptedSampleTrial = await _dbContext.SampleRequestSampleTrials
+                        .Include(x => x.Formula)
+                        .Where(x =>
+                            x.SampleRequestId == sampleRequest.SampleRequestId &&
+                            x.IsActive &&
+                            (x.Status == SampleTrialStatus.SampleSent ||
+                            x.Status == SampleTrialStatus.WaitingCustomerFeedback ||
+                            x.Status == SampleTrialStatus.PriceQuote))
+                        .OrderByDescending(x => x.TrialNo)
+                        .FirstOrDefaultAsync(cancellationToken);
 
-                acceptanceProductFormulas ??= await _dbContext.Formulas
-                    .Where(x =>
-                        x.ProductId == sampleRequest.ProductId &&
-                        x.CompanyId == companyId.Value &&
-                        x.IsActive)
-                    .ToListAsync(cancellationToken);
+                    if (acceptedSampleTrial is null)
+                    {
+                        var hasActiveTrial = await _dbContext.SampleRequestSampleTrials
+                            .AsNoTracking()
+                            .AnyAsync(
+                                x => x.SampleRequestId == sampleRequest.SampleRequestId && x.IsActive,
+                                cancellationToken);
+
+                        if (!hasActiveTrial)
+                        {
+                            acceptanceProductFormulas = await _dbContext.Formulas
+                                .Where(x =>
+                                    x.ProductId == sampleRequest.ProductId &&
+                                    x.CompanyId == companyId.Value &&
+                                    x.IsActive)
+                                .ToListAsync(cancellationToken);
+
+                            var selectedFormula = acceptanceProductFormulas
+                                .First(x => x.FormulaId == formulaId);
+                            acceptedSampleTrial = await CreateApprovedTrialForMissingHistoryAsync(
+                                sampleRequest,
+                                selectedFormula,
+                                _currentUser.EmployeeId.Value,
+                                auditChangedAt: DateTime.Now,
+                                cancellationToken);
+                            await _dbContext.SampleRequestSampleTrials.AddAsync(
+                                acceptedSampleTrial,
+                                cancellationToken);
+                        }
+                    }
+
+                    var approvalValidationError = SampleRequestSampleTrialApprovalRules.Validate(
+                        acceptedSampleTrial,
+                        formulaId);
+                    if (approvalValidationError is not null)
+                    {
+                        return OperationResult<Guid>.Fail(approvalValidationError);
+                    }
+
+                    acceptanceProductFormulas ??= await _dbContext.Formulas
+                        .Where(x =>
+                            x.ProductId == sampleRequest.ProductId &&
+                            x.CompanyId == companyId.Value &&
+                            x.IsActive)
+                        .ToListAsync(cancellationToken);
+                }
             }
 
             sampleRequest.FormulaId = formula.FormulaId;
@@ -485,7 +517,18 @@ internal sealed class PatchSampleRequestCommandHandler
 
         var startedProcessing = false;
 
-        if (acceptedSampleTrial is not null)
+        if (acceptsFormulaUpdateByFormulaSelection)
+        {
+            SampleRequestStatusTransitionRules.MarkCustomerApproved(sampleRequest);
+            await MarkPendingFormulaUpdateApprovedAsync(
+                sampleRequest.SampleRequestId,
+                companyId.Value,
+                request.FormulaId!.Value,
+                _currentUser.EmployeeId!.Value,
+                auditChangedAt,
+                cancellationToken);
+        }
+        else if (acceptedSampleTrial is not null)
         {
             SampleRequestSampleTrialApprovalRules.ApplyApproved(
                 sampleRequest,
@@ -504,7 +547,8 @@ internal sealed class PatchSampleRequestCommandHandler
         var completedByFormulaSelection =
             request.FormulaId is { } completedFormulaId &&
             completedFormulaId != Guid.Empty &&
-            IsStatus(originalStatus, SampleRequestStatus.SampleSent) &&
+            (IsStatus(originalStatus, SampleRequestStatus.SampleSent) ||
+             IsStatus(originalStatus, SampleRequestStatus.FormulaUpdateRequested)) &&
             IsStatus(sampleRequest.Status, SampleRequestStatus.Completed);
 
         var cancelledByPatch =
@@ -575,6 +619,9 @@ internal sealed class PatchSampleRequestCommandHandler
 
         if (!request.DeferSaveChanges)
         {
+            // SampleRequest có thể đi qua visibility query trước khi được PATCH. Đánh dấu rõ entity
+            // cần ghi để AuditLog không là thay đổi duy nhất được flush khi tracking bị mất ở luồng này.
+            _dbContext.SampleRequests.Update(sampleRequest);
             await _dbContext.SaveChangesAsync(cancellationToken);
 
             if (startedProcessing)
@@ -690,6 +737,98 @@ internal sealed class PatchSampleRequestCommandHandler
             UpdatedDate = auditChangedAt,
             IsActive = true
         };
+    }
+
+    private async Task<string?> ValidatePendingFormulaUpdateSelectionAsync(
+        Guid sampleRequestId,
+        Guid companyId,
+        Guid selectedFormulaId,
+        CancellationToken cancellationToken)
+    {
+        var payloads = await _dbContext.InternalMessages
+            .AsNoTracking()
+            .Where(x =>
+                !x.IsDeleted &&
+                x.Conversation.CompanyId == companyId &&
+                x.Conversation.IsActive &&
+                x.Conversation.RelatedType == InternalMailRelatedType.SampleRequest &&
+                x.Conversation.RelatedId == sampleRequestId)
+            .Select(x => x.PayloadJson)
+            .ToListAsync(cancellationToken);
+
+        var pendingFormulaUpdate = payloads
+            .Select(DeserializeThreadPayload)
+            .Select(x => x?.FormulaChangeRequest)
+            .FirstOrDefault(x =>
+                x is not null &&
+                string.Equals(
+                    x.Status,
+                    SampleRequestFormulaChangeStatuses.Pending,
+                    StringComparison.OrdinalIgnoreCase));
+
+        return pendingFormulaUpdate is not null && pendingFormulaUpdate.RequestedFormulaId != selectedFormulaId
+            ? "Selected formula does not match the pending formula update request."
+            : null;
+    }
+
+    private async Task MarkPendingFormulaUpdateApprovedAsync(
+        Guid sampleRequestId,
+        Guid companyId,
+        Guid selectedFormulaId,
+        Guid employeeId,
+        DateTime decidedAt,
+        CancellationToken cancellationToken)
+    {
+        var messages = await _dbContext.InternalMessages
+            .Where(x =>
+                !x.IsDeleted &&
+                x.Conversation.CompanyId == companyId &&
+                x.Conversation.IsActive &&
+                x.Conversation.RelatedType == InternalMailRelatedType.SampleRequest &&
+                x.Conversation.RelatedId == sampleRequestId)
+            .ToListAsync(cancellationToken);
+
+        foreach (var message in messages)
+        {
+            var payload = DeserializeThreadPayload(message.PayloadJson);
+            var formulaChange = payload?.FormulaChangeRequest;
+            if (formulaChange is null ||
+                formulaChange.RequestedFormulaId != selectedFormulaId ||
+                !string.Equals(
+                    formulaChange.Status,
+                    SampleRequestFormulaChangeStatuses.Pending,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            formulaChange.Status = SampleRequestFormulaChangeStatuses.Approved;
+            formulaChange.DecidedByEmployeeId = employeeId;
+            formulaChange.DecidedAt = decidedAt;
+            formulaChange.DecisionReason = null;
+            message.PayloadJson = JsonSerializer.Serialize(payload, PayloadJsonOptions);
+            message.IsEdited = true;
+            message.EditedAt = decidedAt;
+            message.EditedByEmployeeId = employeeId;
+            return;
+        }
+    }
+
+    private static SampleRequestThreadMessagePayload? DeserializeThreadPayload(string? payloadJson)
+    {
+        if (string.IsNullOrWhiteSpace(payloadJson))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<SampleRequestThreadMessagePayload>(payloadJson, PayloadJsonOptions);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private static void ApplySampleRequestPatch(

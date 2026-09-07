@@ -53,6 +53,10 @@ không phải loại Formula được lưu vào dòng Merchandise Order.
 Khi cờ không gửi hoặc bằng `false`, API giữ nguyên hành vi cũ và trả cả ba nhóm Formula. Tên query hiện tại
 giữ nguyên `isMerchadiseOrder` để tương thích client đang dùng.
 
+Mỗi phần tử trong `formulaDevs`, `formulaSelects` và `formulaStandard` có thêm `createdByName`: họ tên nhân viên
+tạo Formula tương ứng. Field này là `null` khi bản ghi cũ không còn liên kết được với nhân viên tạo, không phải lỗi
+và FE có thể hiển thị dấu `—`.
+
 ## Gửi mẫu và tạo Trial
 
 Message `SampleRequestSampleSent` kèm `sampleReceiptAction` chứa Trial id để Sale xác nhận đã nhận mẫu ngay trong Notification Hub. Action xác nhận thuộc API Sample Request/Trial, chỉ cập nhật dữ liệu nhận mẫu và audit trên Trial; không thay đổi trạng thái Formula và không dùng ngày phản hồi khách hàng.

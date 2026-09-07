@@ -153,6 +153,7 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.CreateQuotation
                 scope.CompanyId,
                 request.CustomerId,
                 currency.ToUpperInvariant(),
+                request.ExchangeRate,
                 request.Lines,
                 cancellationToken);
             if (!lineResult.Success || lineResult.Data is null)

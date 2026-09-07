@@ -42,6 +42,7 @@ internal sealed class LatestQuotationPricingTierReader
                     ProductId = line.ProductId,
                     QuotationLineId = line.QuotationLineId,
                     QuotationId = quotation.QuotationId,
+                    QuotationCurrency = quotation.Currency,
                     QuotationExternalId = quotation.ExternalId,
                     QuotationDate = quotation.QuotationDate,
                     SentDate = quotation.SentDate!.Value,
@@ -106,6 +107,7 @@ internal sealed class LatestQuotationPricingTierReader
                 x.ProductId,
                 x.QuotationId,
                 x.QuotationExternalId,
+                x.QuotationCurrency,
                 x.QuotationDate,
                 x.SentDate,
                 tiersByLine.GetValueOrDefault(x.QuotationLineId) ?? []));
@@ -117,6 +119,7 @@ internal sealed class LatestQuotationPricingTierReader
         public Guid QuotationLineId { get; init; }
         public Guid QuotationId { get; init; }
         public string QuotationExternalId { get; init; } = string.Empty;
+        public string QuotationCurrency { get; init; } = string.Empty;
         public DateTime QuotationDate { get; init; }
         public DateTime SentDate { get; init; }
         public DateTime? QuotationUpdatedDate { get; init; }

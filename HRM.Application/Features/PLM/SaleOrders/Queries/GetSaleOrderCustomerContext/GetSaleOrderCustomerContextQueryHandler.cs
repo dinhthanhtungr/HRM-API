@@ -1,6 +1,7 @@
 using HRM.Application.Abstractions.Persistence.PLM.SaleOrders;
 using HRM.Application.Features.CRM.CustomerCare.Visibility;
 using HRM.Application.Features.PLM.SaleOrders.Dtos;
+using HRM.Application.Features.PLM.Shared.Rules;
 using HRM.Domain.Enums.Merchadises;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -36,9 +37,17 @@ internal sealed class GetSaleOrderCustomerContextQueryHandler
 
         var scope = await _customerVisibilityService.BuildScopeAsync(cancellationToken);
         var cancelledStatus = MerchadiseStatus.Cancelled.ToString();
-        var customerQuery = _customerVisibilityService.ApplyCustomerVisibility(
+        var visibleCustomerIds = _customerVisibilityService.ApplyCustomerVisibility(
             _dbContext.Customers.AsNoTracking(),
-            scope);
+            scope)
+            .Select(x => x.CustomerId);
+        var customerQuery = _dbContext.Customers
+            .AsNoTracking()
+            .Where(customer =>
+                customer.CompanyId == scope.CompanyId &&
+                customer.IsActive == true &&
+                (visibleCustomerIds.Contains(customer.CustomerId) ||
+                 customer.ExternalId == PLMCustomerRules.InternalCustomerExternalId));
 
         return await customerQuery
             .Where(customer => customer.CustomerId == request.CustomerId)
