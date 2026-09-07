@@ -26,6 +26,13 @@ public sealed class DeliveryOrderAccessRulesTests
     }
 
     [Fact]
+    public void AccountingUser_CanReadButACUserCannot()
+    {
+        Assert.True(DeliveryOrderAccessRules.CanRead(CreateUser("ACCUser")));
+        Assert.False(DeliveryOrderAccessRules.CanRead(CreateUser("ACUser")));
+    }
+
+    [Fact]
     public void UnauthenticatedUser_HasNoDeliveryOrderPermission()
     {
         var user = new TestCurrentUser

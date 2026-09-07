@@ -41,9 +41,9 @@ This folder is the backend source of truth for role names, role groups, policy n
 ## PLM Current Defaults
 
 - Formula materials/NVL viewers:
-  - `Admin`, `Developer`, `President`, `PLPUUser`, `ACUser`
+  - `Admin`, `Developer`, `President`, `PLPUUser`, `ACCUser`
 - Formula price viewers:
-  - `Admin`, `Developer`, `President`, `PriceView`, `ACUser`, `SeePriceUser`
+  - `Admin`, `Developer`, `President`, `PriceView`, `ACCUser`, `SeePriceUser`
 - Product technical editors:
   - `Admin`, `Developer`, `President`, `LabUser`
   - Also allowed to view restricted product technical fields in Sample Request audit history.

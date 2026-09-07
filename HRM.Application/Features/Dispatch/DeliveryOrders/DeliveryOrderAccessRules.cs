@@ -6,7 +6,7 @@ namespace HRM.Application.Features.Dispatch.DeliveryOrders;
 public static class DeliveryOrderAccessRules
 {
     public const string ReadRoles =
-        "DispatchUser,SaleUser,KHOUser,ACUser,Leader,Edit,Delete,Admin,Developer,President";
+        "DispatchUser,SaleUser,KHOUser,ACCUser,Leader,Edit,Delete,Admin,Developer,President";
 
     public const string ManageRoles =
         "DispatchUser,Edit,Admin,Developer,President";
@@ -19,7 +19,7 @@ public static class DeliveryOrderAccessRules
         ApplicationRoles.Dispatch.DispatchUser,
         ApplicationRoles.Sales.SaleUser,
         ApplicationRoles.Warehouse.KHOUser,
-        ApplicationRoles.Accounting.ACUser,
+        ApplicationRoles.Accounting.ACCUser,
         ApplicationRoles.Leader,
         ApplicationRoles.Actions.Edit,
         ApplicationRoles.Actions.Delete,

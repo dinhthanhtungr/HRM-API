@@ -57,7 +57,7 @@ Mọi command lifecycle lọc theo `Id + current CompanyId`, yêu cầu current 
 
 ### Quyền
 
-- Đọc list/detail/selectable-lines: `DispatchUser`, `SaleUser`, `KHOUser`, `ACUser`, `Leader`, `Edit`, `Delete`, `Admin`, `Developer`, `President`.
+- Đọc list/detail/selectable-lines: `DispatchUser`, `SaleUser`, `KHOUser`, `ACCUser`, `Leader`, `Edit`, `Delete`, `Admin`, `Developer`, `President`.
 - Tạo, sửa nội dung, đổi trạng thái: `DispatchUser`, `Edit`, `Admin`, `Developer`, `President`.
 - Hủy: `DispatchUser`, `Delete`, `Admin`, `Developer`, `President`.
 
@@ -117,7 +117,7 @@ Response thành công là danh sách lot trực tiếp; response lỗi giữ con
 }
 ```
 
-`unitCostSnapshot` bị omit nếu người gọi không có quyền xem giá công thức. Khi không có quyền, handler cũng không query dữ liệu công thức/cost không cần thiết. Các role được xem cost là nhóm `FormulaPriceViewers`: `Admin`, `Developer`, `President`, `PriceView`, `ACUser`, `SeePriceUser`.
+`unitCostSnapshot` bị omit nếu người gọi không có quyền xem giá công thức. Khi không có quyền, handler cũng không query dữ liệu công thức/cost không cần thiết. Các role được xem cost là nhóm `FormulaPriceViewers`: `Admin`, `Developer`, `President`, `PriceView`, `ACCUser`, `SeePriceUser`.
 
 ### Rule tồn khả dụng
 

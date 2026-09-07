@@ -16,7 +16,7 @@ public sealed class SaleOrderApprovalRulesTests
         => Assert.True(SaleOrderApprovalRules.CanAutoApproveOnCreate(new CurrentUser(role)));
 
     [Theory]
-    [InlineData(ApplicationRoles.Accounting.ACUser)]
+    [InlineData(ApplicationRoles.Sales.ACUser)]
     [InlineData(ApplicationRoles.Accounting.HNUser)]
     public void CanAutoApproveOnCreate_RejectsAccountingRolesWithoutAnApproverRole(string role)
         => Assert.False(SaleOrderApprovalRules.CanAutoApproveOnCreate(

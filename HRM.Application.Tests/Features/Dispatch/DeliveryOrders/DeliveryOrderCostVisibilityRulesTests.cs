@@ -8,7 +8,7 @@ namespace HRM.Application.Tests.Features.Dispatch.DeliveryOrders;
 public sealed class DeliveryOrderCostVisibilityRulesTests
 {
     [Theory]
-    [InlineData("ACUser")]
+    [InlineData("ACCUser")]
     [InlineData("PriceView")]
     [InlineData("SeePriceUser")]
     [InlineData("Admin")]
@@ -21,6 +21,7 @@ public sealed class DeliveryOrderCostVisibilityRulesTests
     [InlineData("DispatchUser")]
     [InlineData("KHOUser")]
     [InlineData("SaleUser")]
+    [InlineData("ACUser")]
     public void OperationalRole_CannotViewCost(string role)
     {
         Assert.False(DeliveryOrderCostVisibilityRules.CanViewCost(new CurrentUser(role)));

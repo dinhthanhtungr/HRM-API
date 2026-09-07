@@ -20,7 +20,7 @@ internal static class SaleOrderApprovalRules
         }
 
         return currentUser.IsInRole(ApplicationRoles.Sales.SaleUser) &&
-               !currentUser.IsInRole(ApplicationRoles.Accounting.ACUser) &&
+               !currentUser.IsInRole(ApplicationRoles.Sales.ACUser) &&
                !currentUser.IsInRole(ApplicationRoles.Accounting.HNUser) &&
                !CanApprove(currentUser);
     }

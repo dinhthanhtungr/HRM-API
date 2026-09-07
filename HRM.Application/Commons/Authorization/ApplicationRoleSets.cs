@@ -87,7 +87,7 @@ public static class ApplicationRoleSets
             ApplicationRoles.Admin,
             ApplicationRoles.Developer,
             ApplicationRoles.President,
-            ApplicationRoles.Accounting.ACUser
+            ApplicationRoles.Accounting.ACCUser
         ];
 
         public static readonly string[] PLPU =
@@ -223,7 +223,7 @@ public static class ApplicationRoleSets
             ApplicationRoles.Developer,
             ApplicationRoles.President,
             ApplicationRoles.Production.PLPUUser,
-            ApplicationRoles.Accounting.ACUser,
+            ApplicationRoles.Accounting.ACCUser,
             ApplicationRoles.Lab.LabUser
         ];
 
@@ -233,7 +233,7 @@ public static class ApplicationRoleSets
             ApplicationRoles.Developer,
             ApplicationRoles.President,
             ApplicationRoles.Sales.PriceView,
-            ApplicationRoles.Accounting.ACUser,
+            ApplicationRoles.Accounting.ACCUser,
             ApplicationRoles.SeePrice.SeePriceUser
         ];
 

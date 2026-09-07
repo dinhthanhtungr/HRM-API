@@ -39,7 +39,7 @@ internal sealed class GetSampleRequestSummaryQueryHandler
         CancellationToken cancellationToken)    
     {
         var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
-        var visibilityScope = _currentUser.IsInRole(ApplicationRoles.Accounting.ACUser)
+        var visibilityScope = _currentUser.IsInRole(ApplicationRoles.Sales.ACUser)
             ? scope with { HasFullCustomerView = true, CanViewInternalCustomer = true }
             : request.NormalizedKeyword is not null
                 ? scope with { CanViewInternalCustomer = true }

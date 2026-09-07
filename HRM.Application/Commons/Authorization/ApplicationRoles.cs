@@ -19,6 +19,7 @@ namespace HRM.Application.Commons.Authorization
         {
             public const string SaleUser = "SaleUser";
             public const string SaleAdmin = "SaleAdmin";
+            public const string ACUser = "ACUser";
             public const string CustomerViewAll = "CustomerViewAll";
             public const string PriceView = "PriceView";
         }
@@ -64,7 +65,6 @@ namespace HRM.Application.Commons.Authorization
         public static class Accounting
         {
             public const string ACCUser = "ACCUser";
-            public const string ACUser = "ACUser";
             public const string LGUser = "LGUser";
             public const string HNUser = "HNUser";
         }
