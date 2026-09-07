@@ -1,6 +1,4 @@
 using HRM.Application.Abstractions.Persistence.PLM;
-using HRM.Application.Abstractions.Security;
-using HRM.Application.Commons.Authorization;
 using HRM.Application.Commons.Authorization.PLM;
 using HRM.Application.Commons.Pagination;
 using HRM.Application.Features.CRM.CustomerCare.Visibility;
@@ -20,18 +18,15 @@ internal sealed class GetSampleRequestSummaryQueryHandler
     private readonly IPLMReadDbContext _dbContext;
     private readonly ICustomerVisibilityService _visibilityService;
     private readonly IPLMFieldVisibilityService _fieldVisibility;
-    private readonly ICurrentUser _currentUser;
 
     public GetSampleRequestSummaryQueryHandler(
         IPLMReadDbContext dbContext,
         ICustomerVisibilityService visibilityService,
-        IPLMFieldVisibilityService fieldVisibility,
-        ICurrentUser currentUser)
+        IPLMFieldVisibilityService fieldVisibility)
     {
         _dbContext = dbContext;
         _visibilityService = visibilityService;
         _fieldVisibility = fieldVisibility;
-        _currentUser = currentUser;
     }
 
     public async Task<PagedResult<SampleRequestSummaryDto>> Handle(
@@ -39,11 +34,9 @@ internal sealed class GetSampleRequestSummaryQueryHandler
         CancellationToken cancellationToken)    
     {
         var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
-        var visibilityScope = _currentUser.IsInRole(ApplicationRoles.Sales.ACUser)
-            ? scope with { HasFullCustomerView = true, CanViewInternalCustomer = true }
-            : request.NormalizedKeyword is not null
-                ? scope with { CanViewInternalCustomer = true }
-                : scope;
+        var visibilityScope = request.NormalizedKeyword is not null
+            ? scope with { CanViewInternalCustomer = true }
+            : scope;
 
         var sampleRequestQuery = _visibilityService.ApplySampleRequestVisibility(
             _dbContext.SampleRequests

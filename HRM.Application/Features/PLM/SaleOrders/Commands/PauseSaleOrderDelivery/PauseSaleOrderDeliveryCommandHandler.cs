@@ -84,7 +84,7 @@ internal sealed class PauseSaleOrderDeliveryCommandHandler
         await _dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
-        if (IsAccountingUser() && order.ManagerById != Guid.Empty && order.ManagerById != employeeId)
+        if (CanNotifySaleAboutPausedDelivery() && order.ManagerById != Guid.Empty && order.ManagerById != employeeId)
         {
             await NotifySaleAboutPausedDeliveryAsync(order, cancellationToken);
         }
@@ -100,10 +100,9 @@ internal sealed class PauseSaleOrderDeliveryCommandHandler
         }, "Cập nhật trạng thái tạm dừng giao hàng thành công.");
     }
 
-    private bool IsAccountingUser()
+    private bool CanNotifySaleAboutPausedDelivery()
     {
-        return _currentUser.IsInRole(AppRoles.ACUser)
-            || _currentUser.IsInRole(AppRoles.President)
+        return _currentUser.IsInRole(AppRoles.President)
             || _currentUser.IsInRole(AppRoles.Admin)
             || _currentUser.IsInRole(AppRoles.Purchaser);
     }
@@ -172,7 +171,7 @@ internal sealed class PauseSaleOrderDeliveryCommandHandler
                 updatedBy = _currentUser.EmployeeId
             }),
             TargetUserIds = targetUserIds,
-            TargetRoles = new[] { AppRoles.President, AppRoles.ACUser, AppRoles.DispatchUser }
+            TargetRoles = new[] { AppRoles.President, AppRoles.DispatchUser }
         }, cancellationToken);
     }
 

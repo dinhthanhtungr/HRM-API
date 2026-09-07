@@ -16,11 +16,15 @@ public sealed class SaleOrderApprovalRulesTests
         => Assert.True(SaleOrderApprovalRules.CanAutoApproveOnCreate(new CurrentUser(role)));
 
     [Theory]
-    [InlineData(ApplicationRoles.Sales.ACUser)]
     [InlineData(ApplicationRoles.Accounting.HNUser)]
     public void CanAutoApproveOnCreate_RejectsAccountingRolesWithoutAnApproverRole(string role)
         => Assert.False(SaleOrderApprovalRules.CanAutoApproveOnCreate(
             new CurrentUser(ApplicationRoles.Sales.SaleUser, role)));
+
+    [Fact]
+    public void CanAutoApproveOnCreate_AllowsSaleUserWithACUser()
+        => Assert.True(SaleOrderApprovalRules.CanAutoApproveOnCreate(
+            new CurrentUser(ApplicationRoles.Sales.SaleUser, ApplicationRoles.Sales.ACUser)));
 
     private sealed class CurrentUser(params string[] roles) : ICurrentUser
     {

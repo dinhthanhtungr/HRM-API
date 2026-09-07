@@ -38,7 +38,7 @@ Create lấy `EmployeeId` và `CompanyId` từ `ICurrentUser`, không tin các f
 
 Với request multipart, controller tự nhận biết collection `files` có dữ liệu hay không. Không có file thì gọi `CreateSaleOrderCommand` và trả đơn `New`. Có file thì `CreateSaleOrderWithAttachmentsCommand` sở hữu transaction chung cho create và upload vào slot `PurchaseOrder`.
 
-Sau khi PO upload thành công, nhóm duyệt (`Admin`, `Developer`, `President`, `Leader`) luôn chạy tiếp approve/MFG. Sale thường cũng được tự duyệt khi có `SaleUser`, không có `ACUser`/`HNUser` và không thuộc nhóm duyệt. AC/HN không tự duyệt chỉ bằng role SaleUser. Upload, auto approve hoặc tạo MFG thất bại sẽ rollback SaleOrder, detail, lead conversion, attachment metadata, MFG và EventLog; file vật lý đã ghi được xóa bằng cơ chế bù trừ trước khi rollback database.
+Sau khi PO upload thành công, nhóm duyệt (`Admin`, `Developer`, `President`, `Leader`) luôn chạy tiếp approve/MFG. Sale thường cũng được tự duyệt khi có `SaleUser`, không có `HNUser` và không thuộc nhóm duyệt. HN không tự duyệt chỉ bằng role SaleUser. Upload, auto approve hoặc tạo MFG thất bại sẽ rollback SaleOrder, detail, lead conversion, attachment metadata, MFG và EventLog; file vật lý đã ghi được xóa bằng cơ chế bù trừ trước khi rollback database.
 
 Khi tạo đơn mới, customer dropdown gọi `GET /api/v1/crm/customers/lookup` kèm `includeInternalForSaleOrder=true`. Ngoại lệ này chỉ thêm đúng customer nội bộ `KH_VIETAUS` cùng company vào tập customer visibility thông thường; không mở quyền CRM tổng quát hoặc customer nội bộ của company khác. Sau khi chọn một customer, FE gọi endpoint `customer-context/{customerId}`. Endpoint này cũng cho phép đọc context của đúng `KH_VIETAUS` cùng company, ngoài customer visibility thường, để tạo đơn nội bộ; các customer khác vẫn áp dụng customer visibility. Response trả toàn bộ contact/address active đã sắp primary trước; `DefaultContactId` và `DefaultAddressId` là item primary hoặc item đầu tiên khi chưa cấu hình primary. `Receiver`, `PhoneSnapshot`, `DeliveryAddress` lấy từ các item mặc định này, còn `PaymentType`, `ShippingMethod`, `Note` lấy từ SaleOrder active không `Cancelled` gần nhất. API không trả toàn bộ lịch sử đơn hàng hoặc detail sản phẩm.
 
@@ -78,7 +78,7 @@ Một `ManufacturingFormula` có thể xuất hiện trong MFG của nhiều cus
 
 Khi tạo đơn cho customer đang là lead, hệ thống chuyển lead thành customer, tạo assignment cho sale tạo đơn nếu chưa có assignment active, đóng claim Work của sale khác và ghi `CustomerTransferLog` loại `Saled`. Customer nội bộ được nhận diện bằng `ExternalId = KH_VIETAUS` qua rule dùng chung và vẫn giữ `IsLead = true`.
 
-Khi request multipart co file, `Admin`, `President`, va `Developer` duoc auto approve va tao MFG. `ACUser`, `HNUser`, va `Leader` van tao `New` va can duyet thu cong. Sale thuong giu rule auto approve hien co.
+Khi request multipart co file, `Admin`, `President`, va `Developer` duoc auto approve va tao MFG. `HNUser` va `Leader` van tao `New` va can duyet thu cong. Sale thuong giu rule auto approve hien co.
 
 Approve chỉ chấp nhận SaleOrder active trong công ty hiện tại có trạng thái `New`, kiểm tra detail active và chặn nếu detail đã có `MfgOrderPO` active. Mỗi detail phải tạo đúng một `MfgProductionOrder` mã `MFG` và một link `MfgOrderPO`; sai số lượng thì toàn bộ transaction fail. Cả auto approve và duyệt thủ công dùng chung `SaleOrderApprovalService` để giữ một bộ invariant.
 
@@ -110,7 +110,7 @@ MerchandiseOrderDeliveryResumed -> sales.merchandise_order.delivery.resumed
 ```
 
 Cả hai thuộc category `Delivery`. Recipient gồm sale phụ trách, leader group liên quan và các role
-`President`, `ACUser`, `DispatchUser`. Payload chứa id/code đơn hàng, customer snapshot và trạng thái/khoảng
+`President`, `DispatchUser`. Payload chứa id/code đơn hàng, customer snapshot và trạng thái/khoảng
 thời gian giao hàng; SignalR/Web Push tiếp tục đi qua outbox hiện có và không đổi contract chuyển phát.
 
 ## Giới hạn hiện tại
