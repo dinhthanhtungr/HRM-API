@@ -192,6 +192,15 @@ internal sealed class SendSampleRequestMessageCommandHandler
             targetUserIds.Add(recipient.EmployeeId);
         }
 
+        var salesGroupAdminRecipients = await _sampleRequestRecipientResolver.ResolveSalesGroupAdminRecipientsAsync(
+            sampleRequest.CompanyId,
+            currentEmployeeId.Value,
+            cancellationToken);
+        foreach (var recipient in salesGroupAdminRecipients)
+        {
+            targetUserIds.Add(recipient.EmployeeId);
+        }
+
         var existingParticipantIds = await _dbContext.InternalConversationParticipants
             .AsNoTracking()
             .Where(x => x.InternalConversationId == conversation.InternalConversationId && x.IsActive)

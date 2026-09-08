@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-09-08
+
+- Added: Admin-only repair command có `dryRun` để đồng bộ group của các `CustomerAssignment` active theo group active của Sale, có company scope và kiểm tra conflict trước khi ghi.
+
 ## 2026-08-13
 
 - Added: composer PLM `POST /api/v1/plm/sample-requests/{sampleRequestId}/sample-trials/{trialId}/customer-feedback` dành cho Sale, cập nhật phản hồi Trial và tạo CRM interaction/reference/follow-up trong một transaction.

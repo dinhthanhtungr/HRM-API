@@ -142,10 +142,18 @@ internal sealed class SampleRequestMessageRecipientResolver : IMessageRecipientR
             currentEmployeeId.Value,
             cancellationToken);
 
+        var salesGroupAdminRecipients = await _sampleRequestRecipientResolver.ResolveSalesGroupAdminRecipientsAsync(
+            companyId.Value,
+            currentEmployeeId.Value,
+            cancellationToken);
+
         var defaultRequiredRecipients = defaultRecipients
             .Where(x => x.Locked && x.EmployeeId != currentEmployeeId.Value)
             .Select(ToMessageRecipientDto)
             .Concat(salesGroupLeaderRecipients
+                .Where(x => x.EmployeeId != currentEmployeeId.Value)
+                .Select(ToMessageRecipientDto))
+            .Concat(salesGroupAdminRecipients
                 .Where(x => x.EmployeeId != currentEmployeeId.Value)
                 .Select(ToMessageRecipientDto))
             .ToList();

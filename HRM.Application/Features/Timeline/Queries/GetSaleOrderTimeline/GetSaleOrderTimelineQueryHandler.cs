@@ -58,11 +58,22 @@ internal sealed class GetSaleOrderTimelineQueryHandler
                 x.CustomerNameSnapshot.Contains(keyword) ||
                 x.CustomerExternalIdSnapshot.Contains(keyword) ||
                 x.CreatedByNavigation!.FullName.Contains(keyword) ||
-                x.MerchandiseOrderDetails.Any(detail =>
-                    detail.Product != null &&
-                    ((detail.Product.ColourCode ?? string.Empty).Contains(keyword) ||
-                     (detail.Product.Name ?? string.Empty).Contains(keyword) ||
-                     (detail.Product.Code ?? string.Empty).Contains(keyword))));
+                x.MerchandiseOrderDetails.Any(d =>
+                    d.Product != null &&
+                    (
+                        (d.Product.ColourCode ?? string.Empty).Contains(keyword) ||
+                        (d.Product.Name ?? string.Empty).Contains(keyword) ||
+                        d.Product.SampleRequests.Any(sampleRequest =>
+                            sampleRequest.IsActive &&
+                            sampleRequest.ExternalId.Contains(keyword)) ||
+                        d.Product.Formulas.Any(formula =>
+                            formula.IsActive &&
+                            EF.Functions.ILike(formula.ExternalId, $"%{keyword}%")) ||
+                        _dbContext.MfgOrderPOs.Any(link =>
+                            link.IsActive &&
+                            link.MerchandiseOrderDetailId == d.MerchandiseOrderDetailId &&
+                            EF.Functions.ILike(link.ProductionOrder.ExternalId, $"%{keyword}%"))) ||
+                    EF.Functions.ILike(d.Formula.ExternalId, $"%{keyword}%")));
         }
 
         var now = _dateTimeProvider.Now;

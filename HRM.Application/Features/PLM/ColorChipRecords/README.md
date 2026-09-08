@@ -75,7 +75,8 @@ PDF giữ nguyên model, quy tắc lấy dữ liệu và source renderer QuestPD
 - `ChipsTanPhuBacNinh3Thresholds`: 3 thresholds.
 
 Nguồn dữ liệu vẫn chọn Sample Request active mới nhất để lấy khách hàng và Color Chip Record active mới nhất theo
-`CreatedDate`. Batch, prepared-by, resin và ngày in giữ nguyên fallback cũ. Logo VietAus/LongGiang/AChau là cùng
+`CreatedDate`. Ngày hiển thị trên PDF lấy từ `RecordDate`; nếu `RecordDate` trống thì fallback sang `CreatedDate`.
+Batch, prepared-by và resin giữ nguyên fallback cũ. Logo VietAus/LongGiang/AChau là cùng
 binary asset với project cũ; chỉ đổi cách resolve path sang `Assets/Pdf` của kiến trúc mới. Query bổ sung company
 scope và endpoint yêu cầu đăng nhập.
 

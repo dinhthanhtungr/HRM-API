@@ -1,8 +1,6 @@
 # PLM Sale Orders
 
-Create SaleOrder thường không nhận `OrderType` từ FE và luôn tạo `OrderType=Merchandise`. Chỉ feature ComplaintReports tạo `OrderType=Complaint`. Handling order complaint hiện chỉ được approve/tạo MFG khi report nguồn đã `Closed` và được chốt `ReplacementProduction`.
-
-Create SaleOrder thường không nhận `OrderType` từ FE và luôn tạo `OrderType=Merchandise`. Chỉ feature ComplaintReports tạo `OrderType=Complaint`. Handling order complaint hiện chỉ được approve/tạo MFG khi report nguồn đã `Closed` và được chốt `ReplacementProduction`.
+Create SaleOrder nhận `OrderType` từ FE: `0` Nội bộ, `1` Hàng hóa, `2` Khiếu nại, `3` Yêu cầu mẫu. `UnitPriceAgreed` không được âm; chỉ đơn Hàng hóa bắt buộc lớn hơn `0`, ba loại còn lại được phép bằng `0`. Formula của mọi loại đơn phải active, cùng Product/công ty và có status `SampleSent` hoặc `Completed`; không kiểm tra liên kết Trial/Sample Request khi validate Formula. Handling order complaint hiện chỉ được approve/tạo MFG khi report nguồn đã `Closed` và được chốt `ReplacementProduction`.
 
 ## Mục đích
 

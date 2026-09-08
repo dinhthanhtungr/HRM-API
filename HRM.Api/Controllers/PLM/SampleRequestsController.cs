@@ -208,16 +208,49 @@ public sealed class SampleRequestsController : ControllerBase
     [HttpGet("{sampleRequestId:guid}")]
     public async Task<IActionResult> GetDetail(
         Guid sampleRequestId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        [FromQuery] bool forSaleOrder = false,
+        [FromQuery] Guid? customerId = null,
+        [FromQuery] HRM.Domain.Enums.Merchadises.OrderType? orderType = null)
     {
         var result = await _sender.Send(new GetSampleRequestDetailQuery
+        {
+            SampleRequestId = sampleRequestId,
+            ForSaleOrder = forSaleOrder,
+            CustomerId = customerId,
+            OrderType = orderType
+        }, cancellationToken);
+
+        if (result is not null)
+        {
+            return Ok(result);
+        }
+
+        var accessStatus = await _sender.Send(new GetSampleRequestDetailAccessQuery
         {
             SampleRequestId = sampleRequestId
         }, cancellationToken);
 
-        return result is null
-            ? NotFound(new { message = "Sample request not found." })
-            : Ok(result);
+        return accessStatus switch
+        {
+            SampleRequestDetailAccessStatus.Forbidden => StatusCode(
+                StatusCodes.Status403Forbidden,
+                new
+                {
+                    code = "sample_request_forbidden",
+                    message = "You do not have permission to read this sample request."
+                }),
+            SampleRequestDetailAccessStatus.InvalidRelationship => UnprocessableEntity(new
+            {
+                code = "sample_request_invalid_relationship",
+                message = "Sample request is not linked to an active customer and product in the current company."
+            }),
+            _ => NotFound(new
+            {
+                code = "sample_request_not_found",
+                message = "Sample request not found."
+            })
+        };
     }
 
     [HttpGet("{sampleRequestId:guid}/history")]

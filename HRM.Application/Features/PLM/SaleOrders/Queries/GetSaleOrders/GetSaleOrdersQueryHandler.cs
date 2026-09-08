@@ -91,7 +91,11 @@ internal sealed class GetSaleOrdersQueryHandler
                         d.Product.Formulas.Any(formula =>
                             formula.IsActive &&
                             formula.CompanyId == companyId &&
-                            EF.Functions.ILike(formula.ExternalId, $"%{keyword}%"))) ||
+                            EF.Functions.ILike(formula.ExternalId, $"%{keyword}%")) ||
+                        _dbContext.MfgOrderPOs.Any(link =>
+                            link.IsActive &&
+                            link.MerchandiseOrderDetailId == d.MerchandiseOrderDetailId &&
+                            EF.Functions.ILike(link.ProductionOrder.ExternalId, $"%{keyword}%"))) ||
                     EF.Functions.ILike(d.Formula.ExternalId, $"%{keyword}%")));
         }
 

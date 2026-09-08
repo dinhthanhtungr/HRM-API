@@ -118,7 +118,7 @@ namespace HRM.Infrastructure.Documents.Pdfs.ColorChipRecords
             var standard = ResinStandardSpecHelper.GetByResinType(resinType);
 
             var batchNo = templateOnly ? "SAMPLE" : m.BatchNo;
-            var dateText = templateOnly ? "" : FormatDate(DateTime.Now);
+            var dateText = templateOnly ? "" : FormatDate(m.Date);
             var customerText = templateOnly ? "" : m.Customer;
             var codeText = templateOnly ? "" : m.Code;
             var colorText = templateOnly ? "" : m.Color;

@@ -2,7 +2,6 @@ using HRM.Application.Abstractions.Commons.ExternalIds;
 using HRM.Application.Abstractions.Persistence.PLM.SaleOrders;
 using HRM.Application.Commons.Models;
 using HRM.Application.Features.PLM.SaleOrders.Dtos;
-using HRM.Application.Features.PLM.Shared.Rules;
 using HRM.Application.Features.Timeline.Dtos;
 using HRM.Application.Features.Timeline.Services;
 using HRM.Domain.Entities.AttachmentSchema;
@@ -10,7 +9,7 @@ using HRM.Domain.Entities.OrderSchema;
 using HRM.Domain.Enums.Category;
 using HRM.Domain.Enums.Logs;
 using HRM.Domain.Enums.Merchadises;
-using HRM.Domain.Enums.SampleRequests;
+using HRM.Domain.Enums.Products;
 using Microsoft.EntityFrameworkCore;
 
 namespace HRM.Application.Features.PLM.SaleOrders.Commands.CreateSaleOrder.Services;
@@ -50,6 +49,11 @@ internal sealed class SaleOrderCreationService
             return OperationResult<MerchandiseOrder>.Fail("CustomerId không hợp lệ.");
         }
 
+        if (!Enum.IsDefined(request.OrderType))
+        {
+            return OperationResult<MerchandiseOrder>.Fail("OrderType không hợp lệ.");
+        }
+
         var details = request.SaleOrderDetails
             .Where(x => x.ProductId != Guid.Empty && x.FormulaId != Guid.Empty && x.ExpectedQuantity > 0)
             .ToList();
@@ -62,6 +66,13 @@ internal sealed class SaleOrderCreationService
         if (details.Any(x => x.UnitPriceAgreed < 0))
         {
             return OperationResult<MerchandiseOrder>.Fail("UnitPriceAgreed không được âm.");
+        }
+
+        if (request.OrderType == OrderType.Merchandise &&
+            details.Any(x => x.UnitPriceAgreed <= 0))
+        {
+            return OperationResult<MerchandiseOrder>.Fail(
+                "Đơn Hàng hóa phải có UnitPriceAgreed lớn hơn 0.");
         }
 
         var managerResult = await ResolveOrderManagerAsync(
@@ -91,46 +102,6 @@ internal sealed class SaleOrderCreationService
             })
             .ToListAsync(cancellationToken);
         var formulaById = formulaRows.ToDictionary(x => x.FormulaId);
-        var isInternalSaleOrder = await _dbContext.Customers
-            .AsNoTracking()
-            .AnyAsync(x =>
-                x.CustomerId == request.CustomerId &&
-                x.CompanyId == companyId &&
-                x.IsActive == true &&
-                x.ExternalId == PLMCustomerRules.InternalCustomerExternalId,
-                cancellationToken);
-        var eligibleSampleRequestStatuses = isInternalSaleOrder
-            ? new[]
-            {
-                SampleRequestStatus.SampleSent.ToString(),
-                SampleRequestStatus.Completed.ToString()
-            }
-            : new[] { SampleRequestStatus.Completed.ToString() };
-        var eligibleSampleRequests = _dbContext.SampleRequests
-            .AsNoTracking()
-            .Where(x =>
-                x.CompanyId == companyId &&
-                (isInternalSaleOrder ||
-                 x.CustomerId == request.CustomerId ||
-                 x.Customer.ExternalId == PLMCustomerRules.InternalCustomerExternalId) &&
-                x.IsActive &&
-                eligibleSampleRequestStatuses.Contains(x.Status));
-        var eligibleSampleRequestFormulaProductPairs = (await eligibleSampleRequests
-            .Where(x => x.FormulaId.HasValue && detailFormulaIds.Contains(x.FormulaId.Value))
-            .Select(x => new { FormulaId = x.FormulaId!.Value, x.ProductId })
-            .ToListAsync(cancellationToken))
-            .Concat(await _dbContext.SampleRequestSampleTrials
-                .AsNoTracking()
-                .Where(x =>
-                    x.IsActive &&
-                    x.FormulaId.HasValue &&
-                    detailFormulaIds.Contains(x.FormulaId.Value) &&
-                    eligibleSampleRequests.Any(sampleRequest =>
-                        sampleRequest.SampleRequestId == x.SampleRequestId))
-                .Select(x => new { FormulaId = x.FormulaId!.Value, x.SampleRequest.ProductId })
-                .ToListAsync(cancellationToken))
-            .Select(x => (x.FormulaId, x.ProductId))
-            .ToHashSet();
 
         foreach (var detail in details)
         {
@@ -146,16 +117,10 @@ internal sealed class SaleOrderCreationService
                     $"Công thức {formula.ExternalId} không thuộc sản phẩm của dòng đơn.");
             }
 
-            if (!eligibleSampleRequestFormulaProductPairs.Contains((detail.FormulaId, detail.ProductId)))
+            if (formula.Status is not (nameof(FormulaStatus.SampleSent) or nameof(FormulaStatus.Completed)))
             {
-                var eligibilityScope = isInternalSaleOrder
-                    ? "của bất kỳ khách hàng nào"
-                    : "của khách hàng hoặc KH_VIETAUS";
-                var requiredStatus = isInternalSaleOrder
-                    ? "gửi mẫu hoặc hoàn thành"
-                    : "hoàn thành";
                 return OperationResult<MerchandiseOrder>.Fail(
-                    $"Công thức {formula.ExternalId} chưa thuộc Sample Request {requiredStatus} {eligibilityScope}, không thể lên đơn hàng.");
+                    $"Công thức {formula.ExternalId} phải ở trạng thái SampleSent hoặc Completed để lên đơn hàng.");
             }
         }
 
@@ -192,7 +157,7 @@ internal sealed class SaleOrderCreationService
                 companyId,
                 DocumentPrefix.DHG.ToString(),
                 cancellationToken),
-            OrderType = OrderType.Merchandise,
+            OrderType = request.OrderType,
             AttachmentCollectionId = attachmentCollectionId,
             CustomerId = request.CustomerId,
             CustomerNameSnapshot = TrimToEmpty(request.CustomerNameSnapshot),

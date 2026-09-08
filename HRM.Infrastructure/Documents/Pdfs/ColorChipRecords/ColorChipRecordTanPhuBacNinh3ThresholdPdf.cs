@@ -151,7 +151,7 @@ namespace HRM.Infrastructure.Documents.Pdfs.ColorChipRecords
                     AddCompactCell(table, templateOnly ? "SAMPLE" : m.BatchNo, center: true, bold: true);
 
                     AddCompactCell(table, "DATE", label: true);
-                    AddCompactCell(table, templateOnly ? "" : FormatDate(DateTime.Now), center: true, bold: true);
+                    AddCompactCell(table, templateOnly ? "" : FormatDate(m.Date), center: true, bold: true);
 
                     AddCompactCell(table, "CODE", label: true);
                     AddCompactCell(table, templateOnly ? "" : m.Code, center: true, bold: true);

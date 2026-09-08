@@ -1,6 +1,10 @@
 using HRM.Application.Commons.Authorization.PLM;
-using HRM.Application.Features.PLM.Boms;
+using HRM.Application.Features.PLM.Boms.Commands.CreateBom;
+using HRM.Application.Features.PLM.Boms.Commands.PatchBomVersion;
+using HRM.Application.Features.PLM.Boms.Commands.ReplaceBomVersion;
 using HRM.Application.Features.PLM.Boms.Dtos;
+using HRM.Application.Features.PLM.Boms.Queries.GetBoms;
+using HRM.Application.Features.PLM.Boms.Queries.GetBomVersion;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;

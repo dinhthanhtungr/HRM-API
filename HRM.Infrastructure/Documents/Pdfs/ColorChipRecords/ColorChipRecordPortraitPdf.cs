@@ -171,7 +171,7 @@ namespace HRM.Infrastructure.Documents.Pdfs.ColorChipRecords
              .Column(col =>
              {
                  AddInfoRowUnderline(col, "BATCH NO", templateOnly ? "SAMPLE" : m.BatchNo);
-                 AddInfoRowUnderline(col, "DATE", templateOnly ? "" : FormatDate(DateTime.Now));
+                 AddInfoRowUnderline(col, "DATE", templateOnly ? "" : FormatDate(m.Date));
                  AddInfoRowUnderline(col, "CUSTOMER", templateOnly ? "" : m.Customer);
                  AddInfoRowUnderline(col, "CODE", templateOnly ? "" : m.Code);
                  AddInfoRowUnderline(col, "COLOR", templateOnly ? "" : m.Color, minHeight: 24);

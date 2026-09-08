@@ -42,13 +42,19 @@ không chứa cost, margin hoặc giá. Sample Request private/KH_VIETAUS tuân 
 ## Danh sách công thức khi lên đơn hàng
 
 ```http
-GET /api/v1/plm/formulas?productId={productId}&isMerchadiseOrder=true
+GET /api/v1/plm/formulas?productId={productId}&customerId={customerId}&orderType={orderType}&isMerchadiseOrder=true
 ```
 
-Khi `isMerchadiseOrder=true`, backend chỉ trả `formulaDevs`: các Formula active của Product đã được
-khách hàng chốt trong một Sample Request active có `Status = Completed` và `SampleRequest.FormulaId`
-trỏ tới Formula đó. `formulaSelects` và `formulaStandard` trả danh sách rỗng vì đây là Manufacturing Formula,
-không phải loại Formula được lưu vào dòng Merchandise Order.
+Khi `isMerchadiseOrder=true`, backend chỉ trả `formulaDevs`; `formulaSelects` và `formulaStandard` trả danh sách
+rỗng vì đây là Manufacturing Formula, không phải loại Formula được lưu vào dòng Merchandise Order. FE phải gửi
+`customerId` của đơn để backend áp đúng rule, không tự suy nội bộ ở client.
+
+- Khi `isMerchadiseOrder=true`, Formula phải active, thuộc Product/công ty hiện tại và có `Formula.Status` là `SampleSent`
+  hoặc `Completed`. Rule này áp dụng giống nhau cho cả bốn `orderType`; API không kiểm tra `SampleRequest.FormulaId`, Trial
+  hay `BatchNo` để quyết định Formula có được chọn hay không.
+
+Không có `customerId` hoặc `orderType`, endpoint vẫn giữ điều kiện tương thích cũ: chỉ `KH_VIETAUS` nhận Formula `SampleSent`;
+client tạo đơn mới phải luôn gửi cả hai field để có kết quả chính xác.
 
 Khi cờ không gửi hoặc bằng `false`, API giữ nguyên hành vi cũ và trả cả ba nhóm Formula. Tên query hiện tại
 giữ nguyên `isMerchadiseOrder` để tương thích client đang dùng.

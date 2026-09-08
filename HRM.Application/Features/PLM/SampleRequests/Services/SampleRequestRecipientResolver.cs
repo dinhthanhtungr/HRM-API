@@ -23,6 +23,7 @@ public sealed class SampleRequestRecipientResolver
         .ToArray();
 
     private static readonly string NormalizedSaleUserRoleName = ApplicationRoles.Sales.SaleUser.ToUpperInvariant();
+    private static readonly string NormalizedSaleAdminRoleName = ApplicationRoles.Sales.SaleAdmin.ToUpperInvariant();
 
     private readonly IInternalMailDbContext _dbContext;
 
@@ -205,6 +206,76 @@ public sealed class SampleRequestRecipientResolver
             .ToListAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Sales gửi yêu cầu phối mẫu sẽ luôn CC SaleAdmin active trong chính group active của sender.
+    /// SaleAdmin là role ứng dụng, còn membership group bảo đảm chỉ CC đúng nhóm nghiệp vụ.
+    /// </summary>
+    public async Task<IReadOnlyList<SampleRequestRecipientDto>> ResolveSalesGroupAdminRecipientsAsync(
+        Guid companyId,
+        Guid senderEmployeeId,
+        CancellationToken cancellationToken)
+    {
+        if (companyId == Guid.Empty || senderEmployeeId == Guid.Empty)
+        {
+            return Array.Empty<SampleRequestRecipientDto>();
+        }
+
+        var senderIsSale = await (
+                from user in _dbContext.Users.AsNoTracking()
+                join userRole in _dbContext.UserRoles.AsNoTracking()
+                    on user.Id equals userRole.UserId
+                join role in _dbContext.Roles.AsNoTracking()
+                    on userRole.RoleId equals role.Id
+                where user.EmployeeId == senderEmployeeId &&
+                      userRole.IsActive &&
+                      ((role.Name != null && role.Name == ApplicationRoles.Sales.SaleUser) ||
+                       (role.NormalizedName != null && role.NormalizedName == NormalizedSaleUserRoleName))
+                select user.Id)
+            .AnyAsync(cancellationToken);
+        if (!senderIsSale)
+        {
+            return Array.Empty<SampleRequestRecipientDto>();
+        }
+
+        return await (
+                from senderMembership in _dbContext.MemberInGroups.AsNoTracking()
+                join groupItem in _dbContext.Groups.AsNoTracking()
+                    on senderMembership.GroupId equals groupItem.GroupId
+                join adminMembership in _dbContext.MemberInGroups.AsNoTracking()
+                    on groupItem.GroupId equals adminMembership.GroupId
+                join admin in _dbContext.Employees.AsNoTracking()
+                    on adminMembership.Profile equals admin.EmployeeId
+                join adminUser in _dbContext.Users.AsNoTracking()
+                    on admin.EmployeeId equals adminUser.EmployeeId
+                join adminUserRole in _dbContext.UserRoles.AsNoTracking()
+                    on adminUser.Id equals adminUserRole.UserId
+                join adminRole in _dbContext.Roles.AsNoTracking()
+                    on adminUserRole.RoleId equals adminRole.Id
+                where senderMembership.Profile == senderEmployeeId &&
+                      senderMembership.IsActive &&
+                      groupItem.CompanyId == companyId &&
+                      adminMembership.IsActive &&
+                      adminMembership.Profile.HasValue &&
+                      admin.EmployeeId != senderEmployeeId &&
+                      admin.CompanyId == companyId &&
+                      admin.IsActive &&
+                      adminUserRole.IsActive &&
+                      ((adminRole.Name != null && adminRole.Name == ApplicationRoles.Sales.SaleAdmin) ||
+                       (adminRole.NormalizedName != null && adminRole.NormalizedName == NormalizedSaleAdminRoleName))
+                orderby admin.FullName
+                select new SampleRequestRecipientDto
+                {
+                    EmployeeId = admin.EmployeeId,
+                    FullName = admin.FullName,
+                    ExternalId = admin.ExternalId,
+                    Source = SampleRequestRecipientSources.SalesGroupAdmin,
+                    Reason = "Sales admin in the sender's group",
+                    Locked = true
+                })
+            .Distinct()
+            .ToListAsync(cancellationToken);
+    }
+
     private async Task<IReadOnlyList<SampleRequestRecipientDto>> ResolveDefaultGroupLeaderRecipientsAsync(
         Guid companyId,
         string? productCategoryExternalId,
@@ -257,4 +328,5 @@ public static class SampleRequestRecipientSources
     public const string Default = "default";
     public const string SilentWatcher = "silent_watcher";
     public const string SalesGroupLeader = "sales_group_leader";
+    public const string SalesGroupAdmin = "sales_group_admin";
 }

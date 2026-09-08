@@ -1,7 +1,9 @@
 using HRM.Application.Abstractions.Persistence.PLM;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Rules;
+using HRM.Application.Features.CRM.CustomerCare.Visibility;
 using HRM.Application.Features.PLM.SampleRequests.Dtos.FormOptions;
+using HRM.Application.Features.PLM.Shared.Rules;
 using HRM.Domain.Enums.SampleRequests;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -13,13 +15,16 @@ internal sealed class GetSampleRequestLookupQueryHandler
 {
     private readonly IPLMReadDbContext _dbContext;
     private readonly ICurrentUser _currentUser;
+    private readonly ICustomerVisibilityService _visibilityService;
 
     public GetSampleRequestLookupQueryHandler(
         IPLMReadDbContext dbContext,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        ICustomerVisibilityService visibilityService)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
+        _visibilityService = visibilityService;
     }
 
     public async Task<IReadOnlyList<SampleRequestLookupItemDto>> Handle(
@@ -28,12 +33,55 @@ internal sealed class GetSampleRequestLookupQueryHandler
     {
         var companyId = _currentUser.CompanyId
             ?? throw new UnauthorizedAccessException("Current user has no CompanyId.");
+        var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+        string? saleOrderCustomerExternalId = null;
+        var canUseAllCustomersFormula = false;
 
-        var query = _dbContext.SampleRequests
-            .Where(x =>
-                x.CompanyId == companyId &&
-                (x.Product.ColourCode != null || x.Product.Name != null))
-            .AsNoTracking()
+        if (request.ForSaleOrder)
+        {
+            if (request.CustomerId is not { } saleOrderCustomerId || saleOrderCustomerId == Guid.Empty)
+            {
+                return Array.Empty<SampleRequestLookupItemDto>();
+            }
+
+            saleOrderCustomerExternalId = await _dbContext.Customers
+                .AsNoTracking()
+                .Where(customer =>
+                    customer.CustomerId == saleOrderCustomerId &&
+                    customer.CompanyId == companyId &&
+                    customer.IsActive == true)
+                .Select(customer => customer.ExternalId)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (saleOrderCustomerExternalId is null)
+            {
+                return Array.Empty<SampleRequestLookupItemDto>();
+            }
+
+            canUseAllCustomersFormula = PLMCustomerRules.CanUseAllCustomersFormula(
+                request.OrderType,
+                PLMCustomerRules.IsInternalCustomerExternalId(saleOrderCustomerExternalId));
+        }
+
+        // KH_VIETAUS chỉ tham gia kết quả khi Sale chủ động tìm keyword,
+        // đồng nhất với endpoint Sample Request Summary.
+        var visibilityScope = canUseAllCustomersFormula
+            ? scope with { HasFullCustomerView = true, CanViewInternalCustomer = true }
+            : request.ForSaleOrder && request.NormalizedKeyword is not null
+                ? scope with { CanViewInternalCustomer = true }
+                : scope;
+
+        var query = _visibilityService.ApplySampleRequestVisibility(
+                _dbContext.SampleRequests
+                    .AsNoTracking()
+                    .Where(x =>
+                        x.Product.IsActive &&
+                        x.Product.CompanyId == companyId &&
+                        x.Customer.IsActive == true &&
+                        x.Customer.CompanyId == companyId &&
+                        (x.Product.ColourCode != null || x.Product.Name != null)),
+                _dbContext.Customers.AsNoTracking(),
+                visibilityScope)
             .AsQueryable();
 
         if (request.IsActive.HasValue)
@@ -56,21 +104,7 @@ internal sealed class GetSampleRequestLookupQueryHandler
             }
             else
             {
-                var saleOrderCustomer = await _dbContext.Customers
-                    .AsNoTracking()
-                    .Where(x =>
-                        (x.CustomerId == customerId ) &&
-                        x.CompanyId == companyId &&
-                        x.IsActive == true)
-                    .Select(x => x.ExternalId)
-                    .FirstOrDefaultAsync(cancellationToken);
-
-                if (saleOrderCustomer is null)
-                {
-                    return Array.Empty<SampleRequestLookupItemDto>();
-                }
-
-                if (!InternalCustomerRules.IsInternalCustomerExternalId(saleOrderCustomer))
+                if (!canUseAllCustomersFormula)
                 {
                     query = query.Where(x =>
                         x.CustomerId == customerId ||
@@ -98,7 +132,12 @@ internal sealed class GetSampleRequestLookupQueryHandler
         {
             var sampleSent = SampleRequestStatus.SampleSent.ToString();
             var completed = SampleRequestStatus.Completed.ToString();
-            query = query.Where(x => x.Status == sampleSent || x.Status == completed);
+            var allowsSampleSent = PLMCustomerRules.AllowsSampleSentFormula(
+                request.OrderType,
+                PLMCustomerRules.IsInternalCustomerExternalId(saleOrderCustomerExternalId));
+            query = allowsSampleSent
+                ? query.Where(x => x.Status == sampleSent || x.Status == completed)
+                : query.Where(x => x.Status == completed);
         }
 
         if (!string.IsNullOrWhiteSpace(request.NormalizedKeyword))

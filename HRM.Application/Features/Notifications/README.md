@@ -387,13 +387,13 @@ Topic không đổi: `SampleRequestSampleSent = 37`, `topicCode = plm.sample_req
 
 Khi Sale xác nhận, backend cập nhật Trial và payload của `InternalMessage` sang `Confirmed`. Luồng xác nhận không publish notification mới và không thay đổi SignalR/Web Push/outbox; FE dùng response hoặc tải lại thread để lấy trạng thái action mới nhất.
 
-## Sample Request Sales-group leader recipients
+## Sample Request Sales-group recipients
 
 Khi current sender có role `SaleUser`, `SampleRequestRecipientResolver` bổ sung toàn bộ leader active
-(`MemberInGroup.IsAdmin = true`) trong đúng group active chứa sender thành recipient thường với
-`source = sales_group_leader`. Rule luôn lọc company, active membership/employee, loại sender và gộp id trùng;
-không dùng role `Leader` toàn công ty. Rule được áp dụng ở preview lẫn `SendSampleRequestMessageCommandHandler`,
-nên leader trở thành participant và nhận notification theo topic Sample Request hiện hữu. Không thêm topic, payload,
+(`MemberInGroup.IsAdmin = true`) và employee có role `SaleAdmin` cùng nằm trong đúng group active chứa sender thành recipient thường với
+`source = sales_group_leader` hoặc `sales_group_admin`. Rule luôn lọc company, active membership/employee, loại sender và gộp id trùng;
+không dùng role `Leader`/`SaleAdmin` toàn công ty. Rule được áp dụng ở preview lẫn `SendSampleRequestMessageCommandHandler`,
+nên các recipient này trở thành participant và nhận notification theo topic Sample Request hiện hữu. Không thêm topic, payload,
 SignalR hay Web Push channel mới: publish tiếp tục đi qua `INotificationService.PublishAsync` và outbox chuẩn.
 
 ## Complaint decision topics

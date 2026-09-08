@@ -14,6 +14,7 @@ using HRM.Application.Features.PLM.Formulas.Services;
 using HRM.Application.Features.PLM.SaleOrders.Commands.CreateSaleOrder.Services;
 using HRM.Application.Features.PLM.SaleOrders.Services;
 using HRM.Application.Features.PLM.ComplaintReports.Services;
+using HRM.Application.Features.PLM.Boms.Services;
 using HRM.Application.Features.CRM.Quotations.Services;
 using HRM.Application.Features.CRM.InteractionSummaries.Services.Automation;
 using HRM.Application.Features.CRM.InteractionSummaries.Services.GenerateCustomerInteractionSummary;
@@ -90,6 +91,7 @@ public static class DependencyInjection
         services.AddScoped<ComplaintEventLogWriter>();
         services.AddScoped<ComplaintDecisionNotificationService>();
         services.AddScoped<ComplaintReportAccessService>();
+        services.AddScoped<BomItemResolver>();
         services.AddScoped<DeliveryOrderLotInventoryService>();
 
         return services;

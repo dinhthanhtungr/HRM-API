@@ -1,7 +1,10 @@
 using HRM.Application.Abstractions.Persistence.PLM;
+using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Authorization.PLM;
 using HRM.Application.Features.PLM.Formulas.Dtos.GetFormulas;
-using HRM.Domain.Enums.SampleRequests;
+using HRM.Domain.Entities.SampleRequestSchema;
+using HRM.Domain.Enums.Merchadises;
+using HRM.Domain.Enums.Products;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -12,13 +15,16 @@ namespace HRM.Application.Features.PLM.Formulas.Queries.GetFormulas
     {
         private readonly IPLMReadDbContext _dbContext;
         private readonly IPLMFieldVisibilityService _fieldVisibility;
+        private readonly ICurrentUser _currentUser;
 
         public GetFormulasQueryHandler(
             IPLMReadDbContext dbContext,
-            IPLMFieldVisibilityService fieldVisibility)
+            IPLMFieldVisibilityService fieldVisibility,
+            ICurrentUser currentUser)
         {
             _dbContext = dbContext;
             _fieldVisibility = fieldVisibility;
+            _currentUser = currentUser;
         }
 
         public async Task<FormulaList> Handle(
@@ -32,6 +38,8 @@ namespace HRM.Application.Features.PLM.Formulas.Queries.GetFormulas
             }
 
             var canViewFormulaPrices = _fieldVisibility.CanViewFormulaPrices();
+            var companyId = _currentUser.CompanyId
+                ?? throw new UnauthorizedAccessException("Current user has no CompanyId.");
 
             if (request.IsMerchadiseOrder)
             {
@@ -40,6 +48,7 @@ namespace HRM.Application.Features.PLM.Formulas.Queries.GetFormulas
                     FormulaDevs = await GetFormulaDevsAsync(
                         request,
                         productId,
+                        companyId,
                         canViewFormulaPrices,
                         cancellationToken)
                 };
@@ -47,9 +56,9 @@ namespace HRM.Application.Features.PLM.Formulas.Queries.GetFormulas
 
             var result = new FormulaList
             {
-                FormulaSelects = await GetFormulaSelectsAsync(request, productId, canViewFormulaPrices, cancellationToken),
-                FormulaDevs = await GetFormulaDevsAsync(request, productId, canViewFormulaPrices, cancellationToken),
-                FormulaStandard = await GetFormulaStandardAsync(request, productId, canViewFormulaPrices, cancellationToken)
+                FormulaSelects = await GetFormulaSelectsAsync(request, productId, companyId, canViewFormulaPrices, cancellationToken),
+                FormulaDevs = await GetFormulaDevsAsync(request, productId, companyId, canViewFormulaPrices, cancellationToken),
+                FormulaStandard = await GetFormulaStandardAsync(request, productId, companyId, canViewFormulaPrices, cancellationToken)
             };
 
             return result;
@@ -79,6 +88,7 @@ namespace HRM.Application.Features.PLM.Formulas.Queries.GetFormulas
         private async Task<IReadOnlyList<FormulaId>> GetFormulaSelectsAsync(
             GetFormulasQuery request,
             Guid productId,
+            Guid companyId,
             bool canViewFormulaPrices,
             CancellationToken cancellationToken)
         {
@@ -88,12 +98,13 @@ namespace HRM.Application.Features.PLM.Formulas.Queries.GetFormulas
                     x.ManufacturingFormulaId.HasValue &&
                     x.ManufacturingFormula != null &&
                     x.ManufacturingFormula.IsActive &&
+                    x.CompanyId == companyId &&
                     x.MfgProductionOrder.IsActive &&
                     x.MfgProductionOrder.ProductId == productId);
 
-            if (request.CompanyId is { } companyId && companyId != Guid.Empty)
+            if (request.CompanyId is { } requestedCompanyId && requestedCompanyId != Guid.Empty)
             {
-                query = query.Where(x => x.CompanyId == companyId);
+                query = query.Where(x => x.CompanyId == requestedCompanyId);
             }
 
             if (!string.IsNullOrWhiteSpace(request.Status))
@@ -152,25 +163,27 @@ namespace HRM.Application.Features.PLM.Formulas.Queries.GetFormulas
         private async Task<IReadOnlyList<FormulaId>> GetFormulaDevsAsync(
             GetFormulasQuery request,
             Guid productId,
+            Guid companyId,
             bool canViewFormulaPrices,
             CancellationToken cancellationToken)
         {
             var query = _dbContext.Formulas
                 .AsNoTracking()
-                .Where(x => x.IsActive && x.ProductId == productId);
+                .Where(x =>
+                    x.IsActive &&
+                    x.CompanyId == companyId &&
+                    x.ProductId == productId);
 
             if (request.IsMerchadiseOrder)
             {
-                query = query.Where(x => x.SampleRequests.Any(sampleRequest =>
-                    sampleRequest.IsActive &&
-                    sampleRequest.ProductId == productId &&
-                    sampleRequest.FormulaId == x.FormulaId &&
-                    sampleRequest.Status == SampleRequestStatus.Completed.ToString()));
+                query = query.Where(formula =>
+                    formula.Status == FormulaStatus.SampleSent.ToString() ||
+                    formula.Status == FormulaStatus.Completed.ToString());
             }
 
-            if (request.CompanyId is { } companyId && companyId != Guid.Empty)
+            if (request.CompanyId is { } requestedCompanyId && requestedCompanyId != Guid.Empty)
             {
-                query = query.Where(x => x.CompanyId == companyId);
+                query = query.Where(x => x.CompanyId == requestedCompanyId);
             }
 
             if (!string.IsNullOrWhiteSpace(request.Status))
@@ -213,6 +226,7 @@ namespace HRM.Application.Features.PLM.Formulas.Queries.GetFormulas
         private async Task<IReadOnlyList<FormulaId>> GetFormulaStandardAsync(
             GetFormulasQuery request,
             Guid productId,
+            Guid companyId,
             bool canViewFormulaPrices,
             CancellationToken cancellationToken)
         {
@@ -222,11 +236,12 @@ namespace HRM.Application.Features.PLM.Formulas.Queries.GetFormulas
                     x.ProductId == productId &&
                     x.ManufacturingFormulaId.HasValue &&
                     x.ManufacturingFormula != null &&
-                    x.ManufacturingFormula.IsActive);
+                    x.ManufacturingFormula.IsActive &&
+                    x.CompanyId == companyId);
 
-            if (request.CompanyId is { } companyId && companyId != Guid.Empty)
+            if (request.CompanyId is { } requestedCompanyId && requestedCompanyId != Guid.Empty)
             {
-                query = query.Where(x => x.CompanyId == companyId);
+                query = query.Where(x => x.CompanyId == requestedCompanyId);
             }
 
             if (!string.IsNullOrWhiteSpace(request.Status))

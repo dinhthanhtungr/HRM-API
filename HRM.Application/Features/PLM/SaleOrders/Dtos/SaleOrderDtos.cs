@@ -47,6 +47,7 @@ public sealed record CreateSaleOrderRequest
     public Guid MerchandiseOrderId { get; init; }
     public Guid AttachmentCollectionId { get; init; }
     public Guid CustomerId { get; init; }
+    public OrderType OrderType { get; init; } = OrderType.Merchandise;
     public string? CustomerNameSnapshot { get; init; }
     public string? CustomerExternalIdSnapshot { get; init; }
     public string? PhoneSnapshot { get; init; }

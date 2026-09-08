@@ -1,4 +1,5 @@
 using HRM.Application.Features.PLM.SampleRequests.Dtos.FormOptions;
+using HRM.Domain.Enums.Merchadises;
 using MediatR;
 
 namespace HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestLookup;
@@ -16,6 +17,7 @@ public sealed class GetSampleRequestLookupQuery : IRequest<IReadOnlyList<SampleR
     /// Khi CustomerId là KH_VIETAUS, lookup trả các Sample Request hợp lệ của mọi khách trong công ty hiện tại.
     /// </summary>
     public bool ForSaleOrder { get; init; }
+    public OrderType? OrderType { get; init; }
     public bool? IsActive { get; init; } = true;
     public int Take { get; init; } = 20;
 

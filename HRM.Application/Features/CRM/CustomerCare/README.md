@@ -1,5 +1,15 @@
 # Customer CRM
 
+## Repair CustomerAssignment group
+
+Admin có thể đồng bộ `GroupId` của toàn bộ `CustomerAssignment` active đang thuộc một Sale về group active của Sale đó trong công ty hiện tại:
+
+```http
+POST /api/v1/crm/customer-assignments/repair-group/{employeeId}?dryRun=true
+```
+
+`dryRun` mặc định là `true` và chỉ trả số assignment active, số đã đúng, số cần sửa, conflict cùng tối đa 100 dòng preview. Chỉ `dryRun=false` mới ghi `GroupId`, `UpdatedBy`, `UpdatedDate`. Nếu Sale thuộc nhiều group active thì bắt buộc truyền `targetGroupId`; backend xác nhận Sale thật sự thuộc group đó và group cùng công ty. Nếu một customer đã có assignment active tại target group, lần chạy thật bị chặn toàn bộ để không vi phạm unique key hoặc tự ý gộp ownership.
+
 Mỗi lần tạo, lưu nội dung hoặc hoàn thành ComplaintReport, PLM tạo một `CustomerInteraction` loại `Complaint`. Interaction tham chiếu report và mọi MerchandiseOrder nguồn để lịch sử khách hàng không nhân bản nội dung nhưng vẫn truy vết đầy đủ.
 
 ## Mục đích
