@@ -1,5 +1,6 @@
 using HRM.Application.Commons.Authorization.PLM;
-using HRM.Application.Features.PLM.PrintLabels.Commands.CreatePrintLabelCatalog;
+using HRM.Application.Features.PLM.PrintLabels.Commands.CreatePrintLabelLogo;
+using HRM.Application.Features.PLM.PrintLabels.Commands.CreatePrintLabelTemplate;
 using HRM.Application.Features.PLM.PrintLabels.Queries.GetTemplateSelection;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;

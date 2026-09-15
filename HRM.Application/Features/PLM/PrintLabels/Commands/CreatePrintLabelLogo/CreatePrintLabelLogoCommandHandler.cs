@@ -6,7 +6,7 @@ using HRM.Domain.Entities.PrintectSchema;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
-namespace HRM.Application.Features.PLM.PrintLabels.Commands.CreatePrintLabelCatalog;
+namespace HRM.Application.Features.PLM.PrintLabels.Commands.CreatePrintLabelLogo;
 
 internal sealed class CreatePrintLabelLogoCommandHandler
     : IRequestHandler<CreatePrintLabelLogoCommand, OperationResult<Guid>>

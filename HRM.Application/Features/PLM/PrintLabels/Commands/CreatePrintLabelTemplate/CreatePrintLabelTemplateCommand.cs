@@ -2,14 +2,7 @@ using HRM.Application.Commons.Models;
 using HRM.Application.Features.PLM.PrintLabels.Dtos;
 using MediatR;
 
-namespace HRM.Application.Features.PLM.PrintLabels.Commands.CreatePrintLabelCatalog;
-
-public sealed class CreatePrintLabelLogoCommand : IRequest<OperationResult<Guid>>
-{
-    public string Code { get; init; } = string.Empty;
-    public string Name { get; init; } = string.Empty;
-    public Guid AttachmentCollectionId { get; init; }
-}
+namespace HRM.Application.Features.PLM.PrintLabels.Commands.CreatePrintLabelTemplate;
 
 public sealed class CreatePrintLabelTemplateCommand : IRequest<OperationResult<Guid>>
 {
