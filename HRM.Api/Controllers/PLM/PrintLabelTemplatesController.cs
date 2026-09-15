@@ -13,7 +13,11 @@ namespace HRM.Api.Controllers.PLM;
 public sealed class PrintLabelTemplatesController : ControllerBase
 {
     private readonly ISender _sender;
-    public PrintLabelTemplatesController(ISender sender) => _sender = sender;
+
+    public PrintLabelTemplatesController(ISender sender)
+    {
+        _sender = sender;
+    }
 
     [HttpGet("{printLabelTemplateId:guid}/selection")]
     public async Task<IActionResult> GetSelection(Guid printLabelTemplateId, CancellationToken ct)
@@ -24,17 +28,25 @@ public sealed class PrintLabelTemplatesController : ControllerBase
 
     [HttpPost]
     [Authorize(Policy = PlmPolicies.ManageCustomerLabels)]
-    public async Task<IActionResult> CreateTemplate([FromBody] CreatePrintLabelTemplateCommand command, CancellationToken ct)
+    public async Task<IActionResult> CreateTemplate(
+        [FromBody] CreatePrintLabelTemplateCommand command,
+        CancellationToken ct)
     {
         var result = await _sender.Send(command, ct);
-        return result.Success ? CreatedAtAction(nameof(GetSelection), new { printLabelTemplateId = result.Data }, result) : BadRequest(result);
+        return result.Success
+            ? CreatedAtAction(nameof(GetSelection), new { printLabelTemplateId = result.Data }, result)
+            : BadRequest(result);
     }
 
     [HttpPost("logos")]
     [Authorize(Policy = PlmPolicies.ManageCustomerLabels)]
-    public async Task<IActionResult> CreateLogo([FromBody] CreatePrintLabelLogoCommand command, CancellationToken ct)
+    public async Task<IActionResult> CreateLogo(
+        [FromBody] CreatePrintLabelLogoCommand command,
+        CancellationToken ct)
     {
         var result = await _sender.Send(command, ct);
-        return result.Success ? Ok(result) : BadRequest(result);
+        return result.Success
+            ? Ok(result)
+            : BadRequest(result);
     }
 }
