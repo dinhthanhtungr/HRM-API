@@ -35,31 +35,15 @@ CREATE TABLE IF NOT EXISTS printect."PrintLabelElements" (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     "printLabelTemplateId" uuid NOT NULL REFERENCES printect."PrintLabelTemplates"(id) ON DELETE CASCADE,
     "lineNo" integer NOT NULL,
-    "elementType" citext NOT NULL,
-    "fieldKey" citext NULL,
-    "displayName" varchar(200) NULL,
-    "valueSource" citext NULL,
+    "fieldKey" citext NOT NULL,
     "defaultValue" text NULL,
-    "prefixText" varchar(200) NULL,
-    "isRequired" boolean NOT NULL DEFAULT false,
-    "isEditableBySales" boolean NOT NULL DEFAULT false,
     "isActive" boolean NOT NULL DEFAULT true,
-    x integer NOT NULL DEFAULT 0,
-    y integer NOT NULL DEFAULT 0,
-    width integer NOT NULL DEFAULT 0,
-    height integer NOT NULL DEFAULT 0,
-    "fontName" varchar(100) NULL,
-    "fontSize" numeric(8,2) NULL,
-    alignment citext NULL,
-    bold boolean NOT NULL DEFAULT false,
-    italic boolean NOT NULL DEFAULT false,
     CONSTRAINT "CK_PrintLabelElements_LineNo" CHECK ("lineNo" > 0),
     CONSTRAINT "UX_PrintLabelElements_Template_Line" UNIQUE ("printLabelTemplateId", "lineNo")
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS "UX_PrintLabelElements_Template_Field"
-    ON printect."PrintLabelElements"("printLabelTemplateId", "fieldKey")
-    WHERE "fieldKey" IS NOT NULL;
+    ON printect."PrintLabelElements"("printLabelTemplateId", "fieldKey");
 
 CREATE TABLE IF NOT EXISTS printect."PrintLabelTemplateLogos" (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -3,18 +3,8 @@ namespace HRM.Application.Features.PLM.PrintLabels.Dtos;
 public sealed class PrintLabelElementRequest
 {
     public int LineNo { get; init; }
-    public string ElementType { get; init; } = string.Empty;
-    public string? FieldKey { get; init; }
-    public string? DisplayName { get; init; }
-    public string? ValueSource { get; init; }
+    public string FieldKey { get; init; } = string.Empty;
     public string? DefaultValue { get; init; }
-    public string? PrefixText { get; init; }
-    public bool IsRequired { get; init; }
-    public bool IsEditableBySales { get; init; }
-    public int X { get; init; }
-    public int Y { get; init; }
-    public int Width { get; init; }
-    public int Height { get; init; }
 }
 
 public sealed class PrintLabelTemplateSelectionDto
@@ -42,12 +32,6 @@ public sealed class PrintLabelElementDto
 {
     public Guid Id { get; init; }
     public int LineNo { get; init; }
-    public string ElementType { get; init; } = string.Empty;
-    public string? FieldKey { get; init; }
-    public string? DisplayName { get; init; }
-    public string? ValueSource { get; init; }
+    public string FieldKey { get; init; } = string.Empty;
     public string? DefaultValue { get; init; }
-    public string? PrefixText { get; init; }
-    public bool IsRequired { get; init; }
-    public bool IsEditableBySales { get; init; }
 }

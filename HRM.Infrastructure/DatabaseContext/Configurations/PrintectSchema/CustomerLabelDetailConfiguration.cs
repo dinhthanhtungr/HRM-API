@@ -51,7 +51,7 @@ namespace HRM.Infrastructure.DatabaseContext.Configurations.PrintectSchema
                 .HasConstraintName("FK_CustomerLabelDetails_Header");
 
             entity.HasOne(x => x.PrintLabelElement)
-                .WithMany(x => x.CustomerLabelDetails)
+                .WithMany()
                 .HasForeignKey(x => x.PrintLabelElementId)
                 .OnDelete(DeleteBehavior.SetNull)
                 .HasConstraintName("FK_CustomerLabelDetails_PrintLabelElement");
