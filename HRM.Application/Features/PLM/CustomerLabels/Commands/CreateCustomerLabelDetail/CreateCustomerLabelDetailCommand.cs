@@ -12,5 +12,6 @@ public sealed class CreateCustomerLabelDetailCommand : IRequest<OperationResult<
     public int LineNo { get; init; }
     public string FieldKey { get; init; } = string.Empty;
     public string? FieldValue { get; init; }
+    public Guid? PrintLabelElementId { get; init; }
     public bool IsActive { get; init; } = true;
 }

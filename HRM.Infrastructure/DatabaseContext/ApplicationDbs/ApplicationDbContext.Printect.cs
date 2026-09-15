@@ -16,6 +16,10 @@ namespace HRM.Infrastructure.DatabaseContext.ApplicationDbs
         public virtual DbSet<LabelTemplate> LabelTemplates { get; set; } = default!;
         public virtual DbSet<CustomerLabelHeader> CustomerLabelHeaders { get; set; } = default!;
         public virtual DbSet<CustomerLabelDetail> CustomerLabelDetails { get; set; } = default!;
+        public virtual DbSet<PrintLabelTemplate> PrintLabelTemplates { get; set; } = default!;
+        public virtual DbSet<PrintLabelElement> PrintLabelElements { get; set; } = default!;
+        public virtual DbSet<PrintLabelLogo> PrintLabelLogos { get; set; } = default!;
+        public virtual DbSet<PrintLabelTemplateLogo> PrintLabelTemplateLogos { get; set; } = default!;
 
     }
 }

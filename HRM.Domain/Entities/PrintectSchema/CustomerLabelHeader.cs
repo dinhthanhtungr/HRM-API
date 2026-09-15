@@ -19,6 +19,10 @@ namespace HRM.Domain.Entities.PrintectSchema
 
         public string? LabelType { get; set; }
 
+        // Mẫu và logo mặc định cho cấu hình riêng theo khách hàng + ColorCode.
+        public Guid? PrintLabelTemplateId { get; set; }
+        public Guid? DefaultPrintLabelLogoId { get; set; }
+
         public Guid? CreatedBy { get; set; }
         public Guid? UpdatedBy { get; set; }
 
@@ -31,6 +35,8 @@ namespace HRM.Domain.Entities.PrintectSchema
         public virtual Customer Customer { get; set; } = null!;
         public virtual Employee? CreatedByNavigation { get; set; }
         public virtual Employee? UpdatedByNavigation { get; set; }
+        public virtual PrintLabelTemplate? PrintLabelTemplate { get; set; }
+        public virtual PrintLabelLogo? DefaultPrintLabelLogo { get; set; }
 
         public virtual ICollection<CustomerLabelDetail> Details { get; set; } = new List<CustomerLabelDetail>();
     }

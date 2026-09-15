@@ -3,6 +3,7 @@ namespace HRM.Application.Features.PLM.CustomerLabels.Dtos;
 public sealed class CustomerLabelDetailDto
 {
     public Guid Id { get; init; }
+    public Guid? PrintLabelElementId { get; init; }
     public int LineNo { get; init; }
     public string FieldKey { get; init; } = string.Empty;
     public string? FieldValue { get; init; }
@@ -17,6 +18,8 @@ public sealed class CustomerLabelDto
     public Guid CustomerId { get; init; }
     public string? CustomerExternalId { get; init; }
     public string? LabelType { get; init; }
+    public Guid? PrintLabelTemplateId { get; init; }
+    public Guid? DefaultPrintLabelLogoId { get; init; }
     public bool IsActive { get; init; }
     public DateTime CreatedDate { get; init; }
     public DateTime? UpdatedDate { get; init; }

@@ -21,5 +21,7 @@ public enum AttachmentSlot
     MaterialMsds = 13,
     MaterialCoa = 14,
     MaterialCertificate = 15,
-    MaterialOther = 16
+    MaterialOther = 16,
+    PrintLabelTemplate = 17,
+    PrintLabelLogo = 18
 }
