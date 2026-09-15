@@ -1,6 +1,6 @@
 using HRM.Application.Commons.Authorization.PLM;
 using HRM.Application.Features.PLM.PrintLabels.Commands.CreatePrintLabelCatalog;
-using HRM.Application.Features.PLM.PrintLabels.Queries.GetPrintLabelTemplateSelection;
+using HRM.Application.Features.PLM.PrintLabels.Queries.GetTemplateSelection;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -18,7 +18,7 @@ public sealed class PrintLabelTemplatesController : ControllerBase
     [HttpGet("{printLabelTemplateId:guid}/selection")]
     public async Task<IActionResult> GetSelection(Guid printLabelTemplateId, CancellationToken ct)
     {
-        var result = await _sender.Send(new GetPrintLabelTemplateSelectionQuery(printLabelTemplateId), ct);
+        var result = await _sender.Send(new GetTemplateSelectionQuery(printLabelTemplateId), ct);
         return result is null ? NotFound() : Ok(result);
     }
 
