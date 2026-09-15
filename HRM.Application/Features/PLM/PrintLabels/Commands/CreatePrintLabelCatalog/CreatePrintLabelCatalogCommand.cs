@@ -13,7 +13,7 @@ public sealed class CreatePrintLabelLogoCommand : IRequest<OperationResult<Guid>
 
 public sealed class CreatePrintLabelTemplateCommand : IRequest<OperationResult<Guid>>
 {
-    public string Code { get; init; } = string.Empty;
+    public string ExternalId { get; init; } = string.Empty;
     public string Name { get; init; } = string.Empty;
     public string? LabelType { get; init; }
     public string? Instructions { get; init; }
