@@ -1,6 +1,6 @@
 using HRM.Application.Abstractions.Persistence.CRM.CustomerCare;
 using HRM.Application.Abstractions.Persistence.PLM.SaleOrders;
-using HRM.Application.Commons.Authorization.PLM;
+using HRM.Application.Features.PLM.Shared.Authorization;
 using HRM.Application.Features.CRM.CustomerCare.Visibility;
 using HRM.Application.Features.CRM.Quotations.Dtos;
 using HRM.Application.Features.CRM.Quotations.Services;
@@ -173,6 +173,7 @@ internal sealed class GetLastSaleOrderByCustomerQueryHandler
                 Source = "ApprovedStandardPrice",
                 Currency = currency,
                 SuggestedUnitPrice = approvedPricing.StandardSellingPrice,
+                PublisherNote = approvedPricing.PublisherNote,
                 ProductPricingVersionId = approvedPricing.ProductPricingVersionId,
                 ProductPricingVersion = approvedPricing.Version,
                 ApprovedAt = approvedPricing.ApprovedAt,

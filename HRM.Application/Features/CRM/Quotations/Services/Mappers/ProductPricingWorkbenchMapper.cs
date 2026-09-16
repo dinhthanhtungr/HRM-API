@@ -84,6 +84,9 @@ internal static class ProductPricingWorkbenchMapper
             PricingHealthStatus = health?.Status ?? ProductPricingHealthStatus.Unknown,
             RequiresPricingAction = health?.RequiresPricingAction ?? false,
             PricingReviewDueDate = health?.PricingReviewDueDate,
+            StandardPriceState = health?.StandardPriceState ?? ProductStandardPriceState.Missing,
+            HasFormulaConfirmationPending = health?.HasFormulaConfirmationPending ?? false,
+            IsPricingReviewExpired = health?.IsReviewExpired ?? false,
             WaitingQuotationCount = waitingRequests
                 .Select(x => x.QuotationId)
                 .Distinct()
@@ -113,6 +116,7 @@ internal static class ProductPricingWorkbenchMapper
             UsedDefaultManufacturingCost = effectivePricing?.UsedDefaultManufacturingCost ??
                 source?.UsedDefaultManufacturingCost == true,
             StandardSellingPrice = storedStandardSellingPrice ?? realtimeStandardSellingPrice,
+            PublisherNote = approved?.PublisherNote,
             RealtimeStandardSellingPrice = realtimeStandardSellingPrice,
             StandardSellingPriceDifference = standardSellingPriceDifference,
             StandardSellingPriceDifferencePercent = standardSellingPriceDifferencePercent,

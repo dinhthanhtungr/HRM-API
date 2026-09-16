@@ -35,7 +35,7 @@ public sealed class CustomerLabelsController : ControllerBase
     }
 
     [HttpPost]
-    [Authorize(Policy = PlmPolicies.EditProductTechnicalInfo)]
+    [Authorize(Policy = PlmPolicies.ManageCustomerLabels)]
     public async Task<IActionResult> Create([FromBody] CreateCustomerLabelCommand command, CancellationToken cancellationToken)
     {
         var result = await _sender.Send(command, cancellationToken);
@@ -45,7 +45,7 @@ public sealed class CustomerLabelsController : ControllerBase
     }
 
     [HttpPatch("{customerLabelHeaderId:guid}")]
-    [Authorize(Policy = PlmPolicies.EditProductTechnicalInfo)]
+    [Authorize(Policy = PlmPolicies.ManageCustomerLabels)]
     public async Task<IActionResult> Patch(
         Guid customerLabelHeaderId,
         [FromBody] PatchCustomerLabelCommand command,
@@ -57,7 +57,7 @@ public sealed class CustomerLabelsController : ControllerBase
     }
 
     [HttpPost("{customerLabelHeaderId:guid}/details")]
-    [Authorize(Policy = PlmPolicies.EditProductTechnicalInfo)]
+    [Authorize(Policy = PlmPolicies.ManageCustomerLabels)]
     public async Task<IActionResult> CreateDetail(
         Guid customerLabelHeaderId,
         [FromBody] CreateCustomerLabelDetailCommand command,
@@ -69,7 +69,7 @@ public sealed class CustomerLabelsController : ControllerBase
     }
 
     [HttpPatch("{customerLabelHeaderId:guid}/details/{customerLabelDetailId:guid}")]
-    [Authorize(Policy = PlmPolicies.EditProductTechnicalInfo)]
+    [Authorize(Policy = PlmPolicies.ManageCustomerLabels)]
     public async Task<IActionResult> PatchDetail(
         Guid customerLabelHeaderId,
         Guid customerLabelDetailId,

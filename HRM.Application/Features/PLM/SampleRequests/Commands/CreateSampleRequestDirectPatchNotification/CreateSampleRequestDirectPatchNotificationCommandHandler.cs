@@ -118,7 +118,7 @@ internal sealed class CreateSampleRequestDirectPatchNotificationCommandHandler
             IsUrgent = request.IsUrgent,
             ExtraRecipientEmployeeIds = request.RecipientEmployeeIds,
             TopicOverride = TopicNotifications.SampleRequestDirectPatchNotified,
-            TitleOverride = "Sale đã điều chỉnh yêu cầu phối mẫu",
+            TitleOverride = request.TitleOverride ?? "Sale đã điều chỉnh yêu cầu phối mẫu",
             DirectPatchNotification = new SampleRequestDirectPatchNotificationPayload
             {
                 IdempotencyKey = request.IdempotencyKey,

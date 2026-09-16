@@ -17,6 +17,7 @@ public sealed class PatchCustomerLabelDetailCommand : IRequest<OperationResult<S
     public int? LineNo { get; init; }
     public string? FieldKey { get; init; }
     public string? FieldValue { get; init; }
+    public Guid? PrintLabelElementId { get; init; }
     public bool? IsActive { get; init; }
     public bool ClearFieldValue { get; init; }
 }

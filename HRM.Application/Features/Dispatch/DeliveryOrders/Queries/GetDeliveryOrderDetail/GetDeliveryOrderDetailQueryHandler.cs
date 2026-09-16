@@ -1,5 +1,6 @@
 using HRM.Application.Abstractions.Persistence.Dispatch;
 using HRM.Application.Abstractions.Security;
+using HRM.Application.Commons.Authorization;
 using HRM.Application.Features.Dispatch.Deliverers.Dtos;
 using HRM.Application.Features.Dispatch.DeliveryOrders.Dtos;
 using MediatR;
@@ -12,13 +13,16 @@ internal sealed class GetDeliveryOrderDetailQueryHandler
 {
     private readonly IDispatchReadDbContext _dbContext;
     private readonly ICurrentUser _currentUser;
+    private readonly ICurrentUserPermissionService _permissionService;
 
     public GetDeliveryOrderDetailQueryHandler(
         IDispatchReadDbContext dbContext,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        ICurrentUserPermissionService permissionService)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
+        _permissionService = permissionService;
     }
 
     public async Task<DeliveryOrderDetailDto?> Handle(
@@ -33,7 +37,7 @@ internal sealed class GetDeliveryOrderDetailQueryHandler
             return null;
         }
 
-        var canViewCost = DeliveryOrderCostVisibilityRules.CanViewCost(_currentUser);
+        var canViewCost = DeliveryOrderCostVisibilityRules.CanViewCost(_permissionService);
         var canManage = DeliveryOrderAccessRules.CanManage(_currentUser);
 
         return await _dbContext.DeliveryOrders

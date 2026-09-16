@@ -101,16 +101,16 @@ internal sealed class GetDashboardDrilldownQueryHandler
         {
             var keyword = request.NormalizedKeyword;
             query = query.Where(x =>
-                x.ExternalId.Contains(keyword) ||
-                x.Status.Contains(keyword) ||
-                x.RequestType.Contains(keyword) ||
-                x.Customer.CustomerName.Contains(keyword) ||
-                x.Customer.ExternalId.Contains(keyword) ||
-                (x.Product.Name ?? string.Empty).Contains(keyword) ||
-                (x.Product.ColourCode ?? string.Empty).Contains(keyword) ||
-                (x.Product.Code ?? string.Empty).Contains(keyword) ||
+                EF.Functions.ILike(x.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike(x.Status, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike(x.RequestType, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike(x.Customer.CustomerName, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike(x.Customer.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike((x.Product.Name ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike((x.Product.ColourCode ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike((x.Product.Code ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
                 (x.Formula != null && EF.Functions.ILike(x.Formula.ExternalId, $"%{keyword}%")) ||
-                x.ManagerByNavigation.FullName.Contains(keyword));
+                EF.Functions.ILike(x.ManagerByNavigation.FullName, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter));
         }
 
         var totalCount = await query.CountAsync(cancellationToken);
@@ -209,15 +209,15 @@ internal sealed class GetDashboardDrilldownQueryHandler
         {
             var keyword = request.NormalizedKeyword;
             query = query.Where(x =>
-                x.ExternalId.Contains(keyword) ||
-                x.Status.Contains(keyword) ||
-                (x.CustomerNameSnapshot ?? string.Empty).Contains(keyword) ||
-                (x.CustomerExternalIdSnapshot ?? string.Empty).Contains(keyword) ||
-                (x.ProductNameSnapshot ?? string.Empty).Contains(keyword) ||
-                (x.ProductExternalIdSnapshot ?? string.Empty).Contains(keyword) ||
-                (x.Requirement ?? string.Empty).Contains(keyword) ||
+                EF.Functions.ILike(x.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike(x.Status, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike((x.CustomerNameSnapshot ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike((x.CustomerExternalIdSnapshot ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike((x.ProductNameSnapshot ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike((x.ProductExternalIdSnapshot ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike((x.Requirement ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
                 (x.CreatedByNavigation != null &&
-                    x.CreatedByNavigation.FullName.Contains(keyword)));
+                    EF.Functions.ILike(x.CreatedByNavigation.FullName, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter)));
         }
 
         var totalCount = await query.CountAsync(cancellationToken);
@@ -318,15 +318,15 @@ internal sealed class GetDashboardDrilldownQueryHandler
         {
             var keyword = request.NormalizedKeyword;
             query = query.Where(x =>
-                x.ExternalId.Contains(keyword) ||
-                x.Status.Contains(keyword) ||
-                x.PONo.Contains(keyword) ||
-                x.CustomerNameSnapshot.Contains(keyword) ||
-                x.CustomerExternalIdSnapshot.Contains(keyword) ||
-                x.ManagerByNameSnapshot.Contains(keyword) ||
+                EF.Functions.ILike(x.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike(x.Status, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike(x.PONo, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike(x.CustomerNameSnapshot, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike(x.CustomerExternalIdSnapshot, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike(x.ManagerByNameSnapshot, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
                 x.MerchandiseOrderDetails.Any(detail =>
-                    detail.ProductExternalIdSnapshot.Contains(keyword) ||
-                    detail.ProductNameSnapshot.Contains(keyword) ||
+                    EF.Functions.ILike(detail.ProductExternalIdSnapshot, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                    EF.Functions.ILike(detail.ProductNameSnapshot, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
                     EF.Functions.ILike(detail.FormulaExternalIdSnapshot, $"%{keyword}%")));
         }
 

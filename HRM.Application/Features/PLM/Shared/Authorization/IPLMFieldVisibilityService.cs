@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace HRM.Application.Commons.Authorization.PLM
+namespace HRM.Application.Features.PLM.Shared.Authorization
 {
     public interface IPLMFieldVisibilityService
     {
@@ -25,5 +25,10 @@ namespace HRM.Application.Commons.Authorization.PLM
         /// </summary>
         /// <returns></returns>
         bool CanViewProductTechnicalInfo();
+
+        /// <summary>
+        /// Kiểm tra có được xem chi tiết rà giá NVL, gồm nguồn giá, lịch sử cập nhật và danh sách NCC hay không.
+        /// </summary>
+        bool CanViewMaterialPriceReviewDetails();
     }
 }

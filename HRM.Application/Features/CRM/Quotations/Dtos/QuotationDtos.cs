@@ -146,6 +146,8 @@ public sealed class QuotationListItemDto
     public DateTime? ValidUntil { get; init; }
     public DateTime? SentDate { get; init; }
     public int LineCount { get; init; }
+    /// <summary>Aggregate standard-price review state across active quotation lines.</summary>
+    public QuotationStandardPriceReviewDto StandardPriceReview { get; set; } = new();
 }
 
 public sealed class QuotationDetailDto
@@ -196,6 +198,8 @@ public sealed class QuotationLineDto
 
     public bool HasApprovedPricingAvailable { get; init; }
     public bool HasNewerPricingVersion { get; init; }
+    /// <summary>Live state of this product's standard price; it does not alter the quotation snapshot.</summary>
+    public QuotationStandardPriceReviewDto StandardPriceReview { get; set; } = new();
 
     public string ProductExternalId { get; init; } = string.Empty;
     public string ProductName { get; init; } = string.Empty;
@@ -225,6 +229,18 @@ public sealed class QuotationLineDto
 
     public string? Note { get; init; }
     public int SortOrder { get; init; }
+}
+
+public sealed class QuotationStandardPriceReviewDto
+{
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public ProductStandardPriceState State { get; init; }
+    public bool RequiresPricingAction { get; init; }
+    public bool HasFormulaConfirmationPending { get; init; }
+    public bool IsPricingReviewExpired { get; init; }
+    public DateTime? PricingReviewDueDate { get; init; }
+    /// <summary>Only populated by the quotation list aggregate, never by a line.</summary>
+    public int AffectedLineCount { get; init; }
 }
 
 public sealed class QuotationLinePriceTierDto

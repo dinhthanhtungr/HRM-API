@@ -12,7 +12,7 @@ internal static class SampleRequestMessageRules
                PLMCustomerRules.IsInternalCustomerExternalId(customerExternalId);
     }
 
-    private static bool IsInternalRequestType(string? requestType)
+    internal static bool IsInternalRequestType(string? requestType)
     {
         if (string.IsNullOrWhiteSpace(requestType))
         {

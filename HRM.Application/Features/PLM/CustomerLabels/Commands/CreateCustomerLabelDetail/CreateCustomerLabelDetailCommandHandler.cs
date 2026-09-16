@@ -31,10 +31,19 @@ internal sealed class CreateCustomerLabelDetailCommandHandler : IRequestHandler<
             ?? CustomerLabelRules.ValidateOptionalText(request.FieldValue, "FieldValue", CustomerLabelRules.MaxFieldValueLength, false);
         if (validationError is not null) return OperationResult<SaveCustomerLabelDetailResultDto>.Fail(validationError);
 
-        var headerExists = await _dbContext.CustomerLabelHeaders.AsNoTracking().AnyAsync(header =>
+        var header = await _dbContext.CustomerLabelHeaders.AsNoTracking().FirstOrDefaultAsync(header =>
             header.Id == request.CustomerLabelHeaderId && header.Product.CompanyId == companyId && header.Customer.CompanyId == companyId,
             cancellationToken);
-        if (!headerExists) return OperationResult<SaveCustomerLabelDetailResultDto>.Fail("Customer label was not found or is outside the current company.");
+        if (header is null) return OperationResult<SaveCustomerLabelDetailResultDto>.Fail("Customer label was not found or is outside the current company.");
+        if (request.PrintLabelElementId.HasValue)
+        {
+            if (!header.PrintLabelTemplateId.HasValue)
+                return OperationResult<SaveCustomerLabelDetailResultDto>.Fail("PrintLabelElementId requires a print label template on the customer label.");
+            var elementExists = await _dbContext.PrintLabelElements.AsNoTracking().AnyAsync(element =>
+                element.Id == request.PrintLabelElementId.Value && element.PrintLabelTemplateId == header.PrintLabelTemplateId.Value,
+                cancellationToken);
+            if (!elementExists) return OperationResult<SaveCustomerLabelDetailResultDto>.Fail("Print label element does not belong to the selected template.");
+        }
 
         var normalizedFieldKey = request.FieldKey.Trim();
         var exists = await _dbContext.CustomerLabelDetails.AsNoTracking().AnyAsync(detail =>
@@ -44,7 +53,8 @@ internal sealed class CreateCustomerLabelDetailCommandHandler : IRequestHandler<
         var entity = new CustomerLabelDetail
         {
             Id = Guid.CreateVersion7(), CustomerLabelHeaderId = request.CustomerLabelHeaderId, LineNo = request.LineNo,
-            FieldKey = normalizedFieldKey, FieldValue = CustomerLabelRules.Normalize(request.FieldValue), IsActive = request.IsActive
+            FieldKey = normalizedFieldKey, FieldValue = CustomerLabelRules.Normalize(request.FieldValue),
+            PrintLabelElementId = request.PrintLabelElementId, IsActive = request.IsActive
         };
         await _dbContext.CustomerLabelDetails.AddAsync(entity, cancellationToken);
         await _dbContext.SaveChangesAsync(cancellationToken);

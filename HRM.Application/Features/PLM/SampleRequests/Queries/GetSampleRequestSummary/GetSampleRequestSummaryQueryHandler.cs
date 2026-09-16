@@ -1,5 +1,5 @@
 using HRM.Application.Abstractions.Persistence.PLM;
-using HRM.Application.Commons.Authorization.PLM;
+using HRM.Application.Features.PLM.Shared.Authorization;
 using HRM.Application.Commons.Pagination;
 using HRM.Application.Features.CRM.CustomerCare.Visibility;
 using HRM.Application.Features.PLM.SampleRequests;
@@ -91,13 +91,13 @@ internal sealed class GetSampleRequestSummaryQueryHandler
             var keyword = request.Keyword.Trim();
 
             sampleRequestQuery = sampleRequestQuery.Where(x =>
-                x.ExternalId.Contains(keyword) ||
-                x.Customer.CustomerName.Contains(keyword) ||
-                x.Customer.ExternalId.Contains(keyword) ||
-                x.CreatedByNavigation != null && (x.CreatedByNavigation.FullName ?? string.Empty).Contains(keyword) ||
-                x.Product.CreatedByNavigation != null && (x.Product.CreatedByNavigation.FullName ?? string.Empty).Contains(keyword) ||
-                (x.Product.Name ?? string.Empty).Contains(keyword) ||
-                ((x.Product.ColourCode ?? string.Empty).Contains(keyword)) ||
+                EF.Functions.ILike(x.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike(x.Customer.CustomerName, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike(x.Customer.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                x.CreatedByNavigation != null && EF.Functions.ILike((x.CreatedByNavigation.FullName ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                x.Product.CreatedByNavigation != null && EF.Functions.ILike((x.Product.CreatedByNavigation.FullName ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike((x.Product.Name ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                (EF.Functions.ILike((x.Product.ColourCode ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter)) ||
                 (x.Formula != null && EF.Functions.ILike(x.Formula.ExternalId, $"%{keyword}%")));
         }
 
@@ -105,6 +105,7 @@ internal sealed class GetSampleRequestSummaryQueryHandler
 
         var dtoQuery = sortedQuery.Select(sampleRequest => new SampleRequestSummaryProjection
         {
+            CompanyId = sampleRequest.CompanyId,
             ProductId = sampleRequest.ProductId,
             AttachmentCollectionId = sampleRequest.AttachmentCollectionId,
             Summary = new SampleRequestSummaryDto
@@ -160,7 +161,7 @@ internal sealed class GetSampleRequestSummaryQueryHandler
             }
         });
 
-        var totalCount = await sortedQuery.CountAsync(cancellationToken);
+    var totalCount = await sortedQuery.CountAsync(cancellationToken);
 
         var pagedRows = await dtoQuery
             .Skip((request.NormalizedPageNumber - 1) * request.NormalizedPageSize)

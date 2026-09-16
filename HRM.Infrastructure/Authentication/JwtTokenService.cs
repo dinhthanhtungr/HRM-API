@@ -1,5 +1,6 @@
 using HRM.Application.Abstractions.Authentication;
 using HRM.Application.Features.Auth.Contracts;
+using HRM.Application.Commons.Authorization;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
@@ -36,6 +37,19 @@ public sealed class JwtTokenService(IConfiguration configuration) : ITokenServic
         };
 
         claims.AddRange(roles.Select(role => new Claim("roles", role)));
+
+        if (user.UsesDatabasePermissions)
+        {
+            claims.Add(new Claim(
+                ApplicationPermissionClaimTypes.PermissionModelVersion,
+                ApplicationPermissionClaimTypes.CurrentModelVersion));
+            claims.AddRange(user.Permissions
+                .Where(permission => !string.IsNullOrWhiteSpace(permission))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Select(permission => new Claim(
+                    ApplicationPermissionClaimTypes.Permission,
+                    permission)));
+        }
 
         var signingKey = new SymmetricSecurityKey(
             Encoding.UTF8.GetBytes(configuration["Jwt:Key"] ?? throw new InvalidOperationException("Jwt:Key is missing.")));

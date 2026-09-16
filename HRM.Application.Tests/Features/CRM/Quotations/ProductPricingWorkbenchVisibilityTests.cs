@@ -1,5 +1,6 @@
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Authorization;
+using HRM.Application.Features.Pricing.Authorization;
 using HRM.Application.Features.CRM.Quotations.Dtos;
 using HRM.Application.Features.CRM.Quotations.Services;
 using HRM.Domain.Enums.CustomerEnum;
@@ -31,11 +32,12 @@ public sealed class ProductPricingWorkbenchVisibilityTests
 
         var result = ProductPricingWorkbenchVisibility.ApplyToSummary(
             source,
-            canManagePricing: false);
+            SaleAccess());
 
         Assert.False(result.CanManagePricing);
         Assert.True(result.CanOpenPricingDetail);
         Assert.Equal(source.StandardSellingPrice, result.StandardSellingPrice);
+        Assert.Equal(source.PublisherNote, result.PublisherNote);
         Assert.Null(result.RealtimeStandardSellingPrice);
         Assert.Null(result.StandardSellingPriceDifference);
         Assert.Null(result.StandardSellingPriceDifferencePercent);
@@ -95,7 +97,7 @@ public sealed class ProductPricingWorkbenchVisibilityTests
 
         var result = ProductPricingWorkbenchVisibility.ApplyToDetail(
             detail,
-            canManagePricing: false);
+            SaleAccess());
 
         Assert.Equal(200_000m, result.StandardSellingPrice);
         Assert.Null(result.ManufacturingCost);
@@ -130,7 +132,7 @@ public sealed class ProductPricingWorkbenchVisibilityTests
 
         var result = ProductPricingWorkbenchVisibility.ApplyToDetail(
             detail,
-            canManagePricing: true);
+            ManagerAccess());
 
         Assert.True(result.Summary.CanManagePricing);
         Assert.Equal(detail.ManufacturingCost, result.ManufacturingCost);
@@ -158,6 +160,7 @@ public sealed class ProductPricingWorkbenchVisibilityTests
             CurrentMaterialCost = 150_000m,
             ManufacturingCost = 10_000m,
             StandardSellingPrice = 200_000m,
+            PublisherNote = "Giá chuẩn áp dụng cho Sale",
             RealtimeStandardSellingPrice = 190_000m,
             StandardSellingPriceDifference = -10_000m,
             StandardSellingPriceDifferencePercent = -5m,
@@ -180,6 +183,30 @@ public sealed class ProductPricingWorkbenchVisibilityTests
                 }
             ]
         };
+
+    private static PricingAccessDecision SaleAccess()
+        => new(
+            CanViewWorkbench: true,
+            CanViewApprovedSellingPrice: true,
+            CanViewSystemCalculatedPrice: false,
+            CanViewMaterialCost: false,
+            CanViewManufacturingCost: false,
+            CanViewMargin: false,
+            CanViewHistory: false,
+            CanManage: false,
+            CanApprove: false);
+
+    private static PricingAccessDecision ManagerAccess()
+        => new(
+            CanViewWorkbench: true,
+            CanViewApprovedSellingPrice: true,
+            CanViewSystemCalculatedPrice: true,
+            CanViewMaterialCost: true,
+            CanViewManufacturingCost: true,
+            CanViewMargin: true,
+            CanViewHistory: true,
+            CanManage: true,
+            CanApprove: true);
 
     private sealed class TestCurrentUser(string role) : ICurrentUser
     {

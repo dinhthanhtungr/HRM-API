@@ -12,6 +12,8 @@ using HRM.Application.Features.PLM.SampleRequests.Commands.DecideSampleRequestFo
 using HRM.Application.Features.PLM.SampleRequests.Commands.SendSampleRequestMessage;
 using HRM.Application.Features.PLM.SampleRequests.Commands.PatchSampleRequest;
 using HRM.Application.Features.PLM.SampleRequests.Commands.PatchSampleRequestSampleTrial;
+using HRM.Application.Features.PLM.SampleRequests.Commands.ChangeSampleRequestColourCode;
+using HRM.Application.Features.PLM.SampleRequests.Commands.UpsertSampleRequestDraftTrial;
 using HRM.Application.Features.PLM.SampleRequests.Commands.RecordSampleRequestSampleTrialCustomerFeedback;
 using HRM.Application.Features.PLM.SampleRequests.Commands.RecordSampleTrialCustomerFeedbackInteraction;
 using HRM.Application.Features.PLM.SampleRequests.Commands.RequestSampleRequestPriceQuote;
@@ -97,6 +99,21 @@ public sealed class SampleRequestsController : ControllerBase
         return result.Success
             ? CreatedAtAction(nameof(GetSampleTrials), new { sampleRequestId }, result)
             : BadRequest(result);
+    }
+
+    /// <summary>
+    /// Lab lưu thông tin kỹ thuật trước khi gửi mẫu; backend tạo Draft nếu chưa có hoặc cập nhật Draft hiện tại.
+    /// </summary>
+    [HttpPut("{sampleRequestId:guid}/sample-trials/draft")]
+    public async Task<IActionResult> UpsertDraftSampleTrial(
+        Guid sampleRequestId,
+        [FromBody] UpsertSampleRequestDraftTrialCommand command,
+        CancellationToken cancellationToken)
+    {
+        command.SampleRequestId = sampleRequestId;
+        var result = await _sender.Send(command, cancellationToken);
+
+        return result.Success ? Ok(result) : BadRequest(result);
     }
 
     /// <summary>
@@ -290,6 +307,21 @@ public sealed class SampleRequestsController : ControllerBase
     public async Task<IActionResult> Patch(
         Guid sampleRequestId,
         [FromBody] PatchSampleRequestCommand command,
+        CancellationToken cancellationToken)
+    {
+        command.SampleRequestId = sampleRequestId;
+
+        var result = await _sender.Send(command, cancellationToken);
+
+        return result.Success
+            ? Ok(result)
+            : BadRequest(result);
+    }
+
+    [HttpPatch("{sampleRequestId:guid}/colour-code")]
+    public async Task<IActionResult> ChangeColourCode(
+        Guid sampleRequestId,
+        [FromBody] ChangeSampleRequestColourCodeCommand command,
         CancellationToken cancellationToken)
     {
         command.SampleRequestId = sampleRequestId;

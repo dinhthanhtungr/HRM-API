@@ -4,6 +4,7 @@ using HRM.Application.Commons.Models;
 using HRM.Application.Features.PLM.Boms.Dtos;
 using HRM.Application.Features.PLM.Boms.Mappers;
 using HRM.Application.Features.PLM.Boms.Rules;
+using HRM.Application.Features.PLM.Boms.Services;
 using HRM.Domain.Entities.BomSchema;
 using HRM.Domain.Enums.Boms;
 using MediatR;
@@ -63,7 +64,15 @@ internal sealed class PatchBomVersionCommandHandler
         }
 
         version.BomDefinition.UpdatedBy = employeeId;
-        version.BomDefinition.UpdatedDate = DateTime.UtcNow;
+        version.BomDefinition.UpdatedDate = DateTime.Now;
+        _dbContext.AuditLogs.Add(BomAudit.Create(
+            companyId,
+            employeeId,
+            "bom_versions",
+            version.BomVersionId,
+            "PatchEngineeringBomDraft",
+            new { command.Request.BaseOutputQuantity, command.Request.OutputUnit, command.Request.ClearFields },
+            version.ChangeReason));
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 

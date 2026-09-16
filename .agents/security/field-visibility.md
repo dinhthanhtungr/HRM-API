@@ -2,11 +2,15 @@
 
 Đọc file này khi task liên quan giá, cost, lương, margin, thông tin nội bộ, trường chỉ một số role được xem hoặc API cần che/ẩn field theo quyền.
 
+Luôn đọc kèm `.agents/security/authorization-capabilities.md`; file đó định nghĩa source of truth, bốn lớp
+authorization và checklist test bắt buộc cho mọi module.
+
 ## Nguyên Tắc
 
 - Không chỉ ẩn field ở FE. BE phải quyết định field nào được trả về theo role, company scope và quyền nghiệp vụ.
 - Không trả dữ liệu nhạy cảm rồi mong FE tự bỏ qua.
-- Không hard-code role rải rác trong từng handler nếu rule dùng lại được; ưu tiên `ApplicationRoleSets` hoặc service phân quyền/visibility gần feature.
+- Không hard-code role rải rác trong handler. Dùng capability/visibility service hiện có; role mapping tập trung tại
+  `ApplicationPermissionRoleSets` và `ApplicationRoleSets`.
 - Nếu rule chỉ dùng một use case, đặt helper gần use case. Nếu nhiều endpoint cùng dùng, tạo service/constant chung đúng boundary.
 - DTO public phải thể hiện rõ contract: field bị ẩn nên là `null`, bị omit, hoặc dùng DTO khác. Chọn cách nhất quán với endpoint hiện tại và ghi README nếu hành vi quan trọng.
 - Không dùng label text để biểu diễn quyền. BE nên trả code/enum ổn định; FE map label/icon/color.
@@ -27,3 +31,4 @@ Nếu thay đổi field visibility, trả lời rõ:
 - Role/quyền nào được xem.
 - API/DTO nào đổi contract.
 - README feature nào đã cập nhật.
+- Query/calculator/export nào đã được bỏ qua khi user không có capability.

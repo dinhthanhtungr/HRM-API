@@ -389,7 +389,7 @@ internal sealed class CustomerCrmAnalyticsService : ICustomerCrmAnalyticsService
         if (!string.IsNullOrWhiteSpace(query.NormalizedKeyword))
         {
             var keyword = query.NormalizedKeyword;
-            customers = customers.Where(x => x.ExternalId.Contains(keyword) || x.CustomerName.Contains(keyword));
+            customers = customers.Where(x => EF.Functions.ILike(x.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) || EF.Functions.ILike(x.CustomerName, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter));
         }
         var customerRows = await customers.Select(x => new { x.CustomerId, x.ExternalId, x.CustomerName }).ToListAsync(cancellationToken);
         var ids = customerRows.Select(x => x.CustomerId).ToArray();
@@ -574,7 +574,7 @@ internal sealed class CustomerCrmAnalyticsService : ICustomerCrmAnalyticsService
 
         if (query.NormalizedKeyword is { } keyword)
         {
-            customerQuery = customerQuery.Where(x => x.ExternalId.Contains(keyword) || x.CustomerName.Contains(keyword));
+            customerQuery = customerQuery.Where(x => EF.Functions.ILike(x.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) || EF.Functions.ILike(x.CustomerName, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter));
         }
 
         var customers = await customerQuery

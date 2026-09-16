@@ -80,6 +80,12 @@ public static class NotificationTopicCatalog
             TopicNotifications.QuotationPricingApproved => Quotation("crm.quotation.pricing.approved", "pricing"),
             TopicNotifications.SampleRequestFormulaApproved => SampleRequest("plm.sample_request.formula.approved", "formula"),
             TopicNotifications.QuotationPricingExpired => Quotation("crm.quotation.pricing.expired", "pricing-alert"),
+            TopicNotifications.SampleRequestReferencePriceAvailable =>
+                SampleRequest("plm.sample_request.reference_price.available", "quotation"),
+            TopicNotifications.SampleRequestCancelled =>
+                SampleRequest("plm.sample_request.cancelled", "lifecycle"),
+            TopicNotifications.MaterialPurchaseUnavailable =>
+                Material("plm.material.purchase_unavailable", "availability"),
 
             _ => System($"{UnknownCodePrefix}{(int)topic}", "unknown", null)
         };
@@ -167,6 +173,9 @@ public static class NotificationTopicCatalog
 
     private static NotificationTopicDefinition Warehouse(string code, string eventGroupCode, string aggregateType)
         => new(code, NotificationCategoryCodes.Warehouse, eventGroupCode, aggregateType);
+
+    private static NotificationTopicDefinition Material(string code, string eventGroupCode)
+        => new(code, NotificationCategoryCodes.Material, eventGroupCode, "Material");
 
     private static NotificationTopicDefinition Customer(string code, string eventGroupCode, string aggregateType)
         => new(code, NotificationCategoryCodes.Customer, eventGroupCode, aggregateType);

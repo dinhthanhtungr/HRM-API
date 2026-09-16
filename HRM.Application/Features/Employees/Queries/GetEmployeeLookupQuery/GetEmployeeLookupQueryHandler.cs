@@ -49,7 +49,7 @@ namespace HRM.Application.Features.Employees.Queries.GetEmployeeDropdown
             {
                 query = query.Where(x =>
                     x.ExternalId.StartsWith(keyword) ||
-                    x.FullName.Contains(keyword));
+                    EF.Functions.ILike(x.FullName, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter));
             }
 
             if (request.PartId.HasValue)

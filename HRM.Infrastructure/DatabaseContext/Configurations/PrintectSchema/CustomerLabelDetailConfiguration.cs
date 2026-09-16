@@ -20,6 +20,7 @@ namespace HRM.Infrastructure.DatabaseContext.Configurations.PrintectSchema
                 .HasDefaultValueSql("gen_random_uuid()");
 
             entity.Property(x => x.CustomerLabelHeaderId).HasColumnName("customerLabelHeaderId").IsRequired();
+            entity.Property(x => x.PrintLabelElementId).HasColumnName("printLabelElementId");
             entity.Property(x => x.LineNo).HasColumnName("lineNo").IsRequired();
             entity.Property(x => x.FieldKey)
                 .HasColumnName("fieldKey")
@@ -36,6 +37,8 @@ namespace HRM.Infrastructure.DatabaseContext.Configurations.PrintectSchema
 
             entity.HasIndex(x => x.CustomerLabelHeaderId)
                   .HasDatabaseName("IX_CustomerLabelDetails_HeaderId");
+            entity.HasIndex(x => x.PrintLabelElementId)
+                  .HasDatabaseName("IX_CustomerLabelDetails_PrintLabelElementId");
 
             entity.HasIndex(x => new { x.CustomerLabelHeaderId, x.FieldKey })
                   .IsUnique()
@@ -46,6 +49,12 @@ namespace HRM.Infrastructure.DatabaseContext.Configurations.PrintectSchema
                 .HasForeignKey(x => x.CustomerLabelHeaderId)
                 .OnDelete(DeleteBehavior.Cascade)
                 .HasConstraintName("FK_CustomerLabelDetails_Header");
+
+            entity.HasOne(x => x.PrintLabelElement)
+                .WithMany()
+                .HasForeignKey(x => x.PrintLabelElementId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("FK_CustomerLabelDetails_PrintLabelElement");
         }
     }
 }

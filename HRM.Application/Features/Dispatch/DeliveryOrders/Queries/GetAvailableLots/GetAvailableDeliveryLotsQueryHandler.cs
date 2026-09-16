@@ -1,5 +1,6 @@
 using HRM.Application.Abstractions.Persistence.Dispatch;
 using HRM.Application.Abstractions.Security;
+using HRM.Application.Commons.Authorization;
 using HRM.Application.Commons.Models;
 using HRM.Application.Features.Dispatch.DeliveryOrders.Dtos;
 using MediatR;
@@ -12,15 +13,18 @@ internal sealed class GetAvailableDeliveryLotsQueryHandler
 {
     private readonly IDispatchReadDbContext _dbContext;
     private readonly ICurrentUser _currentUser;
+    private readonly ICurrentUserPermissionService _permissionService;
     private readonly DeliveryOrderLotInventoryService _inventoryService;
 
     public GetAvailableDeliveryLotsQueryHandler(
         IDispatchReadDbContext dbContext,
         ICurrentUser currentUser,
+        ICurrentUserPermissionService permissionService,
         DeliveryOrderLotInventoryService inventoryService)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
+        _permissionService = permissionService;
         _inventoryService = inventoryService;
     }
 
@@ -55,7 +59,7 @@ internal sealed class GetAvailableDeliveryLotsQueryHandler
             return OperationResult<IReadOnlyList<AvailableDeliveryLotDto>>.Fail("Không tìm thấy product/dòng PO trong công ty hiện tại.");
         }
 
-        var canViewCost = DeliveryOrderCostVisibilityRules.CanViewCost(_currentUser);
+        var canViewCost = DeliveryOrderCostVisibilityRules.CanViewCost(_permissionService);
         var inventory = await _inventoryService.LoadAsync(
             companyId,
             [(line.ProductId, line.ProductCode)],

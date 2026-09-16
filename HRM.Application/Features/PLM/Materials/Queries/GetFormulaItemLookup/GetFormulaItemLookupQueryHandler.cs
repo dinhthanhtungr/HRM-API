@@ -4,9 +4,11 @@ using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Pagination;
 using HRM.Application.Commons.Pricing.Dtos;
 using HRM.Application.Commons.Pricing.Helpers;
+using HRM.Application.Commons.Pricing.Models;
 using HRM.Application.Features.PLM.Formulas.Dtos.Commons;
 using HRM.Application.Features.PLM.Materials.Dtos.Lookup;
 using HRM.Domain.Enums.Formulas;
+using HRM.Domain.Enums.Materials;
 using HRM.Domain.Enums.SampleRequests;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -82,18 +84,18 @@ internal sealed class GetFormulaItemLookupQueryHandler
         if (keyword is not null)
         {
             materials = materials.Where(x =>
-                (x.ExternalId ?? string.Empty).Contains(keyword) ||
-                (x.Name ?? string.Empty).Contains(keyword) ||
-                (x.CustomCode ?? string.Empty).Contains(keyword));
+                EF.Functions.ILike((x.ExternalId ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike((x.Name ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike((x.CustomCode ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter));
 
             products = products.Where(x =>
-                (x.ColourCode ?? string.Empty).Contains(keyword) ||
-                (x.Name ?? string.Empty).Contains(keyword) ||
-                (x.Code ?? string.Empty).Contains(keyword) ||
+                EF.Functions.ILike((x.ColourCode ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike((x.Name ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike((x.Code ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
                 x.SampleRequests.Any(sampleRequest =>
                     sampleRequest.IsActive &&
                     sampleRequest.CompanyId == companyId &&
-                    sampleRequest.ExternalId.Contains(keyword)) ||
+                    EF.Functions.ILike(sampleRequest.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter)) ||
                 x.Formulas.Any(formula =>
                     formula.IsActive &&
                     formula.CompanyId == companyId &&
@@ -112,6 +114,18 @@ internal sealed class GetFormulaItemLookupQueryHandler
             Weight = x.Weight,
             Package = x.Package,
             Unit = x.Unit,
+            PurchaseStatus = x.PurchaseAvailability == null
+                ? MaterialPurchaseStatus.Available
+                : x.PurchaseAvailability.Status,
+            PurchaseStatusReason = x.PurchaseAvailability == null
+                ? null
+                : x.PurchaseAvailability.Reason,
+            PurchaseStatusEffectiveFrom = x.PurchaseAvailability == null
+                ? null
+                : x.PurchaseAvailability.EffectiveFrom,
+            ExpectedAvailableDate = x.PurchaseAvailability == null
+                ? null
+                : x.PurchaseAvailability.ExpectedAvailableDate,
             CreatedDate = x.CreatedDate
         });
 
@@ -133,6 +147,10 @@ internal sealed class GetFormulaItemLookupQueryHandler
             Weight = x.Weight,
             Package = null,
             Unit = x.Unit,
+            PurchaseStatus = null,
+            PurchaseStatusReason = null,
+            PurchaseStatusEffectiveFrom = null,
+            ExpectedAvailableDate = null,
             CreatedDate = x.CreatedDate
         });
 
@@ -149,7 +167,9 @@ internal sealed class GetFormulaItemLookupQueryHandler
 
         var prices = rows.Count == 0
             ? []
-            : await _priceQueryService.LoadLatestItemPriceInfoDictAsync(
+            : await _priceQueryService.LoadLatestPricingItemPriceInfoDictAsync(
+                companyId,
+                "VND",
                 rows.Select(x => new PriceItemRequest
                 {
                     ItemType = x.ItemType,
@@ -180,6 +200,13 @@ internal sealed class GetFormulaItemLookupQueryHandler
                     Weight = x.Weight,
                     Package = x.Package,
                     Unit = x.Unit,
+                    PurchaseStatus = x.PurchaseStatus,
+                    IsPurchaseAvailable = x.PurchaseStatus.HasValue
+                        ? x.PurchaseStatus != MaterialPurchaseStatus.Unavailable
+                        : null,
+                    PurchaseStatusReason = x.PurchaseStatusReason,
+                    PurchaseStatusEffectiveFrom = x.PurchaseStatusEffectiveFrom,
+                    ExpectedAvailableDate = x.ExpectedAvailableDate,
                     Price = new LatestPriceSource
                     {
                         UnitPrice = unitPrice,
@@ -190,7 +217,9 @@ internal sealed class GetFormulaItemLookupQueryHandler
                         Source = MaterialPriceResolver.ResolveLatestItemPriceSource(
                             prices,
                             x.ItemType,
-                            x.ItemId)
+                            x.ItemId),
+                        Calculation = prices.GetValueOrDefault(
+                            new PriceItemKey(x.ItemType, x.ItemId))?.Calculation
                     }
                 };
             })
@@ -246,6 +275,10 @@ internal sealed class GetFormulaItemLookupQueryHandler
         public double? Weight { get; init; }
         public string? Package { get; init; }
         public string? Unit { get; init; }
+        public MaterialPurchaseStatus? PurchaseStatus { get; init; }
+        public string? PurchaseStatusReason { get; init; }
+        public DateTime? PurchaseStatusEffectiveFrom { get; init; }
+        public DateTime? ExpectedAvailableDate { get; init; }
         public DateTime? CreatedDate { get; init; }
     }
 }

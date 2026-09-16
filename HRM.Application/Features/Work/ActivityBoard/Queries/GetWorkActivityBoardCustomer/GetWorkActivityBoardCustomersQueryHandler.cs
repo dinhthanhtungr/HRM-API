@@ -54,8 +54,8 @@ internal sealed class GetWorkActivityBoardCustomersQueryHandler
         if (request.NormalizedKeyword is { } keyword)
         {
             customers = customers.Where(customer =>
-                customer.ExternalId.Contains(keyword) ||
-                customer.CustomerName.Contains(keyword));
+                EF.Functions.ILike(customer.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike(customer.CustomerName, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter));
         }
 
         var customerRows = customers

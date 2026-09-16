@@ -64,7 +64,9 @@ archive. Vì vậy, biết `notificationId` không đồng nghĩa với việc �
 Một InternalMail participant có thể là `Watcher` với `IsMuted = true`: họ vẫn được phép đọc thread theo quyền
 participant. Khi publish message mới, handler đưa họ vào `SilentUserIds`: backend vẫn tạo `NotificationUserState`
 đã đọc để notification hiện trong Notification Hub, nhưng không đưa họ vào SignalR/Web Push và không làm tăng unread
-badge. Đây phù hợp với người chỉ cần theo dõi thread; họ có thể tự unmute để nhận cảnh báo mới về sau.
+badge. Đây phù hợp với người chỉ cần theo dõi thread; họ có thể tự unmute để nhận cảnh báo mới về sau. Với Sample
+Request, rule mute cũng áp dụng cho recipient override của action nghiệp vụ: override không được biến một participant
+đang mute thành recipient thông báo thường.
 
 ### OutboxMessage
 
@@ -268,9 +270,34 @@ SampleRequestCustomerFeedbackRecorded = 47 -> plm.sample_request.customer_feedba
 QuotationPricingApproved             = 48 -> crm.quotation.pricing.approved             -> quotation/pricing
 SampleRequestFormulaApproved         = 49 -> plm.sample_request.formula.approved         -> sample_request/formula
 QuotationPricingExpired              = 50 -> crm.quotation.pricing.expired              -> quotation/pricing-alert
+SampleRequestReferencePriceAvailable = 51 -> plm.sample_request.reference_price.available -> sample_request/quotation
+SampleRequestCancelled              = 52 -> plm.sample_request.cancelled                 -> sample_request/lifecycle
 ```
 
-`SampleRequestFormulaApproved` được phát sau khi Lab xác nhận Formula trong ngữ cảnh một Sample Request.
+Khi PATCH hoặc phản hồi Sample Trial thực sự chuyển trạng thái của toàn bộ Sample Request sang `Cancelled`,
+backend tạo message trong conversation hiện có và publish `SampleRequestCancelled = 52`.
+Topic `SampleRequestFormulaUpdateCancelled = 42` chỉ dành cho việc hủy một yêu cầu cập nhật Formula và được giữ
+nguyên để không làm sai dữ liệu lịch sử. Notification hủy Sample Request tiếp tục dùng aggregate/thread metadata
+hiện có; recipient, SignalR, Web Push và outbox không thay đổi.
+
+API `PATCH /api/v1/plm/sample-requests/{sampleRequestId}/colour-code` tái sử dụng
+`SampleRequestDirectPatchNotified = 43`; không thêm topic mới. Sau khi lưu mã màu, backend tạo message trong thread
+Sample Request và publish notification với title `Mã màu đã đổi thành {newColourCode}`. Payload direct-patch chỉ
+chứa `product.colour_code`, mã cũ/mới, id Sample Request, actor, thời điểm và idempotency key; không chứa công thức,
+giá hoặc dữ liệu nhạy cảm. Recipient tiếp tục theo resolver message hiện có: extra recipient hợp lệ cùng company,
+required Lab recipient, Sales group leader/admin, manager và participant hiện hữu; sender không nhận notification
+của chính mình, employee inactive/sai company bị loại và silent watcher không nhận notification thường.
+
+Trước khi tạo thông báo đổi mã mới, endpoint đồng bộ mã cũ thành mã mới trong message/notification lịch sử thuộc
+đúng các Sample Request của Product và company. Các thông báo đổi mã đã tạo trước đó không bị viết lại vì đó là
+dấu vết audit `old -> new`. FE retry phải gửi lại cùng `idempotencyKey`; backend trả kết quả cũ và không sinh thêm
+mã hoặc thông báo trùng.
+
+`SampleRequestFormulaApproved = 49` được giữ nguyên để đọc đúng notification lịch sử và không còn được publish
+cho lần xác nhận mới. Sau khi Lab xác nhận Formula trong ngữ cảnh một Sample Request, backend phát
+`SampleRequestReferencePriceAvailable = 51` để Notification Hub xếp sự kiện vào mục **Báo giá**
+(`categoryCode = sample_request`, `eventGroupCode = quotation`). Aggregate vẫn là Sample Request vì message tiếp tục
+nằm trong conversation của hồ sơ phối mẫu.
 Notification dùng link `/crm/quotations/product-pricing-options?keyword={ColourCode}` để mở tra cứu giá theo
 mã màu. Payload chỉ giữ metadata của thread/Sample Request; không chứa material cost, giá sản xuất, giá bán
 hoặc margin. Recipient được resolve theo participant hiện có, manager và required recipient của Sample Request;
@@ -416,3 +443,39 @@ Payload có `contentType = SampleRequestPriceQuoteRequested`, `conversationId`, 
 external id và `priceQuoteRequest` gồm Product cùng Formula đã resolve. Payload không chứa material cost,
 manufacturing cost, selling price, margin hoặc tier. Notification tiếp tục đi qua
 `INotificationService.PublishAsync`; SignalR và Web Push dùng outbox hiện hữu, không có channel hoặc worker mới.
+
+Khi Lab duyệt Formula lần đầu từ luồng cập nhật status, backend cũng dùng cùng topic này để yêu cầu rà soát giá chuẩn.
+President active được thêm vào conversation; notification được gửi tới toàn bộ participant active của conversation,
+không chỉ President. Participant đã mute vẫn giữ quyền đọc thread/Hub nhưng được đưa vào `SilentUserIds`, nên không
+nhận badge, SignalR hoặc Web Push cho notification đó.
+
+## Backfill notification Báo giá gần đây
+
+```http
+POST /api/v1/notifications/backfill/sample-request-price-quotes?dryRun=true
+```
+
+Chỉ `Admin` hoặc `Developer` trong company hiện tại được gọi. Mặc định endpoint quét từ đầu ngày hôm qua đến đầu ngày
+mai; có thể truyền `from` và `to`, nhưng khoảng thời gian tối đa là 3 ngày. `dryRun=true` chỉ trả số notification,
+conversation và participant cần bổ sung. Với `dryRun=false`, backend chỉ thêm `NotificationRecipient` và
+`NotificationUserState` còn thiếu cho participant active của conversation có notification topic
+`SampleRequestPriceQuoteRequested`; chạy lại là idempotent. Sender không được thêm notification của chính mình.
+
+Participant mute nhận state đã đọc để vẫn thấy card ở Hub nhưng không tăng badge. Backfill không tạo
+`OutboxMessage`, nên không phát lại SignalR/Web Push và không thay đổi Formula, message, topic hay notification
+**Thay đổi** lịch sử.
+
+## Material purchase unavailable
+
+Topic append-only `MaterialPurchaseUnavailable = 53` có `topicCode = plm.material.purchase_unavailable`, category
+`material`, event group `availability` và aggregate type `Material`. Topic được publish từ
+`UpdateMaterialPurchaseAvailabilityCommandHandler` qua `INotificationService.PublishAsync` khi một NVL chuyển từ
+`Available` sang `Unavailable`.
+
+Recipient là employee active có role global `LabUser` hoặc `LabAdmin` trong đúng company của NVL. Người cập nhật
+không bị loại riêng nếu đồng thời có role Lab. Fallback có `title = "Ngừng mua NVL"` và message ngắn; payload có
+`contentType = material_purchase_availability_changed`, nhóm `material` (id/mã/tên), `availability` (trạng thái,
+lý do, ngày hiệu lực, ngày dự kiến mua lại) và `action.href` trỏ vào màn hình rà soát giá với `materialId`. FE dùng
+`contentType` để render event card thay vì trình bày payload như tin nhắn hội thoại. Payload không chứa giá, cost,
+công thức hoặc dữ liệu nhạy cảm. SignalR và Web Push không đổi: service tạo UserState và outbox chuẩn, kênh
+realtime/push chỉ mang tín hiệu để FE tải lại notification feed/detail.

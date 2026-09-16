@@ -2,7 +2,7 @@ using HRM.Application.Abstractions.Commons.Pricing;
 using HRM.Application.Abstractions.Documents;
 using HRM.Application.Abstractions.Persistence.PLM;
 using HRM.Application.Abstractions.Security;
-using HRM.Application.Commons.Authorization.PLM;
+using HRM.Application.Features.PLM.Shared.Authorization;
 using HRM.Application.Commons.Models;
 using HRM.Application.Commons.Pricing.Models;
 using HRM.Application.Features.PLM.Formulas.Dtos.Exports;

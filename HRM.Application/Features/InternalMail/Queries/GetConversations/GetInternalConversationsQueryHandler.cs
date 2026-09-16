@@ -2,7 +2,9 @@ using HRM.Application.Abstractions.Persistence.InternalMail;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Pagination;
 using HRM.Application.Features.InternalMail.Dtos;
+using HRM.Application.Features.InternalMail.Services;
 using HRM.Application.Features.PLM.SampleRequests.PriceQuoteRequests;
+using HRM.Domain.Enums.InternalMailEnums;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -13,13 +15,19 @@ internal sealed class GetInternalConversationsQueryHandler
 {
     private readonly IInternalMailDbContext _dbContext;
     private readonly ICurrentUser _currentUser;
+    private readonly InternalConversationSampleRequestInfoResolver _sampleRequestInfoResolver;
+    private readonly InternalConversationQuotationInfoResolver _quotationInfoResolver;
 
     public GetInternalConversationsQueryHandler(
         IInternalMailDbContext dbContext,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        InternalConversationSampleRequestInfoResolver sampleRequestInfoResolver,
+        InternalConversationQuotationInfoResolver quotationInfoResolver)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
+        _sampleRequestInfoResolver = sampleRequestInfoResolver;
+        _quotationInfoResolver = quotationInfoResolver;
     }
 
     public async Task<PagedResult<InternalConversationListItemDto>> Handle(
@@ -69,10 +77,33 @@ internal sealed class GetInternalConversationsQueryHandler
 
         if (request.NormalizedSearchKeyword is { } keyword)
         {
+            var searchPattern = PostgresSearchPattern.ContainsLiteral(keyword);
             query = query.Where(x =>
-                x.Conversation.Subject.Contains(keyword) ||
-                (x.Conversation.RelatedExternalId != null && x.Conversation.RelatedExternalId.Contains(keyword)) ||
-                x.Conversation.Messages.Any(message => !message.IsDeleted && message.Body.Contains(keyword)));
+                EF.Functions.ILike(x.Conversation.Subject, searchPattern, PostgresSearchPattern.EscapeCharacter) ||
+                (x.Conversation.RelatedExternalId != null && EF.Functions.ILike(x.Conversation.RelatedExternalId, searchPattern, PostgresSearchPattern.EscapeCharacter)) ||
+                x.Conversation.Messages.Any(message => !message.IsDeleted && EF.Functions.ILike(message.Body, searchPattern, PostgresSearchPattern.EscapeCharacter)) ||
+                (x.Conversation.RelatedType == InternalMailRelatedType.SampleRequest &&
+                 x.Conversation.RelatedId.HasValue &&
+                 _dbContext.SampleRequests.Any(sampleRequest =>
+                     sampleRequest.SampleRequestId == x.Conversation.RelatedId.Value &&
+                     sampleRequest.CompanyId == companyId &&
+                     sampleRequest.IsActive &&
+                     sampleRequest.Customer.CompanyId == companyId &&
+                     sampleRequest.ManagerByNavigation.CompanyId == companyId &&
+                     (EF.Functions.ILike(sampleRequest.Customer.ExternalId, searchPattern, PostgresSearchPattern.EscapeCharacter) ||
+                      EF.Functions.ILike(sampleRequest.Customer.CustomerName, searchPattern, PostgresSearchPattern.EscapeCharacter) ||
+                       EF.Functions.ILike(sampleRequest.ManagerByNavigation.FullName, searchPattern, PostgresSearchPattern.EscapeCharacter)))) ||
+                (x.Conversation.RelatedType == InternalMailRelatedType.Quotation &&
+                 x.Conversation.RelatedId.HasValue &&
+                 _dbContext.Quotations.Any(quotation =>
+                     quotation.QuotationId == x.Conversation.RelatedId.Value &&
+                     quotation.CompanyId == companyId &&
+                     quotation.IsActive &&
+                     quotation.Customer.CompanyId == companyId &&
+                     quotation.SaleEmployee.CompanyId == companyId &&
+                     (EF.Functions.ILike(quotation.Customer.ExternalId, searchPattern, PostgresSearchPattern.EscapeCharacter) ||
+                      EF.Functions.ILike(quotation.Customer.CustomerName, searchPattern, PostgresSearchPattern.EscapeCharacter) ||
+                       EF.Functions.ILike(quotation.SaleEmployee.FullName, searchPattern, PostgresSearchPattern.EscapeCharacter)))));
         }
 
         var totalCount = await query.CountAsync(cancellationToken);
@@ -122,6 +153,21 @@ internal sealed class GetInternalConversationsQueryHandler
                 item.RelatedType,
                 item.Subject,
                 item.RelatedExternalId);
+        }
+
+        var sampleRequestInfoById = await _sampleRequestInfoResolver.ResolveAsync(
+            items.Where(item => item.RelatedType == InternalMailRelatedType.SampleRequest)
+                .Select(item => item.RelatedId ?? Guid.Empty),
+            companyId,
+            cancellationToken);
+        var quotationInfoById = await _quotationInfoResolver.ResolveAsync(
+            items.Where(item => item.RelatedType == InternalMailRelatedType.Quotation)
+                .Select(item => item.RelatedId ?? Guid.Empty),
+            companyId,
+            cancellationToken);
+        foreach (var item in items)
+        {
+            InternalConversationRelatedInfoMapper.Apply(item, sampleRequestInfoById, quotationInfoById);
         }
 
         return new PagedResult<InternalConversationListItemDto>(items, totalCount, pageNumber, pageSize);

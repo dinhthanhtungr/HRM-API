@@ -13,7 +13,7 @@ namespace HRM.Application.Features.PLM.SaleOrders.Services;
 
 /// <summary>
 /// Applies SaleOrder approval invariants. The caller owns SaveChanges and the transaction.
-/// Complaint orders become eligible after a valid initial replacement decision, not after final close.
+/// Complaint orders follow the same approval and MFG-creation invariants as other sale orders.
 /// </summary>
 internal sealed class SaleOrderApprovalService
 {
@@ -37,15 +37,6 @@ internal sealed class SaleOrderApprovalService
         DateTime now,
         CancellationToken cancellationToken)
     {
-        if (order.OrderType == OrderType.Complaint)
-        {
-            var readiness = await ValidateComplaintReadinessAsync(order, cancellationToken);
-            if (readiness is not null)
-            {
-                return OperationResult.Fail(readiness);
-            }
-        }
-
         var activeDetails = order.MerchandiseOrderDetails.Where(x => x.IsActive).ToList();
         if (activeDetails.Count == 0)
         {
@@ -114,28 +105,5 @@ internal sealed class SaleOrderApprovalService
         }, cancellationToken);
 
         return OperationResult.Ok("Đã duyệt và tạo lệnh sản xuất.");
-    }
-
-    private async Task<string?> ValidateComplaintReadinessAsync(
-        MerchandiseOrder order,
-        CancellationToken cancellationToken)
-    {
-        if (!order.ComplaintReportId.HasValue)
-        {
-            return "Đơn xử lý complaint không có báo cáo nguồn.";
-        }
-
-        var isReady = await _dbContext.ComplaintReports.AsNoTracking().AnyAsync(x =>
-            x.ComplaintReportId == order.ComplaintReportId.Value &&
-            x.CompanyId == order.CompanyId && x.IsActive &&
-            x.Status != ComplaintReportStatus.Draft &&
-            x.Status != ComplaintReportStatus.Submitted &&
-            x.Status != ComplaintReportStatus.Rejected &&
-            x.Status != ComplaintReportStatus.Cancelled &&
-            x.ResolutionType == ComplaintResolutionType.ReplacementProduction,
-            cancellationToken);
-        return isReady
-            ? null
-            : "Complaint phải được initial approval với hướng sản xuất bù trước khi duyệt/tạo MFG.";
     }
 }

@@ -15,5 +15,8 @@ public class ManufacturingBomStage
 
     public virtual BomVersion BomVersion { get; set; } = null!;
     public virtual ICollection<BomVersionItem> Items { get; set; } = new List<BomVersionItem>();
+    public virtual ICollection<ManufacturingBomStageMachine> Machines { get; set; } = new List<ManufacturingBomStageMachine>();
+    public virtual ICollection<ManufacturingBomStageTransition> OutgoingTransitions { get; set; } = new List<ManufacturingBomStageTransition>();
+    public virtual ICollection<ManufacturingBomStageTransition> IncomingTransitions { get; set; } = new List<ManufacturingBomStageTransition>();
     public virtual ICollection<ManufacturingBomLossRule> LossRules { get; set; } = new List<ManufacturingBomLossRule>();
 }

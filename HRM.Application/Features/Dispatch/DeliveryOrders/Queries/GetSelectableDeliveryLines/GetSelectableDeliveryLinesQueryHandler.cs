@@ -92,13 +92,13 @@ internal sealed class GetSelectableDeliveryLinesQueryHandler
         {
             var keyword = request.NormalizedKeyword;
             lineBaseQuery = lineBaseQuery.Where(x =>
-                x.Order.ExternalId.Contains(keyword) ||
-                x.Order.PONo.Contains(keyword) ||
-                x.Order.CustomerNameSnapshot.Contains(keyword) ||
-                x.Order.PhoneSnapshot.Contains(keyword) ||
-                x.Detail.ProductExternalIdSnapshot.Contains(keyword) ||
-                x.Detail.ProductNameSnapshot.Contains(keyword) ||
-                (x.Detail.Comment ?? string.Empty).Contains(keyword));
+                EF.Functions.ILike(x.Order.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike(x.Order.PONo, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike(x.Order.CustomerNameSnapshot, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike(x.Order.PhoneSnapshot, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike(x.Detail.ProductExternalIdSnapshot, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike(x.Detail.ProductNameSnapshot, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike((x.Detail.Comment ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter));
         }
 
         var orderQuery = lineBaseQuery

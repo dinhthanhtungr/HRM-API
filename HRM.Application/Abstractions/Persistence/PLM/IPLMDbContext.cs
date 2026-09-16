@@ -26,9 +26,12 @@ namespace HRM.Application.Abstractions.Persistence.PLM
         DbSet<BomVersion> BomVersions { get; }
         DbSet<BomVersionItem> BomVersionItems { get; }
         DbSet<ManufacturingBomStage> ManufacturingBomStages { get; }
+        DbSet<ManufacturingBomStageMachine> ManufacturingBomStageMachines { get; }
+        DbSet<ManufacturingBomStageTransition> ManufacturingBomStageTransitions { get; }
         DbSet<ManufacturingLossType> ManufacturingLossTypes { get; }
         DbSet<ManufacturingBomLossRule> ManufacturingBomLossRules { get; }
         DbSet<ProductStandardBomVersion> ProductStandardBomVersions { get; }
+        DbSet<MfgProductionOrderLoss> MfgProductionOrderLosses { get; }
         //DbSet<Customer> customers { get; }
         //DbSet<CustomerAssignment> customerAssignments { get; }
         //DbSet<CustomerClaim> customerClaims { get; }
@@ -81,6 +84,8 @@ namespace HRM.Application.Abstractions.Persistence.PLM
 
         // ==================== Material ====================
         DbSet<Material> Materials { get; }
+        DbSet<MaterialPurchaseAvailability> MaterialPurchaseAvailabilities { get; }
+        DbSet<MaterialReplacement> MaterialReplacements { get; }
         DbSet<MaterialGroupName> MaterialGroupNames { get; }
         DbSet<MaterialsSupplier> MaterialsSuppliers { get; }
         DbSet<PriceHistory> PriceHistories { get; }
@@ -100,6 +105,10 @@ namespace HRM.Application.Abstractions.Persistence.PLM
         DbSet<CustomerClaim> CustomerClaims { get; }
         DbSet<CustomerLabelHeader> CustomerLabelHeaders { get; }
         DbSet<CustomerLabelDetail> CustomerLabelDetails { get; }
+        DbSet<PrintLabelTemplate> PrintLabelTemplates { get; }
+        DbSet<PrintLabelElement> PrintLabelElements { get; }
+        DbSet<PrintLabelLogo> PrintLabelLogos { get; }
+        DbSet<PrintLabelTemplateLogo> PrintLabelTemplateLogos { get; }
         DbSet<QuotationLine> QuotationLines { get; }
     }
 }

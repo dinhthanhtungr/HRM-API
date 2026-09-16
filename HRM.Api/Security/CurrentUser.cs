@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using HRM.Application.Abstractions.Security;
+using HRM.Application.Commons.Authorization;
 
 namespace HRM.Domain.Entities.Security;
 
@@ -45,6 +46,19 @@ public sealed class CurrentUser : ICurrentUser
                 .Where(x => !string.IsNullOrWhiteSpace(x))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToArray();
+
+    public IReadOnlyCollection<string> Permissions =>
+        Principal is null
+            ? Array.Empty<string>()
+            : Principal.FindAll(ApplicationPermissionClaimTypes.Permission)
+                .Select(x => x.Value)
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+    public bool HasExplicitPermissionSet =>
+        Principal?.FindFirst(ApplicationPermissionClaimTypes.PermissionModelVersion)?.Value ==
+        ApplicationPermissionClaimTypes.CurrentModelVersion;
 
     public bool IsInRole(string role)
     {

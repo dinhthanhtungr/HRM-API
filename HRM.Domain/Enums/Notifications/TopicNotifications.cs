@@ -77,6 +77,9 @@ namespace HRM.Domain.Enums.Notifications
         SampleRequestCustomerFeedbackRecorded = 47,
         QuotationPricingApproved = 48,
         SampleRequestFormulaApproved = 49,
-        QuotationPricingExpired = 50
+        QuotationPricingExpired = 50,
+        SampleRequestReferencePriceAvailable = 51,
+        SampleRequestCancelled = 52,
+        MaterialPurchaseUnavailable = 53
     }
 }

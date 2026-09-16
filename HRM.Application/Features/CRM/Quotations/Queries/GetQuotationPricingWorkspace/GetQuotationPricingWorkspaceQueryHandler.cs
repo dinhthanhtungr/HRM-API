@@ -1,6 +1,7 @@
 using HRM.Application.Abstractions.Persistence.CRM.CustomerCare;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Models;
+using HRM.Application.Features.Pricing.Authorization;
 using HRM.Application.Commons.Pricing.Dtos;
 using HRM.Application.Commons.Pricing.Helpers;
 using HRM.Application.Features.CRM.CustomerCare.Visibility;
@@ -20,24 +21,27 @@ internal sealed class GetQuotationPricingWorkspaceQueryHandler
     private readonly ICustomerVisibilityService _visibilityService;
     private readonly ICurrentUser _currentUser;
     private readonly ProductPricingSourceQueryService _sourceQueryService;
+    private readonly IPricingVisibilityService _pricingVisibilityService;
 
     public GetQuotationPricingWorkspaceQueryHandler(
         ICRMReadDbContext dbContext,
         ICustomerVisibilityService visibilityService,
         ICurrentUser currentUser,
-        ProductPricingSourceQueryService sourceQueryService)
+        ProductPricingSourceQueryService sourceQueryService,
+        IPricingVisibilityService pricingVisibilityService)
     {
         _dbContext = dbContext;
         _visibilityService = visibilityService;
         _currentUser = currentUser;
         _sourceQueryService = sourceQueryService;
+        _pricingVisibilityService = pricingVisibilityService;
     }
 
     public async Task<OperationResult<QuotationPricingWorkspaceDto>> Handle(
         GetQuotationPricingWorkspaceQuery request,
         CancellationToken cancellationToken)
     {
-        if (!ProductPricingAccessRules.CanManage(_currentUser))
+        if (!_pricingVisibilityService.GetAccess().CanManage)
         {
             return OperationResult<QuotationPricingWorkspaceDto>.Fail(
                 "Only President or Developer can access the quotation pricing workspace.");

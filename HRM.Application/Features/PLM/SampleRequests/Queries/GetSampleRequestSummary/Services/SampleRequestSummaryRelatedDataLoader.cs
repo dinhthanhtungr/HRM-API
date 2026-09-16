@@ -1,5 +1,6 @@
 using HRM.Application.Abstractions.Persistence.PLM;
 using HRM.Application.Features.Attachments.Services;
+using HRM.Application.Features.PLM.Formulas.Dtos.GetFormulas;
 using HRM.Application.Features.PLM.SampleRequests.Dtos.Common;
 using HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestSummary.Models;
 using Microsoft.EntityFrameworkCore;
@@ -26,9 +27,9 @@ internal static class SampleRequestSummaryRelatedDataLoader
             productIds,
             canViewFormulaPrices,
             cancellationToken);
-        var productionOrdersByProductId = await GetProductionOrdersByProductIdAsync(
+        var formulaListsByProduct = await GetFormulaListsByProductAsync(
             dbContext,
-            productIds,
+            rows,
             canViewFormulaPrices,
             cancellationToken);
 
@@ -45,10 +46,13 @@ internal static class SampleRequestSummaryRelatedDataLoader
                 row.Summary.SelectedFormula = selectedFormula;
             }
 
-            if (row.ProductId.HasValue
-                && productionOrdersByProductId.TryGetValue(row.ProductId.Value, out var productionOrders))
+            if (row.ProductId.HasValue && formulaListsByProduct.TryGetValue(
+                    (row.ProductId.Value, row.CompanyId),
+                    out var formulaList))
             {
-                row.Summary.ProductionOrders = productionOrders;
+                row.Summary.FormulaSelects = formulaList.FormulaSelects;
+                row.Summary.FormulaDevs = formulaList.FormulaDevs;
+                row.Summary.FormulaStandard = formulaList.FormulaStandard;
             }
         }
     }
@@ -105,226 +109,166 @@ internal static class SampleRequestSummaryRelatedDataLoader
             .ToDictionary(x => x.Key, x => x.ToList());
     }
 
-    private static async Task<Dictionary<Guid, List<SampleRequestProductionOrderDto>>> GetProductionOrdersByProductIdAsync(
+    private static async Task<Dictionary<(Guid ProductId, Guid CompanyId), FormulaList>> GetFormulaListsByProductAsync(
         IPLMReadDbContext dbContext,
-        IReadOnlyList<Guid> productIds,
+        IReadOnlyList<SampleRequestSummaryProjection> rows,
         bool canViewFormulaPrices,
         CancellationToken cancellationToken)
     {
-        if (productIds.Count == 0)
+        var productKeys = rows
+            .Where(x => x.ProductId.HasValue)
+            .Select(x => (ProductId: x.ProductId!.Value, x.CompanyId))
+            .Distinct()
+            .ToList();
+
+        if (productKeys.Count == 0)
         {
-            return new Dictionary<Guid, List<SampleRequestProductionOrderDto>>();
+            return new Dictionary<(Guid ProductId, Guid CompanyId), FormulaList>();
         }
 
-        var productionOrders = await dbContext.MfgProductionOrders
+        var productIds = productKeys.Select(x => x.ProductId).Distinct().ToList();
+        var companyIds = productKeys.Select(x => x.CompanyId).Distinct().ToList();
+
+        var formulaSelectRows = await dbContext.ProductionSelectVersions
+            .AsNoTracking()
+            .Where(x =>
+                x.ManufacturingFormulaId.HasValue &&
+                x.ManufacturingFormula != null &&
+                x.ManufacturingFormula.IsActive &&
+                companyIds.Contains(x.CompanyId) &&
+                x.MfgProductionOrder.IsActive &&
+                productIds.Contains(x.MfgProductionOrder.ProductId))
+            .Select(x => new
+            {
+                ProductId = x.MfgProductionOrder.ProductId,
+                x.CompanyId,
+                Id = x.ManufacturingFormulaId!.Value,
+                x.ManufacturingFormula!.ExternalId,
+                CreatedByName = x.ManufacturingFormula.CreatedByNavigation != null
+                    ? x.ManufacturingFormula.CreatedByNavigation.FullName
+                    : null,
+                x.ManufacturingFormula.Note,
+                Price = canViewFormulaPrices ? x.ManufacturingFormula.TotalPrice : null,
+                ItemCount = x.ManufacturingFormula.ManufacturingFormulaMaterials.Count(m => m.IsActive),
+                LastDateUse = x.MfgProductionOrder.ManufacturingDate
+                    ?? x.MfgProductionOrder.UpdatedDate
+            })
+            .ToListAsync(cancellationToken);
+
+        var formulaDevRows = await dbContext.Formulas
             .AsNoTracking()
             .Where(x =>
                 x.IsActive &&
+                x.CompanyId.HasValue &&
+                companyIds.Contains(x.CompanyId.Value) &&
                 productIds.Contains(x.ProductId))
-            .OrderByDescending(x => x.CreatedDate)
-            .Select(x => new ProductionOrderProjection
+            .OrderByDescending(x => x.UpdatedDate ?? x.CreatedDate)
+            .Select(x => new
             {
-                ProductId = x.ProductId,
-                MfgProductionOrderId = x.MfgProductionOrderId,
-                ExternalId = x.ExternalId,
-                FormulaExternalId = x.FormulaExternalIdSnapshot ?? string.Empty
-            })
-            .Take(5)
-            .ToListAsync(cancellationToken);
-
-        var selectedFormulasByProductionOrderId = await GetSelectedManufacturingFormulasByProductionOrderIdAsync(
-            dbContext,
-            productionOrders.Select(x => x.MfgProductionOrderId).ToList(),
-            canViewFormulaPrices,
-            cancellationToken);
-        var standardFormulasByProductId = await GetStandardManufacturingFormulasByProductIdAsync(
-            dbContext,
-            productionOrders.Select(x => x.ProductId).Distinct().ToList(),
-            canViewFormulaPrices,
-            cancellationToken);
-
-        return productionOrders
-            .GroupBy(x => x.ProductId)
-            .ToDictionary(
-                x => x.Key,
-                x => x.Select(productionOrder =>
+                x.ProductId,
+                CompanyId = x.CompanyId!.Value,
+                Formula = new FormulaId
                 {
-                    selectedFormulasByProductionOrderId.TryGetValue(
-                        productionOrder.MfgProductionOrderId,
-                        out var selectedFormula);
-                    standardFormulasByProductId.TryGetValue(
-                        productionOrder.ProductId,
-                        out var standardFormula);
-
-                    // Bỏ công thức chuẩn ra khỏi công thức sản xuất
-                    if (selectedFormula is not null && standardFormula is not null)
-                    {
-                        selectedFormula.IsStandard =
-                            selectedFormula.ManufacturingFormulaId == standardFormula.ManufacturingFormulaId;
-
-                        if (selectedFormula.IsStandard)
-                        {
-                            selectedFormula = null;
-                        }
-                    }
-
-                    return new SampleRequestProductionOrderDto
-                    {
-                        MfgProductionOrderId = productionOrder.MfgProductionOrderId,
-                        ExternalId = productionOrder.ExternalId,
-                        FormulaExternalId = productionOrder.FormulaExternalId,
-                        SelectedManufacturingFormula = selectedFormula,
-                        StandardManufacturingFormula = standardFormula
-                    };
-                })
-                .ToList());
-    }
-
-    private static async Task<Dictionary<Guid, SampleRequestSelectedManufacturingFormulaDto>>
-        GetSelectedManufacturingFormulasByProductionOrderIdAsync(
-            IPLMReadDbContext dbContext,
-            IReadOnlyList<Guid> productionOrderIds,
-            bool canViewFormulaPrices,
-            CancellationToken cancellationToken)
-    {
-        if (productionOrderIds.Count == 0)
-        {
-            return new Dictionary<Guid, SampleRequestSelectedManufacturingFormulaDto>();
-        }
-
-        var selectedFormulas = await dbContext.ProductionSelectVersions
-            .AsNoTracking()
-            .Where(x =>
-                productionOrderIds.Contains(x.MfgProductionOrderId) &&
-                x.ValidFrom != null &&
-                x.ValidTo == null &&
-                x.ManufacturingFormulaId.HasValue)
-            .Select(x => new SelectedManufacturingFormulaProjection
-            {
-                MfgProductionOrderId = x.MfgProductionOrderId,
-                Formula = new SampleRequestSelectedManufacturingFormulaDto
-                {
-                    ManufacturingFormulaId = x.ManufacturingFormulaId!.Value,
-                    FormulaExternalId = x.ManufacturingFormula != null
-                        ? x.ManufacturingFormula.ExternalId
-                        : string.Empty,
-                    Name = x.ManufacturingFormula != null
-                        ? x.ManufacturingFormula.Name
-                        : string.Empty,
-                    TotalPrice = x.ManufacturingFormula != null
-                        ? canViewFormulaPrices ? x.ManufacturingFormula.TotalPrice : null
+                    Id = x.FormulaId,
+                    ExternalId = x.ExternalId,
+                    Name = x.Name,
+                    CreatedByName = x.CreatedByNavigation != null
+                        ? x.CreatedByNavigation.FullName
                         : null,
-                    MaterialCount = x.ManufacturingFormula != null
-                        ? x.ManufacturingFormula.ManufacturingFormulaMaterials.Count(m => m.IsActive)
-                        : 0,
-                    MaterialsUrl = $"/api/v1/plm/manufacturing-formulas/{x.ManufacturingFormulaId}/materials"
+                    Note = x.Note ?? string.Empty,
+                    Status = x.Status,
+                    Price = canViewFormulaPrices ? x.TotalPrice : null,
+                    ItemCount = x.FormulaMaterials.Count(m => m.IsActive),
+                    LastDateUse = x.UpdatedDate ?? x.CreatedDate
                 }
             })
             .ToListAsync(cancellationToken);
 
-        return selectedFormulas
-            .GroupBy(x => x.MfgProductionOrderId)
-            .ToDictionary(x => x.Key, x => x.First().Formula);
-    }
-
-    private static async Task<Dictionary<Guid, SampleRequestStandardManufacturingFormulaDto>>
-        GetStandardManufacturingFormulasByProductIdAsync(
-            IPLMReadDbContext dbContext,
-            IReadOnlyList<Guid> productIds,
-            bool canViewFormulaPrices,
-            CancellationToken cancellationToken)
-    {
-        if (productIds.Count == 0)
-        {
-            return new Dictionary<Guid, SampleRequestStandardManufacturingFormulaDto>();
-        }
-
-        var currentRows = await dbContext.ProductStandardFormulas
+        var formulaStandardRows = await dbContext.ProductStandardFormulas
             .AsNoTracking()
             .Where(x =>
                 productIds.Contains(x.ProductId) &&
-                x.ValidTo == null &&
-                x.ManufacturingFormulaId.HasValue)
+                x.ManufacturingFormulaId.HasValue &&
+                x.ManufacturingFormula != null &&
+                x.ManufacturingFormula.IsActive &&
+                companyIds.Contains(x.CompanyId))
             .Select(x => new
             {
                 x.ProductId,
-                StandardFormula = new SampleRequestStandardManufacturingFormulaDto
-                {
-                    ProductStandardFormulaId = x.ProductStandardFormulaId,
-                    ManufacturingFormulaId = x.ManufacturingFormulaId!.Value,
-                    FormulaExternalId = x.ManufacturingFormula != null
-                        ? x.ManufacturingFormula.ExternalId
-                        : string.Empty,
-                    Name = x.ManufacturingFormula != null
-                        ? x.ManufacturingFormula.Name
-                        : string.Empty,
-                    TotalPrice = x.ManufacturingFormula != null
-                        ? canViewFormulaPrices ? x.ManufacturingFormula.TotalPrice : null
-                        : null,
-                    MaterialCount = x.ManufacturingFormula != null
-                        ? x.ManufacturingFormula.ManufacturingFormulaMaterials.Count(m => m.IsActive)
-                        : 0,
-                    MaterialsUrl = $"/api/v1/plm/manufacturing-formulas/{x.ManufacturingFormulaId}/materials",
-                    ValidFrom = x.ValidFrom
-                }
-            })
-            .ToListAsync(cancellationToken);
-
-        if (currentRows.Count == 0)
-        {
-            return new Dictionary<Guid, SampleRequestStandardManufacturingFormulaDto>();
-        }
-
-        var previousRows = await dbContext.ProductStandardFormulas
-            .AsNoTracking()
-            .Where(x =>
-                productIds.Contains(x.ProductId) &&
-                x.ValidTo != null &&
-                x.ManufacturingFormulaId.HasValue)
-            .OrderByDescending(x => x.ValidFrom)
-            .Select(x => new
-            {
-                x.ProductId,
-                ManufacturingFormulaId = x.ManufacturingFormulaId!.Value,
-                FormulaExternalId = x.ManufacturingFormula != null
-                    ? x.ManufacturingFormula.ExternalId
-                    : string.Empty,
-                FormulaName = x.ManufacturingFormula != null
-                    ? x.ManufacturingFormula.Name
-                    : string.Empty,
-                TotalPrice = x.ManufacturingFormula != null
-                    ? canViewFormulaPrices ? x.ManufacturingFormula.TotalPrice : null
+                x.CompanyId,
+                Id = x.ManufacturingFormulaId!.Value,
+                x.ManufacturingFormula!.ExternalId,
+                CreatedByName = x.ManufacturingFormula.CreatedByNavigation != null
+                    ? x.ManufacturingFormula.CreatedByNavigation.FullName
                     : null,
-                MaterialCount = x.ManufacturingFormula != null
-                    ? x.ManufacturingFormula.ManufacturingFormulaMaterials.Count(m => m.IsActive)
-                    : 0,
-                MaterialsUrl = $"/api/v1/plm/manufacturing-formulas/{x.ManufacturingFormulaId}/materials",
-                x.ValidFrom
+                x.ManufacturingFormula.Note,
+                Price = canViewFormulaPrices ? x.ManufacturingFormula.TotalPrice : null,
+                ItemCount = x.ManufacturingFormula.ManufacturingFormulaMaterials.Count(m => m.IsActive),
+                LastDateUse = (DateTime?)x.ValidFrom,
+                IsCurrent = x.ValidTo == null
             })
             .ToListAsync(cancellationToken);
 
-        var previousByProductId = previousRows
-            .GroupBy(x => x.ProductId)
-            .ToDictionary(x => x.Key, x => x.First());
+        var result = productKeys.ToDictionary(x => x, _ => new FormulaList());
 
-        var result = currentRows
-            .GroupBy(x => x.ProductId)
-            .ToDictionary(x => x.Key, x => x.First().StandardFormula);
-
-        foreach (var item in result)
+        foreach (var group in formulaSelectRows.GroupBy(x => (x.ProductId, x.CompanyId)))
         {
-            if (!previousByProductId.TryGetValue(item.Key, out var previous))
+            if (!result.TryGetValue(group.Key, out var formulaList))
             {
                 continue;
             }
 
-            item.Value.PreviousManufacturingFormulaId = previous.ManufacturingFormulaId;
-            item.Value.PreviousFormulaExternalId = previous.FormulaExternalId;
-            item.Value.PreviousFormulaName = previous.FormulaName;
-            item.Value.PreviousTotalPrice = previous.TotalPrice;
-            item.Value.PreviousMaterialCount = previous.MaterialCount;
-            item.Value.PreviousMaterialsUrl = previous.MaterialsUrl;
-            item.Value.PreviousValidFrom = previous.ValidFrom;
+            formulaList.FormulaSelects = group
+                .GroupBy(x => x.Id)
+                .Select(x => x.OrderByDescending(f => f.LastDateUse).First())
+                .Select(x => new FormulaId
+                {
+                    Id = x.Id,
+                    ExternalId = x.ExternalId,
+                    CreatedByName = x.CreatedByName,
+                    Note = x.Note ?? string.Empty,
+                    Price = x.Price,
+                    ItemCount = x.ItemCount,
+                    LastDateUse = x.LastDateUse
+                })
+                .OrderByDescending(x => x.LastDateUse)
+                .ToList();
+        }
+
+        foreach (var group in formulaDevRows.GroupBy(x => (x.ProductId, x.CompanyId)))
+        {
+            if (result.TryGetValue(group.Key, out var formulaList))
+            {
+                formulaList.FormulaDevs = group.Select(x => x.Formula).ToList();
+            }
+        }
+
+        foreach (var group in formulaStandardRows.GroupBy(x => (x.ProductId, x.CompanyId)))
+        {
+            if (!result.TryGetValue(group.Key, out var formulaList))
+            {
+                continue;
+            }
+
+            formulaList.FormulaStandard = group
+                .GroupBy(x => x.Id)
+                .Select(x => x
+                    .OrderByDescending(f => f.IsCurrent)
+                    .ThenByDescending(f => f.LastDateUse)
+                    .First())
+                .Select(x => new FormulaId
+                {
+                    Id = x.Id,
+                    ExternalId = x.ExternalId,
+                    CreatedByName = x.CreatedByName,
+                    Note = x.Note ?? string.Empty,
+                    Price = x.Price,
+                    ItemCount = x.ItemCount,
+                    LastDateUse = x.LastDateUse
+                })
+                .OrderByDescending(x => group.Any(r => r.Id == x.Id && r.IsCurrent))
+                .ThenByDescending(x => x.LastDateUse)
+                .ToList();
         }
 
         return result;

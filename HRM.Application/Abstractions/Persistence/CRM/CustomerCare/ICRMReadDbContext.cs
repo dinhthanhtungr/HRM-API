@@ -34,6 +34,7 @@ public interface ICRMReadDbContext
     DbSet<FormulaPricingPolicyTier> FormulaPricingPolicyTiers { get; }
     DbSet<Category> Categories { get; }
     DbSet<Product> Products { get; }
+    DbSet<Formula> Formulas { get; }
     DbSet<SampleRequest> SampleRequests { get; }
     DbSet<SampleRequestSampleTrial> SampleRequestSampleTrials { get; }
 

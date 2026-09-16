@@ -36,12 +36,12 @@ internal sealed class GetBomsQueryHandler
             .AsNoTracking()
             .Where(x =>
                 x.CompanyId == companyId &&
-                x.BomType == BomType.Engineering &&
+                x.BomType == request.BomType &&
                 x.IsActive &&
                 (!request.ProductId.HasValue || x.ProductId == request.ProductId) &&
                 (string.IsNullOrEmpty(keyword) ||
-                 x.Code.Contains(keyword) ||
-                 x.Name.Contains(keyword)))
+                 EF.Functions.ILike(x.Code, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                 EF.Functions.ILike(x.Name, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter)))
             .OrderBy(x => x.Code)
             .Select(x => new BomListItemDto
             {

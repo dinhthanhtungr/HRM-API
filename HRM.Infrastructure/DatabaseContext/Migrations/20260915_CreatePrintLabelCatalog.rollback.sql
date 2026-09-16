@@ -1,0 +1,13 @@
+ALTER TABLE printect."CustomerLabelDetails" DROP CONSTRAINT IF EXISTS "FK_CustomerLabelDetails_PrintLabelElement";
+ALTER TABLE printect."CustomerLabelHeaders" DROP CONSTRAINT IF EXISTS "FK_CustomerLabelHeaders_DefaultPrintLabelLogo";
+ALTER TABLE printect."CustomerLabelHeaders" DROP CONSTRAINT IF EXISTS "FK_CustomerLabelHeaders_PrintLabelTemplate";
+DROP INDEX IF EXISTS printect."IX_CustomerLabelDetails_PrintLabelElementId";
+DROP INDEX IF EXISTS printect."IX_CustomerLabelHeaders_DefaultPrintLabelLogoId";
+DROP INDEX IF EXISTS printect."IX_CustomerLabelHeaders_PrintLabelTemplateId";
+ALTER TABLE printect."CustomerLabelDetails" DROP COLUMN IF EXISTS "printLabelElementId";
+ALTER TABLE printect."CustomerLabelHeaders" DROP COLUMN IF EXISTS "defaultPrintLabelLogoId";
+ALTER TABLE printect."CustomerLabelHeaders" DROP COLUMN IF EXISTS "printLabelTemplateId";
+DROP TABLE IF EXISTS printect."PrintLabelTemplateLogos";
+DROP TABLE IF EXISTS printect."PrintLabelElements";
+DROP TABLE IF EXISTS printect."PrintLabelLogos";
+DROP TABLE IF EXISTS printect."PrintLabelTemplates";

@@ -23,7 +23,7 @@ public sealed class FormulaPricingEngine(
             !Enum.IsDefined(profile) || string.IsNullOrWhiteSpace(request.Currency))
             return OperationResult<PricingEngineResult>.Fail("PricingEngineInvalidRequest");
         if (request.MaterialCost < 0m || request.ManufacturingCostOverride < 0m ||
-            request.StandardSellingPrice < 0m || request.ProfitMarginRate < 0m ||
+            request.StandardSellingPrice < 0m || request.ProfitMarginRate is < 0m or >= 100m ||
             (request.ChangedField.HasValue && !Enum.IsDefined(request.ChangedField.Value)))
             return OperationResult<PricingEngineResult>.Fail("PricingEngineInvalidRange");
 

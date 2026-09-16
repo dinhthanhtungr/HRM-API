@@ -60,6 +60,17 @@ internal sealed class RestoreFormulaVersionCommandHandler
                 "Formula was changed by another user. Please reload before restoring.");
         }
 
+        try
+        {
+            FormulaMaterialMutationRules.EnsureCanReplaceMaterials(
+                formula.Status,
+                hasCompositionChanges: true);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return OperationResult<FormulaVersionActionResultDto>.Fail(ex.Message);
+        }
+
         var sourceVersion = await _dbContext.FormulaVersions
             .AsNoTracking()
             .Include(x => x.Items)

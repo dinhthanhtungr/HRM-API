@@ -15,6 +15,7 @@ using HRM.Application.Features.PLM.SampleRequests.FormulaChangeRequests;
 using HRM.Application.Features.PLM.SampleRequests.Rules;
 using HRM.Application.Features.PLM.SampleRequests.Services;
 using HRM.Application.Features.PLM.SampleRequests.SampleTrials;
+using HRM.Application.Features.PLM.Boms.Commands.CreateManufacturingBomFromSelectedFormula;
 using HRM.Domain.Enums.Notifications;
 using HRM.Domain.Entities.SampleRequestSchema;
 using HRM.Domain.Enums.InternalMailEnums;
@@ -143,6 +144,11 @@ internal sealed class PatchSampleRequestCommandHandler
         }
 
         var sampleRequestVisibilityScope = await _visibilityService.BuildScopeAsync(cancellationToken);
+        // Mọi SaleUser trong cùng công ty được PATCH hồ sơ nội bộ KH_VIETAUS.
+        // Chỉ mở đúng internal-customer flag; ownership của khách thường và mọi business guard vẫn giữ nguyên.
+        sampleRequestVisibilityScope = SampleRequestMutationVisibilityRules.Resolve(
+            sampleRequestVisibilityScope,
+            _currentUser.IsInRole(ApplicationRoles.Sales.SaleUser));
         var sampleRequest = await _visibilityService.ApplySampleRequestVisibility(
                 _dbContext.SampleRequests.Where(x => x.SampleRequestId == request.SampleRequestId),
                 _dbContext.Customers.AsNoTracking(),
@@ -267,7 +273,30 @@ internal sealed class PatchSampleRequestCommandHandler
 
             if (acceptsFormulaBySelection)
             {
-                if (!_currentUser.IsInAnyRole(ApplicationRoleSets.PLM.FormulaSelectors))
+                var isFormulaSelector =
+                    _currentUser.IsInAnyRole(ApplicationRoleSets.PLM.FormulaSelectors);
+                var isLabUser =
+                    acceptsSentSampleByFormulaSelection &&
+                    _currentUser.IsInRole(ApplicationRoles.Lab.LabUser);
+                string? customerExternalId = null;
+
+                if (!isFormulaSelector && isLabUser)
+                {
+                    customerExternalId = await _dbContext.Customers
+                        .AsNoTracking()
+                        .Where(x =>
+                            x.CustomerId == sampleRequest.CustomerId &&
+                            x.CompanyId == companyId.Value &&
+                            x.IsActive == true)
+                        .Select(x => x.ExternalId)
+                        .FirstOrDefaultAsync(cancellationToken);
+                }
+
+                if (!SampleRequestFormulaSelectionRules.CanSelectFormula(
+                        isFormulaSelector,
+                        isLabUser,
+                        sampleRequest.RequestType,
+                        customerExternalId))
                 {
                     return OperationResult<Guid>.Fail(
                         "You are not allowed to accept a sent sample by selecting its formula.");
@@ -623,6 +652,19 @@ internal sealed class PatchSampleRequestCommandHandler
             // cần ghi để AuditLog không là thay đổi duy nhất được flush khi tracking bị mất ở luồng này.
             _dbContext.SampleRequests.Update(sampleRequest);
             await _dbContext.SaveChangesAsync(cancellationToken);
+
+            if (completedByFormulaSelection)
+            {
+                var bomResult = await _sender.Send(
+                    new CreateManufacturingBomFromSelectedFormulaCommand(sampleRequest.ProductId),
+                    cancellationToken);
+                if (!bomResult.Success)
+                {
+                    return OperationResult<Guid>.Ok(
+                        sampleRequest.SampleRequestId,
+                        $"Updated sample request successfully, but could not initialize the Manufacturing BOM: {bomResult.Message}");
+                }
+            }
 
             if (startedProcessing)
             {
@@ -1136,7 +1178,7 @@ internal sealed class PatchSampleRequestCommandHandler
             SampleRequestId = sampleRequestId,
             Type = SampleRequestNotificationType.GeneralMessage,
             Message = $"Yêu cầu phối mẫu {sampleRequestExternalId} đã được hủy hoặc khách hàng không tiếp tục làm mẫu.",
-            TopicOverride = TopicNotifications.SampleRequestFormulaUpdateCancelled,
+            TopicOverride = TopicNotifications.SampleRequestCancelled,
             TitleOverride = "Yêu cầu phối mẫu đã hủy"
         }, cancellationToken);
     }

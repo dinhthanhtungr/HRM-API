@@ -12,7 +12,7 @@ namespace HRM.Application.Features.PLM.CustomerLabels.Commands.PatchCustomerLabe
 
 internal sealed class PatchCustomerLabelCommandHandler : IRequestHandler<PatchCustomerLabelCommand, OperationResult<SaveCustomerLabelResultDto>>
 {
-    private static readonly HashSet<string> ClearableFields = new(StringComparer.OrdinalIgnoreCase) { "colorCode", "customerExternalId", "labelType" };
+    private static readonly HashSet<string> ClearableFields = new(StringComparer.OrdinalIgnoreCase) { "colorCode", "customerExternalId", "labelType", "printLabelTemplateId", "defaultPrintLabelLogoId" };
     private readonly IPLMWriteDbContext _dbContext;
     private readonly ICurrentUser _currentUser;
     private readonly IDateTimeProvider _dateTimeProvider;
@@ -37,7 +37,9 @@ internal sealed class PatchCustomerLabelCommandHandler : IRequestHandler<PatchCu
             return OperationResult<SaveCustomerLabelResultDto>.Fail("ClearFields contains an unsupported or duplicate field.");
         if ((request.ColorCode is not null && clearFields.Contains("colorCode", StringComparer.OrdinalIgnoreCase)) ||
             (request.CustomerExternalId is not null && clearFields.Contains("customerExternalId", StringComparer.OrdinalIgnoreCase)) ||
-            (request.LabelType is not null && clearFields.Contains("labelType", StringComparer.OrdinalIgnoreCase)))
+            (request.LabelType is not null && clearFields.Contains("labelType", StringComparer.OrdinalIgnoreCase)) ||
+            (request.PrintLabelTemplateId.HasValue && clearFields.Contains("printLabelTemplateId", StringComparer.OrdinalIgnoreCase)) ||
+            (request.DefaultPrintLabelLogoId.HasValue && clearFields.Contains("defaultPrintLabelLogoId", StringComparer.OrdinalIgnoreCase)))
             return OperationResult<SaveCustomerLabelResultDto>.Fail("A field cannot be both updated and cleared.");
 
         var validationError = new[]
@@ -53,9 +55,33 @@ internal sealed class PatchCustomerLabelCommandHandler : IRequestHandler<PatchCu
             cancellationToken);
         if (entity is null) return OperationResult<SaveCustomerLabelResultDto>.Fail("Customer label was not found or is outside the current company.");
 
+        var templateId = clearFields.Contains("printLabelTemplateId", StringComparer.OrdinalIgnoreCase)
+            ? (Guid?)null
+            : request.PrintLabelTemplateId ?? entity.PrintLabelTemplateId;
+        var logoId = clearFields.Contains("defaultPrintLabelLogoId", StringComparer.OrdinalIgnoreCase)
+            ? (Guid?)null
+            : request.DefaultPrintLabelLogoId ?? entity.DefaultPrintLabelLogoId;
+        if (logoId.HasValue && !templateId.HasValue)
+            return OperationResult<SaveCustomerLabelResultDto>.Fail("DefaultPrintLabelLogoId requires PrintLabelTemplateId.");
+        if (templateId.HasValue)
+        {
+            var templateExists = await _dbContext.PrintLabelTemplates.AsNoTracking().AnyAsync(template =>
+                template.Id == templateId.Value && template.CompanyId == companyId && template.IsActive, cancellationToken);
+            if (!templateExists) return OperationResult<SaveCustomerLabelResultDto>.Fail("Print label template was not found, inactive, or is outside the current company.");
+            if (logoId.HasValue)
+            {
+                var logoAllowed = await _dbContext.PrintLabelTemplateLogos.AsNoTracking().AnyAsync(link =>
+                    link.PrintLabelTemplateId == templateId.Value && link.PrintLabelLogoId == logoId.Value && link.IsActive &&
+                    link.Logo.CompanyId == companyId && link.Logo.IsActive, cancellationToken);
+                if (!logoAllowed) return OperationResult<SaveCustomerLabelResultDto>.Fail("The default logo is not active or is not allowed by the selected print label template.");
+            }
+        }
+
         var changed = PatchHelper.SetTrimmed(request.ColorCode, () => entity.ColorCode, value => entity.ColorCode = value)
             | PatchHelper.SetTrimmed(request.CustomerExternalId, () => entity.CustomerExternalId, value => entity.CustomerExternalId = value)
             | PatchHelper.SetTrimmed(request.LabelType, () => entity.LabelType, value => entity.LabelType = value)
+            | SetOptionalGuid(request.PrintLabelTemplateId, () => entity.PrintLabelTemplateId, value => entity.PrintLabelTemplateId = value)
+            | SetOptionalGuid(request.DefaultPrintLabelLogoId, () => entity.DefaultPrintLabelLogoId, value => entity.DefaultPrintLabelLogoId = value)
             | PatchHelper.SetIfHasValue(request.IsActive, () => entity.IsActive, value => entity.IsActive = value);
         foreach (var field in clearFields)
         {
@@ -64,6 +90,8 @@ internal sealed class PatchCustomerLabelCommandHandler : IRequestHandler<PatchCu
                 "colorcode" => PatchHelper.SetNullableRef<string>(null, () => entity.ColorCode, value => entity.ColorCode = value),
                 "customerexternalid" => PatchHelper.SetNullableRef<string>(null, () => entity.CustomerExternalId, value => entity.CustomerExternalId = value),
                 "labeltype" => PatchHelper.SetNullableRef<string>(null, () => entity.LabelType, value => entity.LabelType = value),
+                "printlabeltemplateid" => PatchHelper.SetNullable<Guid>(null, () => entity.PrintLabelTemplateId, value => entity.PrintLabelTemplateId = value),
+                "defaultprintlabellogoid" => PatchHelper.SetNullable<Guid>(null, () => entity.DefaultPrintLabelLogoId, value => entity.DefaultPrintLabelLogoId = value),
                 _ => false
             };
         }
@@ -80,5 +108,12 @@ internal sealed class PatchCustomerLabelCommandHandler : IRequestHandler<PatchCu
             CustomerLabelHeaderId = entity.Id,
             UpdatedDate = entity.UpdatedDate
         }, "Updated customer label successfully.");
+    }
+
+    private static bool SetOptionalGuid(Guid? incoming, Func<Guid?> current, Action<Guid?> apply)
+    {
+        if (!incoming.HasValue || Nullable.Equals(incoming, current())) return false;
+        apply(incoming);
+        return true;
     }
 }

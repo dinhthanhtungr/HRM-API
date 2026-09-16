@@ -92,14 +92,14 @@ internal sealed class GetComplaintReportsQueryHandler
         if (request.NormalizedKeyword is { } keyword)
         {
             query = query.Where(x =>
-                x.ExternalId.Contains(keyword) ||
-                x.Customer.ExternalId.Contains(keyword) ||
-                x.Customer.CustomerName.Contains(keyword) ||
-                (x.Summary != null && x.Summary.Contains(keyword)) ||
+                EF.Functions.ILike(x.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike(x.Customer.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike(x.Customer.CustomerName, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                (x.Summary != null && EF.Functions.ILike(x.Summary, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter)) ||
                 x.ComplaintReportLines.Any(line =>
                     line.IsActive &&
-                    (line.ProductExternalIdSnapshot.Contains(keyword) ||
-                     line.ProductNameSnapshot.Contains(keyword) ||
+                    (EF.Functions.ILike(line.ProductExternalIdSnapshot, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                     EF.Functions.ILike(line.ProductNameSnapshot, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
                      EF.Functions.ILike(line.FormulaExternalIdSnapshot, $"%{keyword}%"))));
         }
 

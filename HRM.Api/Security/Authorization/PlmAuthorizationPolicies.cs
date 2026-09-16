@@ -28,6 +28,11 @@ internal static class PlmAuthorizationPolicies
             policy.RequireRole(ApplicationRoleSets.PLM.SaleOrderApprovers);
         });
 
+        options.AddPolicy(PlmPolicies.ManageCustomerLabels, policy =>
+        {
+            policy.RequireRole(ApplicationRoleSets.Modules.Sales);
+        });
+
         options.AddPolicy(PlmPolicies.ViewFormulaDetail, policy =>
         {
             policy.RequireRole(ApplicationRoleSets.PLM.ProductTechnicalEditors);
@@ -46,6 +51,21 @@ internal static class PlmAuthorizationPolicies
         options.AddPolicy(PlmPolicies.UpdateMaterialSupplierPrice, policy =>
         {
             policy.RequireRole(ApplicationRoleSets.PLM.MaterialSupplierPriceEditors);
+        });
+
+        options.AddPolicy(PlmPolicies.ManageMaterialPurchaseAvailability, policy =>
+        {
+            policy.RequireRole(ApplicationRoleSets.PLM.MaterialPurchaseAvailabilityManagers);
+        });
+
+        options.AddPolicy(PlmPolicies.ViewMaterialReplacements, policy =>
+        {
+            policy.RequireRole(ApplicationRoleSets.PLM.MaterialReplacementViewers);
+        });
+
+        options.AddPolicy(PlmPolicies.ManageMaterialReplacements, policy =>
+        {
+            policy.RequireRole(ApplicationRoleSets.PLM.MaterialReplacementManagers);
         });
 
         options.AddPolicy(PlmPolicies.ManageFormula, policy =>
@@ -77,5 +97,22 @@ internal static class PlmAuthorizationPolicies
         {
             policy.RequireRole(ApplicationRoleSets.PLM.ProductTechnicalEditors);
         });
+
+        options.AddPolicy(PlmPolicies.ViewBom, policy =>
+            policy.RequireRole(ApplicationRoleSets.PLM.BomViewers));
+        options.AddPolicy(PlmPolicies.ManageBomDraft, policy =>
+            policy.RequireRole(ApplicationRoleSets.PLM.BomDraftManagers));
+        options.AddPolicy(PlmPolicies.ReleaseBom, policy =>
+            policy.RequireRole(ApplicationRoleSets.PLM.BomReleasers));
+        options.AddPolicy(PlmPolicies.ObsoleteBom, policy =>
+            policy.RequireRole(ApplicationRoleSets.PLM.BomReleasers));
+        options.AddPolicy(PlmPolicies.AssignStandardBom, policy =>
+            policy.RequireRole(ApplicationRoleSets.PLM.BomStandardAssigners));
+        options.AddPolicy(PlmPolicies.ManageBomLossTypes, policy =>
+            policy.RequireRole(ApplicationRoleSets.PLM.BomLossManagers));
+        options.AddPolicy(PlmPolicies.UpdateProductionLoss, policy =>
+            policy.RequireRole(ApplicationRoleSets.PLM.BomLossManagers));
+        options.AddPolicy(PlmPolicies.FinalizeProductionLoss, policy =>
+            policy.RequireRole(ApplicationRoleSets.PLM.BomReleasers));
     }
 }

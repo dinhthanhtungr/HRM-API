@@ -36,6 +36,18 @@ internal sealed class PatchCustomerLabelDetailCommandHandler : IRequestHandler<P
             detail.Header.Product.CompanyId == companyId && detail.Header.Customer.CompanyId == companyId, cancellationToken);
         if (entity is null) return OperationResult<SaveCustomerLabelDetailResultDto>.Fail("Customer label detail was not found or is outside the current company.");
 
+        if (request.PrintLabelElementId.HasValue)
+        {
+            var templateId = await _dbContext.CustomerLabelHeaders.AsNoTracking()
+                .Where(header => header.Id == request.CustomerLabelHeaderId)
+                .Select(header => header.PrintLabelTemplateId)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (!templateId.HasValue) return OperationResult<SaveCustomerLabelDetailResultDto>.Fail("PrintLabelElementId requires a print label template on the customer label.");
+            var elementExists = await _dbContext.PrintLabelElements.AsNoTracking().AnyAsync(element =>
+                element.Id == request.PrintLabelElementId.Value && element.PrintLabelTemplateId == templateId.Value, cancellationToken);
+            if (!elementExists) return OperationResult<SaveCustomerLabelDetailResultDto>.Fail("Print label element does not belong to the selected template.");
+        }
+
         if (request.FieldKey is not null)
         {
             var fieldKey = request.FieldKey.Trim();
@@ -47,6 +59,7 @@ internal sealed class PatchCustomerLabelDetailCommandHandler : IRequestHandler<P
         var changed = PatchHelper.SetIfHasValue(request.LineNo, () => entity.LineNo, value => entity.LineNo = value)
             | PatchHelper.SetTrimmed(request.FieldKey, () => entity.FieldKey, value => entity.FieldKey = value!)
             | PatchHelper.SetTrimmed(request.FieldValue, () => entity.FieldValue, value => entity.FieldValue = value)
+            | PatchHelper.SetIfHasValue(request.PrintLabelElementId, () => entity.PrintLabelElementId.GetValueOrDefault(), value => entity.PrintLabelElementId = value)
             | PatchHelper.SetIfHasValue(request.IsActive, () => entity.IsActive, value => entity.IsActive = value);
         if (request.ClearFieldValue)
             changed |= PatchHelper.SetNullableRef<string>(null, () => entity.FieldValue, value => entity.FieldValue = value);

@@ -2,7 +2,7 @@ using HRM.Application.Abstractions.Commons.Pricing;
 using HRM.Application.Abstractions.Persistence.Commons.Pricing;
 using HRM.Application.Abstractions.Persistence.PLM;
 using HRM.Application.Abstractions.Security;
-using HRM.Application.Commons.Authorization.PLM;
+using HRM.Application.Features.PLM.Shared.Authorization;
 using HRM.Application.Commons.Pricing.Dtos;
 using HRM.Application.Commons.Pricing.Helpers;
 using HRM.Application.Commons.Pricing.Models;
@@ -12,6 +12,7 @@ using HRM.Application.Features.PLM.Formulas.Dtos.Commons;
 using HRM.Application.Features.PLM.Formulas.Helpers;
 using HRM.Domain.Enums.CustomerEnum;
 using HRM.Domain.Enums.Formulas;
+using HRM.Domain.Enums.Materials;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -144,7 +145,25 @@ internal sealed class GetFormulaByIdQueryHandler
                 Price = new LatestPriceSource(),
                 PriceTotal = 0m,
                 ItemName = x.MaterialNameSnapshot,
-                ItemExternalId = x.MaterialExternalIdSnapshot
+                ItemExternalId = x.MaterialExternalIdSnapshot,
+                PurchaseStatus = x.MaterialId.HasValue
+                    ? x.Material.PurchaseAvailability == null
+                        ? MaterialPurchaseStatus.Available
+                        : x.Material.PurchaseAvailability.Status
+                    : null,
+                IsPurchaseAvailable = x.MaterialId.HasValue
+                    ? x.Material.PurchaseAvailability == null ||
+                      x.Material.PurchaseAvailability.Status != MaterialPurchaseStatus.Unavailable
+                    : null,
+                PurchaseStatusReason = x.MaterialId.HasValue && x.Material.PurchaseAvailability != null
+                    ? x.Material.PurchaseAvailability.Reason
+                    : null,
+                PurchaseStatusEffectiveFrom = x.MaterialId.HasValue && x.Material.PurchaseAvailability != null
+                    ? x.Material.PurchaseAvailability.EffectiveFrom
+                    : null,
+                ExpectedAvailableDate = x.MaterialId.HasValue && x.Material.PurchaseAvailability != null
+                    ? x.Material.PurchaseAvailability.ExpectedAvailableDate
+                    : null
             })
             .OrderBy(x => x.LineNo)
             .ToListAsync(cancellationToken);
@@ -392,7 +411,8 @@ internal sealed class GetFormulaByIdQueryHandler
         {
             UnitPrice = latestUnitPrice,
             LatestPriceDate = latestPriceDate,
-            Source = latestPriceSource
+            Source = latestPriceSource,
+            Calculation = hasLatestPrice ? latestPrice?.Calculation : null
         };
         material.PriceTotal = latestTotalPrice;
         material.SupplierPrices = IsMaterial(material.ItemType) && material.ItemId != Guid.Empty

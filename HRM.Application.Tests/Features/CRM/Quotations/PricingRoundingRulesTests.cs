@@ -32,7 +32,7 @@ public sealed class PricingRoundingRulesTests
     }
 
     [Fact]
-    public void RealtimeMaterialCost_UsesZeroForMissingOrZeroPricesAndKeepsWarningCount()
+    public void RealtimeMaterialCost_TreatsKnownZeroAsAValidPrice()
     {
         var pricedItemId = Guid.NewGuid();
         var zeroPriceItemId = Guid.NewGuid();
@@ -63,7 +63,7 @@ public sealed class PricingRoundingRulesTests
 
         Assert.Equal(200m, result.MaterialCost);
         Assert.False(result.IsComplete);
-        Assert.Equal(2, result.MissingPriceCount);
+        Assert.Equal(1, result.MissingPriceCount);
     }
 
     [Fact]
@@ -87,6 +87,51 @@ public sealed class PricingRoundingRulesTests
             calculated.SuggestedPriceTiers.Where(x => x.UnitPrice.HasValue),
             tier => Assert.Equal(0m, tier.UnitPrice!.Value % 1m));
         Assert.Equal(123.456789m, stored.StandardSellingPrice);
+    }
+
+    [Fact]
+    public void FormulaPricing_UsesProfitMarginOnSellingPrice()
+    {
+        var policy = new FormulaPricingPolicyDefinition(
+            FormulaPricingProfile.Powder,
+            0m,
+            20m,
+            FormulaPricingRoundingRule.Nearest,
+            1m,
+            []);
+
+        var fromMargin = FormulaPriceCalculator.Calculate(
+            policy,
+            materialCost: 80m,
+            manufacturingCost: 0m,
+            standardSellingPrice: null,
+            profitMarginRate: 20m,
+            ProductPricingChangedField.ProfitMarginRate);
+        var fromSellingPrice = FormulaPriceCalculator.Calculate(
+            policy,
+            materialCost: 80m,
+            manufacturingCost: 0m,
+            standardSellingPrice: 100m,
+            profitMarginRate: null,
+            ProductPricingChangedField.StandardSellingPrice);
+
+        Assert.Equal(100m, fromMargin.StandardSellingPrice);
+        Assert.Equal(20m, fromMargin.ProfitMarginRate);
+        Assert.Equal(20m, fromSellingPrice.ProfitMarginRate);
+    }
+
+    [Theory]
+    [InlineData(-0.01)]
+    [InlineData(100)]
+    public void FormulaPricing_RejectsProfitMarginOutsideSupportedRange(decimal margin)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => FormulaPriceCalculator.Calculate(
+            PowderPolicy(),
+            materialCost: 100m,
+            manufacturingCost: 10m,
+            standardSellingPrice: null,
+            profitMarginRate: margin,
+            ProductPricingChangedField.ProfitMarginRate));
     }
 
     [Fact]

@@ -2,10 +2,13 @@ using HRM.Application.Abstractions.Persistence.CRM.CustomerCare;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Abstractions.Commons.Time;
 using HRM.Application.Commons.Models;
+using HRM.Application.Features.Pricing.Authorization;
+using HRM.Application.Features.CRM.CustomerCare.Visibility;
 using HRM.Application.Features.CRM.Quotations.Dtos;
 using HRM.Application.Features.CRM.Quotations.Services;
 using HRM.Domain.Entities.CustomerSchema;
 using HRM.Domain.Enums.CustomerEnum;
+using HRM.Domain.Enums.Products;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -24,6 +27,8 @@ internal sealed class GetProductPricingWorkbenchDetailQueryHandler
     private readonly ProductPricingRequestQueryService _requestQueryService;
     private readonly IDateTimeProvider _dateTimeProvider;
     private readonly QuotationFeatureOptions _featureOptions;
+    private readonly ICustomerVisibilityService _visibilityService;
+    private readonly IPricingVisibilityService _pricingVisibilityService;
 
     public GetProductPricingWorkbenchDetailQueryHandler(
         ICRMReadDbContext dbContext,
@@ -31,7 +36,9 @@ internal sealed class GetProductPricingWorkbenchDetailQueryHandler
         ProductPricingRealtimeSourceQueryService sourceQueryService,
         ProductPricingRequestQueryService requestQueryService,
         IDateTimeProvider dateTimeProvider,
-        QuotationFeatureOptions featureOptions)
+        QuotationFeatureOptions featureOptions,
+        ICustomerVisibilityService visibilityService,
+        IPricingVisibilityService pricingVisibilityService)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
@@ -39,19 +46,22 @@ internal sealed class GetProductPricingWorkbenchDetailQueryHandler
         _requestQueryService = requestQueryService;
         _dateTimeProvider = dateTimeProvider;
         _featureOptions = featureOptions;
+        _visibilityService = visibilityService;
+        _pricingVisibilityService = pricingVisibilityService;
     }
 
     public async Task<OperationResult<ProductPricingWorkbenchDetailDto>> Handle(
         GetProductPricingWorkbenchDetailQuery request,
         CancellationToken cancellationToken)
     {
-        if (!ProductPricingAccessRules.CanViewWorkbench(_currentUser))
+        var pricingAccess = _pricingVisibilityService.GetAccess();
+        if (!pricingAccess.CanViewWorkbench)
         {
             return OperationResult<ProductPricingWorkbenchDetailDto>.Fail(
                 "Only Sale, President or Developer can access the product pricing workbench.");
         }
 
-        var canManagePricing = ProductPricingAccessRules.CanManage(_currentUser);
+        var canManagePricing = pricingAccess.CanManage;
 
         if (request.ProductId == Guid.Empty ||
             _currentUser.CompanyId is not { } companyId || companyId == Guid.Empty)
@@ -80,12 +90,34 @@ internal sealed class GetProductPricingWorkbenchDetailQueryHandler
                 "Only President or Developer can preview another pricing source.");
         }
 
-        var product = await _dbContext.Products
+        var productQuery = _dbContext.Products
             .AsNoTracking()
             .Where(x =>
                 x.ProductId == request.ProductId &&
                 x.CompanyId == companyId &&
-                x.IsActive)
+                x.IsActive);
+
+        if (!canManagePricing)
+        {
+            var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+            var visibleCustomerIds = _visibilityService
+                .ApplyCustomerVisibility(_dbContext.Customers.AsNoTracking(), scope)
+                .Select(customer => customer.CustomerId);
+
+            productQuery = productQuery.Where(product =>
+                product.SampleRequests.Any(sampleRequest =>
+                    sampleRequest.IsActive &&
+                    sampleRequest.CompanyId == companyId &&
+                    visibleCustomerIds.Contains(sampleRequest.CustomerId)) ||
+                _dbContext.QuotationLines.AsNoTracking().Any(line =>
+                    line.IsActive &&
+                    line.ProductId == product.ProductId &&
+                    line.Quotation.IsActive &&
+                    line.Quotation.CompanyId == companyId &&
+                    visibleCustomerIds.Contains(line.Quotation.CustomerId)));
+        }
+
+        var product = await productQuery
             .Select(x => new ProductRow
             {
                 ProductId = x.ProductId,
@@ -109,6 +141,11 @@ internal sealed class GetProductPricingWorkbenchDetailQueryHandler
                 x.Currency == request.NormalizedCurrency &&
                 x.IsActive);
 
+        if (!pricingAccess.CanViewHistory)
+        {
+            versionQuery = versionQuery.Where(x => x.Status == ProductPricingStatus.Approved);
+        }
+
         var versions = await IncludeVersionDetails(versionQuery)
             .OrderByDescending(x => x.Version)
             .ThenByDescending(x => x.UpdatedDate ?? x.CreatedDate)
@@ -127,10 +164,20 @@ internal sealed class GetProductPricingWorkbenchDetailQueryHandler
             versionQuery,
             ProductPricingStatus.Approved,
             cancellationToken);
-        var storedPricing = draft ?? approved;
+        if (!canManagePricing && approved?.StandardSellingPrice is not > 0m)
+        {
+            return OperationResult<ProductPricingWorkbenchDetailDto>.Fail(
+                "An approved standard selling price was not found or is outside your visibility scope.");
+        }
+
+        var storedPricing = canManagePricing ? draft ?? approved : approved;
 
         ProductPricingSourceOptionDto? selectedSource;
-        if (request.SourceType is { } requestedSourceType && request.SourceId is { } requestedSourceId)
+        if (!pricingAccess.CanViewSystemCalculatedPrice && storedPricing is not null)
+        {
+            selectedSource = ToApprovedSourceMetadata(storedPricing);
+        }
+        else if (request.SourceType is { } requestedSourceType && request.SourceId is { } requestedSourceId)
         {
             var selection = new ProductPricingSourceSelection(
                 request.ProductId,
@@ -169,18 +216,30 @@ internal sealed class GetProductPricingWorkbenchDetailQueryHandler
                 eligibleSources.GetValueOrDefault(request.ProductId) ?? []);
         }
 
-        var requestRows = await _requestQueryService.LoadAsync(
-            companyId,
-            [request.ProductId],
-            cancellationToken);
-        var draftRow = draft is null ? null : ToRow(draft);
+        var requestRows = canManagePricing
+            ? await _requestQueryService.LoadAsync(
+                companyId,
+                [request.ProductId],
+                cancellationToken)
+            : [];
+        var draftRow = canManagePricing && draft is not null ? ToRow(draft) : null;
         var approvedRow = approved is null ? null : ToRow(approved);
+        var latestFormulaConfirmedAt = await _dbContext.Formulas.AsNoTracking()
+            .Where(x =>
+                x.CompanyId == companyId &&
+                x.ProductId == request.ProductId &&
+                x.IsActive &&
+                x.CheckDate.HasValue &&
+                x.Status != FormulaStatus.Cancelled.ToString() &&
+                x.Status != FormulaStatus.Rejected.ToString())
+            .MaxAsync(x => x.CheckDate, cancellationToken);
         var health = ProductPricingHealthEvaluator.Evaluate(
             selectedSource,
             draftRow,
             approvedRow,
             _dateTimeProvider.Now,
-            _featureOptions);
+            _featureOptions,
+            latestFormulaConfirmedAt);
         var summary = ProductPricingWorkbenchMapper.MapSummary(
             product,
             request.NormalizedCurrency,
@@ -191,7 +250,7 @@ internal sealed class GetProductPricingWorkbenchDetailQueryHandler
             health: health);
         var effectivePricing = ProductPricingWorkbenchMapper.BuildEffectivePricing(
             storedPricing is null ? null : ToRow(storedPricing),
-            selectedSource);
+            pricingAccess.CanViewSystemCalculatedPrice ? selectedSource : null);
         var storedTiers = storedPricing?.PriceTiers
             .Where(x => x.IsActive)
             .OrderBy(x => x.SortOrder)
@@ -236,7 +295,7 @@ internal sealed class GetProductPricingWorkbenchDetailQueryHandler
             };
 
         return OperationResult<ProductPricingWorkbenchDetailDto>.Ok(
-            ProductPricingWorkbenchVisibility.ApplyToDetail(detail, canManagePricing));
+            ProductPricingWorkbenchVisibility.ApplyToDetail(detail, pricingAccess));
     }
 
     private static IQueryable<ProductPricingVersion> IncludeVersionDetails(
@@ -289,6 +348,22 @@ internal sealed class GetProductPricingWorkbenchDetailQueryHandler
         return false;
     }
 
+    private static ProductPricingSourceOptionDto ToApprovedSourceMetadata(
+        ProductPricingVersion version)
+        => new()
+        {
+            FormulaPricingPolicyId = version.FormulaPricingPolicyId,
+            FormulaPricingPolicyVersion = version.FormulaPricingPolicy?.Version,
+            SourceType = version.SourceManufacturingFormulaId.HasValue
+                ? ProductPricingSourceType.ManufacturingFormula
+                : ProductPricingSourceType.Formula,
+            SourceId = version.SourceManufacturingFormulaId ?? version.SourceFormulaId ?? Guid.Empty,
+            ExternalId = version.FormulaExternalIdSnapshot ?? string.Empty,
+            Name = version.SourceManufacturingFormula?.Name ?? version.SourceFormula?.Name ?? string.Empty,
+            Status = ProductPricingStatus.Approved.ToString(),
+            IsEligible = true
+        };
+
     private static PricingVersionRow ToRow(ProductPricingVersion version)
         => new()
         {
@@ -305,9 +380,11 @@ internal sealed class GetProductPricingWorkbenchDetailQueryHandler
             ManufacturingCost = version.ManufacturingCost,
             StandardSellingPrice = version.StandardSellingPrice,
             ProfitMarginRate = version.ProfitMarginRate,
+            PublisherNote = version.PublisherNote,
             Status = version.Status,
             Version = version.Version,
             ApprovedAt = version.ApprovedAt,
+            PriceValidityDays = version.FormulaPricingPolicy?.PriceValidityDays,
             CreatedDate = version.CreatedDate,
             UpdatedDate = version.UpdatedDate
         };

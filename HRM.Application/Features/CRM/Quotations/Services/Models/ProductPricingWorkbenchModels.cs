@@ -24,6 +24,7 @@ internal sealed class PricingVersionRow
     public decimal? ManufacturingCost { get; init; }
     public decimal? StandardSellingPrice { get; init; }
     public decimal? ProfitMarginRate { get; init; }
+    public string? PublisherNote { get; init; }
     public ProductPricingStatus Status { get; init; }
     public int Version { get; init; }
     public DateTime? ApprovedAt { get; init; }

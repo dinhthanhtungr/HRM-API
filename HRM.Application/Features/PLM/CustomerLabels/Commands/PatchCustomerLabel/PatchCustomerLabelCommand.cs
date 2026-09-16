@@ -15,6 +15,8 @@ public sealed class PatchCustomerLabelCommand : IRequest<OperationResult<SaveCus
     public string? ColorCode { get; init; }
     public string? CustomerExternalId { get; init; }
     public string? LabelType { get; init; }
+    public Guid? PrintLabelTemplateId { get; init; }
+    public Guid? DefaultPrintLabelLogoId { get; init; }
     public bool? IsActive { get; init; }
     public IReadOnlyList<string>? ClearFields { get; init; }
 }

@@ -19,5 +19,7 @@ namespace HRM.Application.Abstractions.Persistence.Commons.Pricing
         DbSet<ProductPricingVersion> ProductPricingVersions { get; }
         DbSet<Formula> Formulas { get; }
         DbSet<FormulaMaterial> FormulaMaterials { get; }
+        DbSet<Material> Materials { get; }
+        DbSet<Product> Products { get; }
     }
 }

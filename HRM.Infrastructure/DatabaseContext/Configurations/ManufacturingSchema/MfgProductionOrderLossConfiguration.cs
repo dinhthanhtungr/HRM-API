@@ -33,6 +33,7 @@ public class MfgProductionOrderLossConfiguration : IEntityTypeConfiguration<MfgP
         entity.Property(x => x.RatePercentSnapshot).HasColumnName("rate_percent_snapshot").HasPrecision(9, 6);
         entity.Property(x => x.FixedQuantityKgSnapshot).HasColumnName("fixed_quantity_kg_snapshot").HasPrecision(18, 3);
         entity.Property(x => x.QuantityPerEventKgSnapshot).HasColumnName("quantity_per_event_kg_snapshot").HasPrecision(18, 3);
+        entity.Property(x => x.IncludeInMaterialRequestSnapshot).HasColumnName("include_in_material_request_snapshot").HasDefaultValue(false).IsRequired();
         entity.Property(x => x.PlannedQuantityKg).HasColumnName("planned_quantity_kg").HasPrecision(18, 3).HasDefaultValue(0m).IsRequired();
         entity.Property(x => x.ActualQuantityKg).HasColumnName("actual_quantity_kg").HasPrecision(18, 3);
         entity.Property(x => x.EventCount).HasColumnName("event_count");
@@ -50,6 +51,10 @@ public class MfgProductionOrderLossConfiguration : IEntityTypeConfiguration<MfgP
             .HasDatabaseName("ix_mfg_production_order_losses_order_finalized");
         entity.HasIndex(x => x.SourceManufacturingBomLossRuleId)
             .HasDatabaseName("ix_mfg_production_order_losses_source_rule");
+        entity.HasIndex(x => new { x.MfgProductionOrderId, x.SourceManufacturingBomLossRuleId })
+            .IsUnique()
+            .HasFilter("source_manufacturing_bom_loss_rule_id IS NOT NULL")
+            .HasDatabaseName("ux_mfg_production_order_losses_order_source_rule");
         entity.HasIndex(x => x.LossTypeCodeSnapshot)
             .HasDatabaseName("ix_mfg_production_order_losses_type_code");
 

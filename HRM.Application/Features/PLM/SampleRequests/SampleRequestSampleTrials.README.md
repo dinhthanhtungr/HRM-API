@@ -14,6 +14,8 @@ Trial là bản ghi lịch sử của một lần giao mẫu thực tế, không
    - Shortcut trên màn Sample Request: khi hồ sơ đang `SampleSent`, role thuộc `FormulaSelectors` có thể PATCH chọn
      `formulaId` của đúng Trial pending mới nhất. Backend hiểu thao tác đã xác nhận là khách chấp nhận mẫu, tự đặt
      `CustomerReplyStatus = APPROVED`, duyệt Trial và hoàn thành Formula/Sample Request trong cùng transaction.
+     `LabUser` chỉ nhận cùng quyền shortcut khi customer là `KH_VIETAUS` và `RequestType` là nội bộ; thiếu một trong
+     hai điều kiện thì vẫn bị từ chối.
      Nếu Formula không khớp Trial pending mới nhất, ngoài customer scope hoặc user không có quyền thì toàn bộ PATCH bị từ chối.
      Với Sample Request legacy không có bất kỳ Trial active nào, backend tạo Trial kế tiếp gắn Formula đã chọn và duyệt
      ngay trong transaction đó để lưu lại dấu vết đã gửi–đã nhận–khách duyệt. `SentDate` kế thừa từ `SampleRequest.SendDate`,
@@ -231,9 +233,77 @@ Màn hình tồn đọng nên chủ động gửi `reportType=WaitingCustomerFee
 
 Khi đã có trial, `status` được serialize thành code chuỗi ổn định (`Draft`, `SampleSent`, `WaitingCustomerFeedback`, `Approved`, `Failed`, `Cancelled`, `PriceQuote`, `ReworkRequested`) để FE tự map label, màu và icon. Khi chưa có trial, `status` là `null` và FE có thể dùng `sampleRequestStatus` để hiển thị trạng thái hồ sơ.
 
-Endpoint có `[Authorize]`, khóa dữ liệu theo company và phạm vi khách hàng bằng `ICustomerVisibilityService.ApplySampleRequestVisibility`. Báo cáo luôn loại khách nội bộ `KH_VIETAUS` thông qua `PLMCustomerRules.InternalCustomerExternalId`, kể cả khi current user có thể xem Sample Request nội bộ ở màn hình nghiệp vụ khác. `additiveRate` và `labNote` chỉ được trả cho role thuộc `ApplicationRoleSets.PLM.ProductTechnicalEditors`; user khác nhận `null`.
+Endpoint có `[Authorize]`, khóa dữ liệu theo company và phạm vi khách hàng bằng `ICustomerVisibilityService.ApplySampleRequestVisibility`. Báo cáo luôn loại khách nội bộ `KH_VIETAUS` thông qua `PLMCustomerRules.InternalCustomerExternalId`, kể cả khi current user có thể xem Sample Request nội bộ ở màn hình nghiệp vụ khác. `labNote` chỉ được trả cho role thuộc `ApplicationRoleSets.PLM.ProductTechnicalEditors`; user khác nhận `null`.
+
+`additiveRate` trên report là tên contract cũ của **Tỷ lệ sử dụng hiện tại** và lấy trực tiếp từ
+`SampleRequest.Product.UsageRate`, không lấy từ `SampleRequestSampleTrial.AdditiveRate`. Inline edit field này phải gọi
+PATCH Sample Request, không gọi PUT/PATCH Trial và không tạo Trial:
+
+```http
+PATCH /api/v1/plm/sample-requests/{sampleRequestId}
+```
+
+```json
+{
+  "usageRate": 4,
+  "expectedUpdatedDate": "2026-09-11T09:30:00"
+}
+```
+
+Giá trị `4` được hiển thị là `4%`; `0` là giá trị hợp lệ. Xóa tỷ lệ bằng
+`clearFields: ["product.usage_rate"]`. `expectedUpdatedDate` là token của Sample Request và có thể bỏ qua nếu FE chưa
+có token canonical của Sample Request; tuyệt đối không dùng `Trial.UpdatedDate` làm token cho PATCH này.
 
 ## Tạo trial
+
+### Lab lưu Draft trước khi gửi mẫu
+
+```http
+PUT /api/v1/plm/sample-requests/{sampleRequestId}/sample-trials/draft
+```
+
+Endpoint idempotent theo Draft active mới nhất của Sample Request: lần lưu đầu tiên tạo Trial `Draft` với
+`trialNo = max(trialNo) + 1`; các lần gọi sau cập nhật chính Draft đó và trả lại cùng Trial id. Khi Formula được
+chuyển sang `SampleSent`, luồng gửi mẫu hiện có tiếp tục ưu tiên sử dụng Draft này nếu chưa gắn Formula hoặc đang gắn
+đúng Formula được gửi.
+
+Payload chỉ nhận các field Lab được phép chuẩn bị trước khi gửi: `formulaId`, `formulaExternalId`, `batchNo`,
+`deliveredSampleQuantityKg`, `deliveryMethod`, `labNote`, cùng `requestDeliveryDate` và
+`expectedDeliveryDate`. Hai field ngày cuối được lưu trên Sample Request cha; nếu request chỉ có hai field này thì
+backend từ chối tạo Trial rỗng và FE phải dùng PATCH Sample Request. Field không gửi giữ nguyên; field cần xóa phải
+nằm trong `clearFields`. `expectedUpdatedDate` là concurrency token tùy chọn của Draft hiện có.
+
+```json
+{
+  "formulaId": "00000000-0000-0000-0000-000000000000",
+  "formulaExternalId": "VU260400324",
+  "deliveryMethod": "Gửi xe",
+  "labNote": "Chuẩn bị mẫu để gửi khách",
+  "expectedUpdatedDate": null,
+  "clearFields": []
+}
+```
+
+Response `data` là id canonical của Draft vừa tạo hoặc vừa cập nhật; FE dùng id này để đồng bộ dòng hiện tại và có
+thể reload report để lấy `updatedDate` mới:
+
+```json
+{
+  "success": true,
+  "data": "00000000-0000-0000-0000-000000000010",
+  "message": "Created draft sample trial 1 successfully."
+}
+```
+
+`deliveredSampleQuantityKg = 0` là giá trị hợp lệ. Field không xuất hiện hoặc có giá trị
+`null` không làm thay đổi dữ liệu; muốn xóa phải gửi field code trong `clearFields`. `clearFields = []` tương đương
+không yêu cầu xóa field nào.
+
+Chỉ `ApplicationRoleSets.PLM.ProductTechnicalEditors` được gọi endpoint. Backend luôn kiểm tra company, customer
+visibility, Formula active đúng Product và concurrency. Endpoint không nhận trạng thái gửi mẫu, ngày Sale nhận mẫu,
+ngày hoàn thành, người gửi hoặc phản hồi khách; các field đó tiếp tục đi qua action lifecycle tương ứng. Nếu hai request
+tạo Draft chạy đồng thời, unique index `(SampleRequestId, TrialNo)` chặn bản ghi trùng; request xung đột được yêu cầu
+reload/retry và lần gọi lại sẽ dùng Draft đã tồn tại.
 
 ```http
 POST /api/v1/plm/sample-requests/{sampleRequestId}/sample-trials
@@ -278,7 +348,12 @@ PATCH sử dụng semantics:
 - `status` không nullable và không nằm trong `clearFields`.
 - `expectedUpdatedDate` là concurrency token tùy chọn; nếu record đã đổi, backend yêu cầu FE reload.
 
-`requestDeliveryDate` và `expectedDeliveryDate` của payload Trial là dữ liệu của Sample Request cha, không phải snapshot trên Trial. Khi gửi value, backend cập nhật Sample Request trong cùng transaction; khi không gửi, giữ nguyên. PATCH có thể clear bằng chính field code `requestDeliveryDate` hoặc `expectedDeliveryDate` trong `clearFields`.
+`requestDeliveryDate`, `expectedDeliveryDate` và `expectedPriceQuoteDate` của payload Trial là dữ liệu của Sample
+Request cha, không phải snapshot trên Trial. Khi gửi value, backend cập nhật Sample Request trong cùng transaction;
+khi không gửi, giữ nguyên. PATCH có thể clear bằng chính field code tương ứng trong `clearFields`.
+Riêng `expectedPriceQuoteDate` chỉ cho phép `LabUser`, `Developer` và `President` cập nhật hoặc xóa; các technical
+editor khác vẫn giữ quyền với field Trial hiện có nhưng bị từ chối nếu payload chứa field ngày dự kiến báo giá.
+Response report trả `canUpdateExpectedPriceQuoteDate`; FE dùng cờ này để bật ô chỉnh ngày trên card có Trial.
 
 Technical editor giữ quyền PATCH các field hiện có. Sale thuộc `ApplicationRoleSets.Modules.Sales` chỉ được gửi
 `customerReplyStatus`, `customerReplyNote`, hoặc clear đúng hai field này qua `clearFields`. Nếu payload Sale có bất kỳ
@@ -369,21 +444,25 @@ Mỗi dòng trả thêm:
 ```json
 {
   "approvedStandardSellingPrice": 134322,
+  "publisherNote": "Áp dụng cho đơn từ 100 kg",
   "standardSellingPriceApprovedAt": "2026-08-29T15:19:00",
   "systemCalculatedStandardSellingPrice": 145000
 }
 ```
 
-- `approvedStandardSellingPrice`: `StandardSellingPrice` của `ProductPricingVersion` active, `Approved`, đúng
-  company/product/currency và có version lớn nhất.
+- `approvedStandardSellingPrice`: `StandardSellingPrice` dương của `ProductPricingVersion` active, `Approved`, đúng
+  company/product/currency và có version lớn nhất. Sale được xem field này theo capability giá đã duyệt.
+- `publisherNote`: ghi chú công khai của chính version giá đã duyệt trên để Sale sử dụng cùng giá chuẩn; `null`
+  khi người duyệt không nhập ghi chú hoặc chưa có version Approved.
 - `standardSellingPriceApprovedAt`: `ApprovedAt` của chính version trên; không dùng `UpdatedDate` thay thế.
 - `systemCalculatedStandardSellingPrice`: giá realtime từ `ProductPricingSourceQueryService` và pricing policy
   hiện hành. Backend ưu tiên Formula đang gắn với Trial/SampleRequest; nếu Formula đó không còn là nguồn hợp lệ thì
-  dùng nguồn Product hợp lệ được resolver ưu tiên.
+  dùng nguồn Product hợp lệ được resolver ưu tiên. Field này chỉ có giá trị khi user có capability xem giá hệ
+  thống tính; với Sale field luôn là `null` và backend không tải nguồn giá realtime.
 
-Ba field chỉ được map cho role có quyền mở Product Pricing Workbench (`SaleUser`, `President`, `Developer`). User
-khác nhận `null`. API không trả thêm material cost, manufacturing cost, margin hoặc tier, và không dùng snapshot
-Formula làm fallback cho giá realtime.
+Các field được mask độc lập theo pricing capability dùng chung, không còn suy ra từ một role hoặc quyền mở màn hình.
+`publisherNote` và `standardSellingPriceApprovedAt` đi cùng quyền xem giá đã duyệt. API không trả thêm material cost,
+manufacturing cost, margin hoặc tier, và không dùng snapshot Formula làm fallback cho giá realtime.
 
 ## Ghi chú về API tạo Trial trực tiếp
 

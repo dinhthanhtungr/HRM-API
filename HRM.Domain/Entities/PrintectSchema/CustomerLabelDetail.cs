@@ -9,6 +9,7 @@ namespace HRM.Domain.Entities.PrintectSchema
         public Guid Id { get; set; }
 
         public Guid CustomerLabelHeaderId { get; set; }
+        public Guid? PrintLabelElementId { get; set; }
 
         public int LineNo { get; set; }
 
@@ -18,5 +19,6 @@ namespace HRM.Domain.Entities.PrintectSchema
         public bool IsActive { get; set; } = true;
 
         public virtual CustomerLabelHeader Header { get; set; } = null!;
+        public virtual PrintLabelElement? PrintLabelElement { get; set; }
     }
 }

@@ -2,11 +2,13 @@ using HRM.Application.Abstractions.Persistence.Commons.Pricing;
 using HRM.Application.Abstractions.Persistence.PLM;
 using HRM.Application.Abstractions.Persistence.Warehouse;
 using HRM.Application.Abstractions.Security;
-using HRM.Application.Commons.Authorization.PLM;
+using HRM.Application.Features.PLM.Shared.Authorization;
 using HRM.Application.Commons.Pricing.Rules;
 using HRM.Application.Features.PLM.Materials.Dtos.Preview;
 using HRM.Application.Features.Warehouse.Helpers.Publics;
+using HRM.Application.Features.Warehouse.Services;
 using HRM.Domain.Enums.WareHouses;
+using HRM.Domain.Enums.Materials;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -25,19 +27,22 @@ internal sealed class GetMaterialPreviewQueryHandler
     private readonly IWarehouseReadDbContext _warehouseDbContext;
     private readonly ICurrentUser _currentUser;
     private readonly IPLMFieldVisibilityService _fieldVisibility;
+    private readonly IWarehouseStockVisibilityService _stockVisibilityService;
 
     public GetMaterialPreviewQueryHandler(
         IPLMReadDbContext dbContext,
         IPriceReadDbContext priceDbContext,
         IWarehouseReadDbContext warehouseDbContext,
         ICurrentUser currentUser,
-        IPLMFieldVisibilityService fieldVisibility)
+        IPLMFieldVisibilityService fieldVisibility,
+        IWarehouseStockVisibilityService stockVisibilityService)
     {
         _dbContext = dbContext;
         _priceDbContext = priceDbContext;
         _warehouseDbContext = warehouseDbContext;
         _currentUser = currentUser;
         _fieldVisibility = fieldVisibility;
+        _stockVisibilityService = stockVisibilityService;
     }
 
     public async Task<MaterialPreviewDto?> Handle(
@@ -64,6 +69,18 @@ internal sealed class GetMaterialPreviewQueryHandler
                 CustomCode = x.CustomCode,
                 Name = x.Name,
                 CategoryName = x.Category.Name,
+                PurchaseStatus = x.PurchaseAvailability == null
+                    ? MaterialPurchaseStatus.Available
+                    : x.PurchaseAvailability.Status,
+                PurchaseStatusReason = x.PurchaseAvailability == null
+                    ? null
+                    : x.PurchaseAvailability.Reason,
+                PurchaseStatusEffectiveFrom = x.PurchaseAvailability == null
+                    ? null
+                    : x.PurchaseAvailability.EffectiveFrom,
+                ExpectedAvailableDate = x.PurchaseAvailability == null
+                    ? null
+                    : x.PurchaseAvailability.ExpectedAvailableDate,
                 AttachmentCollectionId = x.AttachmentCollectionId
             })
             .FirstOrDefaultAsync(cancellationToken);
@@ -99,6 +116,11 @@ internal sealed class GetMaterialPreviewQueryHandler
             CustomCode = material.CustomCode,
             Name = material.Name,
             CategoryName = material.CategoryName,
+            PurchaseStatus = material.PurchaseStatus,
+            IsPurchaseAvailable = material.PurchaseStatus != MaterialPurchaseStatus.Unavailable,
+            PurchaseStatusReason = material.PurchaseStatusReason,
+            PurchaseStatusEffectiveFrom = material.PurchaseStatusEffectiveFrom,
+            ExpectedAvailableDate = material.ExpectedAvailableDate,
             TotalOnHandKg = totalOnHandKg,
             LastPurchase = lastPurchase,
             Attachments = attachments
@@ -115,9 +137,15 @@ internal sealed class GetMaterialPreviewQueryHandler
             return 0m;
         }
 
+        var stockQuery = await _stockVisibilityService.ApplyAsync(
+            _warehouseDbContext.WarehouseShelfStocks.AsNoTracking(),
+            companyId,
+            keyword: null,
+            cancellationToken);
+
         return await WarehouseStockQueryHelper
             .ForItemStock(
-                _warehouseDbContext.WarehouseShelfStocks.AsNoTracking(),
+                stockQuery,
                 companyId,
                 materialCode,
                 StockType.RawMaterial,
@@ -212,6 +240,10 @@ internal sealed class GetMaterialPreviewQueryHandler
         public string? CustomCode { get; init; }
         public string? Name { get; init; }
         public string? CategoryName { get; init; }
+        public MaterialPurchaseStatus PurchaseStatus { get; init; }
+        public string? PurchaseStatusReason { get; init; }
+        public DateTime? PurchaseStatusEffectiveFrom { get; init; }
+        public DateTime? ExpectedAvailableDate { get; init; }
         public Guid? AttachmentCollectionId { get; init; }
     }
 }

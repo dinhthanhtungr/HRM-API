@@ -16,10 +16,10 @@ namespace HRM.Domain.Entities.PrintectSchema
         public int Y { get; set; }
         public int Width { get; set; }                // chiều rộng vùng in
         public int Height { get; set; }               // chiều cao vùng in
-        public int FontSize { get; set; }
+        public int? FontSize { get; set; }
         public string? Alignment { get; set; }         // left/center/right…
-        public bool Bold { get; set; }
-        public bool Italic { get; set; }
+        public bool? Bold { get; set; }
+        public bool? Italic { get; set; }
         public string? ValueType { get; set; }         // dữ liệu in: text, qrcode…
         public string? PrefixText { get; set; }        // tiền tố
         public string? RenderType { get; set; }        // engine render

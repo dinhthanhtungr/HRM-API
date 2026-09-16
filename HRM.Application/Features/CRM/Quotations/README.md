@@ -148,7 +148,8 @@ Request có thể chứa:
 `contactName` và `contactPhone` là snapshot trên Quotation. Khi create/PATCH có `contactId` nhưng không gửi hai
 field snapshot, backend lấy tên và số điện thoại hiện tại từ Contact. Giá trị FE gửi được ưu tiên; `contactPhone`
 tối đa 50 ký tự. Với PATCH, không gửi field nghĩa là giữ nguyên, còn gửi chuỗi trắng nghĩa là xóa snapshot.
-`GET /{quotationId}` trả lại `contactPhone`; PDF ưu tiên snapshot này và chỉ fallback `Contact.Phone` cho dữ liệu cũ.
+`GET /{quotationId}` trả lại `contactPhone`; PDF dùng trực tiếp snapshot này cho dòng `Điện thoại/Tel`.
+Nếu snapshot là `null` hoặc chuỗi trắng thì PDF để trống, không fallback về `Customer.Phone` hoặc `Contact.Phone`.
 
 `customerAddressSnapshot` cũng là dữ liệu snapshot, tối đa 1.000 ký tự. Khi create không gửi field, backend lấy
 `Customer.RegistrationAddress`; khi đổi Customer bằng PATCH mà không gửi địa chỉ, backend tự snapshot địa chỉ của
@@ -492,17 +493,21 @@ Mỗi sản phẩm trả:
 - `approvedStandardSellingPrice`: giá chuẩn của version `Approved` mới nhất có giá lớn hơn 0.
 - `approvedStandardSellingPriceEffectiveFrom`: thời điểm President/Developer duyệt giá, lấy từ `ApprovedAt`.
 - `systemCalculatedStandardSellingPrice`: giá realtime của nguồn định giá hợp lệ được backend ưu tiên
-  (nguồn khách chọn trước, sau đó theo loại nguồn và ngày cập nhật).
+  (nguồn khách chọn trước, sau đó theo loại nguồn và ngày cập nhật). Field này là `null` nếu current user không có
+  capability `pricing.system-calculated-price.view`; riêng `SaleUser` không có capability này.
 - `standardSellingPrice`: giá FE nên hiển thị, ưu tiên `approvedStandardSellingPrice`; chỉ fallback sang
-  `systemCalculatedStandardSellingPrice` khi chưa có giá được duyệt.
+  `systemCalculatedStandardSellingPrice` khi current user có quyền xem giá hệ thống. Vì vậy Sale không có giá
+  Approved sẽ nhận `null`, không nhận giá realtime làm fallback.
+- `publisherNote`: ghi chú công khai của cùng version `Approved` đang cung cấp giá chuẩn; `null` khi giá đang
+  fallback từ hệ thống hoặc người duyệt không nhập ghi chú.
 - `standardSellingPriceSource = ApprovedPricingVersion | SystemCalculated | Unavailable` cho biết nguồn của
   `standardSellingPrice`; FE không tự suy nguồn từ `currentPricing` hoặc `formulas`.
 - `hasPricingVersion`, `hasEligiblePricingSource` và `pricingSources`.
 - `formulas` chỉ còn dữ liệu chi tiết tương thích cho Formula đủ điều kiện khi Product chưa có version giá.
 
-Các field giá chuẩn tổng hợp chỉ được trả cho role được phép mở Product Pricing Workbench
-(`SaleUser`, `President`, `Developer`). User khác nhận giá `null` và source `Unavailable`. Cost NVL, chi phí sản
-xuất và margin vẫn theo field visibility cũ; việc được xem giá bán tiêu chuẩn không cấp quyền xem chi phí nội bộ.
+Các field pricing được map bằng `IPricingVisibilityService`, không suy trực tiếp từ role trong handler.
+`SaleUser` chỉ nhận giá Approved; giá hệ thống, cost NVL, chi phí sản xuất, margin và history bị trả `null` hoặc
+danh sách rỗng. Việc được xem giá bán tiêu chuẩn không cấp quyền xem chi phí nội bộ.
 
 Mỗi Formula trả:
 
@@ -632,7 +637,7 @@ Backend chọn nguồn công thức theo rule chung của Product Pricing Workbe
 
 - `priceTiers`: tier khởi tạo cho cột **Giá báo lần này**. Sale sửa rồi gửi lại trong
   create/replace lines để lưu snapshot.
-- `approvedPricing`: giá chuẩn mới nhất President đã duyệt, gồm version, status, `approvedAt`,
+- `approvedPricing`: giá chuẩn mới nhất President đã duyệt, gồm version, status, `approvedAt`, `publisherNote`,
   nguồn và tiers. Chưa có version Approved thì object này là `null`.
 - `systemCalculatedPricing`: tier hệ thống tính realtime từ nguồn công thức, giá NVL và pricing
   policy hiện hành. Object này độc lập với giá Approved để FE so sánh.
@@ -670,6 +675,7 @@ API không trả `defaultPriceTiers` vì nội dung đó trùng với `priceTier
     "version": 3,
     "status": "Approved",
     "approvedAt": "2026-08-20T15:52:00",
+    "publisherNote": "Áp dụng cho đơn từ 100 kg",
     "sourceType": "Formula",
     "sourceId": "formula-guid",
     "sourceExternalId": "VU260600325",
@@ -745,6 +751,10 @@ Response:
       "savedPriceMode": "Tiered",
       "savedUnitPrice": 101000,
       "savedPriceTiers": [],
+      "currentProductPricingVersionId": "pricing-version-guid",
+      "currentProductPricingVersion": 3,
+      "currentPublisherNote": "Áp dụng cho đơn từ 100 kg",
+      "isUsingLatestApprovedPricing": true,
       "formulaId": "formula-guid",
       "formulaExternalId": "VU260700126",
       "formulaName": "F001",
@@ -762,6 +772,9 @@ Response:
 Quy tắc:
 
 - `savedPriceMode`, `savedUnitPrice`, `savedPriceTiers` là snapshot trong database và không bị tính lại.
+- `currentProductPricingVersionId`, `currentProductPricingVersion` và `currentPublisherNote` cùng lấy từ
+  `ProductPricingVersion` active, `Approved` mới nhất trong đúng company/product/currency. Chưa có version giá
+  đã duyệt thì ba field này đều `null`; `currentPublisherNote` cũng `null` khi người duyệt không nhập ghi chú.
 - `currentPriceTiers` được tính từ giá NVL hiện tại bằng cùng `QuotationCurrentPricingResolver` với endpoint
   pricing một sản phẩm.
 - API chỉ đọc, không tự ghi current tiers đè lên snapshot.
@@ -841,6 +854,8 @@ Response gồm:
 - Price tiers snapshot của từng line.
 - Lịch sử trạng thái.
 
+`lines[].standardPriceReview` là trạng thái live của giá chuẩn Product, không làm thay đổi tier snapshot trong báo giá. Khi Lab xác nhận Formula sau lần BGD duyệt giá gần nhất hoặc giá đã quá hạn rà soát, endpoint trả `state = PendingReapproval`, cùng `hasFormulaConfirmationPending`/`isPricingReviewExpired` và `pricingReviewDueDate`. Sale chỉ hiển thị cảnh báo; việc duyệt giá mới hoặc giữ giá hiện tại thuộc Executive Pricing Review.
+
 Mỗi `lines[]` tách bốn nguồn tier độc lập. FE không phải ghép giá chuẩn, giá hệ thống và giá báo cũ vào
 từng hàng snapshot:
 
@@ -885,9 +900,11 @@ GET /api/v1/crm/quotations/{quotationId}/pdf?download=true
 - Mỗi dòng sản phẩm trên PDF có cột `Ghi chú/Note`, lấy từ snapshot
   `Customer.QuotationLines.Note`; để trống thì in `-`. Cột này không lấy từ
   `Quotation.Note` (ghi chú chung của cả báo giá).
-- Tên/địa chỉ khách hàng, người liên hệ, nhân viên phụ trách và thông tin công ty hiện
-  được đọc từ dữ liệu liên kết tại thời điểm xuất PDF. Muốn chứng từ đã gửi bất biến
-  hoàn toàn thì cần lưu thêm snapshot header hoặc lưu chính file PDF khi `mark-sent`.
+- Dòng `Điện thoại/Tel` của khách hàng dùng trực tiếp `Quotation.ContactPhone`; không lấy
+  `Customer.Phone` và không fallback sang `Contact.Phone` khi snapshot trống.
+- Tên khách hàng, nhân viên phụ trách và thông tin công ty vẫn được đọc từ dữ liệu liên kết tại thời điểm
+  xuất PDF; địa chỉ và tên/số điện thoại người liên hệ dùng snapshot trên Quotation theo contract ở mục 5.1.
+  Muốn chứng từ đã gửi bất biến hoàn toàn thì cần lưu thêm các snapshot header còn thiếu hoặc lưu chính file PDF khi `mark-sent`.
 - Header/footer ISO dùng cấu hình `Pdf:Quotation` và tự fallback sang text nếu thiếu ảnh.
 - QuestPDF license lấy từ `Pdf:QuestPdfLicense`; chỉ cấu hình `Community` khi doanh nghiệp
   đáp ứng đúng điều kiện license.
@@ -925,7 +942,8 @@ Giá nội bộ được tách khỏi công thức kỹ thuật và snapshot g�
 - Khi Formula có một dòng thành phần kiểu `Product`, BE lấy giá vốn thành phẩm theo thứ tự:
   `ProductPricingVersion` đang `Approved` mới nhất của đúng `Company + Currency` và có
   `StandardSellingPrice`; nếu chưa có, BE lấy tổng `Quantity × giá NVL` của `Formula.IsSelect = true`
-  đang áp dụng cho TP đó; chỉ khi Formula trống/thiếu giá/vòng lặp mới fallback sang
+  đang áp dụng cho TP đó; nếu Formula được chọn trống, thiếu giá hoặc có vòng lặp thì BE thử Formula
+  `SampleSent` mới cập nhật nhất; chỉ khi cả hai Formula không tính được mới fallback sang
   `MerchandiseOrderDetails.UnitPriceAgreed` gần nhất. Nguồn đơn nội bộ là legacy transaction fallback.
   Formula lồng nhau được resolve theo cùng thứ tự ưu tiên; các truy vấn đều batch theo danh sách product id,
   không query từng dòng Formula.
@@ -938,15 +956,22 @@ Giá nội bộ được tách khỏi công thức kỹ thuật và snapshot g�
 API quản lý bảng giá:
 
 - `GET /api/v1/crm/quotations/product-pricing-workbench?view=NeedsPricing&currency=VND`: danh sách
-  Product-centric cho President/Developer. Bảng giá chuẩn được quản lý bằng VND; không truyền `currency` cũng mặc định
+  Product-centric cho President/Developer và chế độ đọc giới hạn cho Sale. Bảng giá chuẩn được quản lý bằng VND; không truyền `currency` cũng mặc định
   là VND. Mỗi `Product + Currency` chỉ có một dòng. Mọi thứ tự sắp xếp đều
   ưu tiên sản phẩm thuộc báo giá đang yêu cầu định giá trước, tiếp theo là giá chuẩn đã hết hạn, rồi các giá chuẩn
-  có ngày hết hạn gần nhất; `sortBy` của FE chỉ sắp xếp trong từng nhóm ưu tiên này. `view` nhận `NeedsPricing`, `Draft`, `Approved` hoặc `All`;
+  có ngày hết hạn gần nhất; `sortBy` của FE chỉ sắp xếp trong từng nhóm ưu tiên này. `view` nhận `NeedsPricing`, `Draft`, `Approved`, `All`,
+  `MaterialCostChanged` hoặc `ProductionMaterialCostChanged`;
   mặc định là `All`.
+  `MaterialCostChanged` chỉ trả Product mà chi phí NVL realtime của chính Formula/VA đã lưu trên bản giá
+  `Approved` mới nhất tăng ít nhất `MaterialCostChangeThresholdPercent` so với `MaterialCostSnapshot` của bản đó.
+  `ProductionMaterialCostChanged` dùng VA `Checking` được chọn ở lệnh sản xuất mới nhất của Product làm chi phí
+  realtime, nhưng vẫn so với cùng snapshot `Approved`. Snapshot bằng 0, thiếu giá realtime, giá không tăng, hoặc
+  tăng dưới ngưỡng đều không khớp. Hai view này mới chạy batch load giá realtime; bốn view cũ không chịu chi phí đó.
   Tiền tệ của quotation request không được dùng để lọc hàng đợi: mã BBG VND và USD đều có thể đưa Product vào
   workbench, nhưng bản ghi giá chuẩn hiển thị và quản lý tại đây vẫn là VND.
   `President` và `Developer` nhận đầy đủ dữ liệu quản lý giá. `SaleUser` được phép đọc nhưng response bị giới hạn:
-  danh sách giữ nguồn công thức cùng `sourceStatus`/`sourceIsEligible`, giá bán tiêu chuẩn, trạng thái bảng giá và số báo giá đang chờ; các field chi phí,
+  chỉ các product thuộc customer visibility của Sale và có version `Approved` với giá chuẩn dương được xuất hiện.
+  Danh sách giữ metadata nguồn, giá bán tiêu chuẩn và `publisherNote` của version Approved; các field giá hệ thống, chi phí,
   margin, version id và ngày nội bộ trả `null`/giá trị mặc định. `canOpenPricingDetail = true` cho phép FE giữ thao
   tác mở drawer; `canManagePricing = false` chỉ khóa các thao tác ghi, duyệt và đổi nguồn.
   Có thể gửi `sortBy=createdDate&sortDirection=asc|desc` để đổi thứ tự này.
@@ -954,6 +979,7 @@ API quản lý bảng giá:
   báo giá đã gửi yêu cầu định giá. Khi không truyền `keyword`, workbench ẩn sản phẩm có Sample Request của khách nội bộ
   `KH_VIETAUS`; khi người dùng chủ động tìm bằng `keyword`, các sản phẩm này được phép xuất hiện. Khi `keyword` bắt đầu bằng `BBG`, API cũng tìm trực tiếp các dòng active của
   báo giá active bất kể tiền tệ mà người gọi có quyền xem, kể cả khi báo giá đã chuyển khỏi `PendingApproval`.
+  Keyword tìm theo mã/tên Product và mã Sample Request active liên quan; tìm mã Sample Request không phân biệt hoa thường và vẫn giữ company/customer visibility của workbench.
   Product cũ không có nguồn, không có lịch sử giá và không có yêu cầu sẽ bị ẩn;
   sản phẩm đang được yêu cầu nhưng chưa có Formula vẫn được giữ để cảnh báo President.
 
@@ -972,7 +998,9 @@ API quản lý bảng giá:
   Với Formula legacy chưa có `Formula.CompanyId`, company scope được xác định qua Product liên kết; dữ liệu của
   Product thuộc công ty khác không được trả về.
 
-  Với `SaleUser`, drawer trả giá bán tiêu chuẩn, `selectedSource` rút gọn gồm `sourceType`, `sourceId`,
+  Với `SaleUser`, drawer áp dụng cùng customer visibility như list và từ chối product không có giá chuẩn Approved.
+  Response trả giá bán tiêu chuẩn cùng `summary.publisherNote` của version Approved,
+  `selectedSource` rút gọn gồm `sourceType`, `sourceId`,
   `externalId`, `name` và danh sách tiers chỉ đọc. Tier của Sale chỉ có khoảng khối lượng, đơn giá, cờ cần nhập
   thủ công/cờ đã lưu và thứ tự; `marginVsMaterialPercent`/`marginVsCostPercent` luôn `null`. Chi phí, margin tổng,
   NVL, version Draft/Approved, lịch sử và báo giá liên quan vẫn bị trả `null` hoặc danh sách rỗng. Sale không được
@@ -999,13 +1027,15 @@ API quản lý bảng giá:
 - `POST /api/v1/crm/quotations/product-pricing-versions`: nguồn phải hợp lệ và có policy `Published` đúng
   company/profile/currency. Backend tự tải material cost realtime, bỏ qua `materialCostSnapshot` và
   `calculatedAt` từ request, rồi tạo toàn bộ tier theo policy. Request có thể gửi `note` để lưu ghi chú
-  nội bộ. Màn President gửi `approveImmediately=true` để tạo và duyệt version trong cùng một lần ghi.
+  nội bộ và `publisherNote` để lưu ghi chú công khai cho Sale. Màn President gửi `approveImmediately=true`
+  để tạo và duyệt version trong cùng một lần ghi.
 - `PUT /api/v1/crm/quotations/product-pricing-versions/{id}`: sửa giá và tiers của một version `Draft`;
-  không được đổi nguồn hoặc policy. Có thể cập nhật `note`; không gửi hoặc gửi chuỗi rỗng thì ghi chú sẽ là
-  `null`. Backend luôn dùng đúng policy FK của Draft, không tự chuyển sang policy mới.
+  không được đổi nguồn hoặc policy. Có thể cập nhật `note` và `publisherNote`; không gửi hoặc gửi chuỗi rỗng
+  thì field tương ứng sẽ là `null`. Backend luôn dùng đúng policy FK của Draft, không tự chuyển sang policy mới.
 - `POST /api/v1/crm/quotations/product-pricing-versions/{id}/approve`: duyệt version và chuyển version `Approved`
   trước đó của cùng `Product + Currency` sang `Superseded`. Backend tải lại material cost realtime và tính lần
-  cuối bằng policy FK trước khi lưu snapshot/tiers và phát notification.
+  cuối bằng policy FK trước khi lưu snapshot/tiers và phát notification. Request có thể gửi `publisherNote` để
+  cập nhật ghi chú công khai ngay lúc duyệt; không gửi/`null` thì giữ giá trị trên Draft, chuỗi trắng thì xóa.
 
 Khi POST/PUT/approve không thể dùng nguồn giá đã chọn, API trả message tiếng Việt theo nguyên nhân thực tế trong
 phạm vi sản phẩm và công ty hiện tại: công thức hoặc sản phẩm đã ngừng hoạt động, công thức chưa đạt trạng thái
@@ -1018,8 +1048,8 @@ company/profile/currency là read-only. PUT/approve trả HTTP `409 Conflict` v�
 mới. Publish policy mới không sửa bất kỳ snapshot hoặc version `Approved` cũ nào.
 
 Chỉ `President` và `Developer` được xem lịch sử đầy đủ, tạo, sửa hoặc duyệt bảng giá. Endpoint
-`GET /products/{productId}/pricing?currency=VND` cho Sale đọc các tier giá bán và metadata nguồn/duyệt,
-nhưng contract này không trả material cost, manufacturing cost hoặc margin. Field
+`GET /products/{productId}/pricing?currency=VND` cho Sale đọc các tier giá bán, `approvedPricing.publisherNote`
+và metadata nguồn/duyệt, nhưng contract này không trả material cost, manufacturing cost hoặc margin. Field
 `canApplyToQuotation` true khi bộ `priceTiers` mặc định có ít nhất một
 tier và tất cả tier đều có `unitPrice`; nguồn có thể là `ApprovedPricingVersion` hoặc
 `SystemCalculated`. Giá `0` là hợp lệ, chỉ `null` mới được xem là thiếu giá.
@@ -1045,6 +1075,7 @@ Ví dụ tạo Draft mới từ Formula:
   "manufacturingCost": 20000,
   "standardSellingPrice": 140000,
   "profitMarginRate": 27.2727,
+  "publisherNote": "Áp dụng cho đơn từ 100 kg",
   "changedField": "StandardSellingPrice",
   "priceTiers": [
     {
@@ -1124,6 +1155,12 @@ cho người dùng thay vì suy luận từ nhiều field rời rạc:
 | `CostingStale` | Snapshot chi phí/giá đã lưu quá số ngày cho phép. | `true` |
 | `RepricingRequired` | Giá chuẩn đã duyệt quá hạn rà soát. | `true` |
 | `NoEligibleSource`, `SourceNoLongerEligible`, `PricingPolicyMissing` | Không có nguồn kỹ thuật hợp lệ, nguồn cũ không còn hợp lệ, hoặc chưa có policy giá áp dụng. | `true` |
+
+`standardPriceState` độc lập với cảnh báo nguồn kỹ thuật/policy: khi vẫn còn `ProductPricingVersion`
+`Approved` có giá, trạng thái là `Active` (hoặc `PendingReapproval` khi đến hạn rà soát/có Formula mới
+được xác nhận). Vì vậy card có thể đồng thời báo **Đã có giá chuẩn** và cảnh báo
+`SourceNoLongerEligible`/`NoEligibleSource`/`PricingPolicyMissing`; các cảnh báo này yêu cầu xử lý trước
+lần duyệt giá tiếp theo, không xóa hoặc phủ nhận giá chuẩn đã duyệt.
 
 Thứ tự ưu tiên khi backend resolve status là: không có nguồn/policy, thiếu giá NVL, chi phí biến động vượt ngưỡng,
 giá chuẩn đến hạn rà soát, snapshot chi phí cũ, chờ duyệt, rồi mới `Ready`. Vì vậy Formula có thể trả
@@ -1271,11 +1308,16 @@ changedField = ManufacturingCost:
     giữ profitMarginRate hiện tại, tính lại standardSellingPrice
 
 changedField = StandardSellingPrice:
-    profitMarginRate = (standardSellingPrice - costBase) / costBase * 100
+    profitMarginRate = (standardSellingPrice - costBase) / standardSellingPrice * 100
 
 changedField = ProfitMarginRate:
-    standardSellingPrice = costBase * (1 + profitMarginRate / 100)
+    standardSellingPrice = costBase / (1 - profitMarginRate / 100)
 ```
+
+`ProfitMarginRate` là profit margin trên giá bán/doanh thu trong toàn bộ pricing flow, không phải markup trên
+cost. Giá trị hợp lệ từ `0` (inclusive) đến dưới `100` (exclusive). Dữ liệu markup cũ trong
+`ProductPricingVersions` và `FormulaPricingPolicies` được chuyển đổi một lần bằng migration
+`20260912_ConvertPricingMarkupToProfitMargin.sql`.
 
 `changedField` tạm thời nullable để tương thích client cũ. Với `PUT`, nếu không gửi thì backend suy luận từ field
 khác dữ liệu đang lưu; khi không phân biệt được, `StandardSellingPrice` được ưu tiên làm giá trị chính. Client mới
@@ -1456,6 +1498,12 @@ Vì vậy các lần yêu cầu tiếp theo của cùng báo giá đều nằm t
 `notificationId` mới. Người nhận gồm leader active của sale group chứa `quotation.SaleEmployeeId` cùng
 President/Developer active trong công ty, loại người thao tác hiện tại.
 
+Khi Notification Hub đọc InternalMail conversation có `RelatedType = Quotation`, cả API list và detail trả
+`quotationInfo` gồm `quotationCode`, mã/tên khách hàng và `saleEmployeeId`/`saleName` lấy từ
+`Quotation.SaleEmployee`. FE dùng object này để hiển thị đồng bộ sidebar/header, không suy Sale từ người gửi
+message cuối. Ô tìm kiếm inbox cũng tìm không phân biệt hoa/thường theo mã/tên khách hàng và tên Sale của báo giá,
+trong company hiện tại và chỉ với báo giá active.
+
 Response trả `quotationId`, `conversationId`, `messageId`, `notificationId`, `requestedAt`. FE dùng
 `conversationId` và `messageId` để mở đúng cuộc trao đổi và đúng vị trí message.
 
@@ -1488,6 +1536,12 @@ chưa có thread, backend không tạo conversation hoặc message chỉ để p
 ## 13. Quy tắc notification và InternalMail cho báo giá
 
 Mọi notification, trao đổi nội bộ hoặc sự kiện nghiệp vụ liên quan trực tiếp đến một báo giá phải đi theo cùng một contract để FE gom về mục **Báo giá** trong Notification Hub.
+
+Sự kiện Formula được Lab xác nhận và có giá tham khảo dùng topic `SampleRequestReferencePriceAvailable`
+(`plm.sample_request.reference_price.available`, category `sample_request`, event group `quotation`) để xuất hiện
+trong mục **Báo giá** của nhóm Sample Request. Sự kiện này vẫn dùng aggregate và conversation của Sample Request vì tại thời điểm phát có thể chưa có
+Quotation; link mở màn hình tra cứu giá sản phẩm theo mã màu. Topic cũ `SampleRequestFormulaApproved` được giữ nguyên
+mapping lịch sử và không còn được publish cho sự kiện mới.
 
 ### 13.1. Category code, event group và topicCode
 
@@ -1663,15 +1717,19 @@ Khi không resolve được policy, source trả `pricing = null` và `pricingSt
 Khi thiếu giá material, source trả `pricing = null` và `pricingStatus = MaterialPriceMissing`.
 Policy id/version được trả cùng kết quả để client biết chính xác cấu hình đã dùng.
 
-Visibility theo role:
+Visibility theo capability từ `IPricingVisibilityService`:
 
 - Sale chỉ thấy product đã có Sample Request hoặc Quotation active thuộc customer trong `CustomerVisibilityService`
-  của họ (khách được phân công/claim, hoặc thuộc group do họ dẫn). Product không liên quan customer trong scope
+  của họ (khách được phân công/claim, hoặc thuộc group do họ dẫn), đồng thời phải có `ProductPricingVersion`
+  trạng thái `Approved` với `StandardSellingPrice > 0`. Product chưa duyệt, chỉ có Draft hoặc chỉ có giá realtime
   không xuất hiện trong Product Pricing Workbench. Sale nhận metadata nguồn, standard selling price, tiers và
-  `relatedCustomers`. Mỗi related customer chỉ gồm
+  `relatedCustomers`; khi đồng thời tồn tại Draft và Approved, response của Sale chỉ lấy version Approved, không
+  dùng Draft/realtime làm giá fallback. Mỗi related customer chỉ gồm
   mã/tên khách hàng, số chứng từ liên quan và ngày liên quan gần nhất; `healthSummary` luôn là `null`.
 - President/Developer thấy toàn bộ product active cùng company và nhận thêm `healthSummary`, material completeness,
   cost, margin, material/supplier details và history.
+- Quotation Pricing Workspace và Pricing Queue yêu cầu capability `pricing.manage`; mặc định chỉ President/Developer
+  có quyền này.
 - Quotation detail giữ nguyên snapshot nếu đã có; line chưa có snapshot được bổ sung tier gợi ý realtime chỉ để
   hiển thị/nhập liệu với `isSnapshot = false`. PDF tiếp tục chỉ đọc snapshot đã lưu.
 

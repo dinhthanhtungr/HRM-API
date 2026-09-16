@@ -10,7 +10,7 @@ using Microsoft.EntityFrameworkCore;
 namespace HRM.Application.Features.PLM.Materials.Commands.UpdateMaterialSupplierPrice;
 
 /// <summary>
-/// Cập nhật giá hiện tại của một liên kết NVL - nhà cung cấp và lưu giá cũ vào PriceHistory.
+/// Cập nhật hoặc xác nhận lại giá hiện tại của một liên kết NVL - nhà cung cấp và lưu snapshot vào PriceHistory.
 /// Hai thay đổi được ghi trong cùng một lần SaveChanges để bảo đảm tính nguyên tử.
 /// </summary>
 internal sealed class UpdateMaterialSupplierPriceCommandHandler
@@ -94,15 +94,10 @@ internal sealed class UpdateMaterialSupplierPriceCommandHandler
                 "The material supplier price has changed. Reload the latest value before updating.");
         }
 
-        if (materialSupplier.CurrentPrice == newPrice &&
-            string.Equals(materialSupplier.Currency, newCurrency, StringComparison.OrdinalIgnoreCase))
-        {
-            return OperationResult<UpdateMaterialSupplierPriceResultDto>.Fail(
-                "The new price and currency are the same as the current values.");
-        }
-
         var oldPrice = materialSupplier.CurrentPrice;
         var oldCurrency = materialSupplier.Currency;
+        var priceChanged = oldPrice != newPrice ||
+                           !string.Equals(oldCurrency, newCurrency, StringComparison.OrdinalIgnoreCase);
         var now = _dateTimeProvider.Now;
         var historyId = Guid.NewGuid();
 
@@ -137,6 +132,7 @@ internal sealed class UpdateMaterialSupplierPriceCommandHandler
                 NewPrice = newPrice,
                 Currency = newCurrency,
                 PriceHistoryId = historyId,
+                PriceChanged = priceChanged,
                 UpdatedDate = now,
                 UpdatedByEmployeeId = employeeId
             });

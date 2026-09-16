@@ -35,8 +35,8 @@ namespace HRM.Application.Commons.Pricing.Helpers
 
             if (hasValidPurchaseOrderPrice && hasValidSupplierPrice)
             {
-                return IsNewerOrSameDate(purchaseOrderPrice!.PriceDate, supplierPrice!.PriceDate)
-                    ? purchaseOrderPrice
+                return Compare(purchaseOrderPrice!, supplierPrice!) >= 0
+                    ? purchaseOrderPrice!
                     : supplierPrice!;
             }
 
@@ -77,19 +77,50 @@ namespace HRM.Application.Commons.Pricing.Helpers
             };
         }
 
-        private static bool IsNewerOrSameDate(DateTime? sourceDate, DateTime? compareDate)
+        private static int Compare(MaterialPriceCandidate left, MaterialPriceCandidate right)
         {
-            if (!sourceDate.HasValue)
+            var dateComparison = CompareNullable(left.PriceDate, right.PriceDate);
+            if (dateComparison != 0)
             {
-                return !compareDate.HasValue;
+                return dateComparison;
             }
 
-            if (!compareDate.HasValue)
+            var sourceComparison = GetSourcePriority(left.PriceSource)
+                .CompareTo(GetSourcePriority(right.PriceSource));
+            if (sourceComparison != 0)
             {
-                return true;
+                return sourceComparison;
             }
 
-            return sourceDate.Value >= compareDate.Value;
+            if (left.PriceSource == MaterialPriceSource.MaterialSupplier)
+            {
+                var preferredComparison = left.IsPreferred.CompareTo(right.IsPreferred);
+                if (preferredComparison != 0)
+                {
+                    return preferredComparison;
+                }
+            }
+
+            var idComparison = left.CandidateId.CompareTo(right.CandidateId);
+            if (idComparison != 0)
+            {
+                return idComparison;
+            }
+
+            return left.CurrentPrice.CompareTo(right.CurrentPrice);
         }
+
+        private static int CompareNullable(DateTime? left, DateTime? right)
+            => left.HasValue
+                ? right.HasValue ? left.Value.CompareTo(right.Value) : 1
+                : right.HasValue ? -1 : 0;
+
+        private static int GetSourcePriority(MaterialPriceSource source)
+            => source switch
+            {
+                MaterialPriceSource.PurchaseOrder => 2,
+                MaterialPriceSource.MaterialSupplier => 1,
+                _ => 0
+            };
     }
 }

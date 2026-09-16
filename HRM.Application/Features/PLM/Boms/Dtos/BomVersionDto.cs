@@ -12,11 +12,15 @@ public sealed class BomVersionDto
     public BomType BomType { get; init; }
     public int VersionNo { get; init; }
     public BomVersionStatus Status { get; init; }
+    public Guid? SourceEngineeringBomVersionId { get; init; }
     public decimal BaseOutputQuantity { get; init; }
     public string OutputUnit { get; init; } = string.Empty;
     public DateTime? EffectiveFrom { get; init; }
     public DateTime? EffectiveTo { get; init; }
     public string? ChangeReason { get; init; }
     public string? Note { get; init; }
+    public DateTime? ReleasedDate { get; init; }
     public IReadOnlyList<BomItemDto> Items { get; init; } = [];
+    public IReadOnlyList<ManufacturingBomStageDto> Stages { get; init; } = [];
+    public IReadOnlyList<ManufacturingBomLossRuleDto> LossRules { get; init; } = [];
 }

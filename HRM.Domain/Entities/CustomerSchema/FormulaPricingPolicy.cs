@@ -16,6 +16,7 @@ public sealed class FormulaPricingPolicy
     public string Name { get; set; } = string.Empty;
     public int Version { get; set; } = 1;
     public decimal DefaultManufacturingCost { get; set; }
+    /// <summary>Default profit divided by selling price, expressed as a percentage.</summary>
     public decimal DefaultProfitMarginRate { get; set; }
     public FormulaPricingRoundingRule RoundingRule { get; set; }
     public decimal RoundingIncrement { get; set; } = 1m;

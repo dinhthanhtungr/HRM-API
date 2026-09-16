@@ -14,7 +14,8 @@ internal sealed record ApprovedProductTierPricingReference(
     Guid SourceId,
     string SourceExternalId,
     string SourceName,
-    IReadOnlyList<QuotationTierPriceReference> PriceTiers);
+    IReadOnlyList<QuotationTierPriceReference> PriceTiers,
+    string? PublisherNote = null);
 
 internal sealed record SystemCalculatedTierPricingReference(
     Guid ProductId,

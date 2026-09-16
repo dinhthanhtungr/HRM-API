@@ -1,5 +1,6 @@
 using HRM.Domain.Entities.AttachmentSchema;
 using HRM.Domain.Entities.CompanySchema;
+using HRM.Domain.Entities.CustomerSchema;
 using HRM.Domain.Entities.HrSchema;
 using HRM.Domain.Entities.InternalMailSchema;
 using HRM.Domain.Entities.SampleRequestSchema;
@@ -22,6 +23,7 @@ public interface IInternalMailDbContext
     DbSet<AttachmentCollection> AttachmentCollections { get; }
     DbSet<AttachmentModel> AttachmentModels { get; }
     DbSet<SampleRequest> SampleRequests { get; }
+    DbSet<Quotation> Quotations { get; }
     DbSet<Employee> Employees { get; }
     DbSet<Group> Groups { get; }
     DbSet<MemberInGroup> MemberInGroups { get; }

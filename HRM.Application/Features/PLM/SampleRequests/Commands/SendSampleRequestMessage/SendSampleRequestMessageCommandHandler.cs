@@ -349,6 +349,12 @@ internal sealed class SendSampleRequestMessageCommandHandler
             .Select(x => x.FullName)
             .FirstOrDefaultAsync(cancellationToken);
 
+        var notificationRecipients = await ResolveNotificationRecipientsAsync(
+            conversation.InternalConversationId,
+            currentEmployeeId.Value,
+            request.NotificationRecipientEmployeeIdsOverride,
+            cancellationToken);
+
         var notificationId = await _notificationService.PublishAsync(new PublishNotificationRequest
         {
             CompanyId = sampleRequest.CompanyId,
@@ -364,33 +370,8 @@ internal sealed class SendSampleRequestMessageCommandHandler
             ConversationId = conversation.InternalConversationId,
             MessageId = internalMessage.InternalMessageId,
             PayloadJson = notificationPayload,
-            TargetUserIds = request.NotificationRecipientEmployeeIdsOverride is null
-                ? (await ResolveNotifiableParticipantsAsync(
-                        conversation.InternalConversationId,
-                        currentEmployeeId.Value,
-                        cancellationToken))
-                    // Participant mới chỉ đang được EF theo dõi trước SaveChanges, nên query database
-                    // phía trên chưa thấy ở notification đầu tiên. Dùng thêm targetUserIds đã resolve
-                    // trong command để cả normal recipient lẫn silent watcher có state Hub ngay lập tức.
-                    .Concat(targetUserIds)
-                    .Where(x => x != Guid.Empty && x != currentEmployeeId.Value && !silentWatcherIds.Contains(x))
-                    .Distinct()
-                    .ToArray()
-                : request.NotificationRecipientEmployeeIdsOverride
-                    .Where(x => x != Guid.Empty && x != currentEmployeeId.Value)
-                    .Distinct()
-                    .ToArray(),
-            // Ở lần tạo Sample Request đầu tiên, silent watcher vừa được Add vào DbContext nên chưa
-            // query được từ database trước SaveChanges. Union với danh sách request để state Hub được
-            // tạo ngay cho tin đầu tiên; các tin tiếp theo vẫn resolve muted participant từ database.
-            SilentUserIds = (await ResolveSilentParticipantsAsync(
-                    conversation.InternalConversationId,
-                    currentEmployeeId.Value,
-                    cancellationToken))
-                .Concat(silentWatcherIds)
-                .Where(x => x != Guid.Empty && x != currentEmployeeId.Value)
-                .Distinct()
-                .ToArray()
+            TargetUserIds = notificationRecipients.TargetEmployeeIds,
+            SilentUserIds = notificationRecipients.SilentEmployeeIds
         }, cancellationToken);
 
         return OperationResult<SendInternalMessageResultDto>.Ok(new SendInternalMessageResultDto
@@ -621,36 +602,24 @@ internal sealed class SendSampleRequestMessageCommandHandler
         return "InternalMailMessage";
     }
 
-    private async Task<IReadOnlyCollection<Guid>> ResolveNotifiableParticipantsAsync(
+    private async Task<SampleRequestNotificationRecipients> ResolveNotificationRecipientsAsync(
         Guid conversationId,
         Guid senderEmployeeId,
+        IReadOnlyCollection<Guid>? recipientEmployeeIdsOverride,
         CancellationToken cancellationToken)
     {
-        return await _dbContext.InternalConversationParticipants
+        var participants = await _dbContext.InternalConversationParticipants
             .AsNoTracking()
             .Where(x =>
                 x.InternalConversationId == conversationId &&
-                x.EmployeeId != senderEmployeeId &&
-                x.IsActive &&
-                !x.IsMuted)
-            .Select(x => x.EmployeeId)
+                x.IsActive)
+            .Select(x => new SampleRequestConversationParticipant(x.EmployeeId, x.IsMuted))
             .ToListAsync(cancellationToken);
-    }
 
-    private async Task<IReadOnlyCollection<Guid>> ResolveSilentParticipantsAsync(
-        Guid conversationId,
-        Guid senderEmployeeId,
-        CancellationToken cancellationToken)
-    {
-        return await _dbContext.InternalConversationParticipants
-            .AsNoTracking()
-            .Where(x =>
-                x.InternalConversationId == conversationId &&
-                x.EmployeeId != senderEmployeeId &&
-                x.IsActive &&
-                x.IsMuted)
-            .Select(x => x.EmployeeId)
-            .ToListAsync(cancellationToken);
+        return SampleRequestNotificationRecipientRules.Resolve(
+            senderEmployeeId,
+            participants,
+            recipientEmployeeIdsOverride);
     }
 
     private static TopicNotifications ResolveTopic(SampleRequestNotificationType type)

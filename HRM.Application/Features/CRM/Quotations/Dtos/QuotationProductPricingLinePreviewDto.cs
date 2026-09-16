@@ -56,6 +56,7 @@ public sealed class QuotationApprovedTierPricingDto
     public Guid ProductPricingVersionId { get; init; }
     public int Version { get; init; }
     public decimal? StandardSellingPrice { get; init; }
+    public string? PublisherNote { get; init; }
 
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public ProductPricingStatus Status { get; init; }

@@ -21,6 +21,9 @@ public sealed class NotificationTopicCatalogTests
     [InlineData(TopicNotifications.ComplaintInitialDecision, "sales_order", "complaint")]
     [InlineData(TopicNotifications.MfgProductionOrderUpdated, "production", "change")]
     [InlineData(TopicNotifications.QuotationPricingApproved, "quotation", "pricing")]
+    [InlineData(TopicNotifications.SampleRequestReferencePriceAvailable, "sample_request", "quotation")]
+    [InlineData(TopicNotifications.SampleRequestCancelled, "sample_request", "lifecycle")]
+    [InlineData(TopicNotifications.MaterialPurchaseUnavailable, "material", "availability")]
     public void Definition_SeparatesBusinessCategoryFromEventGroup(
         TopicNotifications topic,
         string expectedCategory,
@@ -30,6 +33,40 @@ public sealed class NotificationTopicCatalogTests
 
         Assert.Equal(expectedCategory, definition.CategoryCode);
         Assert.Equal(expectedEventGroup, definition.EventGroupCode);
+    }
+
+    [Fact]
+    public void SampleRequestCancelled_UsesDedicatedLifecycleTopicWithoutRemappingFormulaCancellation()
+    {
+        var formulaCancellation = NotificationTopicCatalog.GetDefinition(
+            TopicNotifications.SampleRequestFormulaUpdateCancelled);
+        var sampleRequestCancellation = NotificationTopicCatalog.GetDefinition(
+            TopicNotifications.SampleRequestCancelled);
+
+        Assert.Equal(42, (int)TopicNotifications.SampleRequestFormulaUpdateCancelled);
+        Assert.Equal("plm.sample_request.formula_update.cancelled", formulaCancellation.Code);
+        Assert.Equal(52, (int)TopicNotifications.SampleRequestCancelled);
+        Assert.Equal("plm.sample_request.cancelled", sampleRequestCancellation.Code);
+        Assert.Equal(NotificationCategoryCodes.SampleRequest, sampleRequestCancellation.CategoryCode);
+        Assert.Equal("lifecycle", sampleRequestCancellation.EventGroupCode);
+        Assert.Equal("SampleRequest", sampleRequestCancellation.AggregateType);
+    }
+
+    [Fact]
+    public void FormulaReferencePriceNotification_UsesNewQuotationTopicWithoutRemappingHistory()
+    {
+        var historicalDefinition = NotificationTopicCatalog.GetDefinition(
+            TopicNotifications.SampleRequestFormulaApproved);
+        var currentDefinition = NotificationTopicCatalog.GetDefinition(
+            TopicNotifications.SampleRequestReferencePriceAvailable);
+
+        Assert.Equal(49, (int)TopicNotifications.SampleRequestFormulaApproved);
+        Assert.Equal(NotificationCategoryCodes.SampleRequest, historicalDefinition.CategoryCode);
+        Assert.Equal(51, (int)TopicNotifications.SampleRequestReferencePriceAvailable);
+        Assert.Equal("plm.sample_request.reference_price.available", currentDefinition.Code);
+        Assert.Equal(NotificationCategoryCodes.SampleRequest, currentDefinition.CategoryCode);
+        Assert.Equal("quotation", currentDefinition.EventGroupCode);
+        Assert.Equal("SampleRequest", currentDefinition.AggregateType);
     }
 
     [Fact]

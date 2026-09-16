@@ -41,8 +41,8 @@ internal sealed class GetCompanyLookupQueryHandler
         if (request.NormalizedKeyword is { } keyword)
         {
             query = query.Where(company =>
-                (company.Code ?? string.Empty).Contains(keyword) ||
-                company.Name.Contains(keyword));
+                EF.Functions.ILike((company.Code ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike(company.Name, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter));
         }
 
         return await query

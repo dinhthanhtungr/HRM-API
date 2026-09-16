@@ -21,6 +21,7 @@ public class MfgProductionOrderLoss
     public decimal? RatePercentSnapshot { get; set; }
     public decimal? FixedQuantityKgSnapshot { get; set; }
     public decimal? QuantityPerEventKgSnapshot { get; set; }
+    public bool IncludeInMaterialRequestSnapshot { get; set; }
 
     public decimal PlannedQuantityKg { get; set; }
     public decimal? ActualQuantityKg { get; set; }

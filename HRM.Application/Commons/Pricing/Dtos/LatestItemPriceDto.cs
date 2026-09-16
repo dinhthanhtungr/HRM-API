@@ -14,5 +14,6 @@ namespace HRM.Application.Commons.Pricing.Dtos
         public decimal CurrentPrice { get; set; }
         public DateTime? PriceDate { get; set; }
         public LatestPriceSourceType PriceSource { get; set; } = LatestPriceSourceType.Unknown;
+        public PriceCalculationDetailDto? Calculation { get; set; }
     }
 }

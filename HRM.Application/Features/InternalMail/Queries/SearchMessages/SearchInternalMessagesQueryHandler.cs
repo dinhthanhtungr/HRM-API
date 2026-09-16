@@ -2,6 +2,7 @@ using HRM.Application.Abstractions.Persistence.InternalMail;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Pagination;
 using HRM.Application.Features.InternalMail.Dtos;
+using HRM.Application.Features.InternalMail.Services;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -12,13 +13,16 @@ internal sealed class SearchInternalMessagesQueryHandler
 {
     private readonly IInternalMailDbContext _dbContext;
     private readonly ICurrentUser _currentUser;
+    private readonly IInternalConversationAccessService _conversationAccessService;
 
     public SearchInternalMessagesQueryHandler(
         IInternalMailDbContext dbContext,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        IInternalConversationAccessService conversationAccessService)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
+        _conversationAccessService = conversationAccessService;
     }
 
     public async Task<PagedResult<InternalMessageSearchResultDto>?> Handle(
@@ -32,15 +36,7 @@ internal sealed class SearchInternalMessagesQueryHandler
             return null;
         }
 
-        var canRead = await _dbContext.InternalConversationParticipants
-            .AsNoTracking()
-            .AnyAsync(x =>
-                x.InternalConversationId == request.ConversationId &&
-                x.EmployeeId == employeeId.Value &&
-                x.IsActive &&
-                x.Conversation.CompanyId == companyId.Value &&
-                x.Conversation.IsActive,
-                cancellationToken);
+        var canRead = await _conversationAccessService.CanReadAsync(request.ConversationId, cancellationToken);
 
         if (!canRead)
         {

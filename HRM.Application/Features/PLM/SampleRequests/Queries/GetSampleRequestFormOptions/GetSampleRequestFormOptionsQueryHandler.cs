@@ -61,13 +61,14 @@ internal sealed class GetSampleRequestFormOptionsQueryHandler
             .OrderBy(x => Array.IndexOf(SampleRequestProductCategoryRules.CanonicalCategoryCodes, x.Code))
             .ToList();
 
-        var branches = await _dbContext.Companies
+        var branches = SampleRequestReferenceData.Branches
             .Select(x => new SampleRequestOptionDto
             {
-                Value = x.CompanyId,
-                DisplayName = x.Name ?? "_"
+                Value = x.Value,
+                Code = x.Code,
+                DisplayName = x.DisplayName
             })
-            .ToListAsync(cancellationToken);
+            .ToList();
 
         return new SampleRequestFormOptionsDto
         {

@@ -26,7 +26,10 @@ public sealed class ProductPricingVersion
     public decimal? MaterialCostSnapshot { get; set; }
     public decimal? ManufacturingCost { get; set; }
     public decimal? StandardSellingPrice { get; set; }
+    /// <summary>Profit divided by standard selling price, expressed as a percentage.</summary>
     public decimal? ProfitMarginRate { get; set; }
+
+    public string? PublisherNote { get; set; }
     public string? Note { get; set; }
 
     public ProductPricingStatus Status { get; set; } = ProductPricingStatus.Draft;

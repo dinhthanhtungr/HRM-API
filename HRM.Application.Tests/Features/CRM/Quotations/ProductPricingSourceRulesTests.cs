@@ -56,6 +56,8 @@ public sealed class ProductPricingSourceRulesTests
             ManufacturingCost = 20m,
             StandardSellingPrice = 50m,
             ProfitMarginRate = 40m,
+            PublisherNote = "Sale được xem ghi chú này",
+            Note = "Ghi chú nội bộ",
             PriceTiers =
             [
                 new ProductPricingTier
@@ -76,6 +78,8 @@ public sealed class ProductPricingSourceRulesTests
         Assert.Null(dto.ManufacturingCost);
         Assert.Null(dto.ProfitMarginRate);
         Assert.Equal(50m, dto.StandardSellingPrice);
+        Assert.Equal("Sale được xem ghi chú này", dto.PublisherNote);
+        Assert.Null(dto.Note);
         Assert.Single(dto.PriceTiers);
     }
 }

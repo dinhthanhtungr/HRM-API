@@ -140,7 +140,7 @@ internal sealed class CustomerCrmWorkService : ICustomerCrmWorkService
         if (!string.IsNullOrWhiteSpace(query.NormalizedKeyword))
         {
             var keyword = query.NormalizedKeyword;
-            source = source.Where(x => x.PlanName.Contains(keyword) || (x.Objective ?? string.Empty).Contains(keyword));
+            source = source.Where(x => EF.Functions.ILike(x.PlanName, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) || EF.Functions.ILike((x.Objective ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter));
         }
         var total = await source.CountAsync(cancellationToken);
         var items = await ProjectPlans(source).OrderBy(x => x.NextFollowUpDate == null).ThenBy(x => x.NextFollowUpDate)
@@ -240,7 +240,7 @@ internal sealed class CustomerCrmWorkService : ICustomerCrmWorkService
         if (!string.IsNullOrWhiteSpace(query.NormalizedKeyword))
         {
             var keyword = query.NormalizedKeyword;
-            source = source.Where(x => x.Title.Contains(keyword) || (x.Description ?? string.Empty).Contains(keyword));
+            source = source.Where(x => EF.Functions.ILike(x.Title, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) || EF.Functions.ILike((x.Description ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter));
         }
         var total = await source.CountAsync(cancellationToken);
         var items = await ProjectTasks(source, today)

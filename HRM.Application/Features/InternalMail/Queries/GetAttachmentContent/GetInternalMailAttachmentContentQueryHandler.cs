@@ -3,6 +3,7 @@ using HRM.Application.Abstractions.Persistence.InternalMail;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Features.Attachments.Dtos;
 using HRM.Application.Features.InternalMail.Dtos;
+using HRM.Application.Features.InternalMail.Services;
 using HRM.Domain.Enums.InternalMailEnums;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -14,17 +15,20 @@ internal sealed class GetInternalMailAttachmentContentQueryHandler
 {
     private readonly IInternalMailDbContext _dbContext;
     private readonly ICurrentUser _currentUser;
+    private readonly IInternalConversationAccessService _conversationAccessService;
     private readonly IFileStorage _fileStorage;
     private readonly IImageThumbnailGenerator _thumbnailGenerator;
 
     public GetInternalMailAttachmentContentQueryHandler(
         IInternalMailDbContext dbContext,
         ICurrentUser currentUser,
+        IInternalConversationAccessService conversationAccessService,
         IFileStorage fileStorage,
         IImageThumbnailGenerator thumbnailGenerator)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
+        _conversationAccessService = conversationAccessService;
         _fileStorage = fileStorage;
         _thumbnailGenerator = thumbnailGenerator;
     }
@@ -40,6 +44,22 @@ internal sealed class GetInternalMailAttachmentContentQueryHandler
             return null;
         }
 
+        var conversationId = request.ConversationId ?? await _dbContext.InternalMessageAttachments
+            .AsNoTracking()
+            .Where(x =>
+                x.AttachmentId == request.AttachmentId &&
+                x.Attachment.IsActive &&
+                !x.Message.IsDeleted &&
+                x.Message.Conversation.CompanyId == companyId.Value &&
+                x.Message.Conversation.IsActive)
+            .Select(x => (Guid?)x.Message.InternalConversationId)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (!conversationId.HasValue ||
+            !await _conversationAccessService.CanReadAsync(conversationId.Value, cancellationToken))
+        {
+            return null;
+        }
+
         var attachment = await _dbContext.InternalMessageAttachments
             .AsNoTracking()
             .Where(x =>
@@ -48,10 +68,7 @@ internal sealed class GetInternalMailAttachmentContentQueryHandler
                 !x.Message.IsDeleted &&
                 x.Message.Conversation.CompanyId == companyId.Value &&
                 x.Message.Conversation.IsActive &&
-                (!request.ConversationId.HasValue ||
-                 x.Message.InternalConversationId == request.ConversationId.Value) &&
-                x.Message.Conversation.Participants.Any(participant =>
-                    participant.EmployeeId == employeeId.Value && participant.IsActive))
+                x.Message.InternalConversationId == conversationId.Value)
             .Select(x => new AttachmentFile(
                 x.Attachment.StoragePath,
                 x.Attachment.FileName,
@@ -78,9 +95,7 @@ internal sealed class GetInternalMailAttachmentContentQueryHandler
                           sampleRequest.CompanyId == companyId.Value &&
                           sampleRequest.IsActive &&
                           sampleAttachment.AttachmentId == request.AttachmentId &&
-                          sampleAttachment.IsActive &&
-                          conversation.Participants.Any(participant =>
-                              participant.EmployeeId == employeeId.Value && participant.IsActive)
+                          sampleAttachment.IsActive
                     select new AttachmentFile(
                         sampleAttachment.StoragePath,
                         sampleAttachment.FileName,

@@ -1,71 +1,57 @@
 # AGENTS.md
 
-Hướng dẫn điều hướng bắt buộc cho AI/coding agent khi làm việc trong repo `HRM.api`.
+Router bắt buộc cho coding agent trong repo `HRM.api`. Chỉ đọc rule đúng với phạm vi task; không nạp toàn bộ `.agents` theo mặc định.
 
-File này chỉ là router và một ít luật nền tối thiểu. Trước khi làm việc, luôn đọc file này, sau đó đọc các file `.agents/...` được liệt kê dưới đây theo đúng ngữ cảnh. Trước khi bắt tay làm, nói ngắn gọn đã đọc `AGENTS.md` và những file agent con nào.
+## Luật Bất Biến
 
-## Luôn Đọc
-
-Trong mọi task có khả năng sửa repo, đọc các file sau:
-
-- Core rules: `.agents/core.md`
-- Workflow rules: `.agents/workflow.md`
-- Anti-patterns: `.agents/anti-patterns.md`
-- Documentation rules: `.agents/documentation.md`
-- Model selection: `.agents/model-selection.md`
-
-Nếu task chỉ là câu hỏi ngắn hoặc tìm thông tin, vẫn đọc `AGENTS.md`; đọc thêm file con khi câu hỏi đụng luật tương ứng.
-
-## Điều Hướng Theo Ngữ Cảnh
-
-### Kiến Trúc, Code Organization, Shared Component
-
-- Khi thêm/sửa feature, service, helper, endpoint hoặc boundary giữa layer: đọc `.agents/architecture.md`.
-- Khi tạo/sửa chính hệ thống agent/rule: đọc `.agents/agent-authoring.md`.
-
-### Bảo Mật, API, Auth, File
-
-- Khi thêm/sửa API, DTO public, EF query, permission, company scope, PATCH/partial update: đọc `.agents/security/api-security.md`.
-- Khi đụng field nhạy cảm theo role như giá, cost, lương, margin hoặc thông tin nội bộ: đọc `.agents/security/field-visibility.md`.
-- Khi đụng auth, JWT, cookie, CORS, SignalR token hoặc current user: đọc `.agents/security/auth.md`.
-- Khi đụng upload/download/attachment/storage: đọc `.agents/security/files.md`.
-
-### Build, Git, Verification
-
-- Khi cần build/test/commit/push hoặc chuẩn bị kết thúc thay đổi code: đọc `.agents/git-and-build.md`.
-- Với feature hoặc bug fix độc lập, mặc định agent được phép tự tạo nhánh `codex/...`, verify, commit đúng phạm vi và push nhánh sau khi hoàn tất mà không cần hỏi lại. Agent không được tự merge; các ngoại lệ phải dừng xin xác nhận được quy định trong `.agents/git-and-build.md`.
-
-### Module Nghiệp Vụ
-
-- CRM CustomerCare: `.agents/features/crm.md`
-- Báo giá CRM: `.agents/features/quotations.md`
-- PLM, formulas, sample requests: `.agents/features/plm.md`
-- Notifications, SignalR, Web Push: `.agents/features/notifications.md`
-- Warehouse: `.agents/features/warehouse.md`
-- Reports/Executive PnL: `.agents/features/reports.md`
-
-Nếu không chắc task thuộc module nào, dùng `rg` tìm feature gần nhất rồi đọc README/AGENTS liên quan.
-
-## Luật Tối Thiểu Không Được Bỏ Qua
-
-- Không revert code người dùng đã sửa trừ khi được yêu cầu rõ.
-- Không hard-code secret/token/password/connection string/API key.
-- Không viết logic nghiệp vụ lớn trong controller.
-- Không trả EF entity trực tiếp ra FE.
-- Không bỏ qua `[Authorize]`, company scope, ownership và IDOR check với API user-facing.
+- Không revert hoặc ghi đè thay đổi có sẵn của user nếu chưa được yêu cầu rõ.
+- Không hard-code hoặc log secret, token, password, connection string hay API key.
+- Không đặt business logic lớn trong controller và không trả EF entity trực tiếp ra public API.
+- API user-facing phải giữ `[Authorize]`, company scope, ownership/capability và chống IDOR theo contract hiện hành.
 - Không dùng raw SQL nối chuỗi.
-- Không tự ý thêm migration/bảng/cột nếu user chưa đồng ý.
-- Không dùng destructive git command như reset/checkout nếu user không yêu cầu rõ.
+- Không tự thêm migration, bảng hoặc cột nếu user chưa đồng ý.
+- Không dùng destructive Git như `reset --hard`, `checkout --`, force-push hoặc tự merge nếu user chưa yêu cầu rõ.
+- Sửa đúng phạm vi; giữ nguyên nghiệp vụ và public contract ngoài phần user yêu cầu.
 
-## Trước Khi Làm
+## Điều Hướng Rule
 
-Với task sửa code hoặc tài liệu rule, trước khi sửa hãy nói:
+Với câu hỏi, tìm file hoặc giải thích code không sửa repo: chỉ đọc file này, rồi đọc file chuyên biệt nếu câu hỏi cần đến rule đó.
 
-- Đã đọc `AGENTS.md`.
-- Đã đọc các file `.agents/...` liên quan nào.
-- Dự định làm các bước chính nào.
-- Đánh giá nhanh có thể làm trọn trong một lượt không, có cần chia nhỏ việc không, và có nên đề xuất goal không.
-- Model khuyến nghị và reasoning khuyến nghị cho task hiện tại.
-- README/summary/build/test dự kiến xử lý ra sao nếu task có đổi code.
+Khi sửa code:
 
-Nếu user yêu cầu chờ xác nhận trước khi làm, dừng ở kế hoạch và chỉ thực hiện khi user đồng ý.
+- Luật code nền: `.agents/core.md`.
+- Feature, service/helper, endpoint hoặc boundary giữa layer: `.agents/architecture.md`.
+- Review/refactor rộng hoặc kiểm tra anti-pattern: `.agents/anti-patterns.md`.
+- Sửa chính `AGENTS.md` hoặc `.agents/*`: `.agents/agent-authoring.md`.
+- Trước khi sửa code hoặc khi cần build/test/commit/push: `.agents/git-and-build.md`.
+
+Security đọc theo đúng trigger:
+
+- API, handler, DTO public, EF query, company scope hoặc PATCH: `.agents/security/api-security.md`.
+- Permission, role gate, capability, authorization service hoặc dữ liệu giới hạn người xem/sửa: `.agents/security/authorization-capabilities.md`.
+- Giá, cost, lương, margin hoặc field nhạy cảm theo quyền: `.agents/security/field-visibility.md`.
+- JWT, cookie, CORS, SignalR token hoặc current user: `.agents/security/auth.md`.
+- Upload, download, attachment hoặc storage: `.agents/security/files.md`.
+
+Documentation và workflow:
+
+- Đổi hành vi, API/DTO public, rule, security, side effect, config hoặc vận hành: `.agents/documentation.md`.
+- Task lớn, nhiều phase, còn quyết định nghiệp vụ hoặc user yêu cầu kiểm soát kế hoạch: `.agents/workflow.md`.
+- Chỉ đọc `.agents/model-selection.md` khi user hỏi chọn model hoặc task thật sự cần khuyến nghị model.
+
+Module nghiệp vụ:
+
+- CRM CustomerCare: `.agents/features/crm.md`.
+- CRM Quotations: `.agents/features/quotations.md`.
+- PLM, formulas, sample requests: `.agents/features/plm.md`.
+- Notifications, SignalR, Web Push: `.agents/features/notifications.md` và file con mà router này chỉ định.
+- Warehouse: `.agents/features/warehouse.md`.
+- Reports/Executive PnL: `.agents/features/reports.md`.
+
+Nếu chưa rõ module, dùng `rg` tìm feature gần nhất rồi đọc README/AGENTS liên quan. Không đọc các module không liên quan.
+
+## Cách Làm Việc
+
+Trước thay đổi đáng kể, báo ngắn rule đã đọc, phạm vi dự kiến và cách verify. Không cần preamble dài, đề xuất goal hay nhắc model cho câu hỏi, tìm code hoặc sửa nhỏ rõ ràng.
+
+Chỉ đề xuất chia phase khi có migration/backfill, đổi public contract đang được dùng, tác động nhiều boundary, side effect khó đảo ngược hoặc còn quyết định nghiệp vụ chưa rõ. Nếu user yêu cầu chờ xác nhận, dừng ở kế hoạch.

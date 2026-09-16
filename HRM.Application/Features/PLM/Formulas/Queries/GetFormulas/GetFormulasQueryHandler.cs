@@ -1,6 +1,6 @@
 using HRM.Application.Abstractions.Persistence.PLM;
 using HRM.Application.Abstractions.Security;
-using HRM.Application.Commons.Authorization.PLM;
+using HRM.Application.Features.PLM.Shared.Authorization;
 using HRM.Application.Features.PLM.Formulas.Dtos.GetFormulas;
 using HRM.Domain.Entities.SampleRequestSchema;
 using HRM.Domain.Enums.Merchadises;
@@ -133,6 +133,7 @@ namespace HRM.Application.Features.PLM.Formulas.Queries.GetFormulas
                     CreatedByName = x.ManufacturingFormula.CreatedByNavigation != null
                         ? x.ManufacturingFormula.CreatedByNavigation.FullName
                         : null,
+                    status = x.ManufacturingFormula.Status,
                     Note = x.ManufacturingFormula.Note,
                     Price = canViewFormulaPrices ? x.ManufacturingFormula.TotalPrice : null,
                     ItemCount = x.ManufacturingFormula.ManufacturingFormulaMaterials.Count(m => m.IsActive),
@@ -151,6 +152,7 @@ namespace HRM.Application.Features.PLM.Formulas.Queries.GetFormulas
                     Id = x.Id,
                     ExternalId = x.ExternalId,
                     CreatedByName = x.CreatedByName,
+                    Status = x.status,
                     Note = x.Note ?? string.Empty,
                     Price = x.Price,
                     ItemCount = x.ItemCount,

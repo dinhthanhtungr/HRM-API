@@ -12,6 +12,8 @@ namespace HRM.Infrastructure.DatabaseContext.ApplicationDbs
     public partial class ApplicationDbContext
     {
         public virtual DbSet<Material> Materials { get; set; } = default!;
+        public virtual DbSet<MaterialPurchaseAvailability> MaterialPurchaseAvailabilities { get; set; } = default!;
+        public virtual DbSet<MaterialReplacement> MaterialReplacements { get; set; } = default!;
         public virtual DbSet<MaterialGroupName> MaterialGroupNames { get; set; } = default!;
         public virtual DbSet<MaterialsSupplier> MaterialsSuppliers { get; set; } = default!;
         public virtual DbSet<PriceHistory> PriceHistories { get; set; } = default!;

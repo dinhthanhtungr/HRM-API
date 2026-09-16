@@ -10,6 +10,7 @@ namespace HRM.Domain.Enums.Formulas
     {
         FromVA = 0,   // ManufacturingFormulaRepository
         FromVU = 1,     // FormulaRepository
-        Both = 2
+        Both = 2,
+        FromBom = 3
     }
 }

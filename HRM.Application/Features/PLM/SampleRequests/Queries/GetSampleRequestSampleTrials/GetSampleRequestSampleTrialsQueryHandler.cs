@@ -2,10 +2,12 @@ using HRM.Application.Abstractions.Persistence.PLM;
 using HRM.Application.Abstractions.Persistence.CRM.CustomerCare;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Authorization;
-using HRM.Application.Commons.Authorization.PLM;
+using HRM.Application.Features.PLM.Shared.Authorization;
+using HRM.Application.Features.Pricing.Authorization;
 using HRM.Application.Commons.Pagination;
 using HRM.Application.Features.CRM.CustomerCare.Visibility;
 using HRM.Application.Features.CRM.Quotations.Services;
+using HRM.Application.Features.CRM.Quotations.Dtos;
 using HRM.Application.Features.PLM.Shared.Rules;
 using HRM.Application.Features.PLM.SampleRequests.Dtos.SampleTrials;
 using HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestSampleTrials.Models;
@@ -26,6 +28,7 @@ internal sealed class GetSampleRequestSampleTrialsQueryHandler
     private readonly IPLMFieldVisibilityService _fieldVisibility;
     private readonly ICurrentUser _currentUser;
     private readonly ProductPricingSourceQueryService _pricingSourceQueryService;
+    private readonly IPricingVisibilityService _pricingVisibilityService;
 
     public GetSampleRequestSampleTrialsQueryHandler(
         IPLMReadDbContext dbContext,
@@ -33,7 +36,8 @@ internal sealed class GetSampleRequestSampleTrialsQueryHandler
         ICustomerVisibilityService visibilityService,
         IPLMFieldVisibilityService fieldVisibility,
         ICurrentUser currentUser,
-        ProductPricingSourceQueryService pricingSourceQueryService)
+        ProductPricingSourceQueryService pricingSourceQueryService,
+        IPricingVisibilityService pricingVisibilityService)
     {
         _dbContext = dbContext;
         _crmDbContext = crmDbContext;
@@ -41,6 +45,7 @@ internal sealed class GetSampleRequestSampleTrialsQueryHandler
         _fieldVisibility = fieldVisibility;
         _currentUser = currentUser;
         _pricingSourceQueryService = pricingSourceQueryService;
+        _pricingVisibilityService = pricingVisibilityService;
     }
 
     public async Task<PagedResult<SampleRequestSampleTrialReportDto>> Handle(
@@ -139,15 +144,15 @@ internal sealed class GetSampleRequestSampleTrialsQueryHandler
         {
             var keyword = request.NormalizedKeyword;
             query = query.Where(x =>
-                ((x.Trial != null ? x.Trial.CustomerNameSnapshot : null) ?? x.SampleRequest.Customer.CustomerName).Contains(keyword) ||
-                ((x.Trial != null ? x.Trial.SampleRequestExternalIdSnapshot : null) ?? x.SampleRequest.ExternalId).Contains(keyword) ||
-                ((x.Trial != null ? x.Trial.ProductNameSnapshot : null) ?? x.SampleRequest.Product.Name ?? string.Empty).Contains(keyword) ||
-                ((x.Trial != null ? x.Trial.ColourCodeSnapshot : null) ?? x.SampleRequest.Product.ColourCode ?? string.Empty).Contains(keyword) ||
+                EF.Functions.ILike(((x.Trial != null ? x.Trial.CustomerNameSnapshot : null) ?? x.SampleRequest.Customer.CustomerName), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike(((x.Trial != null ? x.Trial.SampleRequestExternalIdSnapshot : null) ?? x.SampleRequest.ExternalId), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike(((x.Trial != null ? x.Trial.ProductNameSnapshot : null) ?? x.SampleRequest.Product.Name ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike(((x.Trial != null ? x.Trial.ColourCodeSnapshot : null) ?? x.SampleRequest.Product.ColourCode ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
                 (x.SampleRequest.Formula != null && EF.Functions.ILike(x.SampleRequest.Formula.ExternalId, $"%{keyword}%")) ||
                 (x.Trial != null && x.Trial.Formula != null && EF.Functions.ILike(x.Trial.Formula.ExternalId, $"%{keyword}%")) ||
-                (x.Trial != null && (x.Trial.BatchNo ?? string.Empty).Contains(keyword)) ||
-                (x.Trial != null && (x.Trial.CustomerReplyNote ?? string.Empty).Contains(keyword)) ||
-                (x.Trial != null && (x.Trial.LabNote ?? string.Empty).Contains(keyword)));
+                (x.Trial != null && EF.Functions.ILike((x.Trial.BatchNo ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter)) ||
+                (x.Trial != null && EF.Functions.ILike((x.Trial.CustomerReplyNote ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter)) ||
+                (x.Trial != null && EF.Functions.ILike((x.Trial.LabNote ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter)));
         }
 
         query = SampleRequestSampleTrialReportQueryRules.ApplySorting(query, request);
@@ -156,6 +161,8 @@ internal sealed class GetSampleRequestSampleTrialsQueryHandler
         var canUpdateCustomerFeedback =
             canViewTechnicalFields ||
             _currentUser.IsInAnyRole(ApplicationRoleSets.Modules.Sales);
+        var canUpdateExpectedPriceQuoteDate =
+            _currentUser.IsInAnyRole(ApplicationRoleSets.PLM.SampleRequestExpectedPriceQuoteDateEditors);
 
         var items = await query
             .Skip((request.NormalizedPageNumber - 1) * request.NormalizedPageSize)
@@ -178,6 +185,7 @@ internal sealed class GetSampleRequestSampleTrialsQueryHandler
                 HasPreviousTrials = (x.TrialCount ?? 0) > 1,
                 CanCreateTrial = canViewTechnicalFields,
                 CanUpdateTrial = canViewTechnicalFields && x.Trial != null,
+                CanUpdateExpectedPriceQuoteDate = canUpdateExpectedPriceQuoteDate && x.Trial != null,
                 CanUpdateCustomerFeedback = canUpdateCustomerFeedback &&
                     x.Trial != null &&
                     (x.Trial.Status == SampleTrialStatus.SampleSent ||
@@ -198,6 +206,7 @@ internal sealed class GetSampleRequestSampleTrialsQueryHandler
                 BatchNo = x.Trial != null ? x.Trial.BatchNo : null,
                 RequestDeliveryDate = x.SampleRequest.RequestDeliveryDate,
                 ExpectedDeliveryDate = x.SampleRequest.ExpectedDeliveryDate,
+                ExpectedPriceQuoteDate = x.SampleRequest.ExpectedPriceQuoteDate,
                 RequestReceivedDate = x.Trial != null ? x.Trial.RequestReceivedDate : null,
                 FinishedDate = x.Trial != null ? x.Trial.FinishedDate : null,
 
@@ -218,7 +227,7 @@ internal sealed class GetSampleRequestSampleTrialsQueryHandler
                 CustomerReplyDate = x.Trial != null ? x.Trial.CustomerReplyDate : null,
                 CustomerReplyNote = x.Trial != null ? x.Trial.CustomerReplyNote : null,
                 OrderDate = x.Trial != null ? x.Trial.OrderDate : null,
-                AdditiveRate = x.SampleRequest.Product.UsageRate != null ? x.SampleRequest.Product.UsageRate : null ,
+                AdditiveRate = x.SampleRequest.Product.UsageRate,
                 LabNote = canViewTechnicalFields && x.Trial != null ? x.Trial.LabNote : null,
                 SampleRequestCreatedDate = x.SampleRequest.CreatedDate,
                 CreatedDate = x.Trial != null ? x.Trial.CreatedDate : x.SampleRequest.CreatedDate,
@@ -237,6 +246,7 @@ internal sealed class GetSampleRequestSampleTrialsQueryHandler
             items,
             scope.CompanyId,
             request.NormalizedCurrency,
+            _pricingVisibilityService.GetAccess(),
             cancellationToken);
 
         return new PagedResult<SampleRequestSampleTrialReportDto>(
@@ -250,9 +260,12 @@ internal sealed class GetSampleRequestSampleTrialsQueryHandler
         IReadOnlyCollection<SampleRequestSampleTrialReportDto> items,
         Guid companyId,
         string currency,
+        PricingAccessDecision pricingAccess,
         CancellationToken cancellationToken)
     {
-        if (items.Count == 0 || !ProductPricingAccessRules.CanViewWorkbench(_currentUser))
+        if (items.Count == 0 ||
+            (!pricingAccess.CanViewApprovedSellingPrice &&
+             !pricingAccess.CanViewSystemCalculatedPrice))
         {
             return;
         }
@@ -285,34 +298,44 @@ internal sealed class GetSampleRequestSampleTrialsQueryHandler
             return;
         }
 
-        var approvedPricingRows = await _crmDbContext.ProductPricingVersions
-            .AsNoTracking()
-            .Where(x =>
-                x.CompanyId == companyId &&
-                productIds.Contains(x.ProductId) &&
-                x.Currency == currency &&
-                x.IsActive &&
-                x.Status == ProductPricingStatus.Approved &&
-                x.StandardSellingPrice > 0m)
-            .OrderByDescending(x => x.Version)
-            .Select(x => new
-            {
-                x.ProductId,
-                x.StandardSellingPrice,
-                x.ApprovedAt,
-                x.Version
-            })
-            .ToListAsync(cancellationToken);
-        var approvedPricingByProduct = approvedPricingRows
-            .GroupBy(x => x.ProductId)
-            .ToDictionary(x => x.Key, x => x.First());
+        Dictionary<Guid, ApprovedTrialPricingRow> approvedPricingByProduct = [];
+        if (pricingAccess.CanViewApprovedSellingPrice)
+        {
+            var approvedPricingRows = await _crmDbContext.ProductPricingVersions
+                .AsNoTracking()
+                .Where(x =>
+                    x.CompanyId == companyId &&
+                    productIds.Contains(x.ProductId) &&
+                    x.Currency == currency &&
+                    x.IsActive &&
+                    x.Status == ProductPricingStatus.Approved &&
+                    x.StandardSellingPrice > 0m)
+                .OrderByDescending(x => x.Version)
+                .Select(x => new ApprovedTrialPricingRow
+                {
+                    ProductId = x.ProductId,
+                    StandardSellingPrice = x.StandardSellingPrice,
+                    PublisherNote = x.PublisherNote,
+                    ApprovedAt = x.ApprovedAt
+                })
+                .ToListAsync(cancellationToken);
+            approvedPricingByProduct = approvedPricingRows
+                .GroupBy(x => x.ProductId)
+                .ToDictionary(x => x.Key, x => x.First());
+        }
 
-        var pricingSourcesByProduct = await _pricingSourceQueryService.LoadAsync(
-            productIds,
-            companyId,
-            currency,
-            includeSensitivePricing: false,
-            cancellationToken);
+        IReadOnlyDictionary<Guid, IReadOnlyList<ProductPricingSourceOptionDto>>
+            pricingSourcesByProduct =
+                new Dictionary<Guid, IReadOnlyList<ProductPricingSourceOptionDto>>();
+        if (pricingAccess.CanViewSystemCalculatedPrice)
+        {
+            pricingSourcesByProduct = await _pricingSourceQueryService.LoadVisibleAsync(
+                productIds,
+                companyId,
+                currency,
+                pricingAccess,
+                cancellationToken);
+        }
 
         foreach (var item in items)
         {
@@ -321,11 +344,7 @@ internal sealed class GetSampleRequestSampleTrialsQueryHandler
                 continue;
             }
 
-            if (approvedPricingByProduct.TryGetValue(productId, out var approvedPricing))
-            {
-                item.ApprovedStandardSellingPrice = approvedPricing.StandardSellingPrice;
-                item.StandardSellingPriceApprovedAt = approvedPricing.ApprovedAt;
-            }
+            approvedPricingByProduct.TryGetValue(productId, out var approvedPricing);
 
             var sources = pricingSourcesByProduct.GetValueOrDefault(productId) ?? [];
             var formulaSource = item.FormulaId.HasValue
@@ -335,8 +354,22 @@ internal sealed class GetSampleRequestSampleTrialsQueryHandler
                     source.IsEligible)
                 : null;
             var effectiveSource = formulaSource ?? sources.FirstOrDefault(source => source.IsEligible);
-            item.SystemCalculatedStandardSellingPrice = effectiveSource?.StandardSellingPrice;
+            SampleRequestTrialPricingVisibility.Apply(
+                item,
+                approvedPricing?.StandardSellingPrice,
+                approvedPricing?.PublisherNote,
+                approvedPricing?.ApprovedAt,
+                effectiveSource?.StandardSellingPrice,
+                pricingAccess);
         }
+    }
+
+    private sealed class ApprovedTrialPricingRow
+    {
+        public Guid ProductId { get; init; }
+        public decimal? StandardSellingPrice { get; init; }
+        public string? PublisherNote { get; init; }
+        public DateTime? ApprovedAt { get; init; }
     }
 
 }

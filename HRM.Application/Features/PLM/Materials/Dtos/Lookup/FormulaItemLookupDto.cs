@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using HRM.Application.Features.PLM.Formulas.Dtos.Commons;
 using HRM.Domain.Enums.Formulas;
+using HRM.Domain.Enums.Materials;
 
 namespace HRM.Application.Features.PLM.Materials.Dtos.Lookup;
 
@@ -23,5 +24,14 @@ public sealed class FormulaItemLookupDto
     public double? Weight { get; init; }
     public string? Package { get; init; }
     public string? Unit { get; init; }
+
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public MaterialPurchaseStatus? PurchaseStatus { get; init; }
+
+    public bool? IsPurchaseAvailable { get; init; }
+    public string? PurchaseStatusReason { get; init; }
+    public DateTime? PurchaseStatusEffectiveFrom { get; init; }
+    public DateTime? ExpectedAvailableDate { get; init; }
+
     public LatestPriceSource Price { get; init; } = new();
 }

@@ -84,11 +84,11 @@ public sealed class ProductPricingWorkbenchMapperTests
         Assert.Equal(20m, result.MaterialCostDifference);
         Assert.Equal(20m, result.MaterialCostDifferencePercent);
         Assert.Equal(140m, result.StandardSellingPrice);
-        Assert.Equal(143m, result.RealtimeStandardSellingPrice);
-        Assert.Equal(3m, result.StandardSellingPriceDifference);
-        Assert.Equal(2.1429m, result.StandardSellingPriceDifferencePercent);
+        Assert.Equal(144m, result.RealtimeStandardSellingPrice);
+        Assert.Equal(4m, result.StandardSellingPriceDifference);
+        Assert.Equal(2.8571m, result.StandardSellingPriceDifferencePercent);
         Assert.True(result.HasRealtimePriceComparison);
-        Assert.Equal(10m, result.ProfitMarginRate);
+        Assert.Equal(9.7222m, result.ProfitMarginRate);
         Assert.Equal(1, result.WaitingQuotationCount);
         Assert.Equal(ProductPricingLookupStatus.Draft, result.PricingStatus);
         Assert.Same(pricing, ProductPricingWorkbenchMapper.BuildEffectivePricing(draft, source));
@@ -139,6 +139,7 @@ public sealed class ProductPricingWorkbenchMapperTests
             ManufacturingCost = 20_000m,
             StandardSellingPrice = 80_000m,
             ProfitMarginRate = 13.0231m,
+            PublisherNote = "Áp dụng cho Sale từ tháng 9",
             Status = ProductPricingStatus.Approved,
             Version = 1,
             CreatedDate = new DateTime(2026, 9, 4)
@@ -165,6 +166,7 @@ public sealed class ProductPricingWorkbenchMapperTests
 
         Assert.Equal(20_000m, result.ManufacturingCost);
         Assert.Equal(80_000m, result.StandardSellingPrice);
+        Assert.Equal("Áp dụng cho Sale từ tháng 9", result.PublisherNote);
         Assert.Equal(13.0231m, result.ProfitMarginRate);
         Assert.Equal(70_782m, result.RealtimeStandardSellingPrice);
     }

@@ -54,7 +54,7 @@ internal sealed class ExportQuotationPdfQueryHandler
                 CompanyEmail = x.Company.Email,
                 CustomerName = x.Customer.CustomerName,
                 CustomerAddress = x.CustomerAddressSnapshot ?? x.Customer.RegistrationAddress,
-                CustomerPhone = x.Customer.Phone,
+                CustomerPhone = x.ContactPhone,
                 CustomerFax = x.Customer.FaxNumber,
                 ContactName = x.ContactName,
                 ContactPhone = x.ContactPhone ?? (x.Contact != null ? x.Contact.Phone : null),

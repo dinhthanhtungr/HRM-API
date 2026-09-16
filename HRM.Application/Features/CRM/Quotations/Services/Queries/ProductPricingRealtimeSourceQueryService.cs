@@ -9,6 +9,7 @@ using HRM.Application.Features.CRM.Quotations.Dtos;
 using HRM.Application.Features.PLM.Formulas.Helpers;
 using HRM.Domain.Enums.CustomerEnum;
 using HRM.Domain.Enums.Formulas;
+using HRM.Domain.Enums.Manufacturings;
 using Microsoft.EntityFrameworkCore;
 
 namespace HRM.Application.Features.CRM.Quotations.Services;
@@ -102,11 +103,160 @@ internal sealed class ProductPricingRealtimeSourceQueryService
                     .ToArray());
     }
 
-    public async Task<IReadOnlyDictionary<ProductPricingSourceSelection, ProductPricingSourceOptionDto>>
+    /// <summary>
+    /// Resolves only the newest eligible fallback source per product. List cards need one source,
+    /// so material prices must not be loaded for every eligible Formula/VA before choosing it.
+    /// </summary>
+    public async Task<IReadOnlyDictionary<Guid, ProductPricingSourceOptionDto>> LoadFallbackSelectedAsync(
+        IReadOnlyCollection<Guid> productIds,
+        Guid companyId,
+        string currency,
+        CancellationToken cancellationToken)
+    {
+        if (productIds.Count == 0)
+        {
+            return new Dictionary<Guid, ProductPricingSourceOptionDto>();
+        }
+
+        var sourceRows = await LoadSourceRowsAsync(productIds, companyId, cancellationToken);
+        var selections = sourceRows
+            .GroupBy(x => x.ProductId)
+            .Select(group => group
+                .OrderByDescending(x => x.UpdatedDate)
+                .ThenByDescending(x => x.IsCustomerSelected)
+                .ThenBy(x => x.SourceType)
+                .ThenBy(x => x.ExternalId)
+                .Select(x => new ProductPricingSourceSelection(x.ProductId, x.SourceType, x.SourceId))
+                .First())
+            .ToArray();
+
+        var selected = await LoadSelectedAsync(selections, companyId, currency, cancellationToken);
+        return selected.ToDictionary(x => x.Key.ProductId, x => x.Value);
+    }
+
+    public Task<IReadOnlyDictionary<ProductPricingSourceSelection, ProductPricingSourceOptionDto>>
         LoadSelectedAsync(
             IReadOnlyCollection<ProductPricingSourceSelection> selections,
             Guid companyId,
             string currency,
+            CancellationToken cancellationToken)
+        => LoadSelectedCoreAsync(
+            selections,
+            companyId,
+            currency,
+            includeProductionSelectedVa: false,
+            cancellationToken);
+
+    /// <summary>
+    /// Executive pricing may review a VA used by a production order even when that VA has not been assigned
+    /// through ProductStandardFormula. The legacy quotation loader intentionally keeps its narrower rule.
+    /// </summary>
+    public Task<IReadOnlyDictionary<ProductPricingSourceSelection, ProductPricingSourceOptionDto>>
+        LoadSelectedForExecutiveAsync(
+            IReadOnlyCollection<ProductPricingSourceSelection> selections,
+            Guid companyId,
+            string currency,
+            CancellationToken cancellationToken)
+        => LoadSelectedCoreAsync(
+            selections,
+            companyId,
+            currency,
+            includeProductionSelectedVa: true,
+            cancellationToken);
+
+    /// <summary>
+    /// Finds products whose realtime material cost increased by the requested threshold compared with
+    /// the snapshot stored on their latest Approved price. This is intentionally called only by the
+    /// explicit material-cost views; default list views must not load realtime material prices for all products.
+    /// </summary>
+    public async Task<IReadOnlySet<Guid>> LoadMaterialCostChangedProductIdsAsync(
+        IReadOnlyCollection<ProductPricingMaterialCostBaseline> baselines,
+        Guid companyId,
+        string currency,
+        decimal thresholdPercent,
+        bool useLatestProductionFormula,
+        CancellationToken cancellationToken)
+    {
+        var validBaselines = baselines
+            .Where(x => x.ProductId != Guid.Empty && x.MaterialCostSnapshot > 0m)
+            .GroupBy(x => x.ProductId)
+            .Select(x => x.First())
+            .ToArray();
+        if (validBaselines.Length == 0 || thresholdPercent <= 0m)
+        {
+            return new HashSet<Guid>();
+        }
+
+        IReadOnlyCollection<ProductPricingSourceSelection> selections;
+        if (useLatestProductionFormula)
+        {
+            var productIds = validBaselines.Select(x => x.ProductId).ToArray();
+            var productionSelections = await _dbContext.ProductionSelectVersions
+                .AsNoTracking()
+                .Where(x =>
+                    x.CompanyId == companyId &&
+                    x.ManufacturingFormulaId.HasValue &&
+                    productIds.Contains(x.MfgProductionOrder.ProductId) &&
+                    x.MfgProductionOrder.CompanyId == companyId &&
+                    x.MfgProductionOrder.IsActive &&
+                    x.MfgProductionOrder.Product.IsActive &&
+                    x.MfgProductionOrder.Product.CompanyId == companyId &&
+                    x.ManufacturingFormula != null &&
+                    x.ManufacturingFormula.IsActive &&
+                    x.ManufacturingFormula.CompanyId == companyId &&
+                    x.ManufacturingFormula.Status == ManufacturingProductOrderFormula.Checking.ToString())
+                .OrderByDescending(x => x.MfgProductionOrder.CreatedDate)
+                .ThenByDescending(x => x.ProductionSelectVersionId)
+                .Select(x => new ProductPricingSourceSelection(
+                    x.MfgProductionOrder.ProductId,
+                    ProductPricingSourceType.ManufacturingFormula,
+                    x.ManufacturingFormulaId!.Value))
+                .ToListAsync(cancellationToken);
+            selections = productionSelections
+                .GroupBy(x => x.ProductId)
+                .Select(x => x.First())
+                .ToArray();
+        }
+        else
+        {
+            selections = validBaselines
+                .Where(x => x.ApprovedSource is not null)
+                .Select(x => x.ApprovedSource!.Value)
+                .ToArray();
+        }
+
+        if (selections.Count == 0)
+        {
+            return new HashSet<Guid>();
+        }
+
+        var sources = await LoadSelectedForExecutiveAsync(
+            selections,
+            companyId,
+            currency,
+            cancellationToken);
+        var baselineByProduct = validBaselines.ToDictionary(x => x.ProductId);
+        return sources
+            .Where(x =>
+                baselineByProduct.TryGetValue(x.Key.ProductId, out var baseline) &&
+                x.Value.IsCurrentMaterialCostComplete &&
+                x.Value.CurrentMaterialCost is > 0m &&
+                x.Value.CurrentMaterialCost.Value > baseline.MaterialCostSnapshot &&
+                decimal.Round(
+                    (x.Value.CurrentMaterialCost.Value - baseline.MaterialCostSnapshot) /
+                    baseline.MaterialCostSnapshot * 100m,
+                    4,
+                    MidpointRounding.AwayFromZero) >= thresholdPercent)
+            .Select(x => x.Key.ProductId)
+            .ToHashSet();
+    }
+
+    private async Task<IReadOnlyDictionary<ProductPricingSourceSelection, ProductPricingSourceOptionDto>>
+        LoadSelectedCoreAsync(
+            IReadOnlyCollection<ProductPricingSourceSelection> selections,
+            Guid companyId,
+            string currency,
+            bool includeProductionSelectedVa,
             CancellationToken cancellationToken)
     {
         var normalizedSelections = selections
@@ -121,10 +271,15 @@ internal sealed class ProductPricingRealtimeSourceQueryService
             return new Dictionary<ProductPricingSourceSelection, ProductPricingSourceOptionDto>();
         }
 
-        var sourceRows = await LoadSelectedSourceRowsAsync(
-            normalizedSelections,
-            companyId,
-            cancellationToken);
+        var sourceRows = includeProductionSelectedVa
+            ? await LoadExecutiveSelectedSourceRowsAsync(
+                normalizedSelections,
+                companyId,
+                cancellationToken)
+            : await LoadSelectedSourceRowsAsync(
+                normalizedSelections,
+                companyId,
+                cancellationToken);
         if (sourceRows.Count == 0)
         {
             return new Dictionary<ProductPricingSourceSelection, ProductPricingSourceOptionDto>();
@@ -339,6 +494,75 @@ internal sealed class ProductPricingRealtimeSourceQueryService
             .ToArray();
     }
 
+    private async Task<IReadOnlyList<SourceRow>> LoadExecutiveSelectedSourceRowsAsync(
+        IReadOnlyCollection<ProductPricingSourceSelection> selections,
+        Guid companyId,
+        CancellationToken cancellationToken)
+    {
+        var canonicalRows = await LoadSelectedSourceRowsAsync(
+            selections,
+            companyId,
+            cancellationToken);
+        var vaSelections = selections
+            .Where(x => x.SourceType == ProductPricingSourceType.ManufacturingFormula)
+            .ToArray();
+        if (vaSelections.Length == 0)
+        {
+            return canonicalRows;
+        }
+
+        var productIds = vaSelections.Select(x => x.ProductId).Distinct().ToArray();
+        var manufacturingFormulaIds = vaSelections.Select(x => x.SourceId).Distinct().ToArray();
+        var now = _dateTimeProvider.Now;
+        var productionSelectedRows = await _dbContext.ProductionSelectVersions
+            .AsNoTracking()
+            .Where(x =>
+                x.CompanyId == companyId &&
+                x.ManufacturingFormulaId.HasValue &&
+                manufacturingFormulaIds.Contains(x.ManufacturingFormulaId.Value) &&
+                x.ManufacturingFormula != null &&
+                x.ManufacturingFormula.CompanyId == companyId &&
+                x.ManufacturingFormula.IsActive &&
+                x.MfgProductionOrder.CompanyId == companyId &&
+                x.MfgProductionOrder.IsActive &&
+                x.MfgProductionOrder.Product.IsActive &&
+                x.MfgProductionOrder.Product.CompanyId == companyId &&
+                productIds.Contains(x.MfgProductionOrder.ProductId))
+            .Select(x => new SourceRow
+            {
+                ProductId = x.MfgProductionOrder.ProductId,
+                ProductCategoryId = x.MfgProductionOrder.Product.CategoryId,
+                ProductColourCode = x.MfgProductionOrder.Product.ColourCode,
+                ProductCode = x.MfgProductionOrder.Product.Code,
+                ProductAdditive = x.MfgProductionOrder.Product.Additive,
+                SourceType = ProductPricingSourceType.ManufacturingFormula,
+                SourceId = x.ManufacturingFormulaId!.Value,
+                ExternalId = x.ManufacturingFormula!.ExternalId,
+                Name = x.ManufacturingFormula.Name,
+                Status = x.ManufacturingFormula.Status,
+                IsEligible = true,
+                IsCustomerSelected = x.ValidFrom <= now &&
+                    (!x.ValidTo.HasValue || x.ValidTo >= now),
+                UpdatedDate = x.MfgProductionOrder.ManufacturingDate ??
+                    x.ValidFrom ??
+                    x.ManufacturingFormula.UpdatedDate
+            })
+            .ToListAsync(cancellationToken);
+
+        ApplyLegacyPricingProfiles(productionSelectedRows);
+        var requestedKeys = selections.ToHashSet();
+        return canonicalRows
+            .Concat(productionSelectedRows)
+            .Where(x => requestedKeys.Contains(
+                new ProductPricingSourceSelection(x.ProductId, x.SourceType, x.SourceId)))
+            .GroupBy(x => new { x.ProductId, x.SourceType, x.SourceId })
+            .Select(x => x
+                .OrderByDescending(y => y.IsCustomerSelected)
+                .ThenByDescending(y => y.UpdatedDate)
+                .First())
+            .ToArray();
+    }
+
     private async Task<IReadOnlyList<MaterialRow>> LoadMaterialRowsAsync(
         IReadOnlyCollection<SourceRow> sources,
         Guid companyId,
@@ -378,6 +602,8 @@ internal sealed class ProductPricingRealtimeSourceQueryService
                     ItemName = x.MaterialNameSnapshot ?? string.Empty,
                     Quantity = x.Quantity,
                     Unit = x.Unit ?? string.Empty,
+                    SourceUnitPrice = x.UnitPrice,
+                    SourceTotalPrice = x.TotalPrice,
                     LineNo = x.LineNo
                 })
                 .ToListAsync(cancellationToken);
@@ -404,6 +630,8 @@ internal sealed class ProductPricingRealtimeSourceQueryService
                     ItemName = x.MaterialNameSnapshot ?? string.Empty,
                     Quantity = x.Quantity,
                     Unit = x.Unit ?? string.Empty,
+                    SourceUnitPrice = x.UnitPrice,
+                    SourceTotalPrice = x.TotalPrice,
                     LineNo = x.LineNo
                 })
                 .ToListAsync(cancellationToken);
@@ -575,6 +803,9 @@ internal sealed class ProductPricingRealtimeSourceQueryService
             Quantity = material.Quantity,
             Unit = material.Unit,
             CategoryId = material.CategoryId,
+            HasSourcePriceSnapshot = true,
+            SourceUnitPrice = material.SourceUnitPrice,
+            SourceTotalPrice = material.SourceTotalPrice,
             HasLatestPrice = hasPrice,
             LatestUnitPrice = hasPrice ? latestPrice!.CurrentPrice : null,
             LatestTotalPrice = hasPrice
@@ -584,7 +815,8 @@ internal sealed class ProductPricingRealtimeSourceQueryService
             LatestPriceDate = hasPrice ? latestPrice!.PriceDate : null,
             LatestPriceSource = hasPrice
                 ? latestPrice!.PriceSource
-                : LatestPriceSourceType.Unknown
+                : LatestPriceSourceType.Unknown,
+            PriceCalculation = hasPrice ? latestPrice?.Calculation : null
         };
     }
 
@@ -622,6 +854,8 @@ internal sealed class ProductPricingRealtimeSourceQueryService
         public string ItemName { get; set; } = string.Empty;
         public decimal Quantity { get; init; }
         public string Unit { get; init; } = string.Empty;
+        public decimal SourceUnitPrice { get; init; }
+        public decimal SourceTotalPrice { get; init; }
         public int LineNo { get; init; }
         public SourceKey SourceKey => new(SourceType, SourceId);
     }
@@ -631,3 +865,12 @@ internal readonly record struct ProductPricingSourceSelection(
     Guid ProductId,
     ProductPricingSourceType SourceType,
     Guid SourceId);
+
+/// <summary>
+/// Canonical baseline for realtime-material-cost list views. The snapshot is always taken from the
+/// latest Approved pricing version; Draft prices must never move the comparison baseline.
+/// </summary>
+internal sealed record ProductPricingMaterialCostBaseline(
+    Guid ProductId,
+    decimal MaterialCostSnapshot,
+    ProductPricingSourceSelection? ApprovedSource);

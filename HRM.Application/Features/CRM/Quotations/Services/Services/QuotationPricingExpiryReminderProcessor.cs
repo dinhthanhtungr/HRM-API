@@ -90,6 +90,12 @@ internal sealed class QuotationPricingExpiryReminderProcessor
                 (line.ProductPricingVersion.ApprovedAt ??
                     line.ProductPricingVersion.UpdatedDate ??
                     line.ProductPricingVersion.CreatedDate) <= reviewCutoff)
+            .OrderBy(line =>
+                line.ProductPricingVersion!.ApprovedAt ??
+                line.ProductPricingVersion.UpdatedDate ??
+                line.ProductPricingVersion.CreatedDate)
+            .ThenBy(line => line.QuotationId)
+            .Take(BatchSize)
             .Select(line => new PricingExpiryCandidate(
                 line.QuotationId,
                 line.Quotation.ExternalId,
@@ -103,9 +109,6 @@ internal sealed class QuotationPricingExpiryReminderProcessor
                     line.ProductPricingVersion.UpdatedDate ??
                     line.ProductPricingVersion.CreatedDate,
                 line.ProductPricingVersion.ApprovedBy ?? line.ProductPricingVersion.CreatedBy))
-            .OrderBy(x => x.PricingApprovedAt)
-            .ThenBy(x => x.QuotationId)
-            .Take(BatchSize)
             .ToListAsync(cancellationToken);
 
         var targets = candidates

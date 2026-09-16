@@ -18,6 +18,7 @@ public sealed class SampleRequestSampleTrialReportDto
     public bool HasPreviousTrials { get; set; }
     public bool CanCreateTrial { get; set; }
     public bool CanUpdateTrial { get; set; }
+    public bool CanUpdateExpectedPriceQuoteDate { get; set; }
     public bool CanUpdateCustomerFeedback { get; set; }
     public string SampleRequestStatus { get; set; } = string.Empty;
 
@@ -34,16 +35,23 @@ public sealed class SampleRequestSampleTrialReportDto
     /// <summary>Giá bán tiêu chuẩn của ProductPricingVersion Approved mới nhất.</summary>
     public decimal? ApprovedStandardSellingPrice { get; set; }
 
+    /// <summary>Ghi chú công khai đi cùng ProductPricingVersion Approved mới nhất.</summary>
+    public string? PublisherNote { get; set; }
+
     /// <summary>Thời điểm President/Developer duyệt version giá chuẩn.</summary>
     public DateTime? StandardSellingPriceApprovedAt { get; set; }
 
-    /// <summary>Giá bán tiêu chuẩn realtime do pricing policy hiện hành tính.</summary>
+    /// <summary>
+    /// Giá bán tiêu chuẩn realtime do pricing policy hiện hành tính; trả null khi user không có
+    /// capability xem giá hệ thống tính (bao gồm SaleUser).
+    /// </summary>
     public decimal? SystemCalculatedStandardSellingPrice { get; set; }
 
     /// <summary>Ngày Sale yêu cầu có mẫu, lấy từ Sample Request.</summary>
     public DateTime? RequestDeliveryDate { get; set; }
     /// <summary>Ngày dự kiến có mẫu, lấy từ Sample Request.</summary>
     public DateTime? ExpectedDeliveryDate { get; set; }
+    public DateTime? ExpectedPriceQuoteDate { get; set; }
     public DateTime? RequestReceivedDate { get; set; }
     public DateTime? FinishedDate { get; set; }
     public DateTime? SentDate { get; set; }
@@ -59,6 +67,7 @@ public sealed class SampleRequestSampleTrialReportDto
     public string? CustomerReplyNote { get; set; }
     public DateTime? OrderDate { get; set; }
 
+    /// <summary>Tỷ lệ sử dụng hiện tại từ SampleRequest.Product.UsageRate; không phải snapshot của Trial.</summary>
     public double? AdditiveRate { get; set; }
     public string? LabNote { get; set; }
     /// <summary>Ngày tạo Sample Request; đây là mốc sắp xếp của danh sách chính.</summary>

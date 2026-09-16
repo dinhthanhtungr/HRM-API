@@ -1,6 +1,6 @@
 # PLM Sale Orders
 
-Create SaleOrder nhận `OrderType` từ FE: `0` Nội bộ, `1` Hàng hóa, `2` Khiếu nại, `3` Yêu cầu mẫu. `UnitPriceAgreed` không được âm; chỉ đơn Hàng hóa bắt buộc lớn hơn `0`, ba loại còn lại được phép bằng `0`. Formula của mọi loại đơn phải active, cùng Product/công ty và có status `SampleSent` hoặc `Completed`; không kiểm tra liên kết Trial/Sample Request khi validate Formula. Handling order complaint hiện chỉ được approve/tạo MFG khi report nguồn đã `Closed` và được chốt `ReplacementProduction`.
+Create SaleOrder nhận `OrderType` từ FE: `0` Nội bộ, `1` Hàng hóa, `2` Khiếu nại, `3` Yêu cầu mẫu. `UnitPriceAgreed` không được âm; chỉ đơn Hàng hóa bắt buộc lớn hơn `0`, ba loại còn lại được phép bằng `0`. Formula của mọi loại đơn phải active, cùng Product/công ty và có status `SampleSent` hoặc `Completed`; không kiểm tra liên kết Trial/Sample Request khi validate Formula. Đơn Complaint được duyệt/tạo MFG theo cùng điều kiện chung của SaleOrder, không bắt buộc có báo cáo complaint nguồn hoặc hướng xử lý sản xuất bù.
 
 ## Mục đích
 
@@ -42,7 +42,7 @@ Khi tạo đơn mới, customer dropdown gọi `GET /api/v1/crm/customers/lookup
 
 Sau khi đã có `CustomerId`, mỗi lần Sale chọn một `ProductId`, FE gọi `last-by-customer`. Query áp dụng cùng customer visibility, chỉ tìm detail active không `Cancelled` của đúng customer/product và chọn ổn định theo ngày tạo đơn, id đơn, id detail giảm dần. Các field lịch sử (`unitPriceAgreed`, formula, bao bì, số lượng, ghi chú...) vẫn là dữ liệu tham khảo của lần bán gần nhất cho chính khách hàng đó; không lấy lịch sử của khách hoặc sản phẩm khác. Ngày yêu cầu giao không được tái sử dụng vì thuộc đơn mới.
 
-Response luôn có `currentPricing` cho customer/product hợp lệ, kể cả khi chưa có SaleOrder cũ (`hasPreviousSale=false`). Backend ưu tiên `Source = ApprovedStandardPrice`: `suggestedUnitPrice` là `StandardSellingPrice` của `ProductPricingVersion` active, `Approved` mới nhất theo sản phẩm và VND. Nếu chưa có giá chuẩn đã duyệt, backend dùng `Source = SystemCalculated`, lấy nguồn Formula/MFG hợp lệ hiện hành và `FormulaPricingEngine` tính theo giá NVL realtime cùng pricing policy đang hiệu lực. Nếu không có nguồn hợp lệ thì `Source = Unavailable` và `suggestedUnitPrice = null`.
+Response luôn có `currentPricing` cho customer/product hợp lệ, kể cả khi chưa có SaleOrder cũ (`hasPreviousSale=false`). Backend ưu tiên `Source = ApprovedStandardPrice`: `suggestedUnitPrice` là `StandardSellingPrice` và `publisherNote` là ghi chú công khai của `ProductPricingVersion` active, `Approved` mới nhất theo sản phẩm và VND. Nếu chưa có giá chuẩn đã duyệt, backend dùng `Source = SystemCalculated`, lấy nguồn Formula/MFG hợp lệ hiện hành và `FormulaPricingEngine` tính theo giá NVL realtime cùng pricing policy đang hiệu lực; khi đó `publisherNote = null`. Nếu không có nguồn hợp lệ thì `Source = Unavailable`, `suggestedUnitPrice = null` và `publisherNote = null`.
 
 `priceTiers` có nguồn và thứ tự fallback độc lập với `suggestedUnitPrice`: (1) tier snapshot của báo giá `Sent` gần nhất theo đúng customer/product/currency, (2) tier active của `ProductPricingVersion Approved` mới nhất, (3) tier do hệ thống tính từ Formula/MFG cùng policy hiện hành. FE phân biệt bằng enum chuỗi `priceTierSource`: `LatestCustomerQuotation`, `ApprovedProductPricing`, `SystemCalculated`, hoặc `Unavailable`. `priceTierSourceDate` lần lượt là ngày gửi báo giá, ngày duyệt/lưu bảng giá, hoặc thời điểm tính hệ thống. Khi nguồn là báo giá, response còn trả `priceTierQuotationId` và `priceTierQuotationExternalId`; các nguồn khác trả hai field này bằng `null`.
 
@@ -53,6 +53,7 @@ Payload rút gọn:
   "currentPricing": {
     "source": "ApprovedStandardPrice",
     "suggestedUnitPrice": 134322,
+    "publisherNote": "Áp dụng cho đơn từ 100 kg",
     "priceTierSource": "LatestCustomerQuotation",
     "priceTierSourceDate": "2026-08-31T10:30:00",
     "priceTierQuotationId": "guid",

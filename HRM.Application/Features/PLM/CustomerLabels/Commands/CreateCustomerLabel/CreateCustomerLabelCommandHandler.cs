@@ -47,6 +47,43 @@ internal sealed class CreateCustomerLabelCommandHandler : IRequestHandler<Create
             return OperationResult<SaveCustomerLabelResultDto>.Fail("Product or customer was not found, is inactive, or is outside the current company.");
         }
 
+        if (request.DefaultPrintLabelLogoId.HasValue && !request.PrintLabelTemplateId.HasValue)
+        {
+            return OperationResult<SaveCustomerLabelResultDto>.Fail("DefaultPrintLabelLogoId requires PrintLabelTemplateId.");
+        }
+
+        if (request.PrintLabelTemplateId.HasValue)
+        {
+            var templateExists = await _dbContext.PrintLabelTemplates.AsNoTracking().AnyAsync(template =>
+                template.Id == request.PrintLabelTemplateId.Value && template.CompanyId == companyId && template.IsActive, cancellationToken);
+            if (!templateExists)
+                return OperationResult<SaveCustomerLabelResultDto>.Fail("Print label template was not found, inactive, or is outside the current company.");
+
+            if (request.DefaultPrintLabelLogoId.HasValue)
+            {
+                var logoAllowed = await _dbContext.PrintLabelTemplateLogos.AsNoTracking().AnyAsync(link =>
+                    link.PrintLabelTemplateId == request.PrintLabelTemplateId.Value &&
+                    link.PrintLabelLogoId == request.DefaultPrintLabelLogoId.Value && link.IsActive &&
+                    link.Logo.CompanyId == companyId && link.Logo.IsActive, cancellationToken);
+                if (!logoAllowed)
+                    return OperationResult<SaveCustomerLabelResultDto>.Fail("The default logo is not active or is not allowed by the selected print label template.");
+            }
+
+            var elementIds = request.Details.Where(detail => detail.PrintLabelElementId.HasValue)
+                .Select(detail => detail.PrintLabelElementId!.Value).Distinct().ToArray();
+            if (elementIds.Length > 0)
+            {
+                var linkedElementCount = await _dbContext.PrintLabelElements.AsNoTracking().CountAsync(element =>
+                    element.PrintLabelTemplateId == request.PrintLabelTemplateId.Value && elementIds.Contains(element.Id), cancellationToken);
+                if (linkedElementCount != elementIds.Length)
+                    return OperationResult<SaveCustomerLabelResultDto>.Fail("A customer label detail references an element outside the selected print label template.");
+            }
+        }
+        else if (request.Details.Any(detail => detail.PrintLabelElementId.HasValue))
+        {
+            return OperationResult<SaveCustomerLabelResultDto>.Fail("PrintLabelElementId requires PrintLabelTemplateId.");
+        }
+
         var now = _dateTimeProvider.Now;
         var entity = new CustomerLabelHeader
         {
@@ -56,6 +93,8 @@ internal sealed class CreateCustomerLabelCommandHandler : IRequestHandler<Create
             CustomerId = request.CustomerId,
             CustomerExternalId = CustomerLabelRules.Normalize(request.CustomerExternalId),
             LabelType = CustomerLabelRules.Normalize(request.LabelType),
+            PrintLabelTemplateId = request.PrintLabelTemplateId,
+            DefaultPrintLabelLogoId = request.DefaultPrintLabelLogoId,
             IsActive = request.IsActive,
             CreatedBy = employeeId,
             UpdatedBy = employeeId,
@@ -67,6 +106,7 @@ internal sealed class CreateCustomerLabelCommandHandler : IRequestHandler<Create
                 LineNo = detail.LineNo,
                 FieldKey = detail.FieldKey.Trim(),
                 FieldValue = CustomerLabelRules.Normalize(detail.FieldValue),
+                PrintLabelElementId = detail.PrintLabelElementId,
                 IsActive = detail.IsActive
             }).ToList()
         };

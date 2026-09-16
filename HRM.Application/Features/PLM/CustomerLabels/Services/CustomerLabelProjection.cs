@@ -14,6 +14,8 @@ internal static class CustomerLabelProjection
         CustomerId = header.CustomerId,
         CustomerExternalId = header.CustomerExternalId,
         LabelType = header.LabelType,
+        PrintLabelTemplateId = header.PrintLabelTemplateId,
+        DefaultPrintLabelLogoId = header.DefaultPrintLabelLogoId,
         IsActive = header.IsActive,
         CreatedDate = header.CreatedDate,
         UpdatedDate = header.UpdatedDate,
@@ -24,6 +26,7 @@ internal static class CustomerLabelProjection
             .Select(detail => new CustomerLabelDetailDto
             {
                 Id = detail.Id,
+                PrintLabelElementId = detail.PrintLabelElementId,
                 LineNo = detail.LineNo,
                 FieldKey = detail.FieldKey,
                 FieldValue = detail.FieldValue,

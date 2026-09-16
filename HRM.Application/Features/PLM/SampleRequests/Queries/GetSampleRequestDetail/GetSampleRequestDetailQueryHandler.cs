@@ -2,7 +2,7 @@ using HRM.Application.Abstractions.Persistence.PLM;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Authorization;
 using HRM.Application.Commons.Rules;
-using HRM.Application.Commons.Authorization.PLM;
+using HRM.Application.Features.PLM.Shared.Authorization;
 using HRM.Application.Features.Attachments.Services;
 using HRM.Application.Features.CRM.CustomerCare.Visibility;
 using HRM.Application.Features.PLM.Shared.Rules;

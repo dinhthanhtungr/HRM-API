@@ -1,4 +1,5 @@
 using HRM.Application.Abstractions.Security;
+using HRM.Application.Commons.Authorization;
 using HRM.Application.Features.Dispatch.DeliveryOrders;
 using HRM.Application.Features.Dispatch.DeliveryOrders.Dtos;
 using System.Text.Json;
@@ -14,7 +15,7 @@ public sealed class DeliveryOrderCostVisibilityRulesTests
     [InlineData("Admin")]
     public void AuthorizedFormulaPriceRole_CanViewCost(string role)
     {
-        Assert.True(DeliveryOrderCostVisibilityRules.CanViewCost(new CurrentUser(role)));
+        Assert.True(DeliveryOrderCostVisibilityRules.CanViewCost(PermissionsFor(role)));
     }
 
     [Theory]
@@ -24,7 +25,7 @@ public sealed class DeliveryOrderCostVisibilityRulesTests
     [InlineData("ACUser")]
     public void OperationalRole_CannotViewCost(string role)
     {
-        Assert.False(DeliveryOrderCostVisibilityRules.CanViewCost(new CurrentUser(role)));
+        Assert.False(DeliveryOrderCostVisibilityRules.CanViewCost(PermissionsFor(role)));
     }
 
     [Fact]
@@ -81,4 +82,7 @@ public sealed class DeliveryOrderCostVisibilityRulesTests
         public bool IsInRole(string requestedRole)
             => string.Equals(role, requestedRole, StringComparison.OrdinalIgnoreCase);
     }
+
+    private static ICurrentUserPermissionService PermissionsFor(string role)
+        => new CurrentUserPermissionService(new CurrentUser(role));
 }

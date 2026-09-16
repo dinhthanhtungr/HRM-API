@@ -12,8 +12,21 @@ internal static class SampleRequestSampleTrialPatchAuthorization
     public static string? Validate(
         bool canUpdateTechnicalFields,
         bool canUpdateCustomerFeedback,
+        bool canUpdateExpectedPriceQuoteDate,
         IEnumerable<string> dirtyFields)
     {
+        var fields = dirtyFields
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (!canUpdateExpectedPriceQuoteDate &&
+            fields.Contains(
+                SampleRequestSampleTrialPatchFields.ExpectedPriceQuoteDate,
+                StringComparer.OrdinalIgnoreCase))
+        {
+            return "You are not allowed to update expectedPriceQuoteDate.";
+        }
+
         if (canUpdateTechnicalFields)
         {
             return null;
@@ -24,9 +37,8 @@ internal static class SampleRequestSampleTrialPatchAuthorization
             return "You are not allowed to update sample trials.";
         }
 
-        var forbiddenFields = dirtyFields
+        var forbiddenFields = fields
             .Where(field => !CustomerFeedbackFields.Contains(field))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(field => field)
             .ToArray();
 

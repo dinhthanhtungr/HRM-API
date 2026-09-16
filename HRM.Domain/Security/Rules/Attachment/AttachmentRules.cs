@@ -197,6 +197,20 @@ namespace HRM.Domain.Security.Rules.Attachment
                 [AttachmentSlot.MaterialCoa] = CreateMaterialDocumentRule(),
                 [AttachmentSlot.MaterialCertificate] = CreateMaterialDocumentRule(),
                 [AttachmentSlot.MaterialOther] = CreateMaterialDocumentRule(),
+                [AttachmentSlot.PrintLabelTemplate] = new SlotRule
+                {
+                    AllowMultiple = true,
+                    AllowedMimePrefixes = new[] { "image/", "application/pdf" },
+                    MaxBytes = 20 * MB,
+                    GenerateThumbnail = true
+                },
+                [AttachmentSlot.PrintLabelLogo] = new SlotRule
+                {
+                    AllowMultiple = false,
+                    AllowedMimePrefixes = new[] { "image/" },
+                    MaxBytes = 5 * MB,
+                    GenerateThumbnail = true
+                },
             };
 
         private static SlotRule CreateMaterialDocumentRule()

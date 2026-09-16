@@ -3,6 +3,7 @@ using HRM.Application.Abstractions.Persistence.InternalMail;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Models;
 using HRM.Application.Commons.Pagination;
+using HRM.Application.Features.Pricing.Authorization;
 using HRM.Application.Features.CRM.CustomerCare.Visibility;
 using HRM.Application.Features.CRM.Quotations.Dtos;
 using HRM.Application.Features.CRM.Quotations.Services;
@@ -25,24 +26,27 @@ internal sealed class GetQuotationPricingQueueQueryHandler
     private readonly IInternalMailDbContext _internalMailDbContext;
     private readonly ICustomerVisibilityService _visibilityService;
     private readonly ICurrentUser _currentUser;
+    private readonly IPricingVisibilityService _pricingVisibilityService;
 
     public GetQuotationPricingQueueQueryHandler(
         ICRMReadDbContext crmDbContext,
         IInternalMailDbContext internalMailDbContext,
         ICustomerVisibilityService visibilityService,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        IPricingVisibilityService pricingVisibilityService)
     {
         _crmDbContext = crmDbContext;
         _internalMailDbContext = internalMailDbContext;
         _visibilityService = visibilityService;
         _currentUser = currentUser;
+        _pricingVisibilityService = pricingVisibilityService;
     }
 
     public async Task<OperationResult<PagedResult<QuotationPricingQueueItemDto>>> Handle(
         GetQuotationPricingQueueQuery request,
         CancellationToken cancellationToken)
     {
-        if (!ProductPricingAccessRules.CanManage(_currentUser))
+        if (!_pricingVisibilityService.GetAccess().CanManage)
         {
             return OperationResult<PagedResult<QuotationPricingQueueItemDto>>.Fail(
                 "Only President or Developer can access the quotation pricing queue.");
@@ -101,12 +105,12 @@ internal sealed class GetQuotationPricingQueueQueryHandler
         if (request.NormalizedKeyword is { } keyword)
         {
             quotationQuery = quotationQuery.Where(x =>
-                x.ExternalId.Contains(keyword) ||
-                x.Customer.ExternalId.Contains(keyword) ||
-                x.Customer.CustomerName.Contains(keyword) ||
+                EF.Functions.ILike(x.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike(x.Customer.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike(x.Customer.CustomerName, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
                 x.Lines.Any(line =>
-                    line.ProductExternalIdSnapshot.Contains(keyword) ||
-                    line.ProductNameSnapshot.Contains(keyword)));
+                    EF.Functions.ILike(line.ProductExternalIdSnapshot, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                    EF.Functions.ILike(line.ProductNameSnapshot, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter)));
         }
 
         var rows = await quotationQuery

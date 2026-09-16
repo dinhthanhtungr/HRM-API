@@ -3,6 +3,7 @@ using HRM.Application.Commons.Models;
 using HRM.Application.Features.CRM.CustomerCare.Visibility;
 using HRM.Application.Features.CRM.Quotations.Dtos;
 using HRM.Application.Features.CRM.Quotations.Services;
+using HRM.Application.Features.CRM.Quotations.Services.Queries;
 using HRM.Domain.Enums.CustomerEnum;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -22,15 +23,18 @@ namespace HRM.Application.Features.CRM.Quotations.Queries.GetQuotationById
         private readonly ICRMReadDbContext _dbContext;
         private readonly ICustomerVisibilityService _visibilityService;
         private readonly QuotationTierPriceReferenceService _tierPriceReferenceService;
+        private readonly ProductStandardPriceReviewQueryService _standardPriceReviewQueryService;
 
         public GetQuotationByIdQueryHandler(
             ICRMReadDbContext dbContext,
             ICustomerVisibilityService visibilityService,
-            QuotationTierPriceReferenceService tierPriceReferenceService)
+            QuotationTierPriceReferenceService tierPriceReferenceService,
+            ProductStandardPriceReviewQueryService standardPriceReviewQueryService)
         {
             _dbContext = dbContext;
             _visibilityService = visibilityService;
             _tierPriceReferenceService = tierPriceReferenceService;
+            _standardPriceReviewQueryService = standardPriceReviewQueryService;
         }
 
         public async Task<OperationResult<QuotationDetailDto>> Handle(
@@ -177,6 +181,16 @@ namespace HRM.Application.Features.CRM.Quotations.Queries.GetQuotationById
                     "Quotation was not found or is outside your visibility scope.");
             }
 
+            var standardPriceStates = await _standardPriceReviewQueryService.LoadAsync(
+                scope.CompanyId,
+                detail.Lines.Select(x => x.ProductId).Distinct().ToArray(),
+                cancellationToken);
+            foreach (var line in detail.Lines)
+            {
+                line.StandardPriceReview = ToStandardPriceReview(
+                    standardPriceStates.GetValueOrDefault(line.ProductId));
+            }
+
             var visibleQuotations = _visibilityService.ApplyQuotationVisibility(
                 _dbContext.Quotations.AsNoTracking(),
                 _dbContext.Customers.AsNoTracking(),
@@ -189,6 +203,22 @@ namespace HRM.Application.Features.CRM.Quotations.Queries.GetQuotationById
 
             return OperationResult<QuotationDetailDto>.Ok(detail);
         }
+
+        private static QuotationStandardPriceReviewDto ToStandardPriceReview(
+            ProductStandardPriceStateResult? state)
+            => state is null
+                ? new QuotationStandardPriceReviewDto
+                {
+                    State = ProductStandardPriceState.Missing
+                }
+                : new QuotationStandardPriceReviewDto
+                {
+                    State = state.State,
+                    RequiresPricingAction = state.State is ProductStandardPriceState.PendingInitialApproval or ProductStandardPriceState.PendingReapproval,
+                    HasFormulaConfirmationPending = state.HasFormulaConfirmationPending,
+                    IsPricingReviewExpired = state.IsPricingReviewExpired,
+                    PricingReviewDueDate = state.PricingReviewDueDate
+                };
     }
 
 }

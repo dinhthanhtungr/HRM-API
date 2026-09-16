@@ -12,4 +12,8 @@ public sealed class AuthenticatedUserDto
     public Guid? CompanyId { get; init; }
 
     public IReadOnlyList<string> Roles { get; init; } = Array.Empty<string>();
+
+    public IReadOnlyList<string> Permissions { get; init; } = Array.Empty<string>();
+
+    public bool UsesDatabasePermissions { get; init; }
 }

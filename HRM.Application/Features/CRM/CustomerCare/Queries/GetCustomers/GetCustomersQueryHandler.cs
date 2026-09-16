@@ -118,12 +118,12 @@ internal sealed class GetCustomersQueryHandler
             var keyword = request.NormalizedKeyword;
 
             query = query.Where(x =>
-                x.ExternalId.Contains(keyword) ||
-                x.CustomerName.Contains(keyword) ||
-                (x.CustomerGroup ?? string.Empty).Contains(keyword) ||
-                (x.ApplicationName ?? string.Empty).Contains(keyword) ||
-                (x.Phone ?? string.Empty).Contains(keyword) ||
-                (x.TaxNumber ?? string.Empty).Contains(keyword));
+                EF.Functions.ILike(x.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike(x.CustomerName, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike((x.CustomerGroup ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike((x.ApplicationName ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike((x.Phone ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike((x.TaxNumber ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter));
         }
 
         query = ApplySorting(query, request);

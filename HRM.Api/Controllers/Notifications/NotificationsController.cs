@@ -1,6 +1,9 @@
+using HRM.Application.Commons.Authorization;
+using HRM.Application.Features.Notifications.Commands.BackfillSampleRequestPriceQuoteRecipients;
 using HRM.Application.Features.Notifications.Dtos;
 using HRM.Application.Features.Notifications.Services;
 using HRM.Domain.Enums.Notifications;
+using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -15,10 +18,12 @@ namespace HRM.Api.Controllers.Notifications;
 public sealed class NotificationsController : ControllerBase
 {
     private readonly INotificationService _notificationService;
+    private readonly ISender _sender;
 
-    public NotificationsController(INotificationService notificationService)
+    public NotificationsController(INotificationService notificationService, ISender sender)
     {
         _notificationService = notificationService;
+        _sender = sender;
     }
 
     [HttpGet("feed")]
@@ -96,6 +101,27 @@ public sealed class NotificationsController : ControllerBase
         var updated = await _notificationService.MarkAllReadAsync(cancellationToken);
 
         return Ok(updated);
+    }
+
+    /// <summary>
+    /// Backfill có giới hạn cho notification Báo giá đã phát sinh: chỉ bổ sung inbox state/recipient thiếu,
+    /// không phát SignalR hoặc Web Push lại. Mặc định quét từ đầu hôm qua đến đầu ngày mai.
+    /// </summary>
+    [HttpPost("backfill/sample-request-price-quotes")]
+    [Authorize(Roles = ApplicationRoleSets.Notifications.BackfillManagerRolesCsv)]
+    public async Task<IActionResult> BackfillSampleRequestPriceQuoteRecipients(
+        [FromQuery] DateTime? from = null,
+        [FromQuery] DateTime? to = null,
+        [FromQuery] bool dryRun = true,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _sender.Send(
+            new BackfillSampleRequestPriceQuoteRecipientsCommand(from, to, dryRun),
+            cancellationToken);
+
+        return result.Success
+            ? Ok(result)
+            : BadRequest(result);
     }
 
     [HttpPost("{id:guid}/archive")]

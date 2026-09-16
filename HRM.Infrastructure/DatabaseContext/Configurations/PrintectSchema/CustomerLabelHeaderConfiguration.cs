@@ -24,6 +24,8 @@ namespace HRM.Infrastructure.DatabaseContext.Configurations.PrintectSchema
             entity.Property(x => x.CustomerId).HasColumnName("customerId").IsRequired();
             entity.Property(x => x.CustomerExternalId).HasColumnName("customerExternalId").HasColumnType("citext");
             entity.Property(x => x.LabelType).HasColumnName("labelType").HasColumnType("citext");
+            entity.Property(x => x.PrintLabelTemplateId).HasColumnName("printLabelTemplateId");
+            entity.Property(x => x.DefaultPrintLabelLogoId).HasColumnName("defaultPrintLabelLogoId");
             entity.Property(x => x.CreatedBy).HasColumnName("createdBy");
             entity.Property(x => x.UpdatedBy).HasColumnName("updatedBy");
             entity.Property(x => x.IsActive).HasColumnName("isActive").HasDefaultValue(true);
@@ -33,6 +35,8 @@ namespace HRM.Infrastructure.DatabaseContext.Configurations.PrintectSchema
             entity.HasIndex(x => x.ProductId).HasDatabaseName("IX_CustomerLabelHeaders_ProductId");
             entity.HasIndex(x => x.CustomerId).HasDatabaseName("IX_CustomerLabelHeaders_CustomerId");
             entity.HasIndex(x => x.LabelType).HasDatabaseName("IX_CustomerLabelHeaders_LabelType");
+            entity.HasIndex(x => x.PrintLabelTemplateId).HasDatabaseName("IX_CustomerLabelHeaders_PrintLabelTemplateId");
+            entity.HasIndex(x => x.DefaultPrintLabelLogoId).HasDatabaseName("IX_CustomerLabelHeaders_DefaultPrintLabelLogoId");
             entity.HasIndex(x => new { x.CustomerId, x.ProductId, x.LabelType })
                   .HasDatabaseName("IX_CustomerLabelHeaders_Customer_Product_LabelType");
 
@@ -59,6 +63,18 @@ namespace HRM.Infrastructure.DatabaseContext.Configurations.PrintectSchema
                 .HasForeignKey(x => x.UpdatedBy)
                 .OnDelete(DeleteBehavior.SetNull)
                 .HasConstraintName("FK_CustomerLabelHeaders_UpdatedBy");
+
+            entity.HasOne(x => x.PrintLabelTemplate)
+                .WithMany()
+                .HasForeignKey(x => x.PrintLabelTemplateId)
+                .OnDelete(DeleteBehavior.Restrict)
+                .HasConstraintName("FK_CustomerLabelHeaders_PrintLabelTemplate");
+
+            entity.HasOne(x => x.DefaultPrintLabelLogo)
+                .WithMany(x => x.DefaultForCustomerLabels)
+                .HasForeignKey(x => x.DefaultPrintLabelLogoId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("FK_CustomerLabelHeaders_DefaultPrintLabelLogo");
         }
     }
 }

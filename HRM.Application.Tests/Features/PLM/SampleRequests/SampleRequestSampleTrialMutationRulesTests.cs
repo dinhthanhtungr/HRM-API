@@ -72,6 +72,7 @@ public sealed class SampleRequestSampleTrialMutationRulesTests
         var result = SampleRequestSampleTrialPatchAuthorization.Validate(
             canUpdateTechnicalFields: false,
             canUpdateCustomerFeedback: true,
+            canUpdateExpectedPriceQuoteDate: false,
             [
                 SampleRequestSampleTrialPatchFields.CustomerReplyStatus,
                 SampleRequestSampleTrialPatchFields.CustomerReplyNote
@@ -86,6 +87,7 @@ public sealed class SampleRequestSampleTrialMutationRulesTests
         var result = SampleRequestSampleTrialPatchAuthorization.Validate(
             canUpdateTechnicalFields: false,
             canUpdateCustomerFeedback: true,
+            canUpdateExpectedPriceQuoteDate: false,
             [
                 SampleRequestSampleTrialPatchFields.CustomerReplyNote,
                 SampleRequestSampleTrialPatchFields.Status,
@@ -102,8 +104,33 @@ public sealed class SampleRequestSampleTrialMutationRulesTests
         var result = SampleRequestSampleTrialPatchAuthorization.Validate(
             canUpdateTechnicalFields: true,
             canUpdateCustomerFeedback: false,
+            canUpdateExpectedPriceQuoteDate: false,
             [SampleRequestSampleTrialPatchFields.FormulaId]);
 
         Assert.Null(result);
+    }
+
+    [Fact]
+    public void PatchAuthorization_AllowsExpectedPriceQuoteDateForAuthorizedEditor()
+    {
+        var result = SampleRequestSampleTrialPatchAuthorization.Validate(
+            canUpdateTechnicalFields: true,
+            canUpdateCustomerFeedback: false,
+            canUpdateExpectedPriceQuoteDate: true,
+            [SampleRequestSampleTrialPatchFields.ExpectedPriceQuoteDate]);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void PatchAuthorization_RejectsExpectedPriceQuoteDateForOtherTechnicalEditor()
+    {
+        var result = SampleRequestSampleTrialPatchAuthorization.Validate(
+            canUpdateTechnicalFields: true,
+            canUpdateCustomerFeedback: false,
+            canUpdateExpectedPriceQuoteDate: false,
+            [SampleRequestSampleTrialPatchFields.ExpectedPriceQuoteDate]);
+
+        Assert.Equal("You are not allowed to update expectedPriceQuoteDate.", result);
     }
 }

@@ -9,6 +9,7 @@ using HRM.Application.Features.PLM.SampleRequests.Commands.SendSampleRequestMess
 using HRM.Application.Features.PLM.SampleRequests.Rules;
 using HRM.Application.Features.PLM.SampleRequests.DataChangeRequests;
 using HRM.Application.Features.PLM.SampleRequests.SampleTrials;
+using HRM.Application.Features.PLM.Boms.Commands.CreateManufacturingBomFromSelectedFormula;
 using HRM.Domain.Enums.Notifications;
 using HRM.Domain.Enums.SampleRequests;
 using MediatR;
@@ -185,6 +186,19 @@ internal sealed class RecordSampleRequestSampleTrialCustomerFeedbackCommandHandl
             cancellationToken);
         await _dbContext.SaveChangesAsync(cancellationToken);
 
+        if (request.Status == SampleTrialStatus.Approved)
+        {
+            var bomResult = await _sender.Send(
+                new CreateManufacturingBomFromSelectedFormulaCommand(sampleRequest.ProductId),
+                cancellationToken);
+            if (!bomResult.Success)
+            {
+                return OperationResult<Guid>.Ok(
+                    trial.SampleRequestSampleTrialId,
+                    $"Recorded customer feedback successfully, but could not initialize the Manufacturing BOM: {bomResult.Message}");
+            }
+        }
+
         var messageResult = await SendFeedbackMessageAsync(
             sampleRequest.SampleRequestId,
             sampleRequest.ExternalId,
@@ -228,8 +242,12 @@ internal sealed class RecordSampleRequestSampleTrialCustomerFeedbackCommandHandl
             SampleRequestId = sampleRequestId,
             Type = SampleRequestNotificationType.GeneralMessage,
             Message = $"Phan hoi khach hang cho yeu cau phoi mau {sampleRequestExternalId}, lan thu {trialNo}. Cong thuc: {formulaExternalId}. Trang thai: {customerReplyStatus}. {outcome}{note}",
-            TopicOverride = TopicNotifications.SampleRequestCustomerFeedbackRecorded,
-            TitleOverride = "Phan hoi khach hang ve mau da gui"
+            TopicOverride = status == SampleTrialStatus.Cancelled
+                ? TopicNotifications.SampleRequestCancelled
+                : TopicNotifications.SampleRequestCustomerFeedbackRecorded,
+            TitleOverride = status == SampleTrialStatus.Cancelled
+                ? "Yêu cầu phối mẫu đã hủy"
+                : "Phan hoi khach hang ve mau da gui"
         }, cancellationToken);
     }
 
