@@ -35,6 +35,9 @@ Dùng static helper khi logic thuần, deterministic, không cần DB/config/cur
 
 Dùng DI service khi cần DB, `_currentUser`, phân quyền, company scope, role, clock testable, logger, config, file storage, HTTP, email, SignalR, cache, hoặc có side effect.
 
+Với authorization dùng lại, feature phải phụ thuộc capability/visibility service thay vì tự đọc role. Source of truth
+hiện hành nằm trong `HRM.Application/Commons/Authorization`; xem `.agents/security/authorization-capabilities.md`.
+
 Không tạo helper/service dùng chung quá sớm. Nếu mới chỉ có một use case, ưu tiên đặt gần use case. Chỉ nâng lên shared khi có ít nhất hai nơi dùng thật hoặc có lý do kiến trúc rõ.
 
 ## Professional Code Shape

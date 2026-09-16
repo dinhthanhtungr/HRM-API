@@ -1,59 +1,54 @@
+using HRM.Application.Features.Pricing.Authorization;
 using HRM.Application.Features.CRM.Quotations.Dtos;
 
 namespace HRM.Application.Features.CRM.Quotations.Services;
 
 internal static class ProductPricingWorkbenchVisibility
 {
+    // Compatibility overload for read models that have not yet been migrated to capability decisions.
     public static ProductPricingWorkbenchItemDto ApplyToSummary(
         ProductPricingWorkbenchItemDto source,
         bool canManagePricing)
-    {
-        if (canManagePricing)
-        {
-            return CopySummary(source, canManagePricing: true, includeSensitiveFields: true);
-        }
+        => ApplyToSummary(source, LegacyAccess(canManagePricing));
 
-        return CopySummary(source, canManagePricing: false, includeSensitiveFields: false);
-    }
+    public static ProductPricingWorkbenchItemDto ApplyToSummary(
+        ProductPricingWorkbenchItemDto source,
+        PricingAccessDecision access)
+        => CopySummary(source, access);
 
     public static ProductPricingWorkbenchDetailDto ApplyToDetail(
         ProductPricingWorkbenchDetailDto source,
-        bool canManagePricing)
-    {
-        if (canManagePricing)
+        PricingAccessDecision access)
+        => new()
         {
-            return new ProductPricingWorkbenchDetailDto
-            {
-                Summary = ApplyToSummary(source.Summary, canManagePricing: true),
-                ManufacturingCost = source.ManufacturingCost,
-                StandardSellingPrice = source.StandardSellingPrice,
-                ProfitMarginRate = source.ProfitMarginRate,
-                SelectedSource = source.SelectedSource,
-                DraftPricing = source.DraftPricing,
-                ApprovedPricing = source.ApprovedPricing,
-                DisplayPriceTiers = source.DisplayPriceTiers,
-                PricingHistory = source.PricingHistory,
-                RelatedQuotations = source.RelatedQuotations
-            };
-        }
-
-        return new ProductPricingWorkbenchDetailDto
-        {
-            Summary = ApplyToSummary(source.Summary, canManagePricing: false),
-            StandardSellingPrice = source.StandardSellingPrice,
-            SelectedSource = ToSaleSource(source.SelectedSource),
-            DisplayPriceTiers = ToSaleTiers(source.DisplayPriceTiers)
+            Summary = ApplyToSummary(source.Summary, access),
+            ManufacturingCost = access.CanViewManufacturingCost
+                ? source.ManufacturingCost
+                : null,
+            StandardSellingPrice = access.CanViewApprovedSellingPrice
+                ? source.StandardSellingPrice
+                : null,
+            ProfitMarginRate = access.CanViewMargin ? source.ProfitMarginRate : null,
+            SelectedSource = source.SelectedSource is null
+                ? null
+                : ProductPricingSourceVisibility.Apply(source.SelectedSource, access),
+            DraftPricing = access.CanManage ? source.DraftPricing : null,
+            ApprovedPricing = access.CanViewHistory ? source.ApprovedPricing : null,
+            DisplayPriceTiers = access.CanViewApprovedSellingPrice ||
+                                access.CanViewSystemCalculatedPrice
+                ? ToVisibleTiers(source.DisplayPriceTiers, access)
+                : [],
+            PricingHistory = access.CanViewHistory ? source.PricingHistory : [],
+            RelatedQuotations = access.CanManage ? source.RelatedQuotations : []
         };
-    }
 
     private static ProductPricingWorkbenchItemDto CopySummary(
         ProductPricingWorkbenchItemDto source,
-        bool canManagePricing,
-        bool includeSensitiveFields)
+        PricingAccessDecision access)
         => new()
         {
-            CanOpenPricingDetail = true,
-            CanManagePricing = canManagePricing,
+            CanOpenPricingDetail = access.CanViewWorkbench,
+            CanManagePricing = access.CanManage,
             ProductId = source.ProductId,
             ProductCode = source.ProductCode,
             ProductName = source.ProductName,
@@ -63,9 +58,12 @@ internal static class ProductPricingWorkbenchVisibility
             PricingHealthStatus = source.PricingHealthStatus,
             RequiresPricingAction = source.RequiresPricingAction,
             PricingReviewDueDate = source.PricingReviewDueDate,
+            StandardPriceState = source.StandardPriceState,
+            HasFormulaConfirmationPending = access.CanManage && source.HasFormulaConfirmationPending,
+            IsPricingReviewExpired = source.IsPricingReviewExpired,
             WaitingQuotationCount = source.WaitingQuotationCount,
-            LatestRequestedAt = includeSensitiveFields ? source.LatestRequestedAt : null,
-            RelatedCustomers = includeSensitiveFields
+            LatestRequestedAt = access.CanManage ? source.LatestRequestedAt : null,
+            RelatedCustomers = access.CanManage
                 ? source.RelatedCustomers
                 : ToSaleRelatedCustomers(source.RelatedCustomers),
             SourceType = source.SourceType,
@@ -74,46 +72,40 @@ internal static class ProductPricingWorkbenchVisibility
             SourceName = source.SourceName,
             SourceStatus = source.SourceStatus,
             SourceIsEligible = source.SourceIsEligible,
-            SourceIsCustomerSelected = includeSensitiveFields && source.SourceIsCustomerSelected,
-            CurrentMaterialCost = includeSensitiveFields ? source.CurrentMaterialCost : null,
-            IsCurrentMaterialCostComplete = includeSensitiveFields && source.IsCurrentMaterialCostComplete,
-            MissingMaterialPriceCount = includeSensitiveFields ? source.MissingMaterialPriceCount : 0,
-            StoredMaterialCostSnapshot = includeSensitiveFields ? source.StoredMaterialCostSnapshot : null,
-            MaterialCostDifference = includeSensitiveFields ? source.MaterialCostDifference : null,
-            MaterialCostDifferencePercent = includeSensitiveFields
+            SourceIsCustomerSelected = access.CanManage && source.SourceIsCustomerSelected,
+            CurrentMaterialCost = access.CanViewMaterialCost ? source.CurrentMaterialCost : null,
+            IsCurrentMaterialCostComplete = access.CanViewMaterialCost && source.IsCurrentMaterialCostComplete,
+            MissingMaterialPriceCount = access.CanViewMaterialCost ? source.MissingMaterialPriceCount : 0,
+            StoredMaterialCostSnapshot = access.CanViewMaterialCost ? source.StoredMaterialCostSnapshot : null,
+            MaterialCostDifference = access.CanViewMaterialCost ? source.MaterialCostDifference : null,
+            MaterialCostDifferencePercent = access.CanViewMaterialCost
                 ? source.MaterialCostDifferencePercent
                 : null,
-            ManufacturingCost = includeSensitiveFields ? source.ManufacturingCost : null,
-            UsedDefaultManufacturingCost = includeSensitiveFields && source.UsedDefaultManufacturingCost,
-            StandardSellingPrice = source.StandardSellingPrice,
-            RealtimeStandardSellingPrice = includeSensitiveFields ? source.RealtimeStandardSellingPrice : null,
-            StandardSellingPriceDifference = includeSensitiveFields ? source.StandardSellingPriceDifference : null,
-            StandardSellingPriceDifferencePercent = includeSensitiveFields
+            ManufacturingCost = access.CanViewManufacturingCost ? source.ManufacturingCost : null,
+            UsedDefaultManufacturingCost = access.CanViewManufacturingCost && source.UsedDefaultManufacturingCost,
+            StandardSellingPrice = access.CanViewApprovedSellingPrice ? source.StandardSellingPrice : null,
+            PublisherNote = access.CanViewApprovedSellingPrice ? source.PublisherNote : null,
+            RealtimeStandardSellingPrice = access.CanViewSystemCalculatedPrice
+                ? source.RealtimeStandardSellingPrice
+                : null,
+            StandardSellingPriceDifference = access.CanViewSystemCalculatedPrice
+                ? source.StandardSellingPriceDifference
+                : null,
+            StandardSellingPriceDifferencePercent = access.CanViewSystemCalculatedPrice
                 ? source.StandardSellingPriceDifferencePercent
                 : null,
-            HasRealtimePriceComparison = includeSensitiveFields && source.HasRealtimePriceComparison,
-            ProfitMarginRate = includeSensitiveFields ? source.ProfitMarginRate : null,
-            DraftPricingVersionId = includeSensitiveFields ? source.DraftPricingVersionId : null,
-            ApprovedPricingVersionId = includeSensitiveFields ? source.ApprovedPricingVersionId : null,
-            PricingUpdatedDate = includeSensitiveFields ? source.PricingUpdatedDate : null,
-            PriceConfirmedAt = includeSensitiveFields ? source.PriceConfirmedAt : null,
-            PriceExpiresAt = includeSensitiveFields ? source.PriceExpiresAt : null,
-            RemainingValidityDays = includeSensitiveFields ? source.RemainingValidityDays : null,
-            OverdueDays = includeSensitiveFields ? source.OverdueDays : null,
-            IsPriceExpired = includeSensitiveFields ? source.IsPriceExpired : null
+            HasRealtimePriceComparison = access.CanViewSystemCalculatedPrice &&
+                source.HasRealtimePriceComparison,
+            ProfitMarginRate = access.CanViewMargin ? source.ProfitMarginRate : null,
+            DraftPricingVersionId = access.CanViewHistory ? source.DraftPricingVersionId : null,
+            ApprovedPricingVersionId = access.CanViewHistory ? source.ApprovedPricingVersionId : null,
+            PricingUpdatedDate = access.CanViewHistory ? source.PricingUpdatedDate : null,
+            PriceConfirmedAt = access.CanViewHistory ? source.PriceConfirmedAt : null,
+            PriceExpiresAt = access.CanViewHistory ? source.PriceExpiresAt : null,
+            RemainingValidityDays = access.CanViewHistory ? source.RemainingValidityDays : null,
+            OverdueDays = access.CanViewHistory ? source.OverdueDays : null,
+            IsPriceExpired = access.CanViewHistory ? source.IsPriceExpired : null
         };
-
-    private static ProductPricingSourceOptionDto? ToSaleSource(
-        ProductPricingSourceOptionDto? source)
-        => source is null
-            ? null
-            : new ProductPricingSourceOptionDto
-            {
-                SourceType = source.SourceType,
-                SourceId = source.SourceId,
-                ExternalId = source.ExternalId,
-                Name = source.Name
-            };
 
     private static IReadOnlyList<ProductPricingWorkbenchCustomerContextDto> ToSaleRelatedCustomers(
         IReadOnlyList<ProductPricingWorkbenchCustomerContextDto> relatedCustomers)
@@ -129,8 +121,9 @@ internal static class ProductPricingWorkbenchVisibility
             })
             .ToArray();
 
-    private static IReadOnlyList<QuotationPricingWorkspaceTierDto> ToSaleTiers(
-        IReadOnlyList<QuotationPricingWorkspaceTierDto> tiers)
+    private static IReadOnlyList<QuotationPricingWorkspaceTierDto> ToVisibleTiers(
+        IReadOnlyList<QuotationPricingWorkspaceTierDto> tiers,
+        PricingAccessDecision access)
         => tiers
             .Select(tier => new QuotationPricingWorkspaceTierDto
             {
@@ -140,9 +133,27 @@ internal static class ProductPricingWorkbenchVisibility
                 MinInclusive = tier.MinInclusive,
                 MaxInclusive = tier.MaxInclusive,
                 UnitPrice = tier.UnitPrice,
+                MarginVsMaterialPercent = access.CanViewMargin
+                    ? tier.MarginVsMaterialPercent
+                    : null,
+                MarginVsCostPercent = access.CanViewMargin
+                    ? tier.MarginVsCostPercent
+                    : null,
                 RequiresManualPrice = tier.RequiresManualPrice,
                 IsStored = tier.IsStored,
                 SortOrder = tier.SortOrder
             })
             .ToArray();
+
+    private static PricingAccessDecision LegacyAccess(bool canManagePricing)
+        => new(
+            CanViewWorkbench: true,
+            CanViewApprovedSellingPrice: true,
+            CanViewSystemCalculatedPrice: canManagePricing,
+            CanViewMaterialCost: canManagePricing,
+            CanViewManufacturingCost: canManagePricing,
+            CanViewMargin: canManagePricing,
+            CanViewHistory: canManagePricing,
+            CanManage: canManagePricing,
+            CanApprove: canManagePricing);
 }

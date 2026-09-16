@@ -8,6 +8,7 @@ using HRM.Application.Features.PLM.SampleRequests.Dtos.InternalMail;
 using HRM.Application.Features.PLM.SampleRequests.FormulaChangeRequests;
 using HRM.Application.Features.PLM.SampleRequests.Rules;
 using HRM.Application.Features.PLM.SampleRequests.DataChangeRequests;
+using HRM.Application.Features.PLM.Boms.Commands.CreateManufacturingBomFromSelectedFormula;
 using HRM.Domain.Enums.InternalMailEnums;
 using HRM.Domain.Enums.Notifications;
 using HRM.Domain.Enums.Products;
@@ -207,6 +208,19 @@ internal sealed class DecideSampleRequestFormulaChangeCommandHandler
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
+        string? bomInitializationWarning = null;
+        if (approved)
+        {
+            var bomResult = await _sender.Send(
+                new CreateManufacturingBomFromSelectedFormulaCommand(sampleRequest.ProductId),
+                cancellationToken);
+            if (!bomResult.Success)
+            {
+                bomInitializationWarning =
+                    $" Formula update was approved, but could not initialize the Manufacturing BOM: {bomResult.Message}";
+            }
+        }
+
         var responseText = approved
             ? $"Sale đã chấp nhận đổi công thức cho yêu cầu phối mẫu {formulaChange.ExternalId}. Công thức mới: {formulaChange.RequestedFormulaExternalId}."
             : cancelled
@@ -254,7 +268,7 @@ internal sealed class DecideSampleRequestFormulaChangeCommandHandler
                 CurrentFormulaId = formulaChange.CurrentFormulaId,
                 RequestedFormulaId = formulaChange.RequestedFormulaId
             },
-            "Decided formula update request successfully.");
+            "Decided formula update request successfully." + bomInitializationWarning);
     }
 
     private static SampleRequestThreadMessagePayload? DeserializePayload(string? payloadJson)

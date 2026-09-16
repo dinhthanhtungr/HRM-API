@@ -10,6 +10,7 @@ public static class NotificationCategoryCodes
     public const string SalesOrder = "sales_order";
     public const string Production = "production";
     public const string Warehouse = "warehouse";
+    public const string Material = "material";
     public const string Customer = "customer";
     public const string Work = "work";
     public const string InternalMail = "internal_mail";
@@ -23,6 +24,7 @@ public static class NotificationCategoryCodes
         SalesOrder,
         Production,
         Warehouse,
+        Material,
         Customer,
         Work,
         InternalMail,

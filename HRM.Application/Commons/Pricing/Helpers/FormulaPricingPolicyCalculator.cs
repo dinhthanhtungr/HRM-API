@@ -58,9 +58,9 @@ public static class FormulaPriceCalculator
             ProductPricingChangedField.ProfitMarginRate when !profitMarginRate.HasValue =>
                 throw new ArgumentOutOfRangeException(nameof(profitMarginRate)),
             ProductPricingChangedField.ProfitMarginRate or ProductPricingChangedField.ManufacturingCost =>
-                Round(policy, costBase * (1m + marginToApply / 100m)),
+                CalculateSellingPriceFromMargin(policy, costBase, marginToApply),
             _ when standardSellingPrice.HasValue => PricingRoundingRules.RoundStoredInput(standardSellingPrice.Value),
-            _ => Round(policy, costBase * (1m + marginToApply / 100m))
+            _ => CalculateSellingPriceFromMargin(policy, costBase, marginToApply)
         };
         var resolvedProfitMarginRate = CalculateProfitMarginRate(
             resolvedStandardSellingPrice,
@@ -121,9 +121,9 @@ public static class FormulaPriceCalculator
         ProductPricingChangedField? changedField)
     {
         if (policy.RoundingIncrement <= 0m || !Enum.IsDefined(policy.RoundingRule) ||
-            policy.DefaultManufacturingCost < 0m || policy.DefaultProfitMarginRate is < 0m or > 100m ||
+            policy.DefaultManufacturingCost < 0m || policy.DefaultProfitMarginRate is < 0m or >= 100m ||
             materialCost < 0m || manufacturingCost < 0m || standardSellingPrice < 0m ||
-            profitMarginRate < 0m ||
+            profitMarginRate is < 0m or >= 100m ||
             (changedField.HasValue && !Enum.IsDefined(changedField.Value)))
             throw new ArgumentOutOfRangeException(nameof(policy));
     }
@@ -135,8 +135,14 @@ public static class FormulaPriceCalculator
                 PercentScale, MidpointRounding.AwayFromZero);
 
     private static decimal CalculateProfitMarginRate(decimal sellingPrice, decimal costBase)
-        => costBase <= 0m
+        => sellingPrice <= 0m
             ? 0m
-            : decimal.Round((sellingPrice - costBase) / costBase * 100m,
+            : decimal.Round((sellingPrice - costBase) / sellingPrice * 100m,
                 PercentScale, MidpointRounding.AwayFromZero);
+
+    private static decimal CalculateSellingPriceFromMargin(
+        FormulaPricingPolicyDefinition policy,
+        decimal costBase,
+        decimal profitMarginRate)
+        => Round(policy, costBase / (1m - profitMarginRate / 100m));
 }

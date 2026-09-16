@@ -130,6 +130,7 @@ internal static class QuotationProductPricingPreviewMapper
                 Status = pricing.Status,
                 ApprovedAt = pricing.ApprovedAt,
                 StandardSellingPrice = pricing.StandardSellingPrice,
+                PublisherNote = pricing.PublisherNote,
                 Currency = pricing.Currency,
                 SourceType = pricing.SourceType,
                 SourceId = pricing.SourceId,

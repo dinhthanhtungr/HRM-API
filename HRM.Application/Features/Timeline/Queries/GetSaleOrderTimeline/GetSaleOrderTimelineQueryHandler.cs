@@ -54,18 +54,18 @@ internal sealed class GetSaleOrderTimelineQueryHandler
         if (request.NormalizedKeyword is { } keyword)
         {
             query = query.Where(x =>
-                x.ExternalId.Contains(keyword) ||
-                x.CustomerNameSnapshot.Contains(keyword) ||
-                x.CustomerExternalIdSnapshot.Contains(keyword) ||
-                x.CreatedByNavigation!.FullName.Contains(keyword) ||
+                EF.Functions.ILike(x.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike(x.CustomerNameSnapshot, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike(x.CustomerExternalIdSnapshot, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike(x.CreatedByNavigation!.FullName, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
                 x.MerchandiseOrderDetails.Any(d =>
                     d.Product != null &&
                     (
-                        (d.Product.ColourCode ?? string.Empty).Contains(keyword) ||
-                        (d.Product.Name ?? string.Empty).Contains(keyword) ||
+                        EF.Functions.ILike((d.Product.ColourCode ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                        EF.Functions.ILike((d.Product.Name ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
                         d.Product.SampleRequests.Any(sampleRequest =>
                             sampleRequest.IsActive &&
-                            sampleRequest.ExternalId.Contains(keyword)) ||
+                            EF.Functions.ILike(sampleRequest.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter)) ||
                         d.Product.Formulas.Any(formula =>
                             formula.IsActive &&
                             EF.Functions.ILike(formula.ExternalId, $"%{keyword}%")) ||

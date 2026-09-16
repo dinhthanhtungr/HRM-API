@@ -1,6 +1,6 @@
 using System.Text.Json;
 using HRM.Application.Abstractions.Persistence.PLM;
-using HRM.Application.Commons.Authorization.PLM;
+using HRM.Application.Features.PLM.Shared.Authorization;
 using HRM.Application.Features.CRM.CustomerCare.Visibility;
 using HRM.Application.Features.PLM.SampleRequests.Dtos.History;
 using HRM.Domain.Entities.AuditSchema;

@@ -91,9 +91,9 @@ internal sealed class GetComplaintSourceLinesQueryHandler
         if (request.NormalizedKeyword is { } keyword)
         {
             baseQuery = baseQuery.Where(x =>
-                x.MerchandiseOrderExternalId.Contains(keyword) ||
-                x.ProductExternalId.Contains(keyword) ||
-                x.ProductName.Contains(keyword) ||
+                EF.Functions.ILike(x.MerchandiseOrderExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike(x.ProductExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike(x.ProductName, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
                 EF.Functions.ILike(x.FormulaExternalId, $"%{keyword}%"));
         }
 

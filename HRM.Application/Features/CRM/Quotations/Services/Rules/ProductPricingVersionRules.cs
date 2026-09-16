@@ -18,8 +18,8 @@ internal static class ProductPricingVersionRules
             return "Pricing cost and selling price values cannot be negative.";
         }
 
-        return profitMarginRate is < 0m or > 100m
-            ? "ProfitMarginRate must be between 0 and 100."
+        return profitMarginRate is < 0m or >= 100m
+            ? "ProfitMarginRate must be greater than or equal to 0 and less than 100."
             : null;
     }
 

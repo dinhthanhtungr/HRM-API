@@ -47,6 +47,47 @@ public static class SampleRequestReferenceData
             new SampleRequestAdditiveDefinition("D_DC", "D", "Dry Colour")
         });
 
+    public static readonly IReadOnlyList<SampleRequestBranchDefinition> Branches =
+        new ReadOnlyCollection<SampleRequestBranchDefinition>(new[]
+        {
+            new SampleRequestBranchDefinition(
+                new Guid("f54b3c96-4faa-43d1-8446-9d98c459c630"),
+                "VIETAUS_TAM_PHUOC",
+                "Vietaus Tam Phước"),
+            new SampleRequestBranchDefinition(
+                new Guid("4b733a32-9fc7-4d42-810e-3b0be22c4993"),
+                "VIETAUS_BINH_DUONG",
+                "Vietaus Bình Dương"),
+            new SampleRequestBranchDefinition(
+                new Guid("7cc1005a-aa68-49b9-91b9-9e0e81260bb1"),
+                "VIETAUS_HEAD_OFFICE",
+                "Tổng công ty Vietaus"),
+            new SampleRequestBranchDefinition(
+                new Guid("28420bba-d609-4269-aab4-ff67856bc91e"),
+                "VIETAUS_DA_NANG",
+                "VU/DN"),
+            new SampleRequestBranchDefinition(
+                new Guid("be06d383-38cf-4848-afbe-2a8a535143e6"),
+                "LONG_GIANG",
+                "Long Giang"),
+            new SampleRequestBranchDefinition(
+                new Guid("312c2a62-c571-4e7b-a0a6-e0c848789279"),
+                "A_CHAU",
+                "Á Châu"),
+            new SampleRequestBranchDefinition(
+                new Guid("a7ccf5b9-1db4-4a3e-8071-e391b6e0ad24"),
+                "OTHER",
+                "Other"),
+            new SampleRequestBranchDefinition(
+                new Guid("02a65ec6-507b-4250-bf6a-193e02b3c6d5"),
+                "VIETAUS_HA_NOI",
+                "VU/HN"),
+            new SampleRequestBranchDefinition(
+                new Guid("e53646b5-ceb1-495a-ad0c-5cb720e0c2a3"),
+                "OVERSEAS",
+                "Nước Ngoài")
+        });
+
     public static SampleRequestColorDefinition? FindColor(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))

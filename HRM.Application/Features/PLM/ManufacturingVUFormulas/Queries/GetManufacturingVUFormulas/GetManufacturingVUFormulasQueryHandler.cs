@@ -52,13 +52,13 @@ internal sealed class GetManufacturingVUFormulasQueryHandler
         {
             query = query.Where(x =>
                 EF.Functions.ILike(x.Formula.ExternalId, $"%{keyword}%") ||
-                x.Formula.Name.Contains(keyword) ||
-                (x.Formula.Product.Name != null && x.Formula.Product.Name.Contains(keyword)) ||
-                (x.Formula.Product.ColourCode != null && x.Formula.Product.ColourCode.Contains(keyword)) ||
+                EF.Functions.ILike(x.Formula.Name, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                (x.Formula.Product.Name != null && EF.Functions.ILike(x.Formula.Product.Name, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter)) ||
+                (x.Formula.Product.ColourCode != null && EF.Functions.ILike(x.Formula.Product.ColourCode, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter)) ||
                 x.Formula.Product.SampleRequests.Any(sampleRequest =>
                     sampleRequest.IsActive &&
                     sampleRequest.CompanyId == companyId &&
-                    sampleRequest.ExternalId.Contains(keyword)));
+                    EF.Functions.ILike(sampleRequest.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter)));
         }
 
         query = request.NormalizedSortBy?.ToLowerInvariant() switch

@@ -4,6 +4,7 @@ namespace HRM.Application.Commons.Pricing.Models
     {
         Unknown = 0,
         PurchaseOrder = 1,
-        MaterialSupplier = 2
+        MaterialSupplier = 2,
+        InternalCostRule = 3
     }
 }

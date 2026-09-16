@@ -6,6 +6,7 @@ using HRM.Application.Commons.Pricing.Models;
 using HRM.Application.Commons.Pricing.Rules;
 using HRM.Domain.Enums.CustomerEnum;
 using HRM.Domain.Enums.Formulas;
+using HRM.Domain.Enums.Products;
 using Microsoft.EntityFrameworkCore;
 
 namespace HRM.Infrastructure.Services.Pricing
@@ -20,6 +21,113 @@ namespace HRM.Infrastructure.Services.Pricing
         }
 
         public async Task<Dictionary<Guid, LatestMaterialPriceDto>> LoadLatestMaterialPriceInfoDictAsync(
+            IEnumerable<Guid?> materialIds,
+            CancellationToken cancellationToken = default)
+        {
+            var ids = NormalizeIds(materialIds);
+            var directPrices = await LoadLatestDirectMaterialPriceInfoDictAsync(
+                ids.Select(x => (Guid?)x), cancellationToken);
+            if (ids.Count == 0)
+            {
+                return directPrices;
+            }
+
+            var requestedMaterials = await _dbContext.Materials
+                .AsNoTracking()
+                .Where(x => ids.Contains(x.MaterialId))
+                .Select(x => new MaterialCostingMaterial(x.MaterialId, x.CompanyId, x.Name, x.IsActive ?? false))
+                .ToListAsync(cancellationToken);
+            foreach (var material in requestedMaterials)
+            {
+                if (directPrices.TryGetValue(material.MaterialId, out var directPrice) &&
+                    directPrice.PriceSource != MaterialPriceSource.Unknown)
+                {
+                    directPrice.Calculation = CreateDirectPriceCalculation(
+                        material.MaterialId,
+                        material.Name,
+                        directPrice.CurrentPrice,
+                        ToLatestPriceSourceType(directPrice.PriceSource));
+                }
+            }
+            var derivedMaterials = requestedMaterials
+                .Select(x => new
+                {
+                    Material = x,
+                    IsDerived = InternalMaterialCostingRules.TryResolveMaterialRule(
+                        x.Name, out var rule, out var sourceNameKey),
+                    Rule = rule,
+                    SourceNameKey = sourceNameKey
+                })
+                .Where(x => x.IsDerived)
+                .ToArray();
+            if (derivedMaterials.Length == 0)
+            {
+                return directPrices;
+            }
+
+            var companyIds = derivedMaterials.Select(x => x.Material.CompanyId).Distinct().ToArray();
+            var sourceCandidates = await _dbContext.Materials
+                .AsNoTracking()
+                .Where(x => (x.IsActive ?? true) && companyIds.Contains(x.CompanyId))
+                .Select(x => new MaterialCostingMaterial(x.MaterialId, x.CompanyId, x.Name, x.IsActive ?? false))
+                .ToListAsync(cancellationToken);
+            var baseMaterials = sourceCandidates
+                .Where(x => !InternalMaterialCostingRules.TryResolveMaterialRule(x.Name, out _, out _))
+                .ToArray();
+            var basePrices = await LoadLatestDirectMaterialPriceInfoDictAsync(
+                baseMaterials.Select(x => (Guid?)x.MaterialId), cancellationToken);
+
+            foreach (var derived in derivedMaterials)
+            {
+                var matchedSources = baseMaterials
+                    .Where(x => x.CompanyId == derived.Material.CompanyId &&
+                                string.Equals(
+                                    InternalMaterialCostingRules.NormalizeComparableName(x.Name),
+                                    derived.SourceNameKey,
+                                    StringComparison.Ordinal))
+                    .ToArray();
+
+                if (matchedSources.Length != 1 ||
+                    !basePrices.TryGetValue(matchedSources[0].MaterialId, out var sourcePrice) ||
+                    sourcePrice.PriceSource == MaterialPriceSource.Unknown)
+                {
+                    directPrices[derived.Material.MaterialId] = new LatestMaterialPriceDto
+                    {
+                    MaterialId = derived.Material.MaterialId,
+                    CurrentPrice = 0m,
+                    PriceDate = null,
+                    PriceSource = MaterialPriceSource.Unknown,
+                    Calculation = new PriceCalculationDetailDto
+                    {
+                        RuleCode = "UNRESOLVED_INTERNAL_RULE",
+                        DisplayText = "Không xác định được duy nhất nguyên liệu gốc hoặc giá gốc.",
+                        CalculatedUnitPrice = 0m,
+                        IsComplete = false
+                    }
+                    };
+                    continue;
+                }
+
+                directPrices[derived.Material.MaterialId] = new LatestMaterialPriceDto
+                {
+                    MaterialId = derived.Material.MaterialId,
+                    CurrentPrice = PricingRoundingRules.RoundStoredInput(
+                        InternalMaterialCostingRules.ApplyMaterialRule(derived.Rule, sourcePrice.CurrentPrice)),
+                    PriceDate = sourcePrice.PriceDate,
+                    PriceSource = MaterialPriceSource.InternalCostRule,
+                    Calculation = CreateMaterialRuleCalculation(
+                        derived.Rule,
+                        matchedSources[0].MaterialId,
+                        matchedSources[0].Name,
+                        sourcePrice.CurrentPrice,
+                        ToLatestPriceSourceType(sourcePrice.PriceSource))
+                };
+            }
+
+            return directPrices;
+        }
+
+        private async Task<Dictionary<Guid, LatestMaterialPriceDto>> LoadLatestDirectMaterialPriceInfoDictAsync(
             IEnumerable<Guid?> materialIds,
             CancellationToken cancellationToken = default)
         {
@@ -42,9 +150,12 @@ namespace HRM.Infrastructure.Services.Pricing
                 .GroupBy(x => x.MaterialId)
                 .Select(g => g
                     .OrderByDescending(x => x.PurchaseOrder!.CreateDate)
-                    .ThenByDescending(x => x.LineNo)
+                    .ThenByDescending(x => x.PurchaseOrderDetailId)
+                    .ThenByDescending(x => x.UnitPriceAgreed.HasValue)
+                    .ThenByDescending(x => x.UnitPriceAgreed)
                     .Select(x => new
                     {
+                        x.PurchaseOrderDetailId,
                         x.MaterialId,
                         Price = x.UnitPriceAgreed,
                         PriceDate = (DateTime?)x.PurchaseOrder!.CreateDate
@@ -57,6 +168,7 @@ namespace HRM.Infrastructure.Services.Pricing
                 x => new MaterialPriceCandidate
                 {
                     MaterialId = x.MaterialId,
+                    CandidateId = x.PurchaseOrderDetailId,
                     CurrentPrice = x.Price ?? 0m,
                     HasPriceValue = x.Price.HasValue,
                     PriceDate = x.PriceDate,
@@ -72,11 +184,16 @@ namespace HRM.Infrastructure.Services.Pricing
                 .Select(g => g
                     .OrderByDescending(x => x.UpdatedDate ?? x.CreateDate)
                     .ThenByDescending(x => x.IsPreferred ?? false)
+                    .ThenByDescending(x => x.MaterialsSuppliersId)
+                    .ThenByDescending(x => x.CurrentPrice.HasValue)
+                    .ThenByDescending(x => x.CurrentPrice)
                     .Select(x => new
                     {
+                        x.MaterialsSuppliersId,
                         x.MaterialId,
                         x.CurrentPrice,
-                        PriceDate = x.UpdatedDate ?? x.CreateDate
+                        PriceDate = x.UpdatedDate ?? x.CreateDate,
+                        IsPreferred = x.IsPreferred ?? false
                     })
                     .FirstOrDefault()!)
                 .ToListAsync(cancellationToken);
@@ -86,10 +203,12 @@ namespace HRM.Infrastructure.Services.Pricing
                 x => new MaterialPriceCandidate
                 {
                     MaterialId = x.MaterialId,
+                    CandidateId = x.MaterialsSuppliersId,
                     CurrentPrice = x.CurrentPrice ?? 0m,
                     HasPriceValue = x.CurrentPrice.HasValue,
                     PriceDate = x.PriceDate,
-                    PriceSource = MaterialPriceSource.MaterialSupplier
+                    PriceSource = MaterialPriceSource.MaterialSupplier,
+                    IsPreferred = x.IsPreferred
                 });
 
             return MaterialLatestPriceSelector.SelectMany(ids, poDict, supplierDict);
@@ -120,9 +239,12 @@ namespace HRM.Infrastructure.Services.Pricing
                 .GroupBy(x => x.MaterialId)
                 .Select(g => g
                     .OrderByDescending(x => x.PurchaseOrder!.CreateDate)
-                    .ThenByDescending(x => x.LineNo)
+                    .ThenByDescending(x => x.PurchaseOrderDetailId)
+                    .ThenByDescending(x => x.UnitPriceAgreed.HasValue)
+                    .ThenByDescending(x => x.UnitPriceAgreed)
                     .Select(x => new
                     {
+                        x.PurchaseOrderDetailId,
                         x.MaterialId,
                         Price = x.UnitPriceAgreed,
                         PriceDate = (DateTime?)x.PurchaseOrder!.CreateDate
@@ -135,6 +257,7 @@ namespace HRM.Infrastructure.Services.Pricing
                 x => new MaterialPriceCandidate
                 {
                     MaterialId = x.MaterialId,
+                    CandidateId = x.PurchaseOrderDetailId,
                     CurrentPrice = x.Price ?? 0m,
                     HasPriceValue = x.Price.HasValue,
                     PriceDate = x.PriceDate,
@@ -151,11 +274,16 @@ namespace HRM.Infrastructure.Services.Pricing
                 .Select(g => g
                     .OrderByDescending(x => x.UpdatedDate ?? x.CreateDate)
                     .ThenByDescending(x => x.IsPreferred ?? false)
+                    .ThenByDescending(x => x.MaterialsSuppliersId)
+                    .ThenByDescending(x => x.CurrentPrice.HasValue)
+                    .ThenByDescending(x => x.CurrentPrice)
                     .Select(x => new
                     {
+                        x.MaterialsSuppliersId,
                         x.MaterialId,
                         x.CurrentPrice,
-                        PriceDate = x.UpdatedDate ?? x.CreateDate
+                        PriceDate = x.UpdatedDate ?? x.CreateDate,
+                        IsPreferred = x.IsPreferred ?? false
                     })
                     .FirstOrDefault()!)
                 .ToListAsync(cancellationToken);
@@ -165,10 +293,12 @@ namespace HRM.Infrastructure.Services.Pricing
                 x => new MaterialPriceCandidate
                 {
                     MaterialId = x.MaterialId,
+                    CandidateId = x.MaterialsSuppliersId,
                     CurrentPrice = x.CurrentPrice ?? 0m,
                     HasPriceValue = x.CurrentPrice.HasValue,
                     PriceDate = x.PriceDate,
-                    PriceSource = MaterialPriceSource.MaterialSupplier
+                    PriceSource = MaterialPriceSource.MaterialSupplier,
+                    IsPreferred = x.IsPreferred
                 });
 
             return MaterialLatestPriceSelector.SelectMany(ids, poDict, supplierDict);
@@ -208,10 +338,12 @@ namespace HRM.Infrastructure.Services.Pricing
                     ItemId = kv.Key,
                     CurrentPrice = kv.Value.CurrentPrice,
                     PriceDate = kv.Value.PriceDate,
+                    Calculation = kv.Value.Calculation,
                     PriceSource = kv.Value.PriceSource switch
                     {
                         MaterialPriceSource.PurchaseOrder => LatestPriceSourceType.PurchaseOrder,
                         MaterialPriceSource.MaterialSupplier => LatestPriceSourceType.MaterialSupplier,
+                        MaterialPriceSource.InternalCostRule => LatestPriceSourceType.InternalCostRule,
                         _ => LatestPriceSourceType.Unknown
                     }
                 };
@@ -303,6 +435,9 @@ namespace HRM.Infrastructure.Services.Pricing
                 return result;
             }
 
+            var internalProductAdjustments = await LoadInternalProductCostAdjustmentsAsync(
+                companyId, productIds, cancellationToken);
+            var internalProductIds = internalProductAdjustments.Keys.ToHashSet();
             var approvedProductIds = new HashSet<Guid>();
             if (companyId != Guid.Empty && !string.IsNullOrWhiteSpace(currency))
             {
@@ -315,6 +450,7 @@ namespace HRM.Infrastructure.Services.Pricing
                         x.Status == ProductPricingStatus.Approved &&
                         x.Currency == normalizedCurrency &&
                         productIds.Contains(x.ProductId) &&
+                        !internalProductIds.Contains(x.ProductId) &&
                         x.StandardSellingPrice.HasValue)
                     .OrderByDescending(x => x.Version)
                     .ThenByDescending(x => x.ApprovedAt ?? x.UpdatedDate ?? x.CreatedDate)
@@ -358,16 +494,19 @@ namespace HRM.Infrastructure.Services.Pricing
                 {
                     ItemType = ItemType.Product,
                     ItemId = productId,
-                    CurrentPrice = formulaCost.Cost,
-                    PriceDate = formulaCost.PriceDate,
-                    PriceSource = LatestPriceSourceType.FormulaMaterialCost
+                        CurrentPrice = formulaCost.Cost,
+                        PriceDate = formulaCost.PriceDate,
+                        Calculation = formulaCost.Calculation,
+                        PriceSource = formulaCost.IsInternalCostRule
+                            ? LatestPriceSourceType.InternalCostRule
+                            : LatestPriceSourceType.FormulaMaterialCost
                 };
             }
 
             if (legacyProductIds.Length > 0)
             {
                 var unresolvedProductIds = legacyProductIds
-                    .Where(x => !formulaCostByProduct.ContainsKey(x))
+                    .Where(x => !internalProductIds.Contains(x) && !formulaCostByProduct.ContainsKey(x))
                     .ToArray();
 
                 // Legacy fallback: chỉ chạy khi TP chưa có giá chuẩn và không tính được giá NVL từ Formula đang áp dụng.
@@ -421,8 +560,8 @@ namespace HRM.Infrastructure.Services.Pricing
         }
 
         /// <summary>
-        /// Tính giá vốn TP theo Formula đang được chọn (IsSelect). Chỉ cộng giá của các dòng NVL;
-        /// TP lồng nhau được resolve đệ quy theo cùng thứ tự ưu tiên và có chặn vòng lặp.
+        /// Tính giá vốn TP theo Formula đang được chọn (IsSelect), rồi Formula SampleSent mới nhất.
+        /// Chỉ cộng giá của các dòng NVL; TP lồng nhau được resolve đệ quy theo cùng thứ tự ưu tiên và có chặn vòng lặp.
         /// Toàn bộ Formula, dòng Formula, giá chuẩn và giá NVL được tải theo batch, không query từng dòng.
         /// </summary>
         private async Task<Dictionary<Guid, FormulaMaterialCost>> LoadSelectedFormulaMaterialCostsAsync(
@@ -441,7 +580,8 @@ namespace HRM.Infrastructure.Services.Pricing
             var normalizedCurrency = currency.Trim().ToUpperInvariant();
             var discoveredProductIds = new HashSet<Guid>(rootProductIds);
             var queriedProductIds = new HashSet<Guid>();
-            var selectedFormulaByProduct = new Dictionary<Guid, HRM.Domain.Entities.SampleRequestSchema.Formula>();
+            var formulaCandidatesByProduct =
+                new Dictionary<Guid, IReadOnlyList<HRM.Domain.Entities.SampleRequestSchema.Formula>>();
             var materialLinesByFormula = new Dictionary<Guid, List<HRM.Domain.Entities.SampleRequestSchema.FormulaMaterial>>();
 
             while (true)
@@ -454,23 +594,24 @@ namespace HRM.Infrastructure.Services.Pricing
                     break;
                 }
 
-                var selectedFormulaRows = await _dbContext.Formulas
+                var formulaCandidateRows = await _dbContext.Formulas
                     .AsNoTracking()
                     .Where(x =>
                         x.CompanyId == companyId &&
                         x.IsActive &&
-                        x.IsSelect &&
+                        (x.IsSelect || x.Status == FormulaStatus.SampleSent.ToString()) &&
                         pendingProductIds.Contains(x.ProductId))
-                    .OrderByDescending(x => x.UpdatedDate ?? x.CreatedDate)
+                    .OrderByDescending(x => x.IsSelect)
+                    .ThenByDescending(x => x.UpdatedDate ?? x.CreatedDate)
                     .ThenByDescending(x => x.FormulaId)
                     .ToListAsync(cancellationToken);
 
-                foreach (var formula in selectedFormulaRows)
+                foreach (var group in formulaCandidateRows.GroupBy(x => x.ProductId))
                 {
-                    selectedFormulaByProduct.TryAdd(formula.ProductId, formula);
+                    formulaCandidatesByProduct.TryAdd(group.Key, group.ToArray());
                 }
 
-                var formulaIds = selectedFormulaRows
+                var formulaIds = formulaCandidateRows
                     .Select(x => x.FormulaId)
                     .Distinct()
                     .ToArray();
@@ -500,11 +641,14 @@ namespace HRM.Infrastructure.Services.Pricing
                 }
             }
 
-            if (selectedFormulaByProduct.Count == 0)
+            if (formulaCandidatesByProduct.Count == 0)
             {
                 return new Dictionary<Guid, FormulaMaterialCost>();
             }
 
+            var internalProductAdjustments = await LoadInternalProductCostAdjustmentsAsync(
+                companyId, discoveredProductIds, cancellationToken);
+            var internalProductIds = internalProductAdjustments.Keys.ToHashSet();
             var standardSellingPriceRows = await _dbContext.ProductPricingVersions
                 .AsNoTracking()
                 .Where(x =>
@@ -513,6 +657,7 @@ namespace HRM.Infrastructure.Services.Pricing
                     x.Status == ProductPricingStatus.Approved &&
                     x.Currency == normalizedCurrency &&
                     discoveredProductIds.Contains(x.ProductId) &&
+                    !internalProductIds.Contains(x.ProductId) &&
                     x.StandardSellingPrice.HasValue)
                 .OrderByDescending(x => x.Version)
                 .ThenByDescending(x => x.ApprovedAt ?? x.UpdatedDate ?? x.CreatedDate)
@@ -548,43 +693,66 @@ namespace HRM.Infrastructure.Services.Pricing
                 }
 
                 if (!resolvingProductIds.Add(productId) ||
-                    !selectedFormulaByProduct.TryGetValue(productId, out var formula) ||
-                    !materialLinesByFormula.TryGetValue(formula.FormulaId, out var lines) ||
-                    lines.Count == 0)
+                    !formulaCandidatesByProduct.TryGetValue(productId, out var formulaCandidates))
                 {
                     return null;
                 }
 
-                decimal totalCost = 0m;
-                foreach (var line in lines)
+                foreach (var formula in formulaCandidates)
                 {
-                    decimal? unitPrice = line.itemType switch
+                    if (!materialLinesByFormula.TryGetValue(formula.FormulaId, out var lines) ||
+                        lines.Count == 0)
                     {
-                        ItemType.Material or ItemType.MaterialFailure when line.MaterialId.HasValue &&
-                            latestMaterialPriceById.TryGetValue(line.MaterialId.Value, out var materialPrice) &&
-                            materialPrice.PriceSource != MaterialPriceSource.Unknown
-                            => materialPrice.CurrentPrice,
-                        ItemType.Product or ItemType.ProductFailure when line.ProductId.HasValue
-                            => ResolveProductCost(line.ProductId.Value)?.Cost,
-                        _ => null
-                    };
-
-                    if (!unitPrice.HasValue)
-                    {
-                        resolvingProductIds.Remove(productId);
-                        calculatedCostByProduct[productId] = null;
-                        return null;
+                        continue;
                     }
 
-                    totalCost += line.Quantity * unitPrice.Value;
+                    decimal totalCost = 0m;
+                    var canCalculate = true;
+                    foreach (var line in lines)
+                    {
+                        decimal? unitPrice = line.itemType switch
+                        {
+                            ItemType.Material or ItemType.MaterialFailure when line.MaterialId.HasValue &&
+                                latestMaterialPriceById.TryGetValue(line.MaterialId.Value, out var materialPrice) &&
+                                materialPrice.PriceSource != MaterialPriceSource.Unknown
+                                => materialPrice.CurrentPrice,
+                            ItemType.Product or ItemType.ProductFailure when line.ProductId.HasValue
+                                => ResolveProductCost(line.ProductId.Value)?.Cost,
+                            _ => null
+                        };
+
+                        if (!unitPrice.HasValue)
+                        {
+                            canCalculate = false;
+                            break;
+                        }
+
+                        totalCost += line.Quantity * unitPrice.Value;
+                    }
+
+                    if (!canCalculate)
+                    {
+                        continue;
+                    }
+
+                    var adjustment = internalProductAdjustments.GetValueOrDefault(productId);
+                    var adjustedCost = PricingRoundingRules.RoundStoredInput(
+                        InternalMaterialCostingRules.ApplyProductCostAdjustment(totalCost, adjustment));
+                    var formulaCost = new FormulaMaterialCost(
+                        adjustedCost,
+                        formula.UpdatedDate ?? formula.CreatedDate,
+                        adjustment.IsInternalCostRule,
+                        adjustment.IsInternalCostRule
+                            ? CreateProductRuleCalculation(totalCost, adjustedCost, adjustment)
+                            : null);
+                    resolvingProductIds.Remove(productId);
+                    calculatedCostByProduct[productId] = formulaCost;
+                    return formulaCost;
                 }
 
                 resolvingProductIds.Remove(productId);
-                var formulaCost = new FormulaMaterialCost(
-                    PricingRoundingRules.RoundStoredInput(totalCost),
-                    formula.UpdatedDate ?? formula.CreatedDate);
-                calculatedCostByProduct[productId] = formulaCost;
-                return formulaCost;
+                calculatedCostByProduct[productId] = null;
+                return null;
             }
 
             var result = new Dictionary<Guid, FormulaMaterialCost>();
@@ -600,7 +768,150 @@ namespace HRM.Infrastructure.Services.Pricing
             return result;
         }
 
-        private readonly record struct FormulaMaterialCost(decimal Cost, DateTime? PriceDate);
+        private async Task<Dictionary<Guid, InternalProductCostAdjustment>> LoadInternalProductCostAdjustmentsAsync(
+            Guid companyId,
+            IEnumerable<Guid> productIds,
+            CancellationToken cancellationToken)
+        {
+            var ids = productIds.Where(x => x != Guid.Empty).Distinct().ToArray();
+            if (companyId == Guid.Empty || ids.Length == 0)
+            {
+                return new Dictionary<Guid, InternalProductCostAdjustment>();
+            }
+
+            var products = await _dbContext.Products
+                .AsNoTracking()
+                .Where(x => x.CompanyId == companyId && x.IsActive && ids.Contains(x.ProductId))
+                .Select(x => new { x.ProductId, x.Name, CategoryExternalId = x.Category!.ExternalId })
+                .ToListAsync(cancellationToken);
+            return products
+                .Select(x => new
+                {
+                    x.ProductId,
+                    Adjustment = InternalMaterialCostingRules.ResolveProductCostAdjustment(
+                        x.Name, x.CategoryExternalId)
+                })
+                .Where(x => x.Adjustment.IsInternalCostRule)
+                .ToDictionary(x => x.ProductId, x => x.Adjustment);
+        }
+
+        private readonly record struct FormulaMaterialCost(
+            decimal Cost,
+            DateTime? PriceDate,
+            bool IsInternalCostRule = false,
+            PriceCalculationDetailDto? Calculation = null);
+
+        private readonly record struct MaterialCostingMaterial(
+            Guid MaterialId,
+            Guid CompanyId,
+            string? Name,
+            bool IsActive);
+
+        private static PriceCalculationDetailDto CreateDirectPriceCalculation(
+            Guid itemId,
+            string? itemName,
+            decimal unitPrice,
+            LatestPriceSourceType source) => new()
+        {
+            RuleCode = "DIRECT_PRICE",
+            DisplayText = $"Giá NVL hiện hành: {unitPrice:N0} đ/kg.",
+            BaseItemId = itemId,
+            BaseItemName = itemName,
+            BaseUnitPrice = unitPrice,
+            BasePriceSource = source,
+            CalculatedUnitPrice = unitPrice,
+            IsComplete = true
+        };
+
+        private static PriceCalculationDetailDto CreateMaterialRuleCalculation(
+            InternalMaterialCostingRule rule,
+            Guid baseItemId,
+            string? baseItemName,
+            decimal baseUnitPrice,
+            LatestPriceSourceType basePriceSource)
+        {
+            var calculatedUnitPrice = PricingRoundingRules.RoundStoredInput(
+                InternalMaterialCostingRules.ApplyMaterialRule(rule, baseUnitPrice));
+            return rule switch
+            {
+                InternalMaterialCostingRule.GroundResin => new PriceCalculationDetailDto
+                {
+                    RuleCode = "GROUND_RESIN",
+                    DisplayText = $"Giá {baseItemName} {baseUnitPrice:N0} đ/kg + 5.000 đ/kg = {calculatedUnitPrice:N0} đ/kg.",
+                    BaseItemId = baseItemId,
+                    BaseItemName = baseItemName,
+                    BaseUnitPrice = baseUnitPrice,
+                    BasePriceSource = basePriceSource,
+                    FixedCostPerKg = InternalMaterialCostingRules.GrindingCostPerKg,
+                    CalculatedUnitPrice = calculatedUnitPrice,
+                    IsComplete = true
+                },
+                InternalMaterialCostingRule.DilutedPigment => new PriceCalculationDetailDto
+                {
+                    RuleCode = "DILUTED_PIGMENT",
+                    DisplayText = $"Giá {baseItemName} {baseUnitPrice:N0} đ/kg x 70% = {calculatedUnitPrice:N0} đ/kg.",
+                    BaseItemId = baseItemId,
+                    BaseItemName = baseItemName,
+                    BaseUnitPrice = baseUnitPrice,
+                    BasePriceSource = basePriceSource,
+                    Rate = InternalMaterialCostingRules.DilutedPigmentRate,
+                    CalculatedUnitPrice = calculatedUnitPrice,
+                    IsComplete = true
+                },
+                _ => throw new ArgumentOutOfRangeException(nameof(rule))
+            };
+        }
+
+        private static LatestPriceSourceType ToLatestPriceSourceType(MaterialPriceSource source) => source switch
+        {
+            MaterialPriceSource.PurchaseOrder => LatestPriceSourceType.PurchaseOrder,
+            MaterialPriceSource.MaterialSupplier => LatestPriceSourceType.MaterialSupplier,
+            MaterialPriceSource.InternalCostRule => LatestPriceSourceType.InternalCostRule,
+            _ => LatestPriceSourceType.Unknown
+        };
+
+        private static PriceCalculationDetailDto CreateProductRuleCalculation(
+            decimal formulaMaterialCost,
+            decimal calculatedUnitPrice,
+            InternalProductCostAdjustment adjustment)
+        {
+            if (adjustment.MaterialRule == InternalMaterialCostingRule.GroundResin)
+            {
+                return new PriceCalculationDetailDto
+                {
+                    RuleCode = "GROUND_RESIN",
+                    DisplayText = $" {formulaMaterialCost:N0} đ/kg + 5.000 đ/kg = {calculatedUnitPrice:N0} đ/kg.",
+                    FormulaMaterialCost = formulaMaterialCost,
+                    FixedCostPerKg = InternalMaterialCostingRules.GrindingCostPerKg,
+                    CalculatedUnitPrice = calculatedUnitPrice,
+                    IsComplete = true
+                };
+            }
+
+            if (adjustment.MaterialRule == InternalMaterialCostingRule.DilutedPigment)
+            {
+                return new PriceCalculationDetailDto
+                {
+                    RuleCode = "DILUTED_PIGMENT",
+                    DisplayText = $" {formulaMaterialCost:N0} đ/kg x 70% = {calculatedUnitPrice:N0} đ/kg.",
+                    FormulaMaterialCost = formulaMaterialCost,
+                    Rate = InternalMaterialCostingRules.DilutedPigmentRate,
+                    CalculatedUnitPrice = calculatedUnitPrice,
+                    IsComplete = true
+                };
+            }
+
+            var isColorMasterbatch = adjustment.SurchargePerKg == InternalMaterialCostingRules.ColorMasterbatchCostPerKg;
+            return new PriceCalculationDetailDto
+            {
+                RuleCode = isColorMasterbatch ? "COLOR_MASTERBATCH" : "COMPOUND",
+                DisplayText = $" {formulaMaterialCost:N0} đ/kg + {adjustment.SurchargePerKg:N0} đ/kg = {calculatedUnitPrice:N0} đ/kg.",
+                FormulaMaterialCost = formulaMaterialCost,
+                FixedCostPerKg = adjustment.SurchargePerKg,
+                CalculatedUnitPrice = calculatedUnitPrice,
+                IsComplete = true
+            };
+        }
 
         private static List<Guid> NormalizeIds(IEnumerable<Guid?> materialIds)
         {

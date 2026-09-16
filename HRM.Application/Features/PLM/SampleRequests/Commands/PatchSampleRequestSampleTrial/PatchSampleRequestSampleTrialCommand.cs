@@ -26,6 +26,8 @@ public sealed class PatchSampleRequestSampleTrialCommand : IRequest<OperationRes
     public DateTime? RequestDeliveryDate { get; set; }
     /// <summary>Ngày dự kiến có mẫu; cập nhật trên Sample Request cha khi được gửi.</summary>
     public DateTime? ExpectedDeliveryDate { get; set; }
+    /// <summary>Ngày dự kiến báo giá; cập nhật trên Sample Request cha khi được gửi.</summary>
+    public DateTime? ExpectedPriceQuoteDate { get; set; }
     public DateTime? RequestReceivedDate { get; set; }
     public DateTime? FinishedDate { get; set; }
     public DateTime? SentDate { get; set; }

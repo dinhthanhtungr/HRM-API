@@ -32,12 +32,15 @@ public sealed class ProductPricingHealthEvaluatorTests
     }
 
     [Fact]
-    public void Evaluate_MaterialCostChangeRequiresPricingAction()
+    public void Evaluate_MaterialCostIncreaseAtThresholdRequiresPricingAction()
     {
         var result = ProductPricingHealthEvaluator.Evaluate(
-            ReadySource(currentMaterialCost: 110m),
+            ReadySource(currentMaterialCost: 105m),
             draft: null,
-            approved: ApprovedPricing(Now.AddDays(-1), materialCostSnapshot: 100m),
+            approved: ApprovedPricing(
+                Now.AddDays(-1),
+                materialCostSnapshot: 100m,
+                standardSellingPrice: 100m),
             now: Now,
             options: new QuotationFeatureOptions { MaterialCostChangeThresholdPercent = 5m });
 
@@ -46,7 +49,24 @@ public sealed class ProductPricingHealthEvaluatorTests
     }
 
     [Fact]
-    public void Evaluate_ExpiredApprovedPricingRequiresRepricing()
+    public void Evaluate_MaterialCostIncreaseBelowThresholdDoesNotRequirePricingAction()
+    {
+        var result = ProductPricingHealthEvaluator.Evaluate(
+            ReadySource(currentMaterialCost: 104.99m),
+            draft: null,
+            approved: ApprovedPricing(
+                Now.AddDays(-1),
+                materialCostSnapshot: 100m,
+                standardSellingPrice: 100m),
+            now: Now,
+            options: new QuotationFeatureOptions { MaterialCostChangeThresholdPercent = 5m });
+
+        Assert.Equal(ProductPricingHealthStatus.Ready, result.Status);
+        Assert.False(result.RequiresPricingAction);
+    }
+
+    [Fact]
+    public void Evaluate_ExpiredApprovedPricingRequiresExplicitReapproval()
     {
         var result = ProductPricingHealthEvaluator.Evaluate(
             ReadySource(),
@@ -55,8 +75,56 @@ public sealed class ProductPricingHealthEvaluatorTests
             now: Now,
             options: new QuotationFeatureOptions { ApprovedPricingReviewAfterDays = 30 });
 
-        Assert.Equal(ProductPricingHealthStatus.RepricingRequired, result.Status);
+        Assert.Equal(ProductPricingHealthStatus.PendingReapproval, result.Status);
+        Assert.Equal(ProductStandardPriceState.PendingReapproval, result.StandardPriceState);
+        Assert.True(result.IsReviewExpired);
         Assert.Equal(Now.AddDays(-1), result.PricingReviewDueDate);
+    }
+
+    [Fact]
+    public void Evaluate_FormulaConfirmedAfterApprovedPriceRequiresReapproval()
+    {
+        var result = ProductPricingHealthEvaluator.Evaluate(
+            ReadySource(),
+            draft: null,
+            approved: ApprovedPricing(Now.AddDays(-2)),
+            now: Now,
+            options: new QuotationFeatureOptions(),
+            latestFormulaConfirmedAt: Now.AddDays(-1));
+
+        Assert.Equal(ProductPricingHealthStatus.PendingReapproval, result.Status);
+        Assert.Equal(ProductStandardPriceState.PendingReapproval, result.StandardPriceState);
+        Assert.True(result.HasFormulaConfirmationPending);
+    }
+
+    [Fact]
+    public void Evaluate_InvalidSourceKeepsExistingApprovedStandardPrice()
+    {
+        var result = ProductPricingHealthEvaluator.Evaluate(
+            new ProductPricingSourceOptionDto { IsEligible = false },
+            draft: null,
+            approved: ApprovedPricing(Now.AddDays(-1)),
+            now: Now,
+            options: new QuotationFeatureOptions());
+
+        Assert.Equal(ProductPricingHealthStatus.SourceNoLongerEligible, result.Status);
+        Assert.True(result.RequiresPricingAction);
+        Assert.Equal(ProductStandardPriceState.Active, result.StandardPriceState);
+    }
+
+    [Fact]
+    public void Evaluate_MissingSourceKeepsExistingApprovedStandardPrice()
+    {
+        var result = ProductPricingHealthEvaluator.Evaluate(
+            source: null,
+            draft: null,
+            approved: ApprovedPricing(Now.AddDays(-1)),
+            now: Now,
+            options: new QuotationFeatureOptions());
+
+        Assert.Equal(ProductPricingHealthStatus.NoEligibleSource, result.Status);
+        Assert.True(result.RequiresPricingAction);
+        Assert.Equal(ProductStandardPriceState.Active, result.StandardPriceState);
     }
 
     [Fact]
@@ -70,6 +138,7 @@ public sealed class ProductPricingHealthEvaluatorTests
             options: new QuotationFeatureOptions());
 
         Assert.Equal(ProductPricingHealthStatus.AwaitingApproval, result.Status);
+        Assert.Equal(ProductStandardPriceState.PendingInitialApproval, result.StandardPriceState);
         Assert.True(result.RequiresPricingAction);
     }
 
@@ -84,7 +153,8 @@ public sealed class ProductPricingHealthEvaluatorTests
 
     private static PricingVersionRow ApprovedPricing(
         DateTime approvedAt,
-        decimal? materialCostSnapshot = null)
+        decimal? materialCostSnapshot = null,
+        decimal? standardSellingPrice = 200m)
         => new()
         {
             ProductPricingVersionId = Guid.NewGuid(),
@@ -92,6 +162,7 @@ public sealed class ProductPricingHealthEvaluatorTests
             Status = ProductPricingStatus.Approved,
             Version = 1,
             MaterialCostSnapshot = materialCostSnapshot,
+            StandardSellingPrice = standardSellingPrice,
             ApprovedAt = approvedAt,
             CreatedDate = approvedAt
         };

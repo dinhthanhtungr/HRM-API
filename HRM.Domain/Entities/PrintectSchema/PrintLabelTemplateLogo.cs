@@ -5,9 +5,9 @@ public class PrintLabelTemplateLogo
 {
     public Guid Id { get; set; }
     public Guid PrintLabelTemplateId { get; set; }
-    public PrintLabelTemplate Template { get; set; } = null!;
+    public virtual PrintLabelTemplate Template { get; set; } = null!;
     public Guid PrintLabelLogoId { get; set; }
-    public PrintLabelLogo Logo { get; set; } = null!;
+    public virtual PrintLabelLogo Logo { get; set; } = null!;
     public int SortOrder { get; set; }
     public bool IsDefault { get; set; }
     public bool IsActive { get; set; } = true;

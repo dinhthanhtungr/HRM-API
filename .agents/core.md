@@ -1,54 +1,32 @@
 # Core Rules
 
-Đọc file này sau `AGENTS.md` trong mọi task có khả năng sửa repo. Đây là luật nền áp dụng cho toàn bộ HRM.api.
+Đọc file này khi sửa code trong repo. Đây chỉ là các invariant dùng chung; chi tiết phải đọc từ file chuyên biệt do `AGENTS.md` điều hướng.
 
-## Kiến trúc
+## Phạm Vi Thay Đổi
 
-Repo đi theo Clean Architecture:
+- Tìm implementation gần nhất và theo pattern hiện có trước khi tạo abstraction hoặc cấu trúc mới.
+- Sửa đúng phạm vi yêu cầu, không trộn refactor rộng với feature nhỏ.
+- Giữ và làm việc cùng thay đổi có sẵn của user; không tự revert, format toàn repo hoặc sửa file không liên quan.
+- Không tự thay đổi schema/migration hay public contract ngoài phạm vi đã được user duyệt.
 
-- `HRM.Domain`: entity, enum, identity model, rule nghiệp vụ thuần.
-- `HRM.Application`: command/query handler, DTO, abstraction persistence/service, rule nghiệp vụ.
-- `HRM.Infrastructure`: EF DbContext, configuration, repository/service implementation, external services.
-- `HRM.Api`: controller, hub, middleware, auth/current user, background worker, DI presentation.
+## Boundary
 
-Controller chỉ nhận request, set route id vào command/query, gọi MediatR/service và trả response. Không viết logic nghiệp vụ lớn trong controller. Application không phụ thuộc trực tiếp Infrastructure. EF query trong Application nên đi qua abstraction/interface context có sẵn.
+- `HRM.Domain`: entity, enum và rule miền thuần.
+- `HRM.Application`: use case, DTO, abstraction và business rule.
+- `HRM.Infrastructure`: EF/persistence và external-service implementation.
+- `HRM.Api`: controller, middleware, auth, hub, worker và DI presentation.
 
-## Tổ Chức Code
+Application không phụ thuộc trực tiếp Infrastructure. Controller chỉ bind request/route, gọi Application và trả response. Quy tắc tổ chức chi tiết nằm ở `.agents/architecture.md`.
 
-- Tìm feature gần nhất và bắt chước folder/cách đặt tên hiện có trước khi thêm feature mới.
-- Ưu tiên dùng component/helper/service/rule chung đã có trong repo; nếu chưa có hoặc không phù hợp mới tạo mới, và phải đặt gần use case trước khi nâng lên shared.
-- Command đặt trong `Features/<Module>/<Entity>/Commands/<Action>`.
-- Query đặt trong `Features/<Module>/<Entity>/Queries/<Action>`.
-- DTO đặt trong `Dtos` của feature/module tương ứng.
-- Helper/service chỉ dùng cho một use case thì đặt gần use case đó.
-- Enum nghiệp vụ đặt trong `HRM.Domain/Enums/<Domain>`.
-- API route đặt trong controller đúng module.
+## Security Và Contract
 
-Dùng static helper chỉ khi logic thuần, deterministic, không cần DB/config/current user/logger/time/network và không có side effect. Dùng DI service khi cần DB, current user, phân quyền, clock, logger, config, file, HTTP, email, SignalR, cache hoặc side effect.
+- Public API không trả EF entity và không cho client set field server-owned như `CompanyId`, `CreatedBy`, role hoặc privileged status.
+- Dữ liệu user-facing phải giữ company/ownership/capability scope và chống IDOR.
+- Không hard-code/log secret hoặc dữ liệu xác thực nhạy cảm; không dùng raw SQL nối chuỗi.
+- Khi sửa API, EF query, permission hoặc field nhạy cảm, đọc đúng file trong `.agents/security/` trước khi implement.
 
-## Bảo Mật Và Multi-Tenant
+## Hoàn Tất
 
-Mỗi API mới hoặc API sửa lại phải tự check:
-
-- Có `[Authorize]` chưa?
-- Có check `CompanyId == _currentUser.CompanyId` với dữ liệu user-facing chưa?
-- Có check user có quyền với record đang truy cập chưa?
-- Có tránh IDOR chưa?
-- Có validate input null/empty/length/enum/date range chưa?
-- Có tránh over-posting/mass assignment chưa?
-- Có dùng async EF query trong async handler chưa?
-- Có tránh raw SQL nối chuỗi chưa?
-- Có tránh log token/password/refreshToken/cookie/secret/payload nhạy cảm chưa?
-- Có tránh trả về data của user/công ty khác chưa?
-
-Phân biệt `_currentUser.UserId`, `_currentUser.EmployeeId` và `_currentUser.CompanyId`. Nếu API dùng `EmployeeId`, phải có fallback hoặc fail rõ ràng khi user không có employee.
-
-## Public Contract
-
-Không trả EF entity trực tiếp ra FE. DTO public phải rõ contract và chỉ gồm field FE cần. Không để FE set field nhạy cảm như `CompanyId`, `CreatedBy`, role, status đặc quyền. Lookup/options endpoint phải có contract rõ ràng. API nên trả enum/code ổn định cho status/type/severity/colorKey; FE tự map label/icon/color.
-
-Sau khi sửa code C# nên chạy:
-
-```powershell
-dotnet build HRM.Api\HRM.Api.csproj -p:OutDir=..\artifacts\verify-build\
-```
+- Đọc `.agents/documentation.md` nếu hành vi hoặc contract thay đổi.
+- Đọc `.agents/git-and-build.md` để chạy verification phù hợp và xử lý Git an toàn.
+- Báo file/phạm vi đã đổi, hành vi bị tác động và build/test thực tế đã chạy; không tuyên bố pass nếu chưa chạy.

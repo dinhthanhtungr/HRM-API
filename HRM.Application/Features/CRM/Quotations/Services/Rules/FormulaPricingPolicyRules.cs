@@ -26,8 +26,8 @@ internal static class FormulaPricingPolicyRules
             return "Currency must be a three-letter ISO currency code.";
         if (defaultManufacturingCost < 0m)
             return "Default manufacturing cost cannot be negative.";
-        if (defaultProfitMarginRate is < 0m or > 100m)
-            return "Default profit margin rate must be between 0 and 100.";
+        if (defaultProfitMarginRate is < 0m or >= 100m)
+            return "Default profit margin rate must be greater than or equal to 0 and less than 100.";
         if (!Enum.IsDefined(roundingRule) || roundingIncrement <= 0m)
             return "A valid rounding rule and positive rounding increment are required.";
         if (priceValidityDays is <= 0)

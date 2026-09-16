@@ -101,6 +101,15 @@ public static class ApplicationRoleSets
 
     public static class Notifications
     {
+        public const string BackfillManagerRolesCsv =
+            $"{ApplicationRoles.Admin},{ApplicationRoles.Developer}";
+
+        public static readonly string[] BackfillManagers =
+        [
+            ApplicationRoles.Admin,
+            ApplicationRoles.Developer
+        ];
+
         public static readonly string[] RecipientManagers =
         [
             ApplicationRoles.Developer,
@@ -123,6 +132,72 @@ public static class ApplicationRoleSets
             ApplicationRoles.Developer,
             ApplicationRoles.President
         ];
+    }
+
+    public static class Pricing
+    {
+        public static readonly string[] WorkbenchViewers =
+        [
+            ApplicationRoles.Developer,
+            ApplicationRoles.President,
+            ApplicationRoles.Sales.SaleUser
+        ];
+
+        public static readonly string[] ApprovedSellingPriceViewers =
+        [
+            ApplicationRoles.Admin,
+            ApplicationRoles.Developer,
+            ApplicationRoles.President,
+            ApplicationRoles.Sales.SaleUser,
+            ApplicationRoles.Sales.PriceView,
+            ApplicationRoles.Accounting.ACCUser,
+            ApplicationRoles.SeePrice.SeePriceUser
+        ];
+
+        public static readonly string[] SystemCalculatedPriceViewers =
+        [
+            ApplicationRoles.Admin,
+            ApplicationRoles.Developer,
+            ApplicationRoles.President,
+            ApplicationRoles.Sales.PriceView,
+            ApplicationRoles.Accounting.ACCUser,
+            ApplicationRoles.SeePrice.SeePriceUser
+        ];
+
+        public static readonly string[] MaterialCostViewers =
+        [
+            ApplicationRoles.Admin,
+            ApplicationRoles.Developer,
+            ApplicationRoles.President,
+            ApplicationRoles.Production.PLPUUser,
+            ApplicationRoles.Accounting.ACCUser,
+            ApplicationRoles.Lab.LabUser
+        ];
+
+        public static readonly string[] ManufacturingCostViewers =
+        [
+            ApplicationRoles.Admin,
+            ApplicationRoles.Developer,
+            ApplicationRoles.President
+        ];
+
+        public static readonly string[] MarginViewers = ManufacturingCostViewers;
+
+        public static readonly string[] HistoryViewers = ManufacturingCostViewers;
+
+        public static readonly string[] Managers =
+        [
+            ApplicationRoles.Developer,
+            ApplicationRoles.President
+        ];
+
+        public static readonly string[] Approvers = Managers;
+    }
+
+    public static class Dispatch
+    {
+        // Giữ nguyên ma trận quyền cũ khi tách delivery cost khỏi PLM formula price.
+        public static readonly string[] DeliveryCostViewers = PLM.FormulaPriceViewers;
     }
 
     public static class EmployeeAdministration
@@ -242,7 +317,37 @@ public static class ApplicationRoleSets
             ApplicationRoles.Admin,
             ApplicationRoles.Developer,
             ApplicationRoles.President,
-            ApplicationRoles.Purchasing.Purchaser
+            ApplicationRoles.Purchasing.Purchaser,
+            ApplicationRoles.Production.PLPUUser
+        ];
+
+        public static readonly string[] MaterialPriceReviewViewers =
+        [
+            .. MaterialSupplierPriceEditors,
+            ApplicationRoles.Lab.LabUser,
+            ApplicationRoles.Lab.LabAdmin
+        ];
+
+        public static readonly string[] MaterialPriceReviewDetailViewers = MaterialSupplierPriceEditors;
+
+        public static readonly string[] MaterialPurchaseAvailabilityManagers = MaterialSupplierPriceEditors;
+
+        public static readonly string[] MaterialReplacementViewers =
+        [
+            .. MaterialSupplierPriceEditors,
+            ApplicationRoles.Lab.LabUser,
+            ApplicationRoles.Lab.LabAdmin
+        ];
+
+        public static readonly string[] MaterialReplacementManagers = MaterialSupplierPriceEditors;
+
+        public static readonly string[] MaterialAvailabilityLabRecipients =
+        [
+            ApplicationRoles.Lab.LabUser,
+            ApplicationRoles.Lab.LabAdmin,
+            ApplicationRoles.Developer,
+            ApplicationRoles.Purchasing.Purchaser,
+            ApplicationRoles.Production.PLPUUser
         ];
 
         public static readonly string[] FormulaManagers =
@@ -252,6 +357,37 @@ public static class ApplicationRoleSets
             ApplicationRoles.President,
             ApplicationRoles.Lab.LabUser,
             ApplicationRoles.Lab.LabAdmin
+        ];
+
+        public static readonly string[] BomViewers = FormulaMaterialViewers;
+
+        public static readonly string[] BomDraftManagers = FormulaManagers;
+
+        public static readonly string[] BomReleasers =
+        [
+            ApplicationRoles.Admin,
+            ApplicationRoles.Developer,
+            ApplicationRoles.President,
+            ApplicationRoles.Leader,
+            ApplicationRoles.Lab.LabAdmin,
+            ApplicationRoles.Production.PLPUUser
+        ];
+
+        public static readonly string[] BomStandardAssigners =
+        [
+            ApplicationRoles.Admin,
+            ApplicationRoles.Developer,
+            ApplicationRoles.President,
+            ApplicationRoles.Leader,
+            ApplicationRoles.Production.PLPUUser
+        ];
+
+        public static readonly string[] BomLossManagers =
+        [
+            ApplicationRoles.Admin,
+            ApplicationRoles.Developer,
+            ApplicationRoles.President,
+            ApplicationRoles.Production.PLPUUser
         ];
 
         public static readonly string[] FormulaPricingEditors =
@@ -277,6 +413,13 @@ public static class ApplicationRoleSets
             ApplicationRoles.President,
             ApplicationRoles.Sales.SaleUser,
             ApplicationRoles.Leader
+        ];
+
+        public static readonly string[] SampleRequestExpectedPriceQuoteDateEditors =
+        [
+            ApplicationRoles.Developer,
+            ApplicationRoles.President,
+            ApplicationRoles.Lab.LabUser
         ];
     }
 }

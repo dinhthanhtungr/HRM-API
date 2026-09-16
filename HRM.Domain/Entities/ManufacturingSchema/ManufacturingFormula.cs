@@ -28,7 +28,7 @@ namespace HRM.Domain.Entities.ManufacturingSchema
         public Guid? SourceVUFormulaId { get; set; }
         public Guid? SourceBomVersionId { get; set; }
         public string? SourceVUExternalIdSnapshot { get; set; }
-        public FormulaSource SourceType { get; set; } // FromVA / FromVU (không nullable)
+        public FormulaSource SourceType { get; set; } // FromVA / FromVU / FromBom (không nullable)
 
 
         public bool IsActive { get; set; }

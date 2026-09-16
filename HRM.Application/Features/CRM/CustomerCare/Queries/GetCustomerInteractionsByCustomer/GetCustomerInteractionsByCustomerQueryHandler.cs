@@ -43,9 +43,9 @@ internal sealed class GetCustomerInteractionsByCustomerQueryHandler
         {
             var keyword = query.NormalizedKeyword;
             source = source.Where(x =>
-                (x.Subject ?? string.Empty).Contains(keyword) ||
-                x.Content.Contains(keyword) ||
-                (x.Outcome ?? string.Empty).Contains(keyword));
+                EF.Functions.ILike((x.Subject ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike(x.Content, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike((x.Outcome ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter));
         }
 
         var total = await source.CountAsync(cancellationToken);

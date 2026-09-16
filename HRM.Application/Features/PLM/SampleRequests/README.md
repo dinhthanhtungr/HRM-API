@@ -4,9 +4,9 @@
 
 ## Lookup cho Sale Order
 
-`GET /api/v1/plm/sample-requests/lookup` giữ nguyên hành vi lookup thông thường. Khi dropdown được gọi từ màn tạo Sale Order, FE truyền `forSaleOrder=true&orderType={0..3}`; backend luôn khóa dữ liệu về `CompanyId` của user hiện tại và chỉ trả Sample Request có `status` là `SampleSent` hoặc `Completed`. `customerId` là bắt buộc trong mode này: chưa chọn customer thì trả mảng rỗng. Với customer thường, lookup dùng tập customer gồm customer đang chọn **và** customer nội bộ `KH_VIETAUS`. Chỉ khi `orderType=0` (Nội bộ) và customer đang chọn có `ExternalId = KH_VIETAUS`, backend mới trả Sample Request hợp lệ của **mọi customer trong cùng company**. Rule được BE tự nhận diện từ customer đã lưu, không tin một cờ FE gửi lên. Mỗi item có thêm `formulaId`/`formulaExternalId`: ưu tiên Formula đang chọn trên Sample Request, nếu chưa có thì lấy Formula active của Trial active mới nhất; FE dùng hai field này để điền Formula cho dòng Sale Order và disable item nếu `formulaId = null`. Các filter `isActive`, keyword và `status` vẫn cùng áp dụng; keyword vẫn phải khớp record như lookup thông thường. Nếu `status` là trạng thái khác hai giá trị trên thì kết quả là danh sách rỗng.
+`GET /api/v1/plm/sample-requests/lookup` chỉ đưa Sample Request của customer nội bộ `KH_VIETAUS` vào kết quả khi request có `keyword`; các item này luôn nằm sau item của customer khác. Khi có `customerId`, lookup tìm trong tập customer đang chọn và `KH_VIETAUS`. Keyword được trim và tìm không phân biệt hoa thường bằng PostgreSQL `ILIKE` trên mã yêu cầu mẫu, mã/tên khách hàng, mã/tên sản phẩm và mã Formula. Lookup thông thường không tự giới hạn status nên trả mọi trạng thái khớp filter `status` nếu FE có truyền. Khi dropdown được gọi từ màn tạo Sale Order, FE truyền `forSaleOrder=true&orderType={0..3}`; backend luôn khóa dữ liệu về `CompanyId` của user hiện tại và chỉ trả Sample Request có `status` là `SampleSent` hoặc `Completed`. `customerId` là bắt buộc trong mode này: chưa chọn customer thì trả mảng rỗng. Chỉ khi `orderType=0` (Nội bộ) và customer đang chọn có `ExternalId = KH_VIETAUS`, backend mới trả Sample Request hợp lệ của **mọi customer trong cùng company**. Rule được BE tự nhận diện từ customer đã lưu, không tin một cờ FE gửi lên. Mỗi item có thêm `formulaId`/`formulaExternalId`: ưu tiên Formula đang chọn trên Sample Request, nếu chưa có thì lấy Formula active của Trial active mới nhất; FE dùng hai field này để điền Formula cho dòng Sale Order và disable item nếu `formulaId = null`. Các filter `isActive`, keyword và `status` vẫn cùng áp dụng; keyword vẫn phải khớp record như lookup thông thường. Nếu `status` là trạng thái khác hai giá trị trên thì kết quả là danh sách rỗng.
 
-Trong mode Sale Order, lookup và `GET /api/v1/plm/sample-requests/{sampleRequestId}` dùng cùng customer visibility của current user. Lookup luôn loại Sample Request inactive, Product inactive/khác company, Customer inactive/khác company, record ngoài customer scope, hoặc record không còn thỏa rule customer/status tạo đơn. Với Sale không có quyền xem toàn bộ khách, `KH_VIETAUS` bị ẩn khi chưa nhập keyword; ngay khi `keyword` có giá trị, lookup mở `KH_VIETAUS` giống endpoint Summary để Sale chủ động tìm mã/tên sản phẩm nội bộ. `sampleRequestId` là định danh canonical duy nhất của item; endpoint không trả alias `id`.
+Lookup và `GET /api/v1/plm/sample-requests/{sampleRequestId}` dùng customer visibility của current user. Lookup luôn loại Sample Request inactive, Product inactive/khác company, Customer inactive/khác company và record ngoài customer scope. `KH_VIETAUS` bị loại khi chưa nhập keyword; ngay khi `keyword` có giá trị, lookup mở `KH_VIETAUS` để người dùng chủ động tìm mã/tên sản phẩm nội bộ. Trong mode Sale Order, record còn phải thỏa rule customer/status tạo đơn. `sampleRequestId` là định danh canonical duy nhất của item; endpoint không trả alias `id`.
 
 Sau khi chọn item từ lookup, FE phải gọi detail kèm context Sale Order:
 
@@ -16,7 +16,7 @@ GET /api/v1/plm/sample-requests/{sampleRequestId}?forSaleOrder=true&customerId={
 
 BE không tin `customerId` từ FE như một quyền độc lập: customer phải active trong company hiện tại. Sample Request target cũng phải active, Product/Customer liên kết active cùng company, có status `SampleSent` hoặc `Completed`, và phải thuộc customer đang lập đơn hoặc `KH_VIETAUS`. Riêng khi `orderType=0` và customer của đơn là `KH_VIETAUS`, Sample Request hợp lệ của mọi customer trong company được phép dùng cho đơn nội bộ. Không truyền `forSaleOrder=true` giữ nguyên quyền detail thông thường.
 
-`GET /api/v1/plm/sample-requests/form-options` only returns the active canonical product categories of the current company. Legacy categories remain in the database for historical records and are intentionally omitted from this form lookup.
+`GET /api/v1/plm/sample-requests/form-options` only returns the active canonical product categories of the current company. Legacy categories remain in the database for historical records and are intentionally omitted from this form lookup. The `branches` collection is a fixed, ordered business reference list; each item returns its stable GUID `value`, stable uppercase `code`, and `displayName` instead of loading every company from the database. FE should use `code` for display rules and must not derive business logic from `displayName`.
 
 | Code | Display name |
 | --- | --- |
@@ -43,6 +43,8 @@ Khi Lab gửi mẫu, message trong Notification Hub trả thêm `sampleReceiptAc
 Ngày Sale nhận mẫu được lưu vào `Trial.RequestReceivedDate` đã có sẵn. Action chuyển Trial từ `SampleSent` sang `WaitingCustomerFeedback` và dùng `UpdatedBy/UpdatedDate` để audit; không bổ sung cột database mới.
 
 `GET /api/v1/plm/sample-requests/sample-trials` trả danh sách phân trang theo từng Sample Request. Mỗi Sample Request chỉ trả một dòng/card và gắn Trial active mới nhất theo `TrialNo`; hồ sơ chưa có Trial vẫn xuất hiện với `hasTrial = false`. `trialCount` và `hasPreviousTrials` cho FE biết có thể mở lịch sử hay không. `reportType=All` (và không truyền `reportType`) trả mọi Sample Request active trong company/customer visibility, không loại theo trạng thái workflow. `CompletedSamples` lấy Sample Request `Completed` có Trial mới nhất `Approved`, lọc/sắp theo `CustomerReplyDate`; `WaitingCustomerFeedback` là hàng đợi theo dõi gồm Trial `SampleSent` chưa có `RequestReceivedDate` (**Chờ Sale nhận mẫu**, luôn xếp trước, sắp theo `SentDate`) và Trial `WaitingCustomerFeedback` đã nhận mẫu (**Chờ phản hồi khách hàng**, sắp theo `RequestReceivedDate`). FE dùng `status` để hiển thị đúng nhãn từng nhóm. Lịch sử được tải lười bằng `GET /api/v1/plm/sample-requests/{sampleRequestId}/sample-trials`, trả các Trial active giảm dần theo `TrialNo`. Dữ liệu luôn loại khách nội bộ `KH_VIETAUS`; `additiveRate` và `labNote` trả `null` nếu current user không có quyền xem thông tin kỹ thuật PLM.
+
+Các field giá trên card Trial dùng pricing capability chung: Sale chỉ nhận giá chuẩn đã duyệt (cùng ghi chú/thời điểm duyệt), còn `systemCalculatedStandardSellingPrice` luôn `null`; backend cũng không tải nguồn giá realtime cho Sale.
 
 Mỗi dòng luôn trả `requestDeliveryDate` (ngày Sale yêu cầu có mẫu) và `expectedDeliveryDate` (ngày dự kiến có mẫu) từ Sample Request, kể cả khi `hasTrial = false`. Hai field này khác `requestReceivedDate`, là ngày Lab/Sale ghi nhận nhận mẫu của một Trial và chỉ có khi Trial tồn tại. FE tạo mới qua `POST /api/v1/plm/sample-requests` hoặc chỉnh qua `PATCH /api/v1/plm/sample-requests/{sampleRequestId}` bằng cùng hai field camelCase; PATCH có thể xóa từng ngày qua `clearFields` với mã `sample_request.request_delivery_date` hoặc `sample_request.expected_delivery_date`.
 
@@ -109,6 +111,66 @@ Patch a sample request:
 ```http
 PATCH /api/v1/plm/sample-requests/{sampleRequestId}
 ```
+
+### Đổi mã màu trước khi gửi mẫu
+
+Lab đổi riêng mã màu và phát thông báo bằng một request:
+
+```http
+PATCH /api/v1/plm/sample-requests/{sampleRequestId}/colour-code
+```
+
+```json
+{
+  "colourCode": "BH_D",
+  "idempotencyKey": "00000000-0000-0000-0000-000000000001",
+  "expectedUpdatedDate": "2026-09-09T10:30:00",
+  "isUrgent": false,
+  "recipientEmployeeIds": []
+}
+```
+
+Endpoint chỉ dành cho `ApplicationRoleSets.PLM.ProductTechnicalEditors`. Sample Request phải còn ở `New`,
+`Pending` hoặc `InProgress`, và Product không được có Trial active đã rời `Draft` hoặc có `SentDate`. Khi prefix
+được gửi ở dạng template có dấu `_`, backend sinh mã theo đúng quy tắc tạo Product lần đầu: lấy số lớn nhất
+đang có của prefix rồi cộng một, sau đó ghép suffix/additive. Ví dụ đang có `BH001C`, `BH002C` thì `BH_D`
+sinh `BH003D`, không giữ lại số của mã hiện tại. Đuôi phải khớp additive code/group trong reference data.
+Mã kết quả phải duy nhất trong các Product active. Cùng một thao tác retry phải giữ nguyên `idempotencyKey` để
+backend trả kết quả đã xử lý thay vì sinh thêm mã kế tiếp.
+
+Một lần lưu cập nhật `Product.ColourCode`, `Additive` nếu template resolve được additive, snapshot của mọi Trial
+`Draft` cùng Product, subject của mọi conversation Sample Request active cùng Product và snapshot/subject của báo
+giá `Draft`. Backend cũng thay mã cũ bằng mã mới trong body/payload của message và title/message/link/payload của
+notification thuộc đúng các Sample Request liên quan trong cùng company. Các message/notification thông báo đổi
+mã trước đó được giữ nguyên để không làm sai dấu vết audit. Backend ghi Product audit với reason
+`SampleRequestColourCodeChanged`, sau đó thêm message mới
+`Mã màu đã được cập nhật từ {old} thành {new}.` và publish topic hiện có
+`SampleRequestDirectPatchNotified` (`plm.sample_request.direct_patch.notified`). Notification title là
+`Mã màu đã đổi thành {new}`. Trial đã gửi và báo giá không còn Draft không bị viết lại.
+
+Response thành công trả mã cũ/mới, số Trial Draft và conversation đã đồng bộ, cùng các id của message/notification:
+
+```json
+{
+  "success": true,
+  "data": {
+    "sampleRequestId": "00000000-0000-0000-0000-000000000010",
+    "productId": "00000000-0000-0000-0000-000000000020",
+    "oldColourCode": "BH001C",
+    "newColourCode": "BH003D",
+    "updatedDraftTrialCount": 1,
+    "updatedConversationCount": 1,
+    "updatedMessageCount": 2,
+    "updatedNotificationCount": 2,
+    "conversationId": "00000000-0000-0000-0000-000000000030",
+    "messageId": "00000000-0000-0000-0000-000000000040",
+    "notificationId": "00000000-0000-0000-0000-000000000050"
+  }
+}
+```
+
+Các id message/notification trả `Guid.Empty` khi Sample Request nội bộ thuộc rule không phát message, hoặc khi dữ
+liệu đã lưu thành công nhưng bước gửi notification thất bại; trường hợp sau được mô tả trong `message` của response.
 
 Trong response detail, `technicalRequirement.otherComment` (ô **Yêu cầu bổ sung**) lấy từ
 `SampleRequest.OtherComment`; đây cũng là nơi PATCH field `otherComment` lưu dữ liệu. Không dùng
@@ -309,33 +371,23 @@ History is also filtered by PLM field visibility. Users outside `ApplicationRole
 
 `PATCH` updates only fields included in the request body. It can update core sample request fields and a small set of product-detail fields used by the detail screen.
 
-Production orders are still returned under `productionOrders` by linking:
+Summary không còn trả `productionOrders`. Thay vào đó, mỗi item trả ba danh sách công thức cùng contract
+`FormulaId` như `GET /api/v1/plm/formulas`:
 
 ```text
-SampleRequest.ProductId -> MfgProductionOrder.ProductId
+formulaSelects   = Manufacturing Formula từng được chọn cho Production Order của Product
+formulaDevs      = Formula phát triển active của Product
+formulaStandard  = Manufacturing Formula từng được đặt làm chuẩn cho Product
 ```
 
-`MfgProductionOrders` does not own attachments in the current database schema, so do not add or query `manufacturing.MfgProductionOrders.attachment_collection_id`.
+Ba danh sách được batch-load cho các Product trên trang hiện tại và luôn khóa theo cặp `ProductId + CompanyId`.
+`formulaSelects` loại trùng theo `ManufacturingFormulaId`, giữ lần dùng gần nhất và sắp theo `lastDateUse` giảm dần.
+`formulaDevs` sắp theo ngày cập nhật/tạo giảm dần. `formulaStandard` loại trùng theo `ManufacturingFormulaId`, ưu tiên
+bản ghi chuẩn hiện hành (`ValidTo IS NULL`), sau đó sắp công thức hiện hành trước và `lastDateUse` giảm dần.
 
-Do not key production order lookups by product code, colour code, or external-id snapshots. Use `ProductId` when both sides have it. Snapshot strings are display/fallback data only.
-
-Each production order also returns the currently selected manufacturing formula header by linking:
-
-```text
-MfgProductionOrder.MfgProductionOrderId -> ProductionSelectVersion.MfgProductionOrderId
-ProductionSelectVersion.ManufacturingFormulaId -> ManufacturingFormula
-```
-
-The selected manufacturing formula rule is:
-
-```text
-ProductionSelectVersion.ValidFrom IS NOT NULL
-ProductionSelectVersion.ValidTo IS NULL
-```
-
-`productionOrders[].formulaExternalId` is populated from the selected manufacturing formula when one exists. If no selected manufacturing formula exists, it falls back to `MfgProductionOrder.FormulaExternalIdSnapshot`.
-
-`productionOrders[].selectedManufacturingFormula` is a lightweight header only. It includes the manufacturing formula id, external id, name, total price, and active material count. It does not include manufacturing formula materials, so summary payloads stay small.
+Nếu không có dữ liệu, collection tương ứng trả `[]`, không trả `null`. Mỗi item gồm `id`, `externalId`, `name`,
+`status`, `note`, `createdByName`, `price`, `itemCount`, `lastDateUse`; các field không áp dụng với nguồn dữ liệu
+tương ứng giữ giá trị mặc định giống contract `GetFormulas`.
 
 Khi `PATCH /api/v1/plm/formulas/{formulaId}/status` chuyển Formula sang `SampleSent`, backend đồng thời chuyển các
 Sample Request active đang trỏ tới `FormulaId` đó sang `SampleRequestStatus.SampleSent`.
@@ -477,33 +529,19 @@ SampleRequestFormulaUpdateApproved     = 40 -> plm.sample_request.formula_update
 SampleRequestFormulaUpdateRejected     = 41 -> plm.sample_request.formula_update.rejected
 SampleRequestFormulaUpdateCancelled    = 42 -> plm.sample_request.formula_update.cancelled
 SampleRequestDirectPatchNotified       = 43 -> plm.sample_request.direct_patch.notified
+SampleRequestCancelled                 = 52 -> plm.sample_request.cancelled
 ```
 
 Tất cả topic này thuộc category `SampleRequest`. Payload notification chỉ chứa metadata định vị thread/message/formula/sample; nội dung chi tiết và action card được đọc lại từ API message có phân quyền.
 
-Các giá formula trong summary (`selectedFormula.totalPrice`, `productionOrders[].selectedManufacturingFormula.totalPrice`,
-`productionOrders[].standardManufacturingFormula.totalPrice` và `previousTotalPrice`) chỉ trả khi current user thuộc
+Khi PATCH hoặc phản hồi Sample Trial làm toàn bộ Sample Request chuyển từ trạng thái khác sang `Cancelled`, backend
+tạo message hủy trong conversation hiện có và publish `SampleRequestCancelled` thuộc event group `lifecycle`. Không dùng
+`SampleRequestFormulaUpdateCancelled` cho trường hợp này vì topic đó chỉ biểu diễn việc hủy yêu cầu cập nhật
+Formula. Message/notification lịch sử không bị đổi hoặc xóa.
+
+Các giá formula trong summary (`selectedFormula.totalPrice`, `formulaSelects[].price`, `formulaDevs[].price` và
+`formulaStandard[].price`) chỉ trả khi current user thuộc
 `ApplicationRoleSets.PLM.FormulaPriceViewers`; ngoài nhóm này backend trả `null`.
-
-Manufacturing formula materials are lazy-loaded from:
-
-```http
-GET /api/v1/plm/manufacturing-formulas/{manufacturingFormulaId}/materials
-```
-
-`productionOrders[].standardManufacturingFormula` is loaded through:
-
-```text
-MfgProductionOrder.ProductId -> ProductStandardFormula.ProductId
-```
-
-The current standard rule is:
-
-```text
-ProductStandardFormula.ValidTo IS NULL
-```
-
-It returns the current standard formula header, the date it became valid, and the closest previous standard formula when one exists.
 
 The selected customer formula header is returned under `selectedFormula` by linking:
 
@@ -543,8 +581,10 @@ chuyển `SampleRequest.Status = SampleSent`, ghi `SendBy/SendDate`, hoàn tất
 message InternalMail topic `SampleRequestSampleSent` với nội dung có giờ gửi, khối lượng mẫu và nhắc Sale ghi nhận.
 
 Khi Sample Request đang `SampleSent`, PATCH Sample Request có thể gửi `formulaId` để xác nhận khách đã chấp nhận
-công thức của Trial pending mới nhất. Shortcut này chỉ dành cho `ApplicationRoleSets.PLM.FormulaSelectors`, vẫn kiểm tra
-company/customer scope và `expectedUpdatedDate`. Formula phải thuộc đúng product, đang active, có status `SampleSent`
+công thức của Trial pending mới nhất. Shortcut này dành cho `ApplicationRoleSets.PLM.FormulaSelectors`; riêng
+`LabUser` cũng được dùng khi hồ sơ đồng thời có customer `KH_VIETAUS` và `RequestType` nội bộ. Backend tự kiểm tra
+hai điều kiện của ngoại lệ Lab từ dữ liệu đã lưu, không tin cờ do FE gửi, và vẫn kiểm tra company/customer scope cùng
+`expectedUpdatedDate`. Formula phải thuộc đúng product, đang active, có status `SampleSent`
 và phải khớp Trial `SampleSent`/`WaitingCustomerFeedback`/`PriceQuote` mới nhất. Backend mặc định
 `CustomerReplyStatus = APPROVED`, cập nhật Trial `Approved`, Formula `Completed`, chọn Formula cho product và chuyển
 Sample Request sang `Completed` trong cùng `SaveChanges`.
@@ -634,9 +674,9 @@ Date fields must be sent as valid date strings. Number/date fields require a con
 
 `GetSampleRequestSummary` applies `CustomerVisibilityService.ApplySampleRequestVisibility` before search, filters, sorting, and paging. Results are scoped to the current user's company and customer visibility; `companyId` can only narrow results inside that current company.
 
-For `LabUser`, Sample Request visibility includes the internal customer `KH_VIETAUS` (`CustomerVisibilityConstants.RestrictedCustomerId`) so `/api/v1/plm/sample-requests/summary` and other Sample Request read APIs can show internal sample requests to Lab. `SaleUser` receives a narrow read-only exception on `GET /api/v1/plm/sample-requests/{sampleRequestId}` so it can open internal-customer detail in the current company; this does not expand the shared customer scope or grant history, message, PATCH, or mutation access. `ACUser` receives no expanded Sample Request or internal-customer access unless the account also has `SaleUser`. Sale order and production order dashboard sources keep their own internal-customer exclusion rules.
+For `LabUser`, Sample Request visibility includes the internal customer `KH_VIETAUS` (`CustomerVisibilityConstants.RestrictedCustomerId`) so `/api/v1/plm/sample-requests/summary` and other Sample Request read APIs can show internal sample requests to Lab. Mọi `SaleUser` trong cùng công ty được mở detail và dùng PATCH chung `PATCH /api/v1/plm/sample-requests/{sampleRequestId}` cho Sample Request của `KH_VIETAUS`, không phụ thuộc ownership/group của khách nội bộ. Ngoại lệ mutation này chỉ bật internal-customer visibility ngay trong `PatchSampleRequestCommandHandler`; nó không mở shared customer scope, không mở khách thường ngoài ownership, và vẫn giữ toàn bộ validation/approval/lifecycle/concurrency hiện có của PATCH. `ACUser` không nhận ngoại lệ này nếu tài khoản không đồng thời có `SaleUser`. Sale order và production order dashboard sources giữ rule loại khách nội bộ riêng của chúng.
 
-Với user bị giới hạn theo phạm vi Sales, `/summary` mặc định không trả Sample Request của khách nội bộ `KH_VIETAUS`. Khi request có `keyword`, riêng query này cho phép khách nội bộ tham gia tập tìm kiếm rồi áp dụng đầy đủ điều kiện keyword; vì vậy user có thể tìm bằng `KH_VIETAUS` hoặc thông tin khác của record nhưng không nhận toàn bộ hồ sơ nội bộ nếu chúng không khớp keyword. Company scope vẫn luôn được giữ nguyên. Role `SaleUser` có thể mở detail của kết quả nội bộ tìm được; ngoại lệ này không tự mở history, message hoặc update Sample Request nội bộ.
+Với user bị giới hạn theo phạm vi Sales, `/summary` mặc định không trả Sample Request của khách nội bộ `KH_VIETAUS`. Khi request có `keyword`, riêng query này cho phép khách nội bộ tham gia tập tìm kiếm rồi áp dụng đầy đủ điều kiện keyword; vì vậy user có thể tìm bằng `KH_VIETAUS` hoặc thông tin khác của record nhưng không nhận toàn bộ hồ sơ nội bộ nếu chúng không khớp keyword. Company scope vẫn luôn được giữ nguyên. Role `SaleUser` có thể mở detail và PATCH kết quả nội bộ tìm được; ngoại lệ này không tự mở history hoặc message.
 
 ## Message Recipients
 
@@ -723,7 +763,10 @@ unread badge, SignalR event or Web Push alert. A silent watcher must
 be active in the current company, cannot be the current creator, and cannot also be in the normal recipient list.
 The initial Sample Request message uses the selected watcher ids directly, so it also creates their Hub item before
 the new conversation participants have been persisted. The same rule applies to initial normal recipients; subsequent
-messages also resolve the persisted, unmuted conversation participants.
+messages resolve the persisted participant preference. This applies equally to action-specific recipient overrides
+(for example pricing or approval decisions): an employee who has muted the conversation remains a silent watcher and
+cannot be made a normal notification recipient by an override. Once that employee un-mutes their own conversation,
+later messages and actions notify them normally again.
 When `selectedSilentWatcherEmployeeIds` is omitted on the first preview, all active `LabUser` and `LabAdmin`
 employees absent from `requiredRecipients`, `suggestedRecipients` and `selectedRecipients` are selected as default
 silent watchers. Sending an explicit empty array lets FE remove those optional defaults.

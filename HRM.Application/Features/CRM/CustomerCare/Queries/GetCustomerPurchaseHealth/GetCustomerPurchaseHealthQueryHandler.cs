@@ -114,8 +114,8 @@ internal sealed class GetCustomerPurchaseHealthQueryHandler
         if (query.NormalizedKeyword is { } keyword)
         {
             customersQuery = customersQuery.Where(x =>
-                x.ExternalId.Contains(keyword) ||
-                x.CustomerName.Contains(keyword));
+                EF.Functions.ILike(x.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike(x.CustomerName, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter));
         }
 
         var customers = await customersQuery

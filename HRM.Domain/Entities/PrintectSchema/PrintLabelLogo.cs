@@ -7,7 +7,7 @@ public class PrintLabelLogo
 {
     public Guid Id { get; set; }
     public Guid CompanyId { get; set; }
-    public string Code { get; set; } = string.Empty;
+    public string ExternalId { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public Guid AttachmentCollectionId { get; set; }
     public AttachmentCollection AttachmentCollection { get; set; } = null!;

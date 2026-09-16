@@ -88,7 +88,16 @@ internal sealed class ReplaceBomVersionCommandHandler
         await _dbContext.BomVersionItems.AddRangeAsync(replacementItems, cancellationToken);
 
         version.BomDefinition.UpdatedBy = employeeId;
-        version.BomDefinition.UpdatedDate = DateTime.UtcNow;
+        version.BomDefinition.UpdatedDate = DateTime.Now;
+
+        _dbContext.AuditLogs.Add(BomAudit.Create(
+            companyId,
+            employeeId,
+            "bom_versions",
+            version.BomVersionId,
+            "ReplaceEngineeringBomDraft",
+            new { ItemCount = replacementItems.Count, version.BaseOutputQuantity, version.OutputUnit },
+            version.ChangeReason));
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 

@@ -29,6 +29,8 @@ public sealed class ManufacturingFormulasController : ControllerBase
             ManufacturingFormulaId = manufacturingFormulaId
         }, cancellationToken);
 
-        return Ok(result);
+        return result is null
+            ? NotFound()
+            : Ok(result);
     }
 }

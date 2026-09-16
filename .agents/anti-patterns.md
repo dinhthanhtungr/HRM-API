@@ -1,6 +1,6 @@
 # Anti-Patterns
 
-Đọc file này trong mọi task có khả năng sửa repo. Đây là danh sách những thứ tuyệt đối tránh hoặc chỉ làm khi có lý do rõ ràng.
+Đọc file này khi review/refactor rộng, kiểm tra chất lượng xuyên module hoặc khi `AGENTS.md` điều hướng tới đây. Các luật vẫn áp dụng cho phần code tương ứng, nhưng không cần nạp file cho mọi task nhỏ.
 
 ## Kiến Trúc
 
@@ -18,6 +18,8 @@
 - Không trả data của user/công ty khác.
 - Không cho FE tự set field nhạy cảm như `CompanyId`, `CreatedBy`, role, status đặc quyền.
 - Không public API notification cho FE tự gửi tùy tiện nếu nghiệp vụ cần đi qua feature cụ thể.
+- Không hard-code role trong handler/service cho dữ liệu hoặc action nhạy cảm khi capability/visibility service đã có.
+- Không query/trả cost, margin, lương, giá nội bộ hoặc dữ liệu kỹ thuật rồi chỉ dựa vào FE để ẩn.
 
 ## API Và Data
 

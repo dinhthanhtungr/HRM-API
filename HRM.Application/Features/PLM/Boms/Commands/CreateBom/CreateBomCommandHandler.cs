@@ -7,6 +7,7 @@ using HRM.Application.Features.PLM.Boms.Rules;
 using HRM.Application.Features.PLM.Boms.Services;
 using HRM.Domain.Entities.BomSchema;
 using HRM.Domain.Enums.Boms;
+using HRM.Domain.Enums.Audits;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -89,7 +90,7 @@ internal sealed class CreateBomCommandHandler
             return OperationResult<BomVersionDto>.Fail(resolution.Error);
         }
 
-        var now = DateTime.UtcNow;
+        var now = DateTime.Now;
         var definition = CreateDefinition(request, companyId, employeeId, normalizedCode, now);
         var version = CreateInitialVersion(request, definition.BomDefinitionId, employeeId, now);
         var items = BomMapper.CreateVersionItems(version.BomVersionId, resolution.Items);
@@ -97,6 +98,14 @@ internal sealed class CreateBomCommandHandler
         await _dbContext.BomDefinitions.AddAsync(definition, cancellationToken);
         await _dbContext.BomVersions.AddAsync(version, cancellationToken);
         await _dbContext.BomVersionItems.AddRangeAsync(items, cancellationToken);
+        _dbContext.AuditLogs.Add(BomAudit.Create(
+            companyId,
+            employeeId,
+            "bom_definitions",
+            definition.BomDefinitionId,
+            "CreateEngineeringBom",
+            new { version.BomVersionId, version.VersionNo, ItemCount = items.Count },
+            actionType: AuditActionType.Create));
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         return OperationResult<BomVersionDto>.Ok(

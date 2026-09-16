@@ -180,6 +180,7 @@ internal sealed class GetQuotationPricingComparisonQueryHandler
             SavedPriceTiers = line.PriceTiers,
             CurrentProductPricingVersionId = approved?.ProductPricingVersionId,
             CurrentProductPricingVersion = approved?.Version,
+            CurrentPublisherNote = approved?.PublisherNote,
             IsUsingLatestApprovedPricing = approved is not null &&
                 line.ProductPricingVersionId == approved.ProductPricingVersionId,
             FormulaId = current?.FormulaId,

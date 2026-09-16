@@ -97,10 +97,13 @@ public sealed class AuthController : ControllerBase
     }
 
     [HttpPost("logout")]
-    [Authorize]
+    [AllowAnonymous]
     public async Task<IActionResult> Logout(CancellationToken cancellationToken)
     {
-        await _sender.Send(new LogoutCommand(), cancellationToken);
+        if (_currentUser.IsAuthenticated && _currentUser.UserId != Guid.Empty)
+        {
+            await _sender.Send(new LogoutCommand(), cancellationToken);
+        }
 
         Response.Cookies.Delete(AccessTokenCookieName, new CookieOptions
         {

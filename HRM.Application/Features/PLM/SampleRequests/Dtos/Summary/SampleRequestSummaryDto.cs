@@ -1,9 +1,5 @@
 ﻿using HRM.Application.Features.PLM.SampleRequests.Dtos.Common;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using HRM.Application.Features.PLM.Formulas.Dtos.GetFormulas;
 
 namespace HRM.Application.Features.PLM.SampleRequests.Dtos.Summary
 {
@@ -52,7 +48,8 @@ namespace HRM.Application.Features.PLM.SampleRequests.Dtos.Summary
 
         public SampleRequestSelectedFormulaDto? SelectedFormula { get; set; }
 
-        public IReadOnlyList<SampleRequestProductionOrderDto> ProductionOrders { get; set; }
-            = new List<SampleRequestProductionOrderDto>();
+        public IReadOnlyList<FormulaId> FormulaSelects { get; set; } = [];
+        public IReadOnlyList<FormulaId> FormulaDevs { get; set; } = [];
+        public IReadOnlyList<FormulaId> FormulaStandard { get; set; } = [];
     }
 }

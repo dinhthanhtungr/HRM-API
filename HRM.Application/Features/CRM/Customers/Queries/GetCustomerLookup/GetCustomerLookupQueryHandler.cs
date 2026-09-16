@@ -109,15 +109,15 @@ internal sealed class GetCustomerLookupQueryHandler
             var keyword = request.NormalizedKeyword;
 
             query = query.Where(x =>
-                x.ExternalId.Contains(keyword) ||
-                x.CustomerName.Contains(keyword) ||
+                EF.Functions.ILike(x.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike(x.CustomerName, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
                 x.CustomerAssignments.Any(a =>
                     a.IsActive &&
-                    a.Employee.FullName.Contains(keyword)) ||
-                (x.CustomerGroup ?? string.Empty).Contains(keyword) ||
-                (x.ApplicationName ?? string.Empty).Contains(keyword) ||
-                (x.Phone ?? string.Empty).Contains(keyword) ||
-                (x.TaxNumber ?? string.Empty).Contains(keyword));
+                    EF.Functions.ILike(a.Employee.FullName, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter)) ||
+                EF.Functions.ILike((x.CustomerGroup ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike((x.ApplicationName ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike((x.Phone ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike((x.TaxNumber ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter));
         }
 
         var totalCount = await query.CountAsync(cancellationToken);

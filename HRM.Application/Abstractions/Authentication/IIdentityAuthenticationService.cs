@@ -35,6 +35,17 @@ public interface IIdentityAuthenticationService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Atomically replaces the current refresh token. The operation succeeds only when
+    /// the expected token is still the active, unexpired token for the user.
+    /// </summary>
+    Task<bool> RotateRefreshTokenAsync(
+        Guid userId,
+        string expectedRefreshToken,
+        string newRefreshToken,
+        DateTime expiresAtUtc,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Thu hồi refresh token của user.
     /// Thường dùng khi user đăng xuất hoặc cần vô hiệu hóa phiên đăng nhập.
     /// </summary>

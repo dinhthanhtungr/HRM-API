@@ -19,6 +19,9 @@ public sealed class QuotationProductTierPricingReferencesTests
         var tier = Assert.Single(references.DefaultPriceTiers);
 
         Assert.Equal(215_000m, tier.UnitPrice);
+        Assert.Equal(
+            "Áp dụng cho đơn từ 100 kg",
+            QuotationProductPricingPreviewMapper.MapApproved(references.ApprovedPricing)?.PublisherNote);
     }
 
     [Fact]
@@ -44,11 +47,13 @@ public sealed class QuotationProductTierPricingReferencesTests
             ProductPricingStatus.Approved,
             new DateTime(2026, 8, 20, 15, 52, 0),
             215_000m,
+            "VND",
             ProductPricingSourceType.Formula,
             Guid.NewGuid(),
             "VU260600325",
             "F001",
-            tiers);
+            tiers,
+            "Áp dụng cho đơn từ 100 kg");
 
     private static SystemCalculatedTierPricingReference SystemCalculated(
         IReadOnlyList<QuotationTierPriceReference> tiers)
@@ -57,6 +62,7 @@ public sealed class QuotationProductTierPricingReferencesTests
             "Available",
             new DateTime(2026, 8, 23, 10, 30, 0),
             218_000m,
+            "VND",
             ProductPricingSourceType.Formula,
             Guid.NewGuid(),
             "VU260600325",

@@ -1,6 +1,6 @@
 using HRM.Application.Abstractions.Persistence.PLM;
 using HRM.Application.Abstractions.Security;
-using HRM.Application.Commons.Authorization.PLM;
+using HRM.Application.Features.PLM.Shared.Authorization;
 using HRM.Application.Features.PLM.Formulas.Dtos.Versions;
 using MediatR;
 using Microsoft.EntityFrameworkCore;

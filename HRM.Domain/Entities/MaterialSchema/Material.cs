@@ -65,6 +65,12 @@ public partial class Material
 
     public virtual ICollection<MaterialsSupplier> MaterialsSuppliers { get; set; } = new List<MaterialsSupplier>();
 
+    public virtual MaterialPurchaseAvailability? PurchaseAvailability { get; set; }
+
+    public virtual ICollection<MaterialReplacement> ReplacementOptions { get; set; } = new List<MaterialReplacement>();
+
+    public virtual ICollection<MaterialReplacement> ReplacementForMaterials { get; set; } = new List<MaterialReplacement>();
+
     public virtual ICollection<PriceHistory> PriceHistories { get; set; } = new List<PriceHistory>();
 
     public virtual ICollection<PurchaseOrderDetail> PurchaseOrderDetails { get; set; } = new List<PurchaseOrderDetail>();

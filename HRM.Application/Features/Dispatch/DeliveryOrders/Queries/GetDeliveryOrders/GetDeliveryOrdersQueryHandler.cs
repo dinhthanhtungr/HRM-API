@@ -1,5 +1,6 @@
 using HRM.Application.Abstractions.Persistence.Dispatch;
 using HRM.Application.Abstractions.Security;
+using HRM.Application.Commons.Authorization;
 using HRM.Application.Commons.Pagination;
 using HRM.Application.Features.Dispatch.DeliveryOrders.Dtos;
 using HRM.Domain.Entities.DeliverySchema;
@@ -13,13 +14,16 @@ internal sealed class GetDeliveryOrdersQueryHandler
 {
     private readonly IDispatchReadDbContext _dbContext;
     private readonly ICurrentUser _currentUser;
+    private readonly ICurrentUserPermissionService _permissionService;
 
     public GetDeliveryOrdersQueryHandler(
         IDispatchReadDbContext dbContext,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        ICurrentUserPermissionService permissionService)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
+        _permissionService = permissionService;
     }
 
     public async Task<PagedResult<DeliveryOrderListItemDto>> Handle(
@@ -37,7 +41,7 @@ internal sealed class GetDeliveryOrdersQueryHandler
                 request.NormalizedPageSize);
         }
 
-        var canViewCost = DeliveryOrderCostVisibilityRules.CanViewCost(_currentUser);
+        var canViewCost = DeliveryOrderCostVisibilityRules.CanViewCost(_permissionService);
         var canManage = DeliveryOrderAccessRules.CanManage(_currentUser);
 
         var query = _dbContext.DeliveryOrders
@@ -116,20 +120,20 @@ internal sealed class GetDeliveryOrdersQueryHandler
         {
             var keyword = request.NormalizedKeyword;
             query = query.Where(x =>
-                (x.ExternalId ?? string.Empty).Contains(keyword) ||
-                (x.CustomerExternalIdSnapShot ?? string.Empty).Contains(keyword) ||
-                (x.Customer.CustomerName ?? string.Empty).Contains(keyword) ||
+                EF.Functions.ILike((x.ExternalId ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike((x.CustomerExternalIdSnapShot ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike((x.Customer.CustomerName ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
                 x.DeliveryOrderPOs.Any(po =>
-                    (po.MerchandiseOrder.ExternalId ?? string.Empty).Contains(keyword) ||
-                    (po.MerchandiseOrder.PONo ?? string.Empty).Contains(keyword)) ||
+                    EF.Functions.ILike((po.MerchandiseOrder.ExternalId ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                    EF.Functions.ILike((po.MerchandiseOrder.PONo ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter)) ||
                 x.Details.Any(d =>
-                    (d.ProductExternalIdSnapShot ?? string.Empty).Contains(keyword) ||
-                    (d.ProductNameSnapShot ?? string.Empty).Contains(keyword) ||
-                    (d.PONo ?? string.Empty).Contains(keyword) ||
+                    EF.Functions.ILike((d.ProductExternalIdSnapShot ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                    EF.Functions.ILike((d.ProductNameSnapShot ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                    EF.Functions.ILike((d.PONo ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
                     d.LotConsumptions.Any(lot =>
-                        lot.IsActive && lot.LotNo.Contains(keyword)) ||
+                        lot.IsActive && EF.Functions.ILike(lot.LotNo, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter)) ||
                     (!d.LotConsumptions.Any(lot => lot.IsActive) &&
-                     (d.LotNoList ?? string.Empty).Contains(keyword))));
+                     EF.Functions.ILike((d.LotNoList ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter))));
         }
 
         query = ApplySorting(query, request);

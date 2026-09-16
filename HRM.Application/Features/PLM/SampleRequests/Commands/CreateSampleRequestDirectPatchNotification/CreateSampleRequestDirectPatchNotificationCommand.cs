@@ -2,6 +2,7 @@ using HRM.Application.Commons.Models;
 using HRM.Application.Features.InternalMail.Dtos;
 using HRM.Application.Features.PLM.SampleRequests.DirectPatchNotifications;
 using MediatR;
+using System.Text.Json.Serialization;
 
 namespace HRM.Application.Features.PLM.SampleRequests.Commands.CreateSampleRequestDirectPatchNotification;
 
@@ -19,4 +20,7 @@ public sealed class CreateSampleRequestDirectPatchNotificationCommand
     public IReadOnlyList<Guid> RecipientEmployeeIds { get; set; } = Array.Empty<Guid>();
     public IReadOnlyList<SampleRequestDirectPatchChangeDto> Changes { get; set; }
         = Array.Empty<SampleRequestDirectPatchChangeDto>();
+
+    [JsonIgnore]
+    internal string? TitleOverride { get; set; }
 }

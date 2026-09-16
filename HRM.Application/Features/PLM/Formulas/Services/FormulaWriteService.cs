@@ -9,6 +9,7 @@ using HRM.Domain.Entities.SampleRequestSchema;
 using HRM.Domain.Enums.Category;
 using HRM.Domain.Enums.Formulas;
 using HRM.Domain.Enums.Manufacturings;
+using HRM.Domain.Enums.Materials;
 using HRM.Domain.Enums.Products;
 using HRM.Domain.Enums.SampleRequests;
 using Microsoft.EntityFrameworkCore;
@@ -146,7 +147,35 @@ internal sealed class FormulaWriteService
 
         var activeRows = await _dbContext.FormulaMaterials
             .Where(x => x.FormulaId == formula.FormulaId && x.IsActive)
+            .OrderBy(x => x.LineNo)
             .ToListAsync(cancellationToken);
+
+        if (!FormulaMaterialMutationRules.CanReplaceMaterials(formula.Status))
+        {
+            var currentComposition = activeRows
+                .Select(x => new FormulaMaterialCompositionItem(
+                    x.itemType,
+                    x.MaterialId ?? x.ProductId ?? Guid.Empty,
+                    x.Quantity))
+                .ToArray();
+            var requestedComposition = requests
+                .Select(x => new FormulaMaterialCompositionItem(
+                    x.ItemType,
+                    x.ItemId,
+                    RoundQuantity(x.Quantity)))
+                .ToArray();
+            var hasCompositionChanges = FormulaMaterialMutationRules.HasCompositionChanges(
+                currentComposition,
+                requestedComposition);
+
+            FormulaMaterialMutationRules.EnsureCanReplaceMaterials(
+                formula.Status,
+                hasCompositionChanges);
+
+            // FE có thể gửi lại nguyên danh sách trên form đầy đủ. Ở status bị khóa,
+            // payload giống dữ liệu hiện tại là no-op để các field header vẫn được lưu.
+            return;
+        }
 
         foreach (var row in activeRows)
         {
@@ -182,6 +211,10 @@ internal sealed class FormulaWriteService
         DateTime now,
         CancellationToken cancellationToken)
     {
+        // Validate/handle materials first so a locked composition change cannot leave
+        // other tracked fields mutated in the current request scope.
+        await ReplaceMaterialsAsync(formula, request.Materials, companyId, cancellationToken);
+
         if (request.ProductId is { } productId && productId != Guid.Empty)
         {
             var product = await LoadProductAsync(companyId, productId, cancellationToken);
@@ -202,8 +235,6 @@ internal sealed class FormulaWriteService
         formula.IsSelect = request.IsSelect ?? formula.IsSelect;
         formula.UpdatedBy = employeeId;
         formula.UpdatedDate = now;
-
-        await ReplaceMaterialsAsync(formula, request.Materials, companyId, cancellationToken);
     }
 
     public static void ValidateStepOfProduct(StepOfProduct? stepOfProduct)
@@ -509,7 +540,9 @@ internal sealed class FormulaWriteService
                 .Where(x =>
                     x.MaterialId == request.ItemId &&
                     x.CompanyId == companyId &&
-                    x.IsActive == true)
+                    x.IsActive == true &&
+                    (x.PurchaseAvailability == null ||
+                     x.PurchaseAvailability.Status != MaterialPurchaseStatus.Unavailable))
                 .Select(x => new ItemSnapshot(
                     x.CategoryId,
                     x.Name ?? string.Empty,
@@ -517,7 +550,8 @@ internal sealed class FormulaWriteService
                     x.Unit))
                 .FirstOrDefaultAsync(cancellationToken);
 
-            return material ?? throw new InvalidOperationException("Formula material was not found or is inactive.");
+            return material ?? throw new InvalidOperationException(
+                "Formula material was not found, is inactive, or is no longer available for purchase.");
         }
 
         var product = await _dbContext.Products

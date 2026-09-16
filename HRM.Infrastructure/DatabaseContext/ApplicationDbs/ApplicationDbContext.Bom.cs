@@ -9,6 +9,8 @@ public partial class ApplicationDbContext
     public virtual DbSet<BomVersion> BomVersions { get; set; } = default!;
     public virtual DbSet<BomVersionItem> BomVersionItems { get; set; } = default!;
     public virtual DbSet<ManufacturingBomStage> ManufacturingBomStages { get; set; } = default!;
+    public virtual DbSet<ManufacturingBomStageMachine> ManufacturingBomStageMachines { get; set; } = default!;
+    public virtual DbSet<ManufacturingBomStageTransition> ManufacturingBomStageTransitions { get; set; } = default!;
     public virtual DbSet<ManufacturingLossType> ManufacturingLossTypes { get; set; } = default!;
     public virtual DbSet<ManufacturingBomLossRule> ManufacturingBomLossRules { get; set; } = default!;
     public virtual DbSet<ProductStandardBomVersion> ProductStandardBomVersions { get; set; } = default!;

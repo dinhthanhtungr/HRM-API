@@ -33,9 +33,9 @@ internal sealed class GetDeliverersQueryHandler
         {
             var keyword = request.NormalizedKeyword;
             query = query.Where(x =>
-                x.Name.Contains(keyword) ||
-                (x.Phone ?? string.Empty).Contains(keyword) ||
-                (x.DelivererType ?? string.Empty).Contains(keyword));
+                EF.Functions.ILike(x.Name, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike((x.Phone ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike((x.DelivererType ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter));
         }
 
         var projected = query

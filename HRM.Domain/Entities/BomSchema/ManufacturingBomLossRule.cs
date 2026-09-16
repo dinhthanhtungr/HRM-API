@@ -13,6 +13,9 @@ public class ManufacturingBomLossRule
     public Guid ManufacturingLossTypeId { get; set; }
     public Guid? BomVersionItemId { get; set; }
     public Guid? ManufacturingBomStageId { get; set; }
+    public Guid? ManufacturingBomStageTransitionId { get; set; }
+    public ManufacturingLossScope Scope { get; set; }
+    public ManufacturingLossAllocationMethod AllocationMethod { get; set; }
     public LossCalculationMethod CalculationMethod { get; set; }
     public decimal? RatePercent { get; set; }
     public decimal? FixedQuantityKg { get; set; }
@@ -28,5 +31,6 @@ public class ManufacturingBomLossRule
     public virtual ManufacturingLossType LossType { get; set; } = null!;
     public virtual BomVersionItem? BomVersionItem { get; set; }
     public virtual ManufacturingBomStage? ManufacturingStage { get; set; }
+    public virtual ManufacturingBomStageTransition? ManufacturingStageTransition { get; set; }
     public virtual ICollection<MfgProductionOrderLoss> ProductionOrderLosses { get; set; } = new List<MfgProductionOrderLoss>();
 }

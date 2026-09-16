@@ -60,6 +60,7 @@ internal sealed class PatchSampleRequestSampleTrialCommandHandler
         var authorizationError = SampleRequestSampleTrialPatchAuthorization.Validate(
             _currentUser.IsInAnyRole(ApplicationRoleSets.PLM.ProductTechnicalEditors),
             _currentUser.IsInAnyRole(ApplicationRoleSets.Modules.Sales),
+            _currentUser.IsInAnyRole(ApplicationRoleSets.PLM.SampleRequestExpectedPriceQuoteDateEditors),
             fieldsWithValues.Concat(clearFields));
         if (authorizationError is not null)
         {
@@ -151,7 +152,7 @@ internal sealed class PatchSampleRequestSampleTrialCommandHandler
             clearFields,
             formulaExternalIdResult.Data,
             employeeId);
-        var sampleRequestChanged = ApplySampleRequestDeliveryDates(
+        var sampleRequestChanged = ApplySampleRequestFields(
             sampleRequest,
             request,
             clearFields);
@@ -423,7 +424,7 @@ internal sealed class PatchSampleRequestSampleTrialCommandHandler
         return changed;
     }
 
-    private static bool ApplySampleRequestDeliveryDates(
+    private static bool ApplySampleRequestFields(
         SampleRequest sampleRequest,
         PatchSampleRequestSampleTrialCommand request,
         IReadOnlySet<string> clearFields)
@@ -439,6 +440,11 @@ internal sealed class PatchSampleRequestSampleTrialCommandHandler
             clearFields.Contains(SampleRequestSampleTrialPatchFields.ExpectedDeliveryDate),
             () => sampleRequest.ExpectedDeliveryDate,
             value => sampleRequest.ExpectedDeliveryDate = value);
+        changed |= ApplyNullable(
+            request.ExpectedPriceQuoteDate,
+            clearFields.Contains(SampleRequestSampleTrialPatchFields.ExpectedPriceQuoteDate),
+            () => sampleRequest.ExpectedPriceQuoteDate,
+            value => sampleRequest.ExpectedPriceQuoteDate = value);
         return changed;
     }
 
@@ -483,6 +489,7 @@ internal sealed class PatchSampleRequestSampleTrialCommandHandler
         AddIf(fields, SampleRequestSampleTrialPatchFields.AdditiveRate, request.AdditiveRate.HasValue);
         AddIf(fields, SampleRequestSampleTrialPatchFields.RequestDeliveryDate, request.RequestDeliveryDate.HasValue);
         AddIf(fields, SampleRequestSampleTrialPatchFields.ExpectedDeliveryDate, request.ExpectedDeliveryDate.HasValue);
+        AddIf(fields, SampleRequestSampleTrialPatchFields.ExpectedPriceQuoteDate, request.ExpectedPriceQuoteDate.HasValue);
         AddIf(fields, SampleRequestSampleTrialPatchFields.RequestReceivedDate, request.RequestReceivedDate.HasValue);
         AddIf(fields, SampleRequestSampleTrialPatchFields.FinishedDate, request.FinishedDate.HasValue);
         AddIf(fields, SampleRequestSampleTrialPatchFields.SentDate, request.SentDate.HasValue);

@@ -117,7 +117,7 @@ Response thành công là danh sách lot trực tiếp; response lỗi giữ con
 }
 ```
 
-`unitCostSnapshot` bị omit nếu người gọi không có quyền xem giá công thức. Khi không có quyền, handler cũng không query dữ liệu công thức/cost không cần thiết. Các role được xem cost là nhóm `FormulaPriceViewers`: `Admin`, `Developer`, `President`, `PriceView`, `ACCUser`, `SeePriceUser`.
+`unitCostSnapshot` bị omit nếu người gọi không có capability `dispatch.delivery-cost.view`. Khi không có quyền, handler cũng không query dữ liệu công thức/cost không cần thiết. Mapping role ban đầu của capability này là `Admin`, `Developer`, `President`, `PriceView`, `ACCUser`, `SeePriceUser`; việc thay đổi mapping sau này không cần sửa các query giao hàng.
 
 ### Rule tồn khả dụng
 
@@ -131,7 +131,7 @@ Response thành công là danh sách lot trực tiếp; response lỗi giữ con
 
 Backend tự lấy unit cost từ `ManufacturingFormula` active của current company có `ExternalId` khớp lot, theo rule COGS hiện có: tổng `ManufacturingFormulaMaterials.TotalPrice` active có `itemType = Material`. Nếu dữ liệu lịch sử không có công thức tương ứng, unit cost theo fallback hiện hành là `0`. `TotalCostSnapshot = round(lot.quantity * UnitCostSnapshot, 2, AwayFromZero)`.
 
-Request DTO chỉ có `lotNo` và `quantity`; không có field cost để FE bind. GET list/detail chỉ trả `UnitCostSnapshot` và `TotalCostSnapshot` cho role được phép; với role khác, hai field bị omit khỏi JSON.
+Request DTO chỉ có `lotNo` và `quantity`; không có field cost để FE bind. GET list/detail chỉ trả `UnitCostSnapshot` và `TotalCostSnapshot` khi có capability xem delivery cost; nếu không, hai field bị omit khỏi JSON.
 
 Delivery Order hiện **không reserve và không consume tồn kho ở bất kỳ status transition nào**. Create/update chỉ kiểm tra point-in-time và ghi cost snapshot trong cùng transaction với detail/lots; không tạo `WarehouseTempStock`, không sửa `WarehouseShelfStock`. Việc reserve/consume chỉ được bổ sung khi nghiệp vụ kho có rule và transaction boundary chính thức.
 

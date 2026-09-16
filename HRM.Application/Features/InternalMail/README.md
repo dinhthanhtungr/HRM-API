@@ -1,5 +1,14 @@
 # InternalMail API và luồng Notification
 
+## Quyền đọc conversation từ Executive Sample Request Overview
+
+Mặc định mọi API đọc conversation/message/attachment yêu cầu current employee là participant active của
+conversation cùng company. Riêng President và Developer đã có quyền mở Executive Sample Request Pricing Overview
+được đọc conversation có `RelatedType = SampleRequest` trong cùng company, kể cả khi không là participant. Rule
+này chỉ dành cho read API (detail, messages, search/context và attachment) để action **Mở trao đổi** của Overview
+không trả cờ cho phép sai với quyền backend. Nó không áp dụng cho conversation `Internal` hoặc `Quotation`, không
+cho phép gửi/sửa/xóa message, và không mở quyền cho role khác.
+
 ## Mục tiêu
 
 InternalMail là nguồn dữ liệu thật của hòm thư nội bộ:
@@ -50,13 +59,41 @@ Các filter chính của `GET /conversations`:
 - `relatedType`: enum `InternalMailRelatedType`; bỏ trống để lấy tất cả.
 - `unreadOnly`: chỉ lấy conversation có message chưa đọc.
 - `archived`: lấy inbox thường hoặc archive cá nhân.
-- `keyword` hoặc `search`, `pageNumber`, `pageSize`: search và phân trang.
+- `keyword` hoặc `search`, `pageNumber`, `pageSize`: search và phân trang. Search không phân biệt hoa/thường theo subject, mã liên kết, nội dung tin nhắn; với conversation `SampleRequest` còn tìm theo mã/tên khách hàng và tên Sale phụ trách (`SampleRequest.ManagerBy`). Metadata nguồn luôn bị giới hạn cùng company và Sample Request active.
 
 Mỗi item danh sách trả cả `subject` và `displayTitle`. `subject` là tên conversation được lưu nguyên vẹn;
 `displayTitle` là tiêu đề ngắn cho cột inbox. Với Sample Request lịch sử, backend loại prefix
 `Trao đổi yêu cầu phối mẫu` khỏi `displayTitle` để mã yêu cầu và mã màu không bị phần mô tả chung chiếm chỗ.
 Conversation mới có subject ngắn vẫn trả nguyên subject làm `displayTitle`. Các related type khác mặc định dùng
 subject và fallback về `relatedExternalId` khi subject trống. Không có backfill hoặc migration.
+
+Khi `relatedType = SampleRequest`, cả list và detail trả thêm `sampleRequestInfo` để sidebar và header hiển thị
+nhất quán: `requestCode`, `colourCode`, `customerId`, `customerCode`, `customerName`, `saleEmployeeId` và
+`saleName`. `sale*` được lấy từ `SampleRequest.ManagerBy`, không phải `lastSenderName`. Metadata đọc từ
+Sample Request/Customer/Employee hiện tại, luôn lọc cùng company và Sample Request active. Với conversation
+không phải Sample Request, record nguồn inactive hoặc quan hệ nguồn không cùng company, `sampleRequestInfo = null`;
+FE vẫn dùng `displayTitle`/`subject` như trước.
+
+Khi `relatedType = Quotation`, cả list và detail trả thêm `quotationInfo`: `quotationCode`, `customerId`,
+`customerCode`, `customerName`, `saleEmployeeId` và `saleName`. `sale*` lấy từ `Quotation.SaleEmployee`, không phải
+`lastSenderName`. Contract dùng điều kiện company và báo giá active tương tự Sample Request; nếu không đúng điều kiện,
+`quotationInfo = null`. Search `keyword`/`search` cũng áp dụng cho mã/tên khách và Sale phụ trách của cả Sample Request
+và Quotation.
+
+Ví dụ response rút gọn:
+
+```json
+{
+  "displayTitle": "TP_22350 - BH51012C",
+  "sampleRequestInfo": {
+    "requestCode": "TP_22350",
+    "colourCode": "BH51012C",
+    "customerCode": "KH_1234",
+    "customerName": "CÔNG TY ABC",
+    "saleName": "Lê Anh"
+  }
+}
+```
 
 ## Reply Và Attachment
 

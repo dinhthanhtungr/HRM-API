@@ -5,7 +5,10 @@ using HRM.Application.Features.CRM.CustomerCare.Visibility;
 using HRM.Application.Features.CRM.CustomerCare.Services;
 using HRM.Application.Features.CRM.CustomerCare.Commands.CustomerFollowUpTasks;
 using HRM.Application.Features.Attachments.Services;
-using HRM.Application.Commons.Authorization.PLM;
+using HRM.Application.Features.InternalMail.Services;
+using HRM.Application.Commons.Authorization;
+using HRM.Application.Features.PLM.Shared.Authorization;
+using HRM.Application.Features.Pricing.Authorization;
 using HRM.Application.Features.Notifications.Services;
 using HRM.Application.Features.MessageRecipients.Services;
 using HRM.Application.Features.PLM.SampleRequests.Attachments;
@@ -16,11 +19,15 @@ using HRM.Application.Features.PLM.SaleOrders.Services;
 using HRM.Application.Features.PLM.ComplaintReports.Services;
 using HRM.Application.Features.PLM.Boms.Services;
 using HRM.Application.Features.CRM.Quotations.Services;
+using HRM.Application.Features.CRM.Quotations.Services.Queries;
 using HRM.Application.Features.CRM.InteractionSummaries.Services.Automation;
 using HRM.Application.Features.CRM.InteractionSummaries.Services.GenerateCustomerInteractionSummary;
 using HRM.Application.Features.Timeline.Services;
 using HRM.Application.Features.Dispatch.DeliveryOrders;
+using HRM.Application.Features.Warehouse.Services;
 using HRM.Application.Features.Work.MyTasks;
+using HRM.Application.Features.Executive.ProductPricingReview.Services;
+using HRM.Application.Features.Purchasing.PurchaseOrders.Services;
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;
 using QuestPDF.Infrastructure;
@@ -35,8 +42,12 @@ public static class DependencyInjection
 
         services.AddMediatR(typeof(DependencyInjection).Assembly);
         services.AddScoped<IAttachmentService, AttachmentService>();
+        services.AddScoped<InternalConversationSampleRequestInfoResolver>();
+        services.AddScoped<InternalConversationQuotationInfoResolver>();
+        services.AddScoped<IInternalConversationAccessService, InternalConversationAccessService>();
         services.AddScoped<ISampleRequestAttachmentService, SampleRequestAttachmentService>();
         services.AddScoped<ICustomerVisibilityService, CustomerVisibilityService>();
+        services.AddScoped<IWarehouseStockVisibilityService, WarehouseStockVisibilityService>();
         services.AddScoped<CustomerCrmAccessService>();
         services.AddScoped<CustomerInteractionAiSummaryGenerationService>();
         services.AddScoped<
@@ -54,8 +65,13 @@ public static class DependencyInjection
         services.AddScoped<ProductPricingRequestQueryService>();
         services.AddScoped<ProductPricingApprovalNotificationService>();
         services.AddScoped<QuotationPricingApprovalStateService>();
+        services.AddScoped<ProductStandardPriceReviewQueryService>();
         services.AddScoped<IQuotationPricingExpiryReminderProcessor, QuotationPricingExpiryReminderProcessor>();
         services.AddScoped<ProductPricingSourceValidator>();
+        services.AddScoped<ProductPricingReviewReader>();
+        services.AddScoped<ProductPricingReviewMaterialReader>();
+        services.AddScoped<ProductPricingReviewCalculator>();
+        services.AddScoped<ProductPricingReviewWriter>();
         services.AddScoped<FormulaPricingPolicyProvider>();
         services.AddScoped<IFormulaPricingPolicyResolver>(provider =>
             provider.GetRequiredService<FormulaPricingPolicyProvider>());
@@ -74,6 +90,8 @@ public static class DependencyInjection
         services.AddScoped<ICustomerCrmAnalyticsService, CustomerCrmAnalyticsService>();
         services.AddScoped<ICustomerFollowUpTaskDueReminderProcessor, CustomerFollowUpTaskDueReminderProcessor>();
         services.AddScoped<IPLMFieldVisibilityService, PLMFieldVisibilityService>();
+        services.AddScoped<ICurrentUserPermissionService, CurrentUserPermissionService>();
+        services.AddScoped<IPricingVisibilityService, PricingVisibilityService>();
         services.AddScoped<INotificationService, NotificationService>();
         services.AddScoped<IEventLogWriter, EventLogWriter>();
         services.AddScoped<IMessageRecipientResolver, SampleRequestMessageRecipientResolver>();
@@ -92,7 +110,11 @@ public static class DependencyInjection
         services.AddScoped<ComplaintDecisionNotificationService>();
         services.AddScoped<ComplaintReportAccessService>();
         services.AddScoped<BomItemResolver>();
+        services.AddScoped<BomLifecycleService>();
+        services.AddScoped<ManufacturingBomStructureService>();
         services.AddScoped<DeliveryOrderLotInventoryService>();
+        services.AddScoped<PurchaseOrderWorkflowService>();
+        services.AddScoped<PurchaseOrderReceiptReader>();
 
         return services;
     }

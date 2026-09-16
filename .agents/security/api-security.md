@@ -16,6 +16,8 @@ Mỗi API mới hoặc API sửa lại phải check:
 - Có tránh raw SQL nối chuỗi chưa? Nếu raw SQL thì parameterized.
 - Có tránh log token/password/refreshToken/cookie/secret/payload nhạy cảm chưa?
 - Có tránh trả về data của user/công ty khác chưa?
+- Đã tách endpoint access, record scope, business capability và field visibility theo
+  `.agents/security/authorization-capabilities.md` chưa?
 
 ## Multi-Tenant And Current User
 

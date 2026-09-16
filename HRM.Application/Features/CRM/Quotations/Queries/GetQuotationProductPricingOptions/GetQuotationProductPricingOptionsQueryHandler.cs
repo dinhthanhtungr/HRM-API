@@ -3,6 +3,7 @@ using HRM.Application.Abstractions.Persistence.PLM;
 using HRM.Application.Abstractions.Persistence.CRM.CustomerCare;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Models;
+using HRM.Application.Features.Pricing.Authorization;
 using HRM.Application.Commons.Pagination;
 using HRM.Application.Commons.Pricing.Dtos;
 using HRM.Application.Commons.Pricing.Helpers;
@@ -36,19 +37,22 @@ internal sealed class GetQuotationProductPricingOptionsQueryHandler
     private readonly ICurrentUser _currentUser;
     private readonly IMaterialPriceQueryService _materialPriceQueryService;
     private readonly ProductPricingSourceQueryService _sourceQueryService;
+    private readonly IPricingVisibilityService _pricingVisibilityService;
 
     public GetQuotationProductPricingOptionsQueryHandler(
         IPLMReadDbContext dbContext,
         ICRMReadDbContext crmDbContext,
         ICurrentUser currentUser,
         IMaterialPriceQueryService materialPriceQueryService,
-        ProductPricingSourceQueryService sourceQueryService)
+        ProductPricingSourceQueryService sourceQueryService,
+        IPricingVisibilityService pricingVisibilityService)
     {
         _dbContext = dbContext;
         _crmDbContext = crmDbContext;
         _currentUser = currentUser;
         _materialPriceQueryService = materialPriceQueryService;
         _sourceQueryService = sourceQueryService;
+        _pricingVisibilityService = pricingVisibilityService;
     }
 
     public async Task<OperationResult<PagedResult<QuotationProductPricingOptionDto>>> Handle(
@@ -86,8 +90,11 @@ internal sealed class GetQuotationProductPricingOptionsQueryHandler
         }
 
         var requestType = request.NormalizedRequestType;
-        var canViewSensitivePricing = ProductPricingAccessRules.CanManage(_currentUser);
-        var canViewStandardSellingPrice = ProductPricingAccessRules.CanViewWorkbench(_currentUser);
+        var pricingAccess = _pricingVisibilityService.GetAccess();
+        var optionAccess = PricingAccessScopes.ForQuotationPricingOptions(pricingAccess);
+        var canViewSensitivePricing = optionAccess.CanManage;
+        var canViewMaterialPricing = optionAccess.CanViewMaterialCost;
+        var canViewApprovedSellingPrice = optionAccess.CanViewApprovedSellingPrice;
 
         var eligibleRequests = _dbContext.SampleRequests
             .AsNoTracking()
@@ -169,16 +176,16 @@ internal sealed class GetQuotationProductPricingOptionsQueryHandler
             else
             {
                 productQuery = productQuery.Where(product =>
-                    (product.ColourCode ?? string.Empty).Contains(keyword) ||
-                    (product.Name ?? string.Empty).Contains(keyword) ||
+                    EF.Functions.ILike((product.ColourCode ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                    EF.Functions.ILike((product.Name ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
                     eligibleRequests.Any(sampleRequest =>
                         sampleRequest.ProductId == product.ProductId &&
-                        sampleRequest.ExternalId.Contains(keyword)) ||
+                        EF.Functions.ILike(sampleRequest.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter)) ||
                     _dbContext.Formulas.Any(formula =>
                         formula.IsActive &&
                         formula.CompanyId == companyId &&
                         formula.ProductId == product.ProductId &&
-                        (EF.Functions.ILike(formula.ExternalId, $"%{keyword}%") || formula.Name.Contains(keyword))));
+                        (EF.Functions.ILike(formula.ExternalId, $"%{keyword}%") || EF.Functions.ILike(formula.Name, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter))));
             }
         }
 
@@ -265,11 +272,11 @@ internal sealed class GetQuotationProductPricingOptionsQueryHandler
         var pricingVersionsByProduct = pricingVersionRows
             .GroupBy(x => x.ProductId)
             .ToDictionary(x => x.Key, x => x.ToArray());
-        var pricingSourcesByProduct = await _sourceQueryService.LoadAsync(
+        var pricingSourcesByProduct = await _sourceQueryService.LoadVisibleAsync(
             productIds,
             companyId,
             request.NormalizedCurrency,
-            canViewSensitivePricing,
+            optionAccess,
             cancellationToken);
 
         var formulaRows = await _dbContext.Formulas
@@ -288,7 +295,7 @@ internal sealed class GetQuotationProductPricingOptionsQueryHandler
                 Status = x.Status,
                 MaterialCost = x.TotalPrice,
                 IsSelected = x.IsSelect,
-                PricingUpdatedDate = canViewSensitivePricing ? x.UpdatedDate : null
+                PricingUpdatedDate = optionAccess.CanViewHistory ? x.UpdatedDate : null
             })
             .OrderByDescending(x => x.IsSelected)
             .ThenBy(x => x.FormulaExternalId)
@@ -360,18 +367,22 @@ internal sealed class GetQuotationProductPricingOptionsQueryHandler
             })
             .ToList();
 
-        var latestPriceByItem = await _materialPriceQueryService
-            .LoadLatestPricingItemPriceInfoDictAsync(
-                companyId,
-                request.NormalizedCurrency,
-                priceRequests,
-                cancellationToken);
+        Dictionary<PriceItemKey, LatestItemPriceDto> latestPriceByItem = [];
+        if (canViewMaterialPricing)
+        {
+            latestPriceByItem = await _materialPriceQueryService
+                .LoadLatestPricingItemPriceInfoDictAsync(
+                    companyId,
+                    request.NormalizedCurrency,
+                    priceRequests,
+                    cancellationToken);
+        }
 
         IReadOnlyDictionary<Guid, IReadOnlyList<QuotationProductPricingMaterialSupplierDto>>
             supplierPricesByMaterial =
                 new Dictionary<Guid, IReadOnlyList<QuotationProductPricingMaterialSupplierDto>>();
 
-        if (canViewSensitivePricing)
+        if (canViewMaterialPricing)
         {
             var materialIds = materialRows
                 .Where(x => IsMaterial(x.ItemType) && x.ItemId.HasValue)
@@ -424,7 +435,7 @@ internal sealed class GetQuotationProductPricingOptionsQueryHandler
         }
 
         IReadOnlyDictionary<Guid, IReadOnlyList<QuotationProductPricingMaterialDto>>
-            materialsByFormula = canViewSensitivePricing
+            materialsByFormula = canViewMaterialPricing
                 ? materialRows
                     .GroupBy(x => x.FormulaId)
                     .ToDictionary(
@@ -452,7 +463,7 @@ internal sealed class GetQuotationProductPricingOptionsQueryHandler
                                 source.SourceType == ProductPricingSourceType.Formula &&
                                 source.SourceId == formula.FormulaId),
                             materialsByFormula.GetValueOrDefault(formula.FormulaId) ?? [],
-                            canViewSensitivePricing))
+                            optionAccess))
                         .ToList();
                 });
 
@@ -464,11 +475,13 @@ internal sealed class GetQuotationProductPricingOptionsQueryHandler
                 var versions = pricingVersionsByProduct.GetValueOrDefault(product.ProductId) ?? [];
                 var currentPricing = canViewSensitivePricing
                     ? versions.OrderByDescending(x => x.Version).FirstOrDefault()
-                    : versions
+                    : canViewApprovedSellingPrice
+                        ? versions
                         .Where(x => x.Status == ProductPricingStatus.Approved)
                         .OrderByDescending(x => x.Version)
-                        .FirstOrDefault();
-                var approvedPricing = canViewStandardSellingPrice
+                        .FirstOrDefault()
+                        : null;
+                var approvedPricing = canViewApprovedSellingPrice
                     ? versions
                         .Where(x =>
                             x.Status == ProductPricingStatus.Approved &&
@@ -476,7 +489,7 @@ internal sealed class GetQuotationProductPricingOptionsQueryHandler
                         .OrderByDescending(x => x.Version)
                         .FirstOrDefault()
                     : null;
-                var systemCalculatedPrice = canViewStandardSellingPrice
+                var systemCalculatedPrice = optionAccess.CanViewSystemCalculatedPrice
                     ? sources
                         .Where(x => x.IsEligible && x.StandardSellingPrice.HasValue)
                         .Select(x => x.StandardSellingPrice)
@@ -484,9 +497,7 @@ internal sealed class GetQuotationProductPricingOptionsQueryHandler
                     : null;
                 var effectiveStandardSellingPrice = approvedPricing?.StandardSellingPrice ??
                     systemCalculatedPrice;
-                var effectiveStandardSellingPriceSource = !canViewStandardSellingPrice
-                    ? QuotationProductStandardSellingPriceSource.Unavailable
-                    : approvedPricing is not null
+                var effectiveStandardSellingPriceSource = approvedPricing is not null
                         ? QuotationProductStandardSellingPriceSource.ApprovedPricingVersion
                         : systemCalculatedPrice.HasValue
                             ? QuotationProductStandardSellingPriceSource.SystemCalculated
@@ -515,6 +526,7 @@ internal sealed class GetQuotationProductPricingOptionsQueryHandler
                             currentPricing,
                             canViewSensitivePricing),
                     StandardSellingPrice = effectiveStandardSellingPrice,
+                    PublisherNote = approvedPricing?.PublisherNote,
                     StandardSellingPriceSource = effectiveStandardSellingPriceSource,
                     ApprovedStandardSellingPrice = approvedPricing?.StandardSellingPrice,
                     ApprovedStandardSellingPriceEffectiveFrom = approvedPricing?.ApprovedAt,
@@ -687,6 +699,7 @@ internal sealed class GetQuotationProductPricingOptionsQueryHandler
             LatestPriceSource = hasPrice
                 ? latestPrice!.PriceSource
                 : LatestPriceSourceType.Unknown,
+            PriceCalculation = hasPrice ? latestPrice?.Calculation : null,
             SupplierPrices = IsMaterial(material.ItemType) && material.ItemId.HasValue
                 ? supplierPricesByMaterial.GetValueOrDefault(material.ItemId.Value) ?? []
                 : []
@@ -697,23 +710,8 @@ internal sealed class GetQuotationProductPricingOptionsQueryHandler
         PricingFormula formula,
         ProductPricingSourceOptionDto? source,
         IReadOnlyList<QuotationProductPricingMaterialDto> materials,
-        bool canViewSensitivePricing)
+        PricingAccessDecision access)
     {
-        if (!canViewSensitivePricing)
-        {
-            return new QuotationProductPricingFormulaDto
-            {
-                PricingStatus = source?.PricingStatus ?? FormulaPricingPolicyRules.PricingPolicyMissing,
-                FormulaId = formula.FormulaId,
-                FormulaExternalId = formula.FormulaExternalId,
-                FormulaName = formula.FormulaName,
-                Status = formula.Status,
-                IsCustomerSelected = formula.IsSelected,
-                StandardSellingPrice = source?.StandardSellingPrice,
-                SuggestedPriceTiers = source?.PriceTierTemplates ?? []
-            };
-        }
-
         return new QuotationProductPricingFormulaDto
         {
             PricingStatus = source?.PricingStatus ?? FormulaPricingPolicyRules.PricingPolicyMissing,
@@ -724,17 +722,27 @@ internal sealed class GetQuotationProductPricingOptionsQueryHandler
             FormulaName = formula.FormulaName,
             Status = formula.Status,
             IsCustomerSelected = formula.IsSelected,
-            MaterialCost = formula.MaterialCost,
-            RealtimeMaterialCost = source?.CurrentMaterialCost,
-            IsRealtimeMaterialCostComplete = source?.IsCurrentMaterialCostComplete,
-            MissingMaterialPriceCount = source?.MissingMaterialPriceCount,
-            ManufacturingCost = source?.ManufacturingCost,
-            StandardSellingPrice = source?.StandardSellingPrice,
-            ProfitMarginRate = source?.ProfitMarginRate,
-            PricingUpdatedDate = formula.PricingUpdatedDate,
+            MaterialCost = access.CanViewMaterialCost ? formula.MaterialCost : null,
+            RealtimeMaterialCost = access.CanViewMaterialCost ? source?.CurrentMaterialCost : null,
+            IsRealtimeMaterialCostComplete = access.CanViewMaterialCost
+                ? source?.IsCurrentMaterialCostComplete
+                : null,
+            MissingMaterialPriceCount = access.CanViewMaterialCost
+                ? source?.MissingMaterialPriceCount
+                : null,
+            ManufacturingCost = access.CanViewManufacturingCost
+                ? source?.ManufacturingCost
+                : null,
+            StandardSellingPrice = access.CanViewSystemCalculatedPrice
+                ? source?.StandardSellingPrice
+                : null,
+            ProfitMarginRate = access.CanViewMargin ? source?.ProfitMarginRate : null,
+            PricingUpdatedDate = access.CanViewHistory ? formula.PricingUpdatedDate : null,
             Pricing = source?.Pricing,
-            SuggestedPriceTiers = source?.PriceTierTemplates ?? [],
-            Materials = materials
+            SuggestedPriceTiers = access.CanViewSystemCalculatedPrice
+                ? source?.PriceTierTemplates ?? []
+                : [],
+            Materials = access.CanViewMaterialCost ? materials : []
         };
     }
 

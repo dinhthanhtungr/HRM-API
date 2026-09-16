@@ -8,7 +8,9 @@ public enum ProductPricingWorkbenchView
     NeedsPricing = 0,
     Draft = 10,
     Approved = 20,
-    All = 30
+    All = 30,
+    MaterialCostChanged = 40,
+    ProductionMaterialCostChanged = 50
 }
 
 public sealed class ProductPricingWorkbenchItemDto
@@ -31,6 +33,11 @@ public sealed class ProductPricingWorkbenchItemDto
     public ProductPricingHealthStatus PricingHealthStatus { get; init; }
     public bool RequiresPricingAction { get; init; }
     public DateTime? PricingReviewDueDate { get; init; }
+
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public ProductStandardPriceState StandardPriceState { get; init; }
+    public bool HasFormulaConfirmationPending { get; init; }
+    public bool IsPricingReviewExpired { get; init; }
 
     public int WaitingQuotationCount { get; init; }
     public DateTime? LatestRequestedAt { get; init; }
@@ -64,6 +71,10 @@ public sealed class ProductPricingWorkbenchItemDto
     /// Chỉ fallback sang giá realtime khi chưa có version giá nào được lưu.
     /// </summary>
     public decimal? StandardSellingPrice { get; init; }
+    /// <summary>
+    /// Ghi chú công khai của version giá đã duyệt để Sale sử dụng cùng giá chuẩn.
+    /// </summary>
+    public string? PublisherNote { get; init; }
     public decimal? RealtimeStandardSellingPrice { get; init; }
     public decimal? StandardSellingPriceDifference { get; init; }
     public decimal? StandardSellingPriceDifferencePercent { get; init; }

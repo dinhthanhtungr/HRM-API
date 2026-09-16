@@ -78,13 +78,13 @@ internal sealed class GetCustomerTransfersQueryHandler
         if (keyword is not null)
         {
             query = query.Where(log =>
-                (log.Note ?? string.Empty).Contains(keyword) ||
-                log.FromEmployee.FullName.Contains(keyword) ||
-                log.ToEmployee.FullName.Contains(keyword) ||
+                EF.Functions.ILike((log.Note ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike(log.FromEmployee.FullName, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike(log.ToEmployee.FullName, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
                 log.DetailCustomerTransfers.Any(detail =>
                     visibleCustomerIds.Contains(detail.CustomerId) &&
-                    (detail.Customer.CustomerName.Contains(keyword) ||
-                     detail.Customer.ExternalId.Contains(keyword))));
+                    (EF.Functions.ILike(detail.Customer.CustomerName, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                     EF.Functions.ILike(detail.Customer.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter))));
         }
 
         var totalCount = await query.CountAsync(cancellationToken);

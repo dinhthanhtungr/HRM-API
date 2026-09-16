@@ -37,7 +37,7 @@ internal sealed class GetBomVersionQueryHandler
             .Where(x =>
                 x.BomVersionId == request.BomVersionId &&
                 x.BomDefinition.CompanyId == companyId &&
-                x.BomDefinition.BomType == BomType.Engineering &&
+                (!request.ExpectedBomType.HasValue || x.BomDefinition.BomType == request.ExpectedBomType) &&
                 x.BomDefinition.IsActive)
             .Select(x => new BomVersionDto
             {
@@ -49,12 +49,14 @@ internal sealed class GetBomVersionQueryHandler
                 BomType = x.BomDefinition.BomType,
                 VersionNo = x.VersionNo,
                 Status = x.Status,
+                SourceEngineeringBomVersionId = x.SourceEngineeringBomVersionId,
                 BaseOutputQuantity = x.BaseOutputQuantity,
                 OutputUnit = x.OutputUnit,
                 EffectiveFrom = x.EffectiveFrom,
                 EffectiveTo = x.EffectiveTo,
                 ChangeReason = x.ChangeReason,
                 Note = x.Note,
+                ReleasedDate = x.ReleasedDate,
                 Items = x.Items
                     .OrderBy(item => item.LineNo)
                     .Select(item => new BomItemDto
@@ -69,6 +71,40 @@ internal sealed class GetBomVersionQueryHandler
                         ItemCode = item.MaterialExternalIdSnapshot,
                         ItemName = item.MaterialNameSnapshot,
                         Note = item.Note
+                    })
+                    .ToList(),
+                Stages = x.ManufacturingStages
+                    .OrderBy(stage => stage.SequenceNo)
+                    .Select(stage => new ManufacturingBomStageDto
+                    {
+                        ManufacturingBomStageId = stage.ManufacturingBomStageId,
+                        Code = stage.Code,
+                        Name = stage.Name,
+                        SequenceNo = stage.SequenceNo,
+                        Description = stage.Description,
+                        IsActive = stage.IsActive
+                    })
+                    .ToList(),
+                LossRules = x.LossRules
+                    .OrderBy(rule => rule.SequenceNo)
+                    .Select(rule => new ManufacturingBomLossRuleDto
+                    {
+                        ManufacturingBomLossRuleId = rule.ManufacturingBomLossRuleId,
+                        ManufacturingLossTypeId = rule.ManufacturingLossTypeId,
+                        LossTypeCode = rule.LossType.Code,
+                        LossTypeName = rule.LossType.Name,
+                        ItemLineNo = rule.BomVersionItem != null ? rule.BomVersionItem.LineNo : null,
+                        StageCode = rule.ManufacturingStage != null ? rule.ManufacturingStage.Code : null,
+                        CalculationMethod = rule.CalculationMethod,
+                        RatePercent = rule.RatePercent,
+                        FixedQuantityKg = rule.FixedQuantityKg,
+                        QuantityPerEventKg = rule.QuantityPerEventKg,
+                        DefaultEventCount = rule.DefaultEventCount,
+                        SequenceNo = rule.SequenceNo,
+                        IsRecoverable = rule.IsRecoverable,
+                        IncludeInMaterialRequest = rule.IncludeInMaterialRequest,
+                        IsActive = rule.IsActive,
+                        Note = rule.Note
                     })
                     .ToList()
             })

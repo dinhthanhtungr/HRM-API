@@ -63,11 +63,11 @@ internal sealed class GetSampleRequestLookupQueryHandler
                 PLMCustomerRules.IsInternalCustomerExternalId(saleOrderCustomerExternalId));
         }
 
-        // KH_VIETAUS chỉ tham gia kết quả khi Sale chủ động tìm keyword,
-        // đồng nhất với endpoint Sample Request Summary.
+        // KH_VIETAUS chỉ tham gia kết quả khi người dùng chủ động tìm keyword.
+        // Mode Sale Order vẫn áp giới hạn status riêng ở bên dưới.
         var visibilityScope = canUseAllCustomersFormula
             ? scope with { HasFullCustomerView = true, CanViewInternalCustomer = true }
-            : request.ForSaleOrder && request.NormalizedKeyword is not null
+            : request.NormalizedKeyword is not null
                 ? scope with { CanViewInternalCustomer = true }
                 : scope;
 
@@ -117,6 +117,12 @@ internal sealed class GetSampleRequestLookupQueryHandler
             return Array.Empty<SampleRequestLookupItemDto>();
         }
 
+        if (request.NormalizedKeyword is null)
+        {
+            query = query.Where(x =>
+                x.Customer.ExternalId != InternalCustomerRules.InternalCustomerExternalId);
+        }
+
         if (request.SampleRequestId is { } sampleRequestId && sampleRequestId != Guid.Empty)
         {
             query = query.Where(x => x.SampleRequestId == sampleRequestId);
@@ -143,20 +149,23 @@ internal sealed class GetSampleRequestLookupQueryHandler
         if (!string.IsNullOrWhiteSpace(request.NormalizedKeyword))
         {
             var keyword = request.NormalizedKeyword;
+            var keywordPattern = PostgresSearchPattern.ContainsLiteral(keyword);
 
             query = query.Where(x =>
-                x.ExternalId.Contains(keyword) ||
-                x.Customer.ExternalId.Contains(keyword) ||
-                x.Customer.CustomerName.Contains(keyword) ||
-                (x.Product.ColourCode ?? string.Empty).Contains(keyword) ||
-                (x.Product.Name ?? string.Empty).Contains(keyword) ||
-                (x.Product.Code ?? string.Empty).Contains(keyword) ||
-                (x.Formula != null && EF.Functions.ILike(x.Formula.ExternalId, $"%{keyword}%")));
+                EF.Functions.ILike(x.ExternalId, keywordPattern, PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike(x.Customer.ExternalId, keywordPattern, PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike(x.Customer.CustomerName, keywordPattern, PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike(x.Product.ColourCode ?? string.Empty, keywordPattern, PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike(x.Product.Name ?? string.Empty, keywordPattern, PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike(x.Product.Code ?? string.Empty, keywordPattern, PostgresSearchPattern.EscapeCharacter) ||
+                (x.Formula != null && EF.Functions.ILike(x.Formula.ExternalId, keywordPattern, PostgresSearchPattern.EscapeCharacter)));
 
         }
 
         return await query
-            .OrderByDescending(x => x.CreatedDate)
+            .OrderBy(x =>
+                x.Customer.ExternalId == InternalCustomerRules.InternalCustomerExternalId)
+            .ThenByDescending(x => x.CreatedDate)
             .ThenByDescending(x => x.SampleRequestId)
             .Take(request.NormalizedTake)
             .Select(x => new SampleRequestLookupItemDto

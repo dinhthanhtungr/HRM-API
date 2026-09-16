@@ -24,6 +24,7 @@ public sealed class UpdateMaterialSupplierPriceResultDto
     public string? Currency { get; init; }
 
     public Guid PriceHistoryId { get; init; }
+    public bool PriceChanged { get; init; }
     public DateTime UpdatedDate { get; init; }
     public Guid UpdatedByEmployeeId { get; init; }
 }

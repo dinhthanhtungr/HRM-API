@@ -16,6 +16,18 @@ public sealed class InternalConversationListItemDto
     /// </summary>
     public string DisplayTitle { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Context hien thi tu Sample Request khi conversation lien ket voi yeu cau phoi mau;
+    /// null voi cac conversation loai khac hoac khi record nguon khong con duoc phep hien thi.
+    /// </summary>
+    public SampleRequestConversationInfoDto? SampleRequestInfo { get; set; }
+
+    /// <summary>
+    /// Context hiển thị từ báo giá khi conversation liên kết với báo giá;
+    /// null với các conversation loại khác hoặc khi record nguồn không còn được phép hiển thị.
+    /// </summary>
+    public QuotationConversationInfoDto? QuotationInfo { get; set; }
+
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public InternalMailRelatedType? RelatedType { get; set; }
 
@@ -36,6 +48,18 @@ public sealed class InternalConversationDetailDto
 {
     public Guid ConversationId { get; set; }
     public string Subject { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Context hien thi tu Sample Request khi conversation lien ket voi yeu cau phoi mau;
+    /// null voi cac conversation loai khac hoac khi record nguon khong con duoc phep hien thi.
+    /// </summary>
+    public SampleRequestConversationInfoDto? SampleRequestInfo { get; set; }
+
+    /// <summary>
+    /// Context hiển thị từ báo giá khi conversation liên kết với báo giá;
+    /// null với các conversation loại khác hoặc khi record nguồn không còn được phép hiển thị.
+    /// </summary>
+    public QuotationConversationInfoDto? QuotationInfo { get; set; }
 
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public InternalMailRelatedType? RelatedType { get; set; }
@@ -62,4 +86,35 @@ public sealed class InternalConversationParticipantDto
     public InternalConversationParticipantRole Role { get; set; }
 
     public DateTime JoinedAt { get; set; }
+}
+
+/// <summary>
+/// Metadata hien thi dong bo cho conversation bam vao Sample Request.
+/// Sale la <c>SampleRequest.ManagerBy</c>, khong phai nguoi gui message cuoi.
+/// </summary>
+public sealed class SampleRequestConversationInfoDto
+{
+    public Guid SampleRequestId { get; set; }
+    public string RequestCode { get; set; } = string.Empty;
+    public string? ColourCode { get; set; }
+    public Guid CustomerId { get; set; }
+    public string CustomerCode { get; set; } = string.Empty;
+    public string CustomerName { get; set; } = string.Empty;
+    public Guid SaleEmployeeId { get; set; }
+    public string SaleName { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Metadata hiển thị đồng bộ cho conversation bám vào báo giá.
+/// Sale là <c>Quotation.SaleEmployee</c>, không phải người gửi message cuối.
+/// </summary>
+public sealed class QuotationConversationInfoDto
+{
+    public Guid QuotationId { get; set; }
+    public string QuotationCode { get; set; } = string.Empty;
+    public Guid CustomerId { get; set; }
+    public string CustomerCode { get; set; } = string.Empty;
+    public string CustomerName { get; set; } = string.Empty;
+    public Guid SaleEmployeeId { get; set; }
+    public string SaleName { get; set; } = string.Empty;
 }

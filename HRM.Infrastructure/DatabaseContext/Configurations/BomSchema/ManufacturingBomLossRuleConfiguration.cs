@@ -23,6 +23,9 @@ public class ManufacturingBomLossRuleConfiguration : IEntityTypeConfiguration<Ma
         entity.Property(x => x.ManufacturingLossTypeId).HasColumnName("manufacturing_loss_type_id").IsRequired();
         entity.Property(x => x.BomVersionItemId).HasColumnName("bom_version_item_id");
         entity.Property(x => x.ManufacturingBomStageId).HasColumnName("manufacturing_bom_stage_id");
+        entity.Property(x => x.ManufacturingBomStageTransitionId).HasColumnName("manufacturing_bom_stage_transition_id");
+        entity.Property(x => x.Scope).HasColumnName("scope").HasConversion<string>().HasColumnType("citext").HasMaxLength(32).IsRequired();
+        entity.Property(x => x.AllocationMethod).HasColumnName("allocation_method").HasConversion<string>().HasColumnType("citext").HasMaxLength(32).IsRequired();
         entity.Property(x => x.CalculationMethod).HasColumnName("calculation_method")
             .HasConversion<string>().HasColumnType("citext").HasMaxLength(64).IsRequired();
         entity.Property(x => x.RatePercent).HasColumnName("rate_percent").HasPrecision(9, 6);
@@ -40,6 +43,7 @@ public class ManufacturingBomLossRuleConfiguration : IEntityTypeConfiguration<Ma
         entity.HasIndex(x => x.ManufacturingLossTypeId).HasDatabaseName("ix_manufacturing_bom_loss_rules_type");
         entity.HasIndex(x => x.BomVersionItemId).HasDatabaseName("ix_manufacturing_bom_loss_rules_item");
         entity.HasIndex(x => x.ManufacturingBomStageId).HasDatabaseName("ix_manufacturing_bom_loss_rules_stage");
+        entity.HasIndex(x => x.ManufacturingBomStageTransitionId).HasDatabaseName("ix_manufacturing_bom_loss_rules_transition");
         entity.HasIndex(x => new { x.BomVersionId, x.IsActive })
             .HasDatabaseName("ix_manufacturing_bom_loss_rules_version_active");
 
@@ -51,5 +55,7 @@ public class ManufacturingBomLossRuleConfiguration : IEntityTypeConfiguration<Ma
             .OnDelete(DeleteBehavior.Restrict).HasConstraintName("fk_manufacturing_bom_loss_rules_item");
         entity.HasOne(x => x.ManufacturingStage).WithMany(x => x.LossRules).HasForeignKey(x => x.ManufacturingBomStageId)
             .OnDelete(DeleteBehavior.Restrict).HasConstraintName("fk_manufacturing_bom_loss_rules_stage");
+        entity.HasOne(x => x.ManufacturingStageTransition).WithMany(x => x.LossRules).HasForeignKey(x => x.ManufacturingBomStageTransitionId)
+            .OnDelete(DeleteBehavior.Restrict).HasConstraintName("fk_manufacturing_bom_loss_rules_transition");
     }
 }

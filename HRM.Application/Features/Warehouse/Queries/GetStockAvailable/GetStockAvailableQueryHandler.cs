@@ -4,6 +4,7 @@ using HRM.Application.Commons.Models;
 using HRM.Application.Commons.Pagination;
 using HRM.Application.Features.Warehouse.Dtos;
 using HRM.Application.Features.Warehouse.Helpers.Publics;
+using HRM.Application.Features.Warehouse.Services;
 using HRM.Domain.Entities.WarehouseSchema;
 using HRM.Domain.Enums.WareHouses;
 using MediatR;
@@ -16,11 +17,16 @@ public sealed class GetStockAvailableQueryHandler
 {
     private readonly IWarehouseReadDbContext _dbContext;
     private readonly ICurrentUser _currentUser;
+    private readonly IWarehouseStockVisibilityService _stockVisibilityService;
 
-    public GetStockAvailableQueryHandler(IWarehouseReadDbContext dbContext, ICurrentUser currentUser)
+    public GetStockAvailableQueryHandler(
+        IWarehouseReadDbContext dbContext,
+        ICurrentUser currentUser,
+        IWarehouseStockVisibilityService stockVisibilityService)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
+        _stockVisibilityService = stockVisibilityService;
     }
 
     public async Task<OperationResult<PagedResult<StockAvailableDto>>> Handle(
@@ -46,13 +52,19 @@ public sealed class GetStockAvailableQueryHandler
             new PagedResult<StockAvailableDto>(pagedItems, totalCount, pageNumber, pageSize));
     }
 
-    private IQueryable<WarehouseShelfStock> BuildShelfStockQuery(GetStockAvailableQuery request, Guid companyId)
+    private async Task<IQueryable<WarehouseShelfStock>> BuildShelfStockQueryAsync(
+        GetStockAvailableQuery request,
+        Guid companyId,
+        CancellationToken cancellationToken)
     {
         var shelfQuery = WarehouseStockQueryHelper.ActiveShelfStocks(
             _dbContext.WarehouseShelfStocks.AsNoTracking(),
             companyId);
 
         var keyword = request.NormalizedKeyword;
+        shelfQuery = await _stockVisibilityService.ApplyAsync(
+            shelfQuery, companyId, keyword, cancellationToken);
+
         if (!string.IsNullOrWhiteSpace(keyword))
         {
             var sampleProductColourCodes =
@@ -61,7 +73,7 @@ public sealed class GetStockAvailableQueryHandler
                     on sampleRequest.ProductId equals product.ProductId
                 where sampleRequest.CompanyId == companyId
                       && sampleRequest.IsActive
-                      && sampleRequest.ExternalId.Contains(keyword)
+                      && EF.Functions.ILike(sampleRequest.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter)
                       && product.CompanyId == companyId
                       && product.ColourCode != null
                       && product.ColourCode != string.Empty
@@ -89,11 +101,11 @@ public sealed class GetStockAvailableQueryHandler
                 join product in _dbContext.Products.AsNoTracking().Where(x => x.CompanyId == companyId)
                     on stock.Code equals product.ColourCode into productJoin
                 from product in productJoin.DefaultIfEmpty()
-                where (stock.Code ?? string.Empty).Contains(keyword)
-                      || (stock.LotNo ?? string.Empty).Contains(keyword)
-                      || (stock.LotKey ?? string.Empty).Contains(keyword)
-                      || (material.Name ?? string.Empty).Contains(keyword)
-                      || (product.Name ?? string.Empty).Contains(keyword)
+                where EF.Functions.ILike((stock.Code ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter)
+                      || EF.Functions.ILike((stock.LotNo ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter)
+                      || EF.Functions.ILike((stock.LotKey ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter)
+                      || EF.Functions.ILike((material.Name ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter)
+                      || EF.Functions.ILike((product.Name ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter)
                       || sampleProductColourCodes.Contains(stock.Code)
                       || formulaProductColourCodes.Contains(stock.Code)
                 select stock;
@@ -107,12 +119,13 @@ public sealed class GetStockAvailableQueryHandler
         return shelfQuery;
     }
 
+
     private async Task<List<StockAvailableDto>> BuildStockAvailableItemsAsync(
         GetStockAvailableQuery request,
         Guid companyId,
         CancellationToken cancellationToken)
     {
-        var shelfQuery = BuildShelfStockQuery(request, companyId);
+        var shelfQuery = await BuildShelfStockQueryAsync(request, companyId, cancellationToken);
 
         var items = await (
             from stock in shelfQuery

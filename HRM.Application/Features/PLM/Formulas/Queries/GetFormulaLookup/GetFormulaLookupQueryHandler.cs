@@ -35,7 +35,7 @@ internal sealed class GetFormulaLookupQueryHandler
         var productId = await ResolveProductIdAsync(request, companyId, cancellationToken);
         //var colorCode = await ResolveColorCodeAsync(productId, companyId, cancellationToken);
         var includeVu = request.SourceType is null or FormulaSource.Both or FormulaSource.FromVU;
-        var includeVa = request.SourceType is null or FormulaSource.Both or FormulaSource.FromVA;
+        var includeVa = request.SourceType is null or FormulaSource.Both or FormulaSource.FromVA or FormulaSource.FromBom;
 
         if (!includeVu && !includeVa)
         {
@@ -53,12 +53,25 @@ internal sealed class GetFormulaLookupQueryHandler
             .AsNoTracking()
             .Where(x =>
                 includeVa &&
-                x.IsActive);
+                x.IsActive &&
+                x.CompanyId == companyId);
+
+        if (request.SourceType == FormulaSource.FromBom)
+        {
+            vaFormulas = vaFormulas.Where(x => x.SourceBomVersionId.HasValue);
+        }
+        else if (request.SourceType == FormulaSource.FromVA)
+        {
+            vaFormulas = vaFormulas.Where(x => !x.SourceBomVersionId.HasValue);
+        }
 
         if (productId is { } scopedProductId)
         {
             vuFormulas = vuFormulas.Where(x => x.ProductId == scopedProductId);
             vaFormulas = vaFormulas.Where(x =>
+                (x.SourceBomVersion != null &&
+                 x.SourceBomVersion.BomDefinition.ProductId == scopedProductId &&
+                 x.SourceBomVersion.BomDefinition.CompanyId == companyId) ||
                 (x.SourceVUFormula != null &&
                  x.SourceVUFormula.ProductId == scopedProductId &&
                  x.SourceVUFormula.Product.CompanyId == companyId) ||
@@ -70,12 +83,6 @@ internal sealed class GetFormulaLookupQueryHandler
                     s.MfgProductionOrder.Product.CompanyId == companyId &&
                     s.ManufacturingFormulaId.HasValue));
         }
-        else
-        {
-            // Không có Product để xác định tenant của dữ liệu legacy thì chỉ lấy VA có company id khớp token.
-            vaFormulas = vaFormulas.Where(x => x.CompanyId == companyId);
-        }
-
         var statuses = NormalizeStatuses(request);
         if (statuses.Length > 0)
         {
@@ -87,35 +94,42 @@ internal sealed class GetFormulaLookupQueryHandler
         {
             vuFormulas = vuFormulas.Where(x =>
                 EF.Functions.ILike(x.ExternalId, $"%{keyword}%") ||
-                x.Name.Contains(keyword) ||
-                (x.Product.Name ?? string.Empty).Contains(keyword) ||
-                (x.Product.ColourCode ?? string.Empty).Contains(keyword) ||
+                EF.Functions.ILike(x.Name, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike((x.Product.Name ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike((x.Product.ColourCode ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
                 x.Product.SampleRequests.Any(sampleRequest =>
                     sampleRequest.IsActive &&
                     sampleRequest.CompanyId == companyId &&
-                    sampleRequest.ExternalId.Contains(keyword)) ||
-                (x.Note ?? string.Empty).Contains(keyword));
+                    EF.Functions.ILike(sampleRequest.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter)) ||
+                EF.Functions.ILike((x.Note ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter));
 
             vaFormulas = vaFormulas.Where(x =>
                 EF.Functions.ILike(x.ExternalId, $"%{keyword}%") ||
-                x.Name.Contains(keyword) ||
+                EF.Functions.ILike(x.Name, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                (x.SourceBomVersion != null &&
+                 (EF.Functions.ILike((x.SourceBomVersion.BomDefinition.Product.Name ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                  EF.Functions.ILike((x.SourceBomVersion.BomDefinition.Product.ColourCode ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                  x.SourceBomVersion.BomDefinition.Product.SampleRequests.Any(sampleRequest =>
+                      sampleRequest.IsActive &&
+                      sampleRequest.CompanyId == companyId &&
+                      EF.Functions.ILike(sampleRequest.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter)))) ||
                 x.ProductionSelectVersions.Any(version =>
                     version.MfgProductionOrder != null &&
                     version.MfgProductionOrder.Product != null &&
                     (
-                        (version.MfgProductionOrder.Product.Name ?? string.Empty).Contains(keyword) ||
-                        (version.MfgProductionOrder.Product.ColourCode ?? string.Empty).Contains(keyword) ||
-                        (version.MfgProductionOrder.ColorName ?? string.Empty).Contains(keyword) ||
+                        EF.Functions.ILike((version.MfgProductionOrder.Product.Name ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                        EF.Functions.ILike((version.MfgProductionOrder.Product.ColourCode ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                        EF.Functions.ILike((version.MfgProductionOrder.ColorName ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
                         version.MfgProductionOrder.Product.SampleRequests.Any(sampleRequest =>
                             sampleRequest.IsActive &&
                             sampleRequest.CompanyId == companyId &&
-                            sampleRequest.ExternalId.Contains(keyword)) ||
+                            EF.Functions.ILike(sampleRequest.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter)) ||
                         version.MfgProductionOrder.Product.Formulas.Any(formula =>
                             formula.IsActive &&
                             formula.CompanyId == companyId &&
                             EF.Functions.ILike(formula.ExternalId, $"%{keyword}%"))
                     )) ||
-                (x.Note ?? string.Empty).Contains(keyword));
+                EF.Functions.ILike((x.Note ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter));
         }
 
         var vuRows = vuFormulas.Select(x => new FormulaLookupRow
@@ -135,7 +149,9 @@ internal sealed class GetFormulaLookupQueryHandler
         {
             FormulaId = x.ManufacturingFormulaId,
             ColorCode =
-                    x.SourceVUFormula != null
+                    x.SourceBomVersion != null
+                        ? x.SourceBomVersion.BomDefinition.Product.ColourCode ?? string.Empty
+                        : x.SourceVUFormula != null
                         ? x.SourceVUFormula.Product.ColourCode ?? string.Empty
                         : x.ProductStandardFormulas
                             .Where(s => s.ValidTo == null)
@@ -148,7 +164,7 @@ internal sealed class GetFormulaLookupQueryHandler
                             .Select(v => v.MfgProductionOrder.Product.ColourCode)
                             .FirstOrDefault()
                         ?? string.Empty,
-            SourceType = FormulaSource.FromVA,
+            SourceType = x.SourceBomVersionId.HasValue ? FormulaSource.FromBom : FormulaSource.FromVA,
             ExternalId = x.ExternalId,
             Name = x.Name,
             Status = x.Status,

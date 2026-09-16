@@ -14,5 +14,11 @@ public enum ProductPricingHealthStatus
     RepricingRequired = 60,
     NoEligibleSource = 70,
     SourceNoLongerEligible = 80,
-    PricingPolicyMissing = 90
+    PricingPolicyMissing = 90,
+    /// <summary>
+    /// A previously approved price remains visible, but an explicit Executive
+    /// confirmation is required because Lab confirmed a formula afterwards or
+    /// the periodic pricing-review date has passed.
+    /// </summary>
+    PendingReapproval = 100
 }

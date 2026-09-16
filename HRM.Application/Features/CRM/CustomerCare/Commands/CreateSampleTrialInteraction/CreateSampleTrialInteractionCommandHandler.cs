@@ -482,8 +482,12 @@ internal sealed class CreateSampleTrialInteractionCommandHandler
             Message = $"Phản hồi khách hàng cho yêu cầu phối mẫu {sampleRequestExternalId}, lần thử {trial.TrialNo}. " +
                       $"Công thức: {formulaExternalId}. Trạng thái: {customerReplyStatus}. {outcome}" +
                       (string.IsNullOrWhiteSpace(detail) ? string.Empty : $" Ghi chú: {detail}"),
-            TopicOverride = TopicNotifications.SampleRequestCustomerFeedbackRecorded,
-            TitleOverride = "Phản hồi khách hàng về mẫu đã gửi"
+            TopicOverride = trial.Status == SampleTrialStatus.Cancelled
+                ? TopicNotifications.SampleRequestCancelled
+                : TopicNotifications.SampleRequestCustomerFeedbackRecorded,
+            TitleOverride = trial.Status == SampleTrialStatus.Cancelled
+                ? "Yêu cầu phối mẫu đã hủy"
+                : "Phản hồi khách hàng về mẫu đã gửi"
         }, cancellationToken);
     }
 

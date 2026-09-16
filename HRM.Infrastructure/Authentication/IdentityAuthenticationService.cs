@@ -1,5 +1,6 @@
 using HRM.Application.Abstractions.Authentication;
 using HRM.Application.Features.Auth.Contracts;
+using HRM.Application.Commons.Authorization;
 using HRM.Domain.Identity;
 using HRM.Infrastructure.DatabaseContext.ApplicationDbs;
 using Microsoft.AspNetCore.Identity;
@@ -50,7 +51,7 @@ public sealed class IdentityAuthenticationService(
             return null;
         }
 
-        var roles = await GetActiveRolesAsync(user, cancellationToken);
+        var authorization = await GetAuthorizationAsync(user, cancellationToken);
 
         return new AuthenticatedUserDto
         {
@@ -59,7 +60,9 @@ public sealed class IdentityAuthenticationService(
             Email = user.Email,
             EmployeeId = user.EmployeeId,
             CompanyId = employeeAccess?.CompanyId,
-            Roles = roles.ToArray()
+            Roles = authorization.Roles,
+            Permissions = authorization.Permissions,
+            UsesDatabasePermissions = authorization.UsesDatabasePermissions
         };
     }
 
@@ -109,7 +112,7 @@ public sealed class IdentityAuthenticationService(
                 return null;
             }
 
-            var roles = await GetActiveRolesAsync(user, cancellationToken);
+            var authorization = await GetAuthorizationAsync(user, cancellationToken);
 
             return new AuthenticatedUserDto
             {
@@ -118,9 +121,40 @@ public sealed class IdentityAuthenticationService(
                 Email = user.Email,
                 EmployeeId = user.EmployeeId,
                 CompanyId = employeeAccess?.CompanyId,
-                Roles = roles
+                Roles = authorization.Roles,
+                Permissions = authorization.Permissions,
+                UsesDatabasePermissions = authorization.UsesDatabasePermissions
             };
         }
+
+    public async Task<bool> RotateRefreshTokenAsync(
+        Guid userId,
+        string expectedRefreshToken,
+        string newRefreshToken,
+        DateTime expiresAtUtc,
+        CancellationToken cancellationToken = default)
+    {
+        if (userId == Guid.Empty ||
+            string.IsNullOrWhiteSpace(expectedRefreshToken) ||
+            string.IsNullOrWhiteSpace(newRefreshToken))
+        {
+            return false;
+        }
+
+        var now = DateTime.Now;
+        var updatedRows = await userManager.Users
+            .Where(user =>
+                user.Id == userId &&
+                user.RefreshToken == expectedRefreshToken &&
+                user.RefreshTokenExpirationDateTime > now)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(user => user.RefreshToken, newRefreshToken)
+                    .SetProperty(user => user.RefreshTokenExpirationDateTime, expiresAtUtc),
+                cancellationToken);
+
+        return updatedRows == 1;
+    }
 
     public async Task RevokeRefreshTokenAsync(
         Guid userId,
@@ -140,7 +174,7 @@ public sealed class IdentityAuthenticationService(
         await userManager.UpdateAsync(user);
     }
 
-    private async Task<string[]> GetActiveRolesAsync(
+    private async Task<UserAuthorizationSnapshot> GetAuthorizationAsync(
         ApplicationUser user,
         CancellationToken cancellationToken)
     {
@@ -149,12 +183,34 @@ public sealed class IdentityAuthenticationService(
                 join role in dbContext.Roles on userRole.RoleId equals role.Id
                 where userRole.UserId == user.Id &&
                       userRole.IsActive
-                select role.Name)
+                select new { role.Id, role.Name })
             .ToListAsync(cancellationToken);
 
         var activeRoles = roleAssignments
-            .Where(roleName => !string.IsNullOrWhiteSpace(roleName))
-            .Select(roleName => roleName!)
+            .Where(role => !string.IsNullOrWhiteSpace(role.Name))
+            .Select(role => role.Name!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        var activeRoleIds = roleAssignments
+            .Select(role => role.Id)
+            .Distinct()
+            .ToArray();
+        var roleClaims = await dbContext.RoleClaims
+            .AsNoTracking()
+            .Where(claim => activeRoleIds.Contains(claim.RoleId) &&
+                (claim.ClaimType == ApplicationPermissionClaimTypes.Permission ||
+                 claim.ClaimType == ApplicationPermissionClaimTypes.PermissionModelVersion))
+            .Select(claim => new { claim.ClaimType, claim.ClaimValue })
+            .ToListAsync(cancellationToken);
+        var usesDatabasePermissions = roleClaims.Any(claim =>
+            claim.ClaimType == ApplicationPermissionClaimTypes.PermissionModelVersion &&
+            claim.ClaimValue == ApplicationPermissionClaimTypes.CurrentModelVersion);
+        var permissions = roleClaims
+            .Where(claim =>
+                claim.ClaimType == ApplicationPermissionClaimTypes.Permission &&
+                !string.IsNullOrWhiteSpace(claim.ClaimValue))
+            .Select(claim => claim.ClaimValue!)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
@@ -166,7 +222,10 @@ public sealed class IdentityAuthenticationService(
             roleAssignments.Count,
             string.Join(", ", activeRoles));
 
-        return activeRoles;
+        return new UserAuthorizationSnapshot(
+            activeRoles,
+            permissions,
+            usesDatabasePermissions);
     }
 
     private async Task<EmployeeAccess?> GetEmployeeAccessAsync(
@@ -188,4 +247,9 @@ public sealed class IdentityAuthenticationService(
     }
 
     private sealed record EmployeeAccess(Guid? CompanyId);
+
+    private sealed record UserAuthorizationSnapshot(
+        IReadOnlyList<string> Roles,
+        IReadOnlyList<string> Permissions,
+        bool UsesDatabasePermissions);
 }

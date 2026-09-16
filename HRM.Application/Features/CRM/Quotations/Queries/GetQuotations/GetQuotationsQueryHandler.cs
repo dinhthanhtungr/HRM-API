@@ -3,7 +3,10 @@ using HRM.Application.Commons.Models;
 using HRM.Application.Commons.Pagination;
 using HRM.Application.Features.CRM.CustomerCare.Visibility;
 using HRM.Application.Features.CRM.Quotations.Dtos;
+using HRM.Application.Features.CRM.Quotations.Services;
+using HRM.Application.Features.CRM.Quotations.Services.Queries;
 using HRM.Domain.Entities.CustomerSchema;
+using HRM.Domain.Enums.CustomerEnum;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using System;
@@ -19,13 +22,16 @@ namespace HRM.Application.Features.CRM.Quotations.Queries.GetQuotations
     {
         private readonly ICRMReadDbContext _dbContext;
         private readonly ICustomerVisibilityService _visibilityService;
+        private readonly ProductStandardPriceReviewQueryService _standardPriceReviewQueryService;
 
         public GetQuotationsQueryHandler(
             ICRMReadDbContext dbContext,
-            ICustomerVisibilityService visibilityService)
+            ICustomerVisibilityService visibilityService,
+            ProductStandardPriceReviewQueryService standardPriceReviewQueryService)
         {
             _dbContext = dbContext;
             _visibilityService = visibilityService;
+            _standardPriceReviewQueryService = standardPriceReviewQueryService;
         }
 
         public async Task<OperationResult<PagedResult<QuotationListItemDto>>> Handle(
@@ -73,17 +79,17 @@ namespace HRM.Application.Features.CRM.Quotations.Queries.GetQuotations
             if (request.NormalizedKeyword is { } keyword)
             {
                 query = query.Where(x =>
-                    x.ExternalId.Contains(keyword) ||
-                    x.Customer.ExternalId.Contains(keyword) ||
-                    x.Customer.CustomerName.Contains(keyword) ||
-                    (x.ContactName != null && x.ContactName.Contains(keyword)) ||
+                    EF.Functions.ILike(x.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                    EF.Functions.ILike(x.Customer.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                    EF.Functions.ILike(x.Customer.CustomerName, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                    (x.ContactName != null && EF.Functions.ILike(x.ContactName, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter)) ||
 
                     x.Lines.Any(line => line.ProductNavigation.ColourCode != null &&
-                        line.ProductNavigation.ColourCode.Contains(keyword)) ||
+                        EF.Functions.ILike(line.ProductNavigation.ColourCode, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter)) ||
 
                     x.Lines.Any(line =>
                         line.SampleRequest != null &&
-                        line.SampleRequest.ExternalId.Contains(keyword)));
+                        EF.Functions.ILike(line.SampleRequest.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter)));
             }
 
             query = ApplySorting(query, request);
@@ -110,7 +116,65 @@ namespace HRM.Application.Features.CRM.Quotations.Queries.GetQuotations
                     request.NormalizedPageSize,
                     cancellationToken);
 
+            var quotationIds = page.Items.Select(x => x.QuotationId).ToArray();
+            var lineProducts = await _dbContext.QuotationLines.AsNoTracking()
+                .Where(x => x.IsActive && quotationIds.Contains(x.QuotationId))
+                .Select(x => new { x.QuotationId, x.ProductId })
+                .ToListAsync(cancellationToken);
+            var states = await _standardPriceReviewQueryService.LoadAsync(
+                scope.CompanyId,
+                lineProducts.Select(x => x.ProductId).Distinct().ToArray(),
+                cancellationToken);
+            foreach (var quotation in page.Items)
+            {
+                quotation.StandardPriceReview = AggregateReview(
+                    lineProducts
+                        .Where(x => x.QuotationId == quotation.QuotationId)
+                        .Select(x => states.GetValueOrDefault(x.ProductId))
+                        .Where(x => x is not null)
+                        .Cast<ProductStandardPriceStateResult>()
+                        .ToArray());
+            }
+
             return OperationResult<PagedResult<QuotationListItemDto>>.Ok(page);
+        }
+
+        private static QuotationStandardPriceReviewDto AggregateReview(
+            IReadOnlyList<ProductStandardPriceStateResult> states)
+        {
+            if (states.Count == 0)
+            {
+                return new QuotationStandardPriceReviewDto
+                {
+                    State = ProductStandardPriceState.Missing
+                };
+            }
+
+            var pendingReapprovals = states
+                .Where(x => x.State == ProductStandardPriceState.PendingReapproval)
+                .ToArray();
+            var pendingInitialApprovals = states
+                .Where(x => x.State == ProductStandardPriceState.PendingInitialApproval)
+                .ToArray();
+            var affected = pendingReapprovals.Length > 0
+                ? pendingReapprovals
+                : pendingInitialApprovals;
+            return new QuotationStandardPriceReviewDto
+            {
+                State = pendingReapprovals.Length > 0
+                    ? ProductStandardPriceState.PendingReapproval
+                    : pendingInitialApprovals.Length > 0
+                        ? ProductStandardPriceState.PendingInitialApproval
+                        : ProductStandardPriceState.Active,
+                RequiresPricingAction = affected.Length > 0,
+                HasFormulaConfirmationPending = pendingReapprovals.Any(x => x.HasFormulaConfirmationPending),
+                IsPricingReviewExpired = pendingReapprovals.Any(x => x.IsPricingReviewExpired),
+                PricingReviewDueDate = pendingReapprovals
+                    .Where(x => x.PricingReviewDueDate.HasValue)
+                    .Select(x => x.PricingReviewDueDate)
+                    .Min(),
+                AffectedLineCount = affected.Length
+            };
         }
 
         private static IQueryable<Quotation> ApplySorting(

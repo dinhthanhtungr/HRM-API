@@ -1,5 +1,29 @@
 # Giá công thức
 
+## Chi tiết công thức sản xuất
+
+```http
+GET /api/v1/plm/manufacturing-formulas/{manufacturingFormulaId}/materials
+```
+
+Endpoint giữ URL tương thích cũ nhưng trả cùng contract `FormulaInformationDto` với API chi tiết Formula phát triển:
+header công thức, `stepOfProduct`, giá realtime, pricing và danh sách `materials`. Không còn trả collection `items`.
+`stepOfProduct` lấy từ `MfgProductionOrder` liên kết qua `ProductionSelectVersion`; backend ưu tiên lựa chọn hiện hành
+(`ValidTo = null`, `ValidFrom` có giá trị), sau đó fallback về lần sử dụng gần nhất theo `ValidFrom`, ngày cập nhật lệnh
+và id lệnh để kết quả luôn tất định. Nếu công thức chưa từng gắn với lệnh sản xuất thì `stepOfProduct = null`.
+
+Product dùng cho pricing cũng ưu tiên lệnh sản xuất đã resolve ở trên, sau đó fallback về Product của M-BOM nguồn hoặc
+Formula VU nguồn. Không resolve được Product thì `pricing = null` và `pricingStatus = ProductContextMissing`.
+Các field giá chỉ có giá trị với user được phép xem giá công thức; nếu không có quyền thì field giá là `null`,
+`supplierPrices` rỗng và `pricingStatus = Hidden`. Công thức không tồn tại, không active hoặc khác công ty trả `404`.
+
+## Công thức sản xuất sinh từ M-BOM
+
+`POST /api/v1/plm/manufacturing-boms/versions/{bomVersionId}/manufacturing-formulas` tạo một
+`ManufacturingFormula` từ M-BOM `Released`, lưu `SourceBomVersionId` để truy vết và xuất hiện trong lookup với
+`sourceType = FromBom`. Đây là action khởi tạo tường minh; các lần chỉnh sửa công thức sản xuất sau đó không ghi ngược
+vào BOM master và không tự thay Product Standard Formula hoặc lựa chọn công thức của lệnh sản xuất.
+
 ## Xuất Excel danh sách NVL
 
 ```http
@@ -14,6 +38,8 @@ Endpoint yêu cầu đồng thời `PLM.FormulaMaterials.View` và `PLM.FormulaP
 nhóm `FormulaMaterialViewers` và `FormulaPriceViewers`, nên không đủ một trong hai quyền không thể tải file.
 
 ## API ghi công thức
+
+Khi Lab chuyển một Formula sang `Approved` lần đầu và request có `sampleRequestId`, backend gửi message `SampleRequestPriceQuoteRequested` trong conversation của Sample Request với title **Yêu cầu xác nhận lại giá chuẩn**. President active cùng company được thêm vào conversation để xử lý giá; notification Báo giá được gửi tới mọi participant active của conversation. Participant đã mute vẫn xem được thread/Hub nhưng không nhận realtime/Web Push. Payload chứa Formula vừa xác nhận và action `Executive.OpenProductPricingReview`; link mở Executive Pricing Review đúng Product/Sample Request/VU. Đây là trigger của luồng rà soát giá chuẩn, không phải yêu cầu báo giá của Sale; Sale không thể tạo hoặc xóa trạng thái `PendingReapproval` bằng message yêu cầu báo giá.
 
 Các API ghi công thức nằm dưới:
 
@@ -212,13 +238,15 @@ validate transition, tạo đúng một Formula Version và lưu Formula/materia
 `SaveChanges`. Nếu validation hoặc transition thất bại, không phần nào được lưu. Khi không có thay đổi
 Formula, FE không gửi `formulaUpdate` và vẫn có thể dùng `PATCH /status` như cũ.
 
-Khi `Approved` được gọi kèm `sampleRequestId` hợp lệ cùng Product, backend gửi message/notification trong
-conversation của Sample Request với topic `SampleRequestFormulaApproved`
-(`plm.sample_request.formula.approved`). Nội dung báo Formula đã được xác nhận và giá tham khảo có thể tra cứu.
-Notification có `Link = /crm/quotations/product-pricing-options?keyword={ColourCode}` để người nhận bấm mở
-màn hình tra cứu giá đã lọc theo mã màu. Payload không chứa material cost, giá sản xuất, giá bán hoặc margin;
-quyền xem giá và quyền truy cập màn hình tra cứu vẫn được kiểm soát độc lập. Sample Request `private` hoặc
-khách `KH_VIETAUS` vẫn không tạo message/notification theo rule chung.
+Khi `Approved` lần đầu được gọi kèm `sampleRequestId` hợp lệ cùng Product, backend gửi message/notification trong
+conversation của Sample Request với topic `SampleRequestPriceQuoteRequested`
+(`plm.sample_request.price_quote.requested`, category `sample_request`, event group `quotation`). Message yêu cầu
+rà soát giá chuẩn và có link tới Executive Pricing Review đúng Product/Sample Request/Formula. President active
+được thêm vào conversation; notification được tạo cho mọi participant active để mọi người liên quan đều thấy card
+ở tab **Báo giá**. Participant đã mute conversation chỉ không nhận realtime/Web Push, không mất quyền xem thread
+hoặc Hub. Payload không chứa material cost, giá sản xuất, giá bán hoặc margin; quyền mở Executive Pricing Review
+vẫn được kiểm soát độc lập. Sample Request `private` hoặc khách `KH_VIETAUS` vẫn không tạo message/notification
+theo rule chung.
 
 `SampleSent` được chuyển khi công thức hiện đang ở trạng thái `Approved`, hoặc gửi lại khi công thức đã là `SampleSent`; backend từ chối chuyển thẳng từ `Draft`, `Cancelled` hoặc trạng thái khác sang `SampleSent`.
 `Completed` chỉ được chuyển khi công thức hiện đang ở trạng thái `SampleSent`.
@@ -226,11 +254,12 @@ khách `KH_VIETAUS` vẫn không tạo message/notification theo rule chung.
 Thiết kế lifecycle mới của công thức dùng thêm ý nghĩa trạng thái:
 
 ```text
-Draft / Approved              -> còn được chỉnh thông tin và material theo quyền.
-SampleSent                    -> đã gửi mẫu, không sửa đè công thức này; muốn cải tiến thì clone/tạo công thức mới.
-Completed                     -> Sale đã chọn/chốt công thức khách hàng đồng ý; chỉ trạng thái này mới được dùng để lên đơn hàng.
-PendingSaleConfirmation       -> công thức cải tiến đang chờ Sale xác nhận đổi cho Sample Request đã Completed.
-Cancelled hoặc Rejected       -> công thức/yêu cầu cập nhật bị hủy hoặc bị từ chối.
+Draft / Approved              -> được chỉnh thông tin và material theo quyền.
+SampleSent                    -> khóa material; các field header khác vẫn được chỉnh theo quyền.
+Completed                     -> khóa material; các field header khác vẫn được chỉnh theo quyền; chỉ trạng thái này mới được dùng để lên đơn hàng.
+Cancelled                     -> khóa material; các field header khác vẫn được chỉnh theo quyền.
+PendingSaleConfirmation       -> công thức cải tiến đang chờ Sale xác nhận; vẫn được chỉnh material theo quyền.
+Rejected                      -> công thức/yêu cầu cập nhật bị từ chối; vẫn được chỉnh material theo quyền.
 ```
 
 Khi Sale chốt công thức, backend phải cập nhật cả `SampleRequest.Status = Completed` và `Formula.Status = Completed`, đồng thời gửi message trong cùng Sample Request conversation để báo cho Lab. Khi Lab yêu cầu cập nhật công thức sau khi Sample Request đã Completed, Formula mới chuyển sang `PendingSaleConfirmation`, còn Sample Request chuyển sang `FormulaUpdateRequested` cho đến khi Sale chấp nhận hoặc từ chối.
@@ -403,6 +432,14 @@ Màn hình FE có thể chỉ có một nút `Lưu`, nhưng backend vẫn tách 
 - `PUT /api/v1/plm/formulas/{formulaId}` chỉ lưu thông tin công thức và material. API này không nhận và không ghi đè `manufacturingCost`, `standardSellingPrice`, `profitMarginRate` hoặc `materialCost` ở cấp Formula. Nếu FE gửi `materials`, snapshot NVL `Formula.TotalPrice` được tính lại từ tổng `materials[].quantity * materials[].unitPrice`. Nếu FE gửi `materials: []`, snapshot NVL về `0`. Nếu FE không gửi `materials`, backend giữ nguyên material và snapshot NVL cũ.
 - `PATCH /api/v1/plm/formulas/{formulaId}/pricing` chỉ lưu giá sản xuất và giá bán tiêu chuẩn. API này không nhận `materialCost`; snapshot NVL chỉ đổi khi lưu material của công thức.
 
+NVL không được thay đổi khi status hiện tại của Formula là `SampleSent`, `Completed` hoặc `Cancelled`. Rule này áp dụng
+cho `PUT`, `PATCH /status` hoặc `POST /status-transition` có `formulaUpdate.materials`, và restore Formula Version.
+Backend so sánh thành phần theo đúng thứ tự dòng, `itemType`, `itemId` và `quantity`. Nếu FE gửi lại danh sách giống
+dữ liệu hiện tại thì backend xem là no-op, không tạo lại dòng NVL và vẫn lưu các field khác như `note`, `stepOfProduct`
+hoặc status. Chỉ khi thành phần NVL thực sự khác backend mới trả lỗi và không lưu request. `materials: []` là thay đổi
+nếu công thức đang có NVL; `materials: null` hoặc không gửi field luôn giữ nguyên NVL. FE vẫn nên khóa vùng NVL ở ba
+status trên, nhưng không bắt buộc phải loại danh sách không đổi khỏi payload của form đầy đủ.
+
 Vì vậy FE phải tách payload submit theo dirty state dù UI chỉ hiển thị một nút lưu.
 
 ## Phiên bản công thức phát triển
@@ -447,3 +484,22 @@ conversation Sample Request, recipient President và topic `plm.sample_request.p
 `POST /api/v1/plm/sample-requests/{sampleRequestId}/price-quote-requests`.
 
 POST lưu yêu cầu `PLM.Formula.Manage`; POST khôi phục yêu cầu đồng thời `PLM.Formula.Manage` và `PLM.FormulaPricing.Update` vì action này ghi lại cả giá snapshot. Current user phải có `EmployeeId`. Khôi phục không sửa version cũ: backend thay header/material active của Formula bằng snapshot đã chọn rồi tạo một version mới với `ChangeReason = Restored from version ...`. Do contract FormulaVersion không snapshot `ExternalId`, `ProductId`, `EffectiveDate`, `IsSelect` và các field audit trạng thái, thao tác restore giữ nguyên các field đó trên Formula hiện tại.
+## Tình trạng mua hiện tại của NVL
+
+`GET /api/v1/plm/formulas/{formulaId}` trả tình trạng mua hiện tại trên từng phần tử `materials` khi item là NVL:
+
+```json
+{
+  "itemId": "00000000-0000-0000-0000-000000000000",
+  "itemType": "Material",
+  "purchaseStatus": "Unavailable",
+  "isPurchaseAvailable": false,
+  "purchaseStatusReason": "Nhà cung cấp ngừng sản xuất",
+  "purchaseStatusEffectiveFrom": "2026-09-15T08:00:00",
+  "expectedAvailableDate": null
+}
+```
+
+Dữ liệu là trạng thái hiện tại từ `MaterialPurchaseAvailability`, không phải snapshot của version công thức. NVL
+chưa có record được hiểu là `Available`; item Product trả các field trên là `null`. Công thức cũ vẫn hiển thị NVL
+`Unavailable` để Lab biết dòng nào cần thay, nhưng backend không cho dùng NVL này khi ghi lại thành phần công thức.

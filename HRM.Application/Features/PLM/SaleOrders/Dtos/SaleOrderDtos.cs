@@ -210,6 +210,7 @@ public sealed class SaleOrderCurrentPricingDto
     public string Source { get; init; } = "Unavailable";
     public string Currency { get; init; } = "VND";
     public decimal? SuggestedUnitPrice { get; init; }
+    public string? PublisherNote { get; init; }
 
     public Guid? ProductPricingVersionId { get; init; }
     public int? ProductPricingVersion { get; init; }

@@ -60,10 +60,10 @@ internal sealed class GetMyTasksQueryHandler
         {
             var keyword = query.NormalizedKeyword;
             source = source.Where(x =>
-                x.Title.Contains(keyword) ||
-                (x.Description ?? string.Empty).Contains(keyword) ||
-                (x.CustomerName ?? string.Empty).Contains(keyword) ||
-                (x.CustomerExternalId ?? string.Empty).Contains(keyword));
+                EF.Functions.ILike(x.Title, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike((x.Description ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike((x.CustomerName ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike((x.CustomerExternalId ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter));
         }
 
         return source;

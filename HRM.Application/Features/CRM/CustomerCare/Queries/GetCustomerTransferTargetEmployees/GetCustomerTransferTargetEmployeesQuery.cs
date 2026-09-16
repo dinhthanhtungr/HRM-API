@@ -59,8 +59,8 @@ internal sealed class GetCustomerTransferTargetEmployeesQueryHandler
         {
             var keyword = request.NormalizedKeyword;
             query = query.Where(member =>
-                member.ProfileNavigation!.FullName.Contains(keyword) ||
-                (member.Group.Name != null && member.Group.Name.Contains(keyword)));
+                EF.Functions.ILike(member.ProfileNavigation!.FullName, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                (member.Group.Name != null && EF.Functions.ILike(member.Group.Name, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter)));
         }
 
         var materialized = await query

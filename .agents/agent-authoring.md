@@ -1,29 +1,25 @@
 # Agent Rule Authoring
 
-Đọc file này khi tạo mới hoặc sửa `AGENTS.md` và các file `.agents/...`.
+Đọc file này khi tạo hoặc sửa `AGENTS.md` và `.agents/*`.
 
-## Nguyên Tắc Tách File
+## Nguyên Tắc
 
-`AGENTS.md` root chỉ nên là router: nói file nào luôn đọc, file nào đọc theo ngữ cảnh, và cách điều hướng tiếp. Không nhét chi tiết nghiệp vụ dài vào root.
+- Root `AGENTS.md` là router kèm một nhóm nhỏ invariant an toàn; không bắt đọc mọi file con.
+- Mỗi rule chỉ có một source of truth. Router và file khác chỉ trỏ tới nguồn đó, không sao chép checklist.
+- Rule phải ghi rõ trigger đọc và phạm vi áp dụng.
+- Rule nền dùng chung đặt ở `core.md`; workflow chỉ dành cho task phức tạp; build/Git chỉ ở `git-and-build.md`.
+- Security và module rules chỉ nạp khi task đụng đúng capability, dữ liệu hoặc feature đó.
+- Không đặt quy tắc chọn model, báo cáo dài hoặc nghi thức hội thoại vào luồng mặc định nếu chúng không bảo vệ code/nghiệp vụ.
 
-Các file rule nên có vai trò rõ:
+## Tách File
 
-- Core rules: luật nền bắt buộc như kiến trúc, bảo mật, public contract, build.
-- Workflow rules: cách làm việc, xin xác nhận, cập nhật README, trả lời cuối.
-- Anti-patterns: những thứ tuyệt đối tránh.
-- Module rules: CRM, PLM, Warehouse, Notification, Reports.
-- Router module lớn: nếu một module có nhiều nghiệp vụ con, file cha chỉ điều hướng sang file con.
+Tách file khi một nhóm rule có trigger độc lập và việc tách giúp task khác không phải đọc nội dung không liên quan. Module lớn dùng file cha làm router tới file con.
 
-## Khi Nào Tách Nhỏ
+Không tạo file mới cho một rule đơn lẻ và không sao chép invariant sang nested `AGENTS.md`. Nested `AGENTS.md` chỉ chứa khác biệt thật sự của subtree.
 
-Tách file con khi một file module bắt đầu chứa nhiều nhóm luật độc lập, ví dụ notification có topic, recipient, Web Push, outbox, final report. File cha nên giữ ngắn và chỉ định khi nào đọc từng file con.
+## Bảo Toàn Nghiệp Vụ
 
-Không tạo file mới chỉ vì một rule xuất hiện một lần. Tạo file mới khi rule có khả năng được đọc độc lập hoặc giúp tránh bắt agent đọc quá nhiều nghiệp vụ không liên quan.
-
-## Chất Lượng Nội Dung
-
-- Dùng tiếng Việt có dấu, UTF-8, không để mojibake.
-- Rule phải nói rõ "khi nào đọc" và "khi nào áp dụng".
-- Rule nghiệp vụ phải trỏ tới class/file thật trong repo nếu có.
-- Không viết theo kế hoạch chưa implement.
-- Không biến README/rule thành nhật ký dài; rule mô tả trạng thái đúng hiện tại.
+- Rule nghiệp vụ phải mô tả trạng thái code hiện hành và trỏ tới class/file thật khi có.
+- Khi tối ưu rule, ưu tiên đổi routing trước; không đổi semantics của feature, permission, field visibility, topic/recipient hoặc contract.
+- Trước khi xóa bản sao, xác nhận còn một source of truth và router vẫn dẫn tới nó bằng đúng trigger.
+- Dùng tiếng Việt có dấu, UTF-8; README/rule mô tả trạng thái hiện tại, không phải nhật ký.

@@ -152,6 +152,10 @@ internal sealed class ApproveProductPricingVersionCommandHandler
         entity.ManufacturingCost = pricingResult.Data.ManufacturingCost;
         entity.StandardSellingPrice = pricingResult.Data.StandardSellingPrice;
         entity.ProfitMarginRate = pricingResult.Data.ProfitMarginRate;
+        if (command.Request.PublisherNote is not null)
+        {
+            entity.PublisherNote = QuotationRules.TrimToNull(command.Request.PublisherNote);
+        }
         entity.CalculatedAt = now;
         entity.Status = ProductPricingStatus.Approved;
         entity.ApprovedBy = employeeId;

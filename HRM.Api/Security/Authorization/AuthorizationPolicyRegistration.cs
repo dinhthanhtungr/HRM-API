@@ -10,6 +10,8 @@ internal static class AuthorizationPolicyRegistration
         services.AddAuthorization(options =>
         {
             options.AddPlmPolicies();
+            options.AddExecutivePolicies();
+            options.AddPurchasingPolicies();
         });
 
         return services;

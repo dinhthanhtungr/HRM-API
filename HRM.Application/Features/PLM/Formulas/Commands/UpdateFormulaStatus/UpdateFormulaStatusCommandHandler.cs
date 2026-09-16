@@ -1,10 +1,12 @@
 using HRM.Application.Abstractions.Persistence.PLM;
 using HRM.Application.Abstractions.Security;
+using HRM.Application.Commons.Authorization;
 using HRM.Application.Commons.Models;
 using HRM.Application.Features.InternalMail.Dtos;
 using HRM.Application.Features.PLM.Formulas.Dtos.Commons;
 using HRM.Application.Features.PLM.Formulas.Services;
 using HRM.Application.Features.PLM.SampleRequests.Commands.SendSampleRequestMessage;
+using HRM.Application.Features.PLM.SampleRequests.PriceQuoteRequests;
 using HRM.Application.Features.PLM.SampleRequests.SampleReceiptConfirmations;
 using HRM.Domain.Enums.Notifications;
 using HRM.Domain.Enums.Products;
@@ -77,6 +79,11 @@ internal sealed class UpdateFormulaStatusCommandHandler
         {
             return OperationResult<FormulaWriteResultDto>.Fail("Formula was not found or is not accessible.");
         }
+
+        var wasAlreadyApproved = string.Equals(
+            formula.Status,
+            FormulaStatus.Approved.ToString(),
+            StringComparison.Ordinal);
 
         if (FormulaConcurrencyRules.HasExpectedUpdatedDateConflict(
                 command.Request.ExpectedUpdatedDate,
@@ -256,15 +263,17 @@ internal sealed class UpdateFormulaStatusCommandHandler
         }
 
         if (targetStatus == FormulaStatus.Approved &&
+            !wasAlreadyApproved &&
             command.Request.SampleRequestId is { } sampleRequestId &&
             sampleRequestId != Guid.Empty)
         {
-            var approvedMessageResult = await SendFormulaApprovedReferencePriceMessageAsync(
+            var approvedMessageResult = await SendFormulaApprovedPricingReviewMessageAsync(
                 sampleRequestId,
                 formula.ProductId,
                 companyId,
+                formula.FormulaId,
                 formula.ExternalId,
-                formula.Product.ColourCode,
+                formula.Name,
                 cancellationToken);
 
             if (!approvedMessageResult.Success)
@@ -380,12 +389,13 @@ internal sealed class UpdateFormulaStatusCommandHandler
         }, cancellationToken);
     }
 
-    private async Task<OperationResult<SendInternalMessageResultDto>> SendFormulaApprovedReferencePriceMessageAsync(
+    private async Task<OperationResult<SendInternalMessageResultDto>> SendFormulaApprovedPricingReviewMessageAsync(
         Guid sampleRequestId,
         Guid formulaProductId,
         Guid companyId,
+        Guid formulaId,
         string formulaExternalId,
-        string? colourCode,
+        string formulaName,
         CancellationToken cancellationToken)
     {
         var sampleRequest = await _dbContext.SampleRequests
@@ -395,7 +405,14 @@ internal sealed class UpdateFormulaStatusCommandHandler
                 x.CompanyId == companyId &&
                 x.ProductId == formulaProductId &&
                 x.IsActive)
-            .Select(x => new { x.SampleRequestId, x.ExternalId })
+            .Select(x => new
+            {
+                x.SampleRequestId,
+                x.ExternalId,
+                x.ProductId,
+                ProductCode = x.Product.ColourCode ?? x.Product.Code ?? string.Empty,
+                ProductName = x.Product.Name ?? string.Empty
+            })
             .FirstOrDefaultAsync(cancellationToken);
 
         if (sampleRequest is null)
@@ -404,24 +421,61 @@ internal sealed class UpdateFormulaStatusCommandHandler
                 "Sample request was not found or does not belong to the formula product.");
         }
 
-        var normalizedColourCode = colourCode?.Trim();
-        if (string.IsNullOrWhiteSpace(normalizedColourCode))
+        var presidentEmployeeIds = await _dbContext.Employees.AsNoTracking()
+            .Where(employee =>
+                employee.CompanyId == companyId &&
+                employee.IsActive &&
+                employee.ApplicationUsers.Any(user => user.UserRoles.Any(role =>
+                    role.IsActive && role.Role.Name == ApplicationRoles.President)))
+            .Select(employee => employee.EmployeeId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+        if (presidentEmployeeIds.Count == 0)
         {
             return OperationResult<SendInternalMessageResultDto>.Fail(
-                "Formula product must have a colour code before sending the reference-price notification.");
+                "No active President employee was found in the current company.");
         }
 
-        var priceLookupLink = "/crm/quotations/product-pricing-options?keyword=" +
-            Uri.EscapeDataString(normalizedColourCode);
+        var pricingLink = "/executive/sample-request-pricing-overview?productId=" +
+            Uri.EscapeDataString(sampleRequest.ProductId.ToString()) +
+            "&sampleRequestId=" + Uri.EscapeDataString(sampleRequest.SampleRequestId.ToString()) +
+            "&sourceType=VU&sourceId=" + Uri.EscapeDataString(formulaId.ToString());
+
+        var payload = new SampleRequestPriceQuotePayload
+        {
+            SampleRequestId = sampleRequest.SampleRequestId,
+            SampleRequestExternalId = sampleRequest.ExternalId,
+            ProductId = sampleRequest.ProductId,
+            ProductCode = sampleRequest.ProductCode,
+            ProductName = sampleRequest.ProductName,
+            FormulaId = formulaId,
+            FormulaExternalId = formulaExternalId,
+            FormulaName = formulaName,
+            FormulaSelectionSource = "LabConfirmed",
+            Action = new SampleRequestPriceQuoteActionDto
+            {
+                Code = "Executive.OpenProductPricingReview",
+                Parameters = new SampleRequestPriceQuoteActionParametersDto
+                {
+                    SampleRequestId = sampleRequest.SampleRequestId,
+                    SampleRequestExternalId = sampleRequest.ExternalId,
+                    ProductId = sampleRequest.ProductId,
+                    ProductCode = sampleRequest.ProductCode,
+                    FormulaId = formulaId
+                }
+            }
+        };
 
         return await _sender.Send(new SendSampleRequestMessageCommand
         {
             SampleRequestId = sampleRequest.SampleRequestId,
-            Type = SampleRequestNotificationType.GeneralMessage,
-            Message = $"Công thức {formulaExternalId} của yêu cầu phối mẫu {sampleRequest.ExternalId} đã được Lab xác nhận. Hệ thống đã có giá tham khảo theo mã màu {normalizedColourCode}; bấm thông báo để tra cứu giá sản phẩm.",
-            TopicOverride = TopicNotifications.SampleRequestFormulaApproved,
-            TitleOverride = "Công thức đã xác nhận, có giá tham khảo",
-            LinkOverride = priceLookupLink
+            Type = SampleRequestNotificationType.PriceQuoteRequest,
+            Message = $"Lab đã xác nhận công thức [{formulaExternalId}] - {formulaName} cho yêu cầu phối mẫu {sampleRequest.ExternalId}. Giá chuẩn của sản phẩm cần được Ban Giám đốc xác nhận lại.",
+            ExtraRecipientEmployeeIds = presidentEmployeeIds,
+            TopicOverride = TopicNotifications.SampleRequestPriceQuoteRequested,
+            TitleOverride = "Yêu cầu xác nhận lại giá chuẩn",
+            LinkOverride = pricingLink,
+            PriceQuoteRequest = payload
         }, cancellationToken);
     }
 }

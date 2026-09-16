@@ -16,5 +16,9 @@ public interface ICurrentUser
 
     IReadOnlyCollection<string> Roles { get; }
 
+    IReadOnlyCollection<string> Permissions => Array.Empty<string>();
+
+    bool HasExplicitPermissionSet => false;
+
     bool IsInRole(string role);
 }

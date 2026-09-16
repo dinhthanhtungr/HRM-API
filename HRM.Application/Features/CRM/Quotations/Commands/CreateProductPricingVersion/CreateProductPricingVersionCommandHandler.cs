@@ -205,6 +205,7 @@ internal sealed class CreateProductPricingVersionCommandHandler
             ManufacturingCost = pricingResult.Data.ManufacturingCost,
             StandardSellingPrice = pricingResult.Data.StandardSellingPrice,
             ProfitMarginRate = pricingResult.Data.ProfitMarginRate,
+            PublisherNote = QuotationRules.TrimToNull(command.Request.PublisherNote),
             Note = QuotationRules.TrimToNull(command.Request.Note),
             Status = command.Request.ApproveImmediately
                 ? ProductPricingStatus.Approved

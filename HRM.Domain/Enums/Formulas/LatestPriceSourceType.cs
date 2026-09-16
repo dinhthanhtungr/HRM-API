@@ -7,6 +7,7 @@ namespace HRM.Domain.Enums.Formulas
         MaterialSupplier = 2,
         MerchandiseOrder = 3,
         ProductPricingVersion = 4,
-        FormulaMaterialCost = 5
+        FormulaMaterialCost = 5,
+        InternalCostRule = 6
     }
 }

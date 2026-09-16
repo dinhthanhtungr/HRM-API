@@ -25,6 +25,10 @@ public sealed class QuotationLinePricingComparisonDto
 
     public Guid? CurrentProductPricingVersionId { get; init; }
     public int? CurrentProductPricingVersion { get; init; }
+    /// <summary>
+    /// Ghi chú công khai của ProductPricingVersion Approved hiện hành; null khi chưa có giá đã duyệt.
+    /// </summary>
+    public string? CurrentPublisherNote { get; init; }
     public bool IsUsingLatestApprovedPricing { get; init; }
 
     public Guid? FormulaId { get; init; }

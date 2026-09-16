@@ -27,7 +27,7 @@ public class BomVersionItemConfiguration : IEntityTypeConfiguration<BomVersionIt
         entity.Property(x => x.ComponentProductId).HasColumnName("component_product_id");
         entity.Property(x => x.CategoryId).HasColumnName("category_id");
         entity.Property(x => x.ManufacturingBomStageId).HasColumnName("manufacturing_bom_stage_id");
-        entity.Property(x => x.Quantity).HasColumnName("quantity").HasPrecision(18, 3).IsRequired();
+        entity.Property(x => x.Quantity).HasColumnName("quantity").HasPrecision(12, 10).IsRequired();
         entity.Property(x => x.Unit).HasColumnName("unit").HasColumnType("citext").HasMaxLength(32).IsRequired();
         entity.Property(x => x.MaterialExternalIdSnapshot).HasColumnName("material_external_id_snapshot").HasColumnType("citext").HasMaxLength(100);
         entity.Property(x => x.MaterialNameSnapshot).HasColumnName("material_name_snapshot").HasMaxLength(300);

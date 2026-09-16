@@ -29,6 +29,7 @@ public class BomVersion
     public virtual ICollection<BomVersion> DerivedManufacturingBomVersions { get; set; } = new List<BomVersion>();
     public virtual ICollection<BomVersionItem> Items { get; set; } = new List<BomVersionItem>();
     public virtual ICollection<ManufacturingBomStage> ManufacturingStages { get; set; } = new List<ManufacturingBomStage>();
+    public virtual ICollection<ManufacturingBomStageTransition> ManufacturingStageTransitions { get; set; } = new List<ManufacturingBomStageTransition>();
     public virtual ICollection<ManufacturingBomLossRule> LossRules { get; set; } = new List<ManufacturingBomLossRule>();
     public virtual ICollection<ProductStandardBomVersion> StandardProductAssignments { get; set; } = new List<ProductStandardBomVersion>();
     public virtual ICollection<ManufacturingFormula> ExecutionFormulas { get; set; } = new List<ManufacturingFormula>();

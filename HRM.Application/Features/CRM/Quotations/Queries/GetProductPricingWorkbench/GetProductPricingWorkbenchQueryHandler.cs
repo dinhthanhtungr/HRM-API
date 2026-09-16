@@ -4,11 +4,13 @@ using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Models;
 using HRM.Application.Commons.Pagination;
 using HRM.Application.Commons.Rules;
+using HRM.Application.Features.Pricing.Authorization;
 using HRM.Application.Features.CRM.CustomerCare.Visibility;
 using HRM.Application.Features.CRM.Quotations.Dtos;
 using HRM.Application.Features.CRM.Quotations.Services;
 using HRM.Domain.Enums.Category;
 using HRM.Domain.Enums.CustomerEnum;
+using HRM.Domain.Enums.Products;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -26,6 +28,7 @@ internal sealed class GetProductPricingWorkbenchQueryHandler
     private readonly ProductPricingRequestQueryService _requestQueryService;
     private readonly IDateTimeProvider _dateTimeProvider;
     private readonly QuotationFeatureOptions _featureOptions;
+    private readonly IPricingVisibilityService _pricingVisibilityService;
 
     public GetProductPricingWorkbenchQueryHandler(
         ICRMReadDbContext dbContext,
@@ -34,7 +37,8 @@ internal sealed class GetProductPricingWorkbenchQueryHandler
         ProductPricingRealtimeSourceQueryService sourceQueryService,
         ProductPricingRequestQueryService requestQueryService,
         IDateTimeProvider dateTimeProvider,
-        QuotationFeatureOptions featureOptions)
+        QuotationFeatureOptions featureOptions,
+        IPricingVisibilityService pricingVisibilityService)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
@@ -43,14 +47,17 @@ internal sealed class GetProductPricingWorkbenchQueryHandler
         _requestQueryService = requestQueryService;
         _dateTimeProvider = dateTimeProvider;
         _featureOptions = featureOptions;
+        _pricingVisibilityService = pricingVisibilityService;
     }
 
     public async Task<OperationResult<PagedResult<ProductPricingWorkbenchItemDto>>> Handle(
         GetProductPricingWorkbenchQuery request,
         CancellationToken cancellationToken)
     {
+        var pricingAccess = _pricingVisibilityService.GetAccess();
         var validationError = ValidateAccess(
             _currentUser,
+            pricingAccess,
             request.NormalizedCurrency,
             request.View);
         if (validationError is not null)
@@ -59,7 +66,7 @@ internal sealed class GetProductPricingWorkbenchQueryHandler
                 validationError);
         }
 
-        var canManagePricing = ProductPricingAccessRules.CanManage(_currentUser);
+        var canManagePricing = pricingAccess.CanManage;
         var companyId = _currentUser.CompanyId!.Value;
         var now = _dateTimeProvider.Now;
         var hasKeyword = request.NormalizedKeyword is not null;
@@ -94,6 +101,20 @@ internal sealed class GetProductPricingWorkbenchQueryHandler
                     line.Quotation.CompanyId == companyId &&
                     visibleCustomerIds.Contains(line.Quotation.CustomerId)));
         }
+
+        var sampleRequestKeywordProductIds = request.NormalizedKeyword is { } sampleRequestKeyword
+            ? (await productQuery
+                .Where(product => product.SampleRequests.Any(sampleRequest =>
+                    sampleRequest.IsActive &&
+                    sampleRequest.CompanyId == companyId &&
+                    EF.Functions.ILike(
+                        sampleRequest.ExternalId,
+                        PostgresSearchPattern.ContainsLiteral(sampleRequestKeyword),
+                        PostgresSearchPattern.EscapeCharacter)))
+                .Select(product => product.ProductId)
+                .ToListAsync(cancellationToken))
+                .ToHashSet()
+            : [];
 
         var products = await productQuery
             .Select(x => new ProductRow
@@ -143,7 +164,7 @@ internal sealed class GetProductPricingWorkbenchQueryHandler
             .ToDictionary(x => x.Key, x => (IReadOnlyList<PricingVersionRow>)x.ToArray());
         var requests = await _requestQueryService.LoadAsync(
             companyId,
-            productIds: null,
+            productIds,
             cancellationToken);
         var requestsByProduct = requests
             .GroupBy(x => x.ProductId)
@@ -164,18 +185,31 @@ internal sealed class GetProductPricingWorkbenchQueryHandler
                 .Any(version => version.Status == ProductPricingStatus.Approved))
             .ToDictionary(x => x.Key, x => x.Value);
 
+        var materialCostChangedProductIds = await LoadMaterialCostViewProductIdsAsync(
+            request.View,
+            versionsByProduct,
+            companyId,
+            request.NormalizedCurrency,
+            cancellationToken);
+
         var filtered = products
             .Where(product => (isQuotationKeyword && quotationKeywordProductIds.Contains(product.ProductId))
                 || MatchesView(
                 request.View,
                 product.HasEligiblePricingSource,
                 versionsByProduct.GetValueOrDefault(product.ProductId) ?? [],
-                pendingRequestsByProduct.ContainsKey(product.ProductId)))
+                pendingRequestsByProduct.ContainsKey(product.ProductId),
+                materialCostChangedProductIds))
+            // Sale chỉ được thấy giá chuẩn đã được President/Developer duyệt.
+            // Không dùng Draft hoặc giá realtime làm fallback cho visibility này.
+            .Where(product => canManagePricing || HasApprovedStandardPrice(
+                versionsByProduct.GetValueOrDefault(product.ProductId) ?? []))
             .Where(product => MatchesKeyword(
                 product,
                 versionsByProduct.GetValueOrDefault(product.ProductId) ?? [],
                 requestsByProduct.GetValueOrDefault(product.ProductId) ?? [],
                 quotationKeywordProductIds,
+                sampleRequestKeywordProductIds,
                 request.NormalizedKeyword))
             .ToArray();
 
@@ -203,8 +237,9 @@ internal sealed class GetProductPricingWorkbenchQueryHandler
         var pageProductIds = pageProducts.Select(x => x.ProductId).ToArray();
         var currentByProduct = pageProductIds.ToDictionary(
             productId => productId,
-            productId => ResolveCurrentVersions(
-                versionsByProduct.GetValueOrDefault(productId) ?? []));
+            productId => ResolveVisibleVersions(
+                versionsByProduct.GetValueOrDefault(productId) ?? [],
+                canManagePricing));
         var storedSelections = currentByProduct.Values
             .Select(x => x.Preferred)
             .Where(x => x is not null && x.SourceId.HasValue && x.SourceType.HasValue)
@@ -221,15 +256,20 @@ internal sealed class GetProductPricingWorkbenchQueryHandler
             .ToArray();
         var fallbackSources = await LoadFallbackSourcesAsync(
             productsWithoutStoredPricing, companyId, request.NormalizedCurrency, cancellationToken);
-        var relatedCustomersByProduct = ProductPricingAccessRules.CanViewWorkbench(_currentUser)
+        var relatedCustomersByProduct = pricingAccess.CanViewWorkbench
             ? await LoadRelatedCustomersAsync(
                 companyId,
                 await _requestQueryService.LoadRelatedCustomersAsync(
                     companyId,
                     pageProductIds,
-                    cancellationToken),
-                cancellationToken)
+                cancellationToken),
+                includeHealthSummary: pricingAccess.CanManage,
+                cancellationToken: cancellationToken)
             : new Dictionary<Guid, IReadOnlyList<ProductPricingWorkbenchCustomerContextDto>>();
+        var latestFormulaConfirmations = await LoadLatestFormulaConfirmationsAsync(
+            pageProductIds,
+            companyId,
+            cancellationToken);
 
         var items = pageProducts
             .Select(product =>
@@ -246,7 +286,8 @@ internal sealed class GetProductPricingWorkbenchQueryHandler
                     current.Draft,
                     current.Approved,
                     now,
-                    _featureOptions);
+                    _featureOptions,
+                    latestFormulaConfirmations.GetValueOrDefault(product.ProductId));
                 return ProductPricingWorkbenchVisibility.ApplyToSummary(
                     ProductPricingWorkbenchMapper.MapSummary(
                         product,
@@ -258,7 +299,7 @@ internal sealed class GetProductPricingWorkbenchQueryHandler
                         relatedCustomersByProduct.GetValueOrDefault(product.ProductId) ?? [],
                         health,
                         now),
-                    canManagePricing);
+                    pricingAccess);
             })
             .ToArray();
 
@@ -299,6 +340,7 @@ internal sealed class GetProductPricingWorkbenchQueryHandler
                 ManufacturingCost = x.ManufacturingCost,
                 StandardSellingPrice = x.StandardSellingPrice,
                 ProfitMarginRate = x.ProfitMarginRate,
+                PublisherNote = x.PublisherNote,
                 Status = x.Status,
                 Version = x.Version,
                 ApprovedAt = x.ApprovedAt,
@@ -341,37 +383,42 @@ internal sealed class GetProductPricingWorkbenchQueryHandler
 
     private async Task<IReadOnlyDictionary<Guid, IReadOnlyList<ProductPricingWorkbenchCustomerContextDto>>>
         LoadRelatedCustomersAsync(
-            Guid companyId,
-            IReadOnlyList<ProductPricingRelatedCustomerRow> relatedCustomerRows,
-            CancellationToken cancellationToken)
+        Guid companyId,
+        IReadOnlyList<ProductPricingRelatedCustomerRow> relatedCustomerRows,
+        bool includeHealthSummary,
+        CancellationToken cancellationToken)
     {
         if (relatedCustomerRows.Count == 0)
         {
             return new Dictionary<Guid, IReadOnlyList<ProductPricingWorkbenchCustomerContextDto>>();
         }
 
-        var customerIds = relatedCustomerRows.Select(x => x.CustomerId).Distinct().ToArray();
-        var latestSummaries = await _dbContext.CustomerInteractionAiSummaries
-            .AsNoTracking()
-            .Where(x =>
-                x.CompanyId == companyId &&
-                x.IsActive &&
-                x.IsAiSuccess &&
-                customerIds.Contains(x.CustomerId))
-            .OrderByDescending(x => x.AiGeneratedDate ?? x.UpdatedDate ?? x.CreatedDate)
-            .ThenByDescending(x => x.CreatedDate)
-            .Select(x => new CustomerHealthSummaryRow
-            {
-                CustomerId = x.CustomerId,
-                Summary = x.Summary,
-                CustomerNeed = x.CustomerNeed,
-                CurrentStage = x.CurrentStage,
-                Risk = x.Risk,
-                NextAction = x.NextAction,
-                Sentiment = x.Sentiment,
-                GeneratedAt = x.AiGeneratedDate ?? x.UpdatedDate ?? x.CreatedDate
-            })
-            .ToListAsync(cancellationToken);
+        List<CustomerHealthSummaryRow> latestSummaries = [];
+        if (includeHealthSummary)
+        {
+            var customerIds = relatedCustomerRows.Select(x => x.CustomerId).Distinct().ToArray();
+            latestSummaries = await _dbContext.CustomerInteractionAiSummaries
+                .AsNoTracking()
+                .Where(x =>
+                    x.CompanyId == companyId &&
+                    x.IsActive &&
+                    x.IsAiSuccess &&
+                    customerIds.Contains(x.CustomerId))
+                .OrderByDescending(x => x.AiGeneratedDate ?? x.UpdatedDate ?? x.CreatedDate)
+                .ThenByDescending(x => x.CreatedDate)
+                .Select(x => new CustomerHealthSummaryRow
+                {
+                    CustomerId = x.CustomerId,
+                    Summary = x.Summary,
+                    CustomerNeed = x.CustomerNeed,
+                    CurrentStage = x.CurrentStage,
+                    Risk = x.Risk,
+                    NextAction = x.NextAction,
+                    Sentiment = x.Sentiment,
+                    GeneratedAt = x.AiGeneratedDate ?? x.UpdatedDate ?? x.CreatedDate
+                })
+                .ToListAsync(cancellationToken);
+        }
 
         var summaryByCustomer = latestSummaries
             .GroupBy(x => x.CustomerId)
@@ -442,7 +489,8 @@ internal sealed class GetProductPricingWorkbenchQueryHandler
         ProductPricingWorkbenchView view,
         bool hasEligiblePricingSource,
         IReadOnlyList<PricingVersionRow> versions,
-        bool hasQuotationRequest)
+        bool hasQuotationRequest,
+        IReadOnlySet<Guid> materialCostChangedProductIds)
     {
         var hasDraft = versions.Any(x => x.Status == ProductPricingStatus.Draft);
         var hasApproved = versions.Any(x => x.Status == ProductPricingStatus.Approved);
@@ -451,10 +499,51 @@ internal sealed class GetProductPricingWorkbenchQueryHandler
             ProductPricingWorkbenchView.NeedsPricing => hasQuotationRequest && !hasApproved,
             ProductPricingWorkbenchView.Draft => hasDraft,
             ProductPricingWorkbenchView.Approved => hasApproved,
+            ProductPricingWorkbenchView.MaterialCostChanged =>
+                materialCostChangedProductIds.Contains(versions.FirstOrDefault()?.ProductId ?? Guid.Empty),
+            ProductPricingWorkbenchView.ProductionMaterialCostChanged =>
+                materialCostChangedProductIds.Contains(versions.FirstOrDefault()?.ProductId ?? Guid.Empty),
             ProductPricingWorkbenchView.All =>
                 hasQuotationRequest || versions.Count > 0 || hasEligiblePricingSource,
             _ => false
         };
+    }
+
+    private async Task<IReadOnlySet<Guid>> LoadMaterialCostViewProductIdsAsync(
+        ProductPricingWorkbenchView view,
+        IReadOnlyDictionary<Guid, IReadOnlyList<PricingVersionRow>> versionsByProduct,
+        Guid companyId,
+        string currency,
+        CancellationToken cancellationToken)
+    {
+        var useLatestProductionFormula = view ==
+            ProductPricingWorkbenchView.ProductionMaterialCostChanged;
+        if (view != ProductPricingWorkbenchView.MaterialCostChanged &&
+            !useLatestProductionFormula)
+        {
+            return new HashSet<Guid>();
+        }
+
+        var baselines = versionsByProduct
+            .Select(pair => Latest(pair.Value, ProductPricingStatus.Approved))
+            .Where(x => x?.MaterialCostSnapshot is > 0m)
+            .Select(x => new ProductPricingMaterialCostBaseline(
+                x!.ProductId,
+                x.MaterialCostSnapshot!.Value,
+                x.SourceType.HasValue && x.SourceId.HasValue
+                    ? new ProductPricingSourceSelection(
+                        x.ProductId,
+                        x.SourceType.Value,
+                        x.SourceId.Value)
+                    : null))
+            .ToArray();
+        return await _sourceQueryService.LoadMaterialCostChangedProductIdsAsync(
+            baselines,
+            companyId,
+            currency,
+            _featureOptions.MaterialCostChangeThresholdPercent,
+            useLatestProductionFormula,
+            cancellationToken);
     }
 
     private static bool MatchesKeyword(
@@ -462,6 +551,7 @@ internal sealed class GetProductPricingWorkbenchQueryHandler
         IReadOnlyList<PricingVersionRow> versions,
         IReadOnlyList<ProductPricingRequestRow> requests,
         IReadOnlySet<Guid> quotationKeywordProductIds,
+        IReadOnlySet<Guid> sampleRequestKeywordProductIds,
         string? keyword)
     {
         if (keyword is null)
@@ -472,6 +562,7 @@ internal sealed class GetProductPricingWorkbenchQueryHandler
         return product.ProductCode.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
             product.ProductName.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
             quotationKeywordProductIds.Contains(product.ProductId) ||
+            sampleRequestKeywordProductIds.Contains(product.ProductId) ||
             versions.Any(x =>
                 x.SourceExternalId?.Contains(keyword, StringComparison.OrdinalIgnoreCase) == true) ||
             requests.Any(x =>
@@ -589,6 +680,42 @@ internal sealed class GetProductPricingWorkbenchQueryHandler
         return new CurrentPricingRows(draft, approved);
     }
 
+    private async Task<IReadOnlyDictionary<Guid, DateTime>> LoadLatestFormulaConfirmationsAsync(
+        IReadOnlyCollection<Guid> productIds,
+        Guid companyId,
+        CancellationToken cancellationToken)
+    {
+        var rows = await _dbContext.Formulas.AsNoTracking()
+            .Where(x =>
+                x.CompanyId == companyId &&
+                x.IsActive &&
+                productIds.Contains(x.ProductId) &&
+                x.CheckDate.HasValue &&
+                x.Status != FormulaStatus.Cancelled.ToString() &&
+                x.Status != FormulaStatus.Rejected.ToString())
+            .GroupBy(x => x.ProductId)
+            .Select(x => new { ProductId = x.Key, ConfirmedAt = x.Max(y => y.CheckDate) })
+            .ToListAsync(cancellationToken);
+
+        return rows
+            .Where(x => x.ConfirmedAt.HasValue)
+            .ToDictionary(x => x.ProductId, x => x.ConfirmedAt!.Value);
+    }
+
+    private static CurrentPricingRows ResolveVisibleVersions(
+        IReadOnlyList<PricingVersionRow> versions,
+        bool canManagePricing)
+    {
+        var current = ResolveCurrentVersions(versions);
+        return canManagePricing
+            ? current
+            : new CurrentPricingRows(null, current.Approved);
+    }
+
+    private static bool HasApprovedStandardPrice(
+        IReadOnlyList<PricingVersionRow> versions)
+        => Latest(versions, ProductPricingStatus.Approved)?.StandardSellingPrice > 0m;
+
     private static PricingVersionRow? Latest(
         IReadOnlyList<PricingVersionRow> versions,
         ProductPricingStatus status)
@@ -616,10 +743,11 @@ internal sealed class GetProductPricingWorkbenchQueryHandler
 
     private static string? ValidateAccess(
         ICurrentUser currentUser,
+        PricingAccessDecision pricingAccess,
         string currency,
         ProductPricingWorkbenchView view)
     {
-        if (!ProductPricingAccessRules.CanViewWorkbench(currentUser))
+        if (!pricingAccess.CanViewWorkbench)
         {
             return "Only Sale, President or Developer can access the product pricing workbench.";
         }

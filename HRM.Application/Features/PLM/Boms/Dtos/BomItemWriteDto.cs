@@ -8,5 +8,6 @@ public sealed class BomItemWriteDto
     public Guid ItemId { get; init; }
     public decimal Quantity { get; init; }
     public string Unit { get; init; } = string.Empty;
+    public string? ManufacturingStageCode { get; init; }
     public string? Note { get; init; }
 }

@@ -40,8 +40,8 @@ internal sealed class GetPartLookupQueryHandler
         if (request.NormalizedKeyword is { } keyword)
         {
             query = query.Where(part =>
-                part.ExternalId.Contains(keyword) ||
-                part.PartName.Contains(keyword));
+                EF.Functions.ILike(part.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike(part.PartName, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter));
         }
 
         return await query

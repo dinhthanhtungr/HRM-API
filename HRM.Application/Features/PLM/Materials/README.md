@@ -44,6 +44,11 @@ API tráº£ thÃ´ng tin NVL vÃ  metadata tá»‡p Ä‘Ã­nh kÃ¨m, khÃ�
   "customCode": "PU-001",
   "name": "Háº¡t nhá»±a PU",
   "categoryName": "Polyurethane",
+  "purchaseStatus": "Unavailable",
+  "isPurchaseAvailable": false,
+  "purchaseStatusReason": "Nhà cung cấp ngừng sản xuất",
+  "purchaseStatusEffectiveFrom": "2026-09-15T08:00:00",
+  "expectedAvailableDate": null,
   "lastPurchase": {
     "purchaseOrderId": "00000000-0000-0000-0000-000000000000",
     "purchaseOrderCode": "PO26070001",
@@ -138,3 +143,251 @@ Thao tÃ¡c nÃ y khÃ´ng tá»± Ä‘á»™ng ghi Ä‘Ã¨ cÃ¡c giÃ¡ t
 Response tráº£ thÃªm `totalOnHandKg`: tá»•ng tá»“n kho thÆ°á»ng cá»§a NVL theo `Material.ExternalId`, `StockType.RawMaterial`, company hiá»‡n táº¡i vÃ  ká»‡ active. Field nÃ y dÃ¹ng cÃ¹ng nguá»“n `WarehouseShelfStock` vá»›i API tá»“n kho Warehouse, nhÆ°ng chá»‰ tráº£ tá»•ng nhanh cho cá»­a sá»• preview material.
 
 `totalOnHandKg` của material preview không cộng tồn ở kệ cân trộn `CT.0.1` và không cộng kệ inactive. Rule loại kệ cân trộn chỉ áp dụng cho preview material, không đổi API tồn kho Warehouse chung.
+
+## Danh sách NVL rà soát giá cho Kế hoạch
+
+```http
+GET /api/v1/plm/material-price-reviews?pageNumber=1&pageSize=15&keyword=PU
+GET /api/v1/plm/material-price-reviews?priceStatus=MissingPrice
+GET /api/v1/plm/material-price-reviews?priceStatus=NeedsReview&staleAfterDays=30
+GET /api/v1/plm/material-price-reviews?priceStatus=UpToDate&staleAfterDays=30
+GET /api/v1/plm/material-price-reviews/materials/{materialId}/suppliers
+```
+
+Response rút gọn của danh sách:
+
+```json
+{
+  "items": [
+    {
+      "materialId": "00000000-0000-0000-0000-000000000000",
+      "externalId": "NVL-001",
+      "customCode": "VA-001",
+      "name": "Hạt nhựa PU",
+      "type": "Nguyên liệu",
+      "unit": "kg",
+      "currentPrice": 110000,
+      "lastPriceUpdatedAt": "2026-09-10T09:00:00",
+      "priceSource": "MaterialSupplier",
+      "reviewStatus": "UpToDate",
+      "usageSource": "RecentSampleRequestFormula",
+      "lastUsedAt": "2026-09-08T08:00:00",
+      "supplierCount": 2
+    }
+  ],
+  "totalCount": 1,
+  "pageNumber": 1,
+  "pageSize": 15
+}
+```
+
+Response rút gọn khi expand:
+
+```json
+{
+  "materialId": "00000000-0000-0000-0000-000000000000",
+  "suppliers": [
+    {
+      "materialsSupplierId": "00000000-0000-0000-0000-000000000001",
+      "supplierId": "00000000-0000-0000-0000-000000000002",
+      "supplierCode": "NCC-001",
+      "supplierName": "Nhà cung cấp ABC",
+      "currentPrice": 110000,
+      "currency": "VND",
+      "isPreferred": true,
+      "lastPriceUpdatedAt": "2026-09-10T09:00:00"
+    }
+  ]
+}
+```
+
+API danh sách trả mỗi NVL active một lần. Nguồn `RecentSampleRequestFormula` được ưu tiên trước: NVL active trong
+Formula active đang gắn với Sample Request active của công ty hiện tại, có `CreatedDate` trong hai tháng gần nhất.
+Trong nhóm này, thứ tự lấy theo ngày tạo Sample Request gần nhất giảm dần. Các NVL còn lại lấy từ
+ManufacturingFormula active cùng công ty, theo `ManufacturingFormula.CreatedDate` gần nhất giảm dần. Nếu một NVL
+có ở cả hai nguồn thì chỉ trả một dòng thuộc nguồn Sample Request. `lastUsedAt` là ngày nguồn dùng để sắp xếp,
+không phải ngày nhập kho hoặc ngày thay đổi master NVL.
+
+`priceStatus` là bộ lọc server-side và được áp dụng trước phân trang: `MissingPrice` là chưa có nguồn giá hợp lệ;
+`NeedsReview` là có giá nhưng không có ngày giá hoặc ngày giá cũ hơn ngưỡng; `UpToDate` là giá còn trong ngưỡng.
+`staleAfterDays` mặc định 30 ngày và được giới hạn từ 1 đến 365. Không truyền `priceStatus` thì trả tất cả trạng thái.
+Mỗi item trả thêm `reviewStatus` theo cùng rule để FE hiển thị badge mà không tự tính lại.
+
+Mỗi dòng trả `externalId`, `customCode`, `name`, `type`, `unit`, `currentPrice`, `lastPriceUpdatedAt`, `priceSource`, `reviewStatus`,
+`usageSource`, `lastUsedAt` và `supplierCount`. `currentPrice`, `lastPriceUpdatedAt`, `priceSource` dùng đúng
+`IMaterialPriceQueryService`: so giá Purchase Order hợp lệ mới nhất với giá Material - Supplier hợp lệ mới nhất
+và chọn ứng viên có ngày mới hơn; khi bằng ngày thì ưu tiên Purchase Order. Chưa có giá trả `currentPrice = 0`,
+`lastPriceUpdatedAt = null`, `priceSource = Unknown`. Giá `0` có nguồn hợp lệ vẫn là giá hợp lệ, không phải thiếu giá.
+
+API suppliers chỉ trả liên kết Material - Supplier active cùng công ty, ưu tiên nhà cung cấp `isPreferred`, sau đó
+theo tên. FE dùng `materialsSupplierId`, `currentPrice` và `currency` để gọi API cập nhật giá hiện có:
+
+```http
+POST /api/v1/plm/material-suppliers/{materialsSupplierId}/price
+```
+
+Nút Done gửi giá người dùng vừa nhập. Nút xác nhận "Giá OK" gửi lại chính `currentPrice` hiện tại làm `newPrice`
+và đồng thời gửi `expectedCurrentPrice`. Backend chấp nhận cả trường hợp giá/currency không đổi, tạo một snapshot
+`PriceHistory`, làm mới `MaterialsSupplier.UpdatedDate` và trả `priceChanged = false`. Nếu giá hoặc currency đổi,
+response trả `priceChanged = true`. Cơ chế `expectedCurrentPrice` tiếp tục ngăn ghi đè khi người khác vừa cập nhật.
+
+Cả hai API rà giá và API cập nhật yêu cầu policy `PLM.MaterialSupplierPrice.Update`. Role `PLPUUser` được phép dùng
+cùng `Purchaser`, `Admin`, `Developer` và `President`. Mọi query đều lấy `CompanyId` từ current user; FE không được
+truyền company để tránh xem hoặc sửa dữ liệu chéo công ty.
+
+### Bổ sung và điều chỉnh nhà cung cấp cho NVL
+
+Dropdown nhà cung cấp dùng API:
+
+```http
+GET /api/v1/plm/material-suppliers/lookup?materialId={materialId}&keyword=nhua&pageSize=50
+```
+
+API chỉ trả nhà cung cấp active thuộc công ty hiện tại. `keyword` tìm không phân biệt hoa thường theo mã hoặc tên;
+`pageSize` mặc định 50, tối đa 100. Khi truyền `materialId`, backend kiểm tra NVL active cùng công ty và loại các NCC
+đang được gắn active với NVL đó. Response chỉ chứa thông tin cơ bản phục vụ dropdown:
+
+```json
+[
+  {
+    "supplierId": "00000000-0000-0000-0000-000000000002",
+    "supplierCode": "NCC_1011",
+    "supplierName": "Công ty TNHH Cơ Khí Nhựa Việt Úc"
+  }
+]
+```
+
+Gắn NCC vào NVL và lưu giá ban đầu:
+
+```http
+POST /api/v1/plm/material-suppliers
+Content-Type: application/json
+
+{
+  "materialId": "00000000-0000-0000-0000-000000000001",
+  "supplierId": "00000000-0000-0000-0000-000000000002",
+  "currentPrice": 0,
+  "currency": "VND",
+  "isPreferred": false,
+  "minDeliveryDays": null
+}
+```
+
+`materialId`, `supplierId` và `currentPrice` là bắt buộc; giá `0` hợp lệ và khác với chưa có nguồn giá.
+`currency` bỏ trống mặc định `VND`. Backend từ chối cặp NVL - NCC active bị trùng; nếu cặp này từng bị inactive,
+record cũ được kích hoạt lại thay vì tạo thêm record mới. Nếu đặt `isPreferred = true`, các NCC ưu tiên khác của
+cùng NVL được bỏ cờ để giữ tối đa một NCC ưu tiên.
+
+Điều chỉnh liên kết đã có:
+
+```http
+PATCH /api/v1/plm/material-suppliers/{materialsSupplierId}
+Content-Type: application/json
+
+{
+  "newPrice": 52000,
+  "expectedCurrentPrice": 50000,
+  "currency": "VND",
+  "isPreferred": true,
+  "minDeliveryDays": 3,
+  "isActive": true
+}
+```
+
+PATCH chỉ thay đổi field được gửi; body rỗng bị từ chối. `supplierId` và `materialId` là định danh của liên kết nên
+không được đổi bằng PATCH. `expectedCurrentPrice` là khóa cạnh tranh lạc quan: nếu giá hiện tại đã khác, FE phải tải
+lại trước khi lưu. Khi request có `newPrice` hoặc `currency`, backend luôn lưu snapshot giá/tiền tệ cũ vào
+`PriceHistory`, kể cả xác nhận lại cùng giá; response trả `priceHistoryId` và `priceChanged`. `minDeliveryDays = null`
+hiện được hiểu là không đổi, API chưa hỗ trợ xóa giá trị này.
+
+`isActive = false` đánh dấu không còn mua NVL từ riêng nhà cung cấp của liên kết này; liên kết sẽ không còn xuất hiện
+trong danh sách nguồn cung/giá active và backend tự bỏ `isPreferred`. `isActive = true` kích hoạt lại liên kết nếu NVL
+và nhà cung cấp vẫn active trong cùng công ty. Không được gửi đồng thời `isActive = false` và `isPreferred = true`.
+Field không gửi là không đổi. Response POST/PATCH trả `isActive` là trạng thái hiện tại của liên kết.
+
+Ba API lookup/POST/PATCH dùng chung policy `PLM.MaterialSupplierPrice.Update` và không nhận `CompanyId` từ client.
+Sau POST/PATCH, FE có thể dùng DTO trả về để cập nhật dòng ngay hoặc gọi lại
+`GET /api/v1/plm/material-price-reviews/materials/{materialId}/suppliers`; `supplierCount` ở danh sách tổng sẽ tăng
+sau lần tải lại.
+
+## Nền dữ liệu tình trạng mua và NVL thay thế
+
+Khi NVL chuyển từ `Available` sang `Unavailable`, backend gửi notification warning cho Lab theo topic
+`plm.material.purchase_unavailable`. Notification là event trạng thái, không phải internal conversation: fallback
+hiển thị `Ngừng mua NVL` cùng mã NVL/ngày hiệu lực; payload có `contentType = material_purchase_availability_changed`,
+nhóm `material`, `availability` và deep-link `/plm/material-price-reviews?materialId={materialId}`. FE dùng
+`contentType` để hiển thị card trạng thái có lý do và ngày dự kiến mua lại. Không gửi giá, cost hay công thức trong
+payload; SignalR/Web Push tiếp tục chỉ báo hiệu để client tải lại feed.
+
+Schema PostgreSQL `Material` có hai entity nền cho luồng Kế hoạch thông báo tình trạng mua và Lab tự chọn NVL thay thế:
+
+- `MaterialPurchaseAvailability`: quan hệ một-một với `Material`, lưu trạng thái hiện tại `Available` hoặc
+  `Unavailable`, lý do, ngày hiệu lực, ngày dự kiến mua lại và audit người tạo/cập nhật.
+- `MaterialReplacement`: quan hệ có hướng từ `SourceMaterial` sang `ReplacementMaterial`. Một cặp NVL chỉ có một
+  record; các trường hợp áp dụng được lưu có cấu trúc trong cột `ApplicableContext` kiểu `jsonb`. Entity còn lưu
+  ghi chú kỹ thuật, tỷ lệ thay thế, mức ưu tiên, cờ khuyến nghị và trạng thái active.
+
+`MaterialReplacement` chỉ cung cấp phương án tham khảo; không biểu diễn việc hệ thống tự thay NVL trong công thức.
+Hai NVL trong một quan hệ phải khác nhau, tỷ lệ thay thế nếu có phải lớn hơn `0`, và mức ưu tiên phải lớn hơn `0`.
+
+### Kế hoạch cập nhật tình trạng mua
+
+```http
+PUT /api/v1/plm/materials/{materialId}/purchase-availability
+Content-Type: application/json
+
+{
+  "status": "Unavailable",
+  "reason": "Nhà cung cấp ngừng sản xuất",
+  "effectiveFrom": "2026-09-15T08:00:00",
+  "expectedAvailableDate": null,
+  "note": "Lab chọn NVL thay thế trước khi lên công thức mới"
+}
+```
+
+Endpoint dùng policy `PLM.MaterialPurchaseAvailability.Manage`; role hiện hành gồm `Purchaser`, `PLPUUser`,
+`Admin`, `Developer` và `President`. Backend lấy company/employee từ current user và chỉ cập nhật NVL active cùng
+company; id sai hoặc khác company trả `404`. `Unavailable` bắt buộc có `reason`; ngày dự kiến mua lại nếu có không
+được trước ngày hiệu lực. Với `Available`, backend xóa ngày hiệu lực và ngày dự kiến mua lại.
+
+Response trả trạng thái canonical đã lưu cùng `notificationPublished`. Cờ này chỉ bằng `true` khi trạng thái chuyển
+từ `Available` (hoặc chưa có record) sang `Unavailable`. Việc sửa lại lý do trên một NVL đang `Unavailable` không
+phát notification lặp. `GET /api/v1/plm/material-price-reviews` trả thêm `purchaseStatus`, lý do, ngày hiệu lực và
+ngày dự kiến mua lại; NVL chưa có record được hiểu là `Available`.
+
+Formula item lookup vẫn trả NVL `Unavailable` để Lab thấy lý do và có thể nhận biết bản ghi cũ, nhưng trả thêm
+`purchaseStatus`, `isPurchaseAvailable`, `purchaseStatusReason`, `purchaseStatusEffectiveFrom` và
+`expectedAvailableDate`. FE phải disable lựa chọn khi `isPurchaseAvailable = false`. Với item Product, các field
+tình trạng mua là `null`. `FormulaWriteService` vẫn kiểm tra lại khi ghi công thức để không thể bỏ qua bằng cách gọi
+API trực tiếp. Các công thức/version lịch sử không bị tự động thay hoặc xóa. Thay đổi này không kèm migration;
+database phải có hai bảng đã thiết kế trước khi gọi API mới.
+
+`GET /api/v1/plm/materials/{materialId}/preview` cũng trả cùng năm field tình trạng mua. Vì endpoint này luôn trả
+NVL nên `purchaseStatus` và `isPurchaseAvailable` không nullable; NVL chưa có record tình trạng được hiểu là
+`Available` và `isPurchaseAvailable = true`. Các field lý do/ngày trả `null` khi Kế hoạch chưa khai báo.
+
+### Phương án NVL thay thế
+
+```http
+GET  /api/v1/plm/materials/{materialId}/replacement-options
+GET  /api/v1/plm/materials/{materialId}/replacements
+POST /api/v1/plm/materials/{materialId}/replacements
+PUT  /api/v1/plm/materials/replacements/{materialReplacementId}
+```
+
+`replacement-options` là endpoint cho Lab và PLPU. Nó chỉ trả phương án `isActive = true` mà NVL thay thế vẫn active
+và không ở trạng thái `Unavailable`; thứ tự là `isRecommended` trước rồi tới `priority` tăng dần. Mỗi item trả mã,
+tên, tình trạng mua, `applicableContext`, ghi chú kỹ thuật, tỷ lệ, mức ưu tiên và cờ khuyến nghị; **không trả giá**.
+Nếu không có phương án phù hợp hoặc NVL nguồn không thuộc company hiện tại, response là danh sách rỗng.
+
+Danh sách `replacements` và hai mutation dành cho PLPU/Kế hoạch. Danh sách quản trị vẫn trả phương án inactive hoặc
+NVL thay thế đang `Unavailable` để người quản lý điều chỉnh. POST tạo một cặp nguồn-thay thế; nếu cặp cũ đã inactive,
+backend kích hoạt lại và trả `200` thay vì tạo bản ghi trùng. PUT thay toàn bộ dữ liệu nghiệp vụ của phương án;
+`technicalNote = null` nghĩa là xóa ghi chú, còn `applicableContext` không gửi sẽ được lưu là `{}`. Hai NVL phải active,
+cùng company, khác nhau; `replacementRatio` nếu có phải lớn hơn 0, `priority` lớn hơn 0, và `applicableContext` phải là
+JSON object. Cờ `isRecommended` không bị giới hạn một lựa chọn duy nhất vì schema hiện hành không đặt ràng buộc đó.
+
+Policy `PLM.MaterialReplacement.View` cho Lab, PLPU và nhóm quản lý giá/NCC xem phương án; policy
+`PLM.MaterialReplacement.Manage` chỉ cho nhóm PLPU/Kế hoạch, Purchasing, Admin, Developer và President ghi hoặc xem
+danh sách quản trị. Tất cả query/write lấy company và employee từ current user, không nhận company từ FE; sai ID hoặc
+khác company trả danh sách rỗng (read) hoặc `404` (write).

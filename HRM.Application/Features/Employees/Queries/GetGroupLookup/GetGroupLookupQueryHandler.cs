@@ -58,9 +58,9 @@ internal sealed class GetGroupLookupQueryHandler
         if (request.NormalizedKeyword is { } keyword)
         {
             query = query.Where(group =>
-                group.ExternalId.Contains(keyword) ||
-                (group.Name ?? string.Empty).Contains(keyword) ||
-                (group.GroupType ?? string.Empty).Contains(keyword));
+                EF.Functions.ILike(group.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike((group.Name ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike((group.GroupType ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter));
         }
 
 

@@ -9,6 +9,7 @@ public static class SampleRequestSampleTrialPatchFields
     public const string AdditiveRate = "additiveRate";
     public const string RequestDeliveryDate = "requestDeliveryDate";
     public const string ExpectedDeliveryDate = "expectedDeliveryDate";
+    public const string ExpectedPriceQuoteDate = "expectedPriceQuoteDate";
     public const string RequestReceivedDate = "requestReceivedDate";
     public const string FinishedDate = "finishedDate";
     public const string SentDate = "sentDate";
@@ -27,6 +28,7 @@ public static class SampleRequestSampleTrialPatchFields
         AdditiveRate,
         RequestDeliveryDate,
         ExpectedDeliveryDate,
+        ExpectedPriceQuoteDate,
         RequestReceivedDate,
         FinishedDate,
         SentDate,

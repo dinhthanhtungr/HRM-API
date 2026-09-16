@@ -70,7 +70,7 @@ internal static class SampleRequestColourCodeGenerator
             new SampleRequestColourCodeResult(candidate, additiveCode));
     }
 
-    private static int ResolveStartNumber(
+    internal static int ResolveStartNumber(
         string? currentColourCode,
         string prefix,
         IReadOnlyList<string> existingCodes)

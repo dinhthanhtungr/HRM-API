@@ -4,12 +4,14 @@ using HRM.Application.Abstractions.Persistence.Commons.Pricing;
 using HRM.Application.Abstractions.Persistence.CRM.CustomerCare;
 using HRM.Application.Abstractions.Persistence.Dispatch;
 using HRM.Application.Abstractions.Persistence.Employees;
+using HRM.Application.Abstractions.Persistence.Executive;
 using HRM.Application.Abstractions.Persistence.HRM;
 using HRM.Application.Abstractions.Persistence.InternalMail;
 using HRM.Application.Abstractions.Persistence.Notifications;
 using HRM.Application.Abstractions.Persistence.PLM;
 using HRM.Application.Abstractions.Persistence.Reports;
 using HRM.Application.Abstractions.Persistence.PLM.SaleOrders;
+using HRM.Application.Abstractions.Persistence.Purchasing;
 using HRM.Application.Abstractions.Persistence.PLM.ComplaintReports;
 using HRM.Application.Abstractions.Persistence.Timeline;
 using HRM.Application.Abstractions.Persistence.Warehouse;
@@ -53,6 +55,8 @@ internal static class PersistenceDependencyInjection
         services.AddSingleton<IProductInspectionPdfRenderer, ProductInspectionPdfRenderer>();
         services.AddSingleton<IColorChipRecordPdfRenderer, ColorChipRecordPdfRenderer>();
         services.AddSingleton<IFormulaMaterialsExcelRenderer, FormulaMaterialsExcelRenderer>();
+        services.AddSingleton<IPurchaseOrderPdfRenderer, PurchaseOrderPdfRenderer>();
+        services.AddSingleton<IPurchaseOrderExcelRenderer, PurchaseOrderExcelRenderer>();
 
         services.AddDbContext<ApplicationDbContext>(options =>
         {
@@ -88,6 +92,7 @@ internal static class PersistenceDependencyInjection
 
         // PLM Sale Order DbContext
         services.AddScoped<ISaleOrderDbContext>(provider => provider.GetRequiredService<ApplicationDbContext>());
+        services.AddScoped<IPurchaseOrderDbContext>(provider => provider.GetRequiredService<ApplicationDbContext>());
         services.AddScoped<IComplaintReportDbContext>(provider => provider.GetRequiredService<ApplicationDbContext>());
 
         // Warehouse DbContexts
@@ -98,6 +103,9 @@ internal static class PersistenceDependencyInjection
 
         // Internal mail DbContext
         services.AddScoped<IInternalMailDbContext>(provider => provider.GetRequiredService<ApplicationDbContext>());
+
+        // Executive read models
+        services.AddScoped<IExecutiveReadDbContext>(provider => provider.GetRequiredService<ApplicationDbContext>());
 
         // Report DbContexts
         services.AddScoped<IReportReadDbContext>(provider => provider.GetRequiredService<ApplicationDbContext>());

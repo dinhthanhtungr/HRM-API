@@ -44,15 +44,21 @@ namespace HRM.Application.Features.Auth.UseCases.RefreshToken
                 return null;
             }
 
-            var accessToken = _tokenService.CreateAccessToken(user);
             var newRefreshToken = _tokenService.CreateRefreshToken();
             var refreshTokenExpiresAtUtc = DateTime.Now.AddDays(7);
 
-            await _identityAuthenticationService.StoreRefreshTokenAsync(
+            var rotated = await _identityAuthenticationService.RotateRefreshTokenAsync(
                 user.UserId,
+                request.RefreshToken,
                 newRefreshToken,
                 refreshTokenExpiresAtUtc,
                 cancellationToken);
+            if (!rotated)
+            {
+                return null;
+            }
+
+            var accessToken = _tokenService.CreateAccessToken(user);
 
             return new LoginResultDto
             {

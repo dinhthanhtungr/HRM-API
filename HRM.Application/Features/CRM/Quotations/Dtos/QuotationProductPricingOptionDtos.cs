@@ -24,10 +24,11 @@ public sealed class QuotationProductPricingOptionDto
     public ProductPricingVersionDto? CurrentPricing { get; init; }
 
     /// <summary>
-    /// Giá chuẩn FE nên hiển thị: ưu tiên giá đã duyệt, nếu chưa có thì dùng giá hệ thống tính realtime.
-    /// Chỉ được map cho role có quyền xem Product Pricing Workbench.
+    /// Giá chuẩn FE nên hiển thị theo pricing capability. Sale chỉ nhận giá Approved;
+    /// fallback realtime chỉ dành cho user có quyền xem giá hệ thống tính.
     /// </summary>
     public decimal? StandardSellingPrice { get; init; }
+    public string? PublisherNote { get; init; }
 
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public QuotationProductStandardSellingPriceSource StandardSellingPriceSource { get; init; }
@@ -94,6 +95,12 @@ public sealed class QuotationProductPricingMaterialDto
     public string Unit { get; init; } = string.Empty;
 
     public Guid? CategoryId { get; init; }
+    [JsonIgnore]
+    public bool HasSourcePriceSnapshot { get; init; }
+    [JsonIgnore]
+    public decimal? SourceUnitPrice { get; init; }
+    [JsonIgnore]
+    public decimal? SourceTotalPrice { get; init; }
     public bool HasLatestPrice { get; init; }
     public decimal? LatestUnitPrice { get; init; }
     public decimal? LatestTotalPrice { get; init; }
@@ -101,6 +108,7 @@ public sealed class QuotationProductPricingMaterialDto
 
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public LatestPriceSourceType LatestPriceSource { get; init; } = LatestPriceSourceType.Unknown;
+    public PriceCalculationDetailDto? PriceCalculation { get; init; }
 
     public IReadOnlyList<QuotationProductPricingMaterialSupplierDto> SupplierPrices { get; init; } = [];
 }

@@ -28,7 +28,7 @@ internal sealed class GetTemplateSelectionQueryHandler
             return Task.FromResult<PrintLabelTemplateSelectionDto?>(null);
         }
 
-        return _db.PrintLabelTemplates
+        return _db.PrintLabelTemplates  
             .AsNoTracking()
             .Where(template =>
                 template.Id == request.PrintLabelTemplateId &&

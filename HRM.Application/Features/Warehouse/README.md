@@ -2,11 +2,13 @@
 
 ## Mục đích
 
-Feature Warehouse phục vụ màn hình xem tồn kho khả dụng. Endpoint chính hiện tại là API lấy danh sách tồn kho khả dụng theo mã hàng và loại kho để FE hiển thị tổng tồn, lượng đang giữ chỗ, lượng khả dụng và detail theo kệ/lô/công ty.
+Feature Warehouse phục vụ màn hình xem tồn kho khả dụng và kiểm tra lịch sử phiếu kho. Endpoint tồn kho lấy tổng tồn, lượng đang giữ chỗ, lượng khả dụng và detail theo kệ/lô/công ty; endpoint voucher trả header và toàn bộ dòng phiếu đã lưu.
 
 ## Phạm vi
 
 Feature này chỉ đọc dữ liệu tồn kho, không ghi nhận nhập/xuất kho, không tạo reserve và không thay đổi trạng thái kệ. Dữ liệu tồn được lấy từ `WarehouseShelfStock`; dữ liệu giữ chỗ được lấy từ `WarehouseTempStock`.
+
+Lịch sử voucher cũng là read-only, không thay đổi phiếu, ledger hoặc request và không cần migration. List chỉ lấy voucher có `RequestId` để giữ nghiệp vụ legacy; API detail vẫn cho phép xem voucher không có request nếu phiếu thuộc company hiện tại.
 
 ## Luồng nghiệp vụ
 
@@ -24,6 +26,8 @@ Feature này chỉ đọc dữ liệu tồn kho, không ghi nhận nhập/xuất
 ## API
 
 - `GET /api/v1/warehouse/stock-available`
+- `GET /api/v1/warehouse/vouchers`
+- `GET /api/v1/warehouse/vouchers/{voucherId}`
 
 Query:
 
@@ -38,6 +42,16 @@ Response:
 - `OperationResult<PagedResult<StockAvailableDto>>`.
 - Mỗi item gồm `ShelfStockId`, `Code`, `StockType`, `CodeName`, `CategoryName`, `TotalOnHandKg`, `ReservedOpenAllKg`, `AvailableKg`, `ReservedVaCodes`, `StockDetailAvailables`.
 
+### Lịch sử voucher
+
+`GET /api/v1/warehouse/vouchers` nhận `voucherType`, `reqType`, `status`, `fromDate`, `toDate`, `keyword`, `pageNumber`, `pageSize`. Không nhận `companyId`: company luôn lấy từ token hiện tại. `status` vẫn là chuỗi legacy và lọc không phân biệt hoa thường; `voucherType`, `reqType`, `reqStatus` và `detail.voucherType` là code enum ổn định để FE tự map nhãn.
+
+Kết quả có dạng `OperationResult<PagedResult<WarehouseVoucherListItemDto>>`; mỗi item gồm header (`voucherId`, `voucherCode`, `status`, `createdDate`), request (`requestId`, `requestCode`, `reqType`, `reqStatus`, `codeFromRequest`), company/người tạo và `details`. Thứ tự là `createdDate DESC`, rồi `voucherId DESC`. `keyword` tìm voucher/request, mã/tên hàng và lot trên dòng, hoặc mã sample request suy ra `Product.ColourCode`; ký tự `%` và `_` được xử lý literal, không trở thành wildcard.
+
+`GET /api/v1/warehouse/vouchers/{voucherId}` trả `OperationResult<WarehouseVoucherDetailResponseDto>` với cùng header và `details`, nhưng không bổ sung supplier/comment ImportOther như legacy list. Nếu không tồn tại, voucher khác company, id không hợp lệ hoặc người gọi không có quyền Warehouse thì trả `404` để không lộ sự tồn tại của phiếu.
+
+Mỗi `details[]` đại diện một `WarehouseVoucherDetail` đã persist. `movementDate` là thời điểm mới nhất (`MAX(WarehouseShelfLedger.CreatedAt)`) theo `voucherDetailId`; `null` nghĩa là chưa có ledger liên kết. Danh sách rỗng nghĩa là phiếu không có dòng. Với request `ImportOther`, list mới điền `supplierName`, `supplierExternalId`, `comments` từ Purchase Order/Snapshot theo `codeFromRequest`; chuỗi rỗng nghĩa là không tìm thấy snapshot phù hợp hoặc voucher không thuộc nhánh đó.
+
 ## Dữ liệu
 
 - `WarehouseShelfStock`: tồn kho thực tế theo kệ/lô/loại kho.
@@ -45,6 +59,10 @@ Response:
 - `Material`: map tên nguyên vật liệu khi `StockType` là `RawMaterial` hoặc `DefectiveRawMaterial`.
 - `Product`: map tên thành phẩm khi `StockType` là `FinishedGood` hoặc `DefectiveFinishedGood`.
 - `WarehouseTempStock`: tính lượng đang giữ chỗ/reserved.
+- `WarehouseVouchers`, `WarehouseVoucherDetails`: header và dòng lịch sử voucher.
+- `WarehouseShelfLedgers`: nguồn canonical của `movementDate` từng dòng.
+- `WarehouseRequests`: request liên kết và loại/trạng thái request.
+- `PurchaseOrders` + `PurchaseOrderSnapshots`: chỉ dùng enrich supplier/comment cho list `ImportOther`.
 
 ## Truy vết tồn thành phẩm theo khách hàng
 
@@ -64,6 +82,12 @@ Riêng `customer-product-stock` loại kệ cân trộn `CT.0.1` khỏi tồn th
 
 Controller có `[Authorize]`. Handler bắt buộc lọc dữ liệu theo `CurrentUser.CompanyId` cho tồn kho, reserved, material, product và sample request để tránh lộ tồn kho giữa các công ty. Stock nằm trên kệ inactive bị loại trước bước group, nên không thể xuất hiện trong tổng tồn, detail hoặc available.
 
+Sale (`SaleUser`/`SaleAdmin`) chỉ xem tồn của Product thuộc Sample Request/Formula trong customer scope của mình; NVL trong Formula của các Product đó cũng thuộc phạm vi. `KH_VIETAUS` luôn được đưa vào phạm vi của Sale, không phụ thuộc `keyword`. Lọc được thực hiện ngay trong Application query trước khi group tồn, không lọc ở FE. Admin, Developer, President, KHOUser và CustomerViewAll vẫn xem toàn bộ tồn trong company.
+
+Rule này nằm ở `IWarehouseStockVisibilityService` và được dùng cho cả `stock-available` và Material Preview, để không phát sinh một cách lọc riêng theo từng màn hình.
+
+Voucher history cho phép thêm Sale đọc nhưng Sale chỉ thấy phiếu có dòng Product/NVL trong customer scope của mình; Sale mở phiếu detail cũng bị kiểm tra lại, không chỉ dựa vào list. `KH_VIETAUS` luôn được xem, còn `keyword` chỉ phục vụ tìm kiếm. Warehouse/Admin/Developer/President vẫn đọc toàn bộ. Cả list và detail đều filter `WarehouseVoucher.CompanyId == CurrentUser.CompanyId`; detail dùng đồng thời `VoucherId + CompanyId` nên không bị IDOR. Request, employee, company và Purchase Order enrich cũng bị giới hạn cùng company.
+
 ## Quy tắc nghiệp vụ
 
 - Kệ inactive không được tính tồn, không hiện detail và không ảnh hưởng available.
@@ -71,6 +95,7 @@ Controller có `[Authorize]`. Handler bắt buộc lọc dữ liệu theo `Curre
 - Reserved chỉ tính dòng open còn dư: `QtyRequest - QtyUsed > 0`.
 - Hàng lỗi không trừ reserved và luôn trả available bằng `0`.
 - Không phân trang trực tiếp ở database vì dữ liệu còn phải enrich tên hàng, detail, reserved và filter theo available.
+- Sale không được trả toàn bộ stock rồi mới lọc ở client; mọi màn hình mới hiển thị tồn phải dùng chung rule customer scope này.
 
 ## Kiểm thử
 
@@ -80,3 +105,6 @@ Controller có `[Authorize]`. Handler bắt buộc lọc dữ liệu theo `Curre
 - Reserved consumed/cancelled hoặc đã dùng hết không được tính.
 - Hàng lỗi luôn có reserved và available bằng `0`.
 - Filter `onlyAvailableLeZero` và `availableMax` phải chạy sau khi tính available.
+- Voucher list chỉ chứa phiếu có `RequestId`; filter ngày dùng `fromDate` inclusive và hết ngày `toDate` inclusive.
+- Voucher list tải page header trước, sau đó batch tải details và ledger; không có N+1 theo voucher/detail.
+- Regression phải kiểm tra Sale không thấy Product ngoài phạm vi và luôn thấy dữ liệu `KH_VIETAUS` cả khi không truyền `keyword`.

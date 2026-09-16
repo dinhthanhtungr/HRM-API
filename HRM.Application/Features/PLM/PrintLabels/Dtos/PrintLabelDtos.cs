@@ -10,7 +10,7 @@ public sealed class PrintLabelElementRequest
 public sealed class PrintLabelTemplateSelectionDto
 {
     public Guid Id { get; init; }
-    public string Code { get; init; } = string.Empty;
+    public string ExternalId { get; init; } = string.Empty;
     public string Name { get; init; } = string.Empty;
     public decimal WidthMm { get; init; }
     public decimal HeightMm { get; init; }
@@ -22,7 +22,7 @@ public sealed class PrintLabelTemplateSelectionDto
 public sealed class PrintLabelLogoDto
 {
     public Guid Id { get; init; }
-    public string Code { get; init; } = string.Empty;
+    public string ExternalId { get; init; } = string.Empty;
     public string Name { get; init; } = string.Empty;
     public Guid AttachmentCollectionId { get; init; }
     public bool IsDefault { get; init; }
