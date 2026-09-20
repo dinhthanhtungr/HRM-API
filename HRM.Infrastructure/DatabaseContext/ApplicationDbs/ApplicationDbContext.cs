@@ -215,6 +215,7 @@ namespace HRM.Infrastructure.DatabaseContext.ApplicationDbs
                     .OnDelete(DeleteBehavior.Restrict) // ProductId là non-nullable ⇒ không SetNull
                     .HasConstraintName("FK_Formulas_Product");
 
+
                 entity.HasOne(d => d.CreatedByNavigation).WithMany(p => p.FormulaCreatedByNavigations)
                     .HasForeignKey(d => d.CreatedBy)
                     .OnDelete(DeleteBehavior.SetNull)   // CreatedBy nullable

@@ -199,6 +199,9 @@ internal static class ProductPricingReviewMaterialComparisonRules
         IReadOnlyDictionary<Guid, PricingReviewFormulaItemCategory> categories)
     {
         var representative = viewed ?? standard!;
+        var identity = ProductPricingReviewItemIdentity.Resolve(
+            representative.ItemType,
+            representative.ItemId);
         var categoryId = viewed?.CategoryId ?? standard?.CategoryId;
         var category = categoryId.HasValue
             ? categories.GetValueOrDefault(categoryId.Value)
@@ -252,8 +255,9 @@ internal static class ProductPricingReviewMaterialComparisonRules
 
         return new PricingReviewFormulaMaterialComparisonDto
         {
-            ItemType = representative.ItemType,
-            MaterialId = representative.ItemId,
+            ItemType = identity.ItemType,
+            MaterialId = identity.MaterialId,
+            ProductId = identity.ProductId,
             MaterialCode = representative.MaterialCode,
             MaterialName = representative.MaterialName,
             CategoryId = categoryId,

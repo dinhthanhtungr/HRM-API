@@ -38,7 +38,7 @@ internal sealed class GetBomDefinitionQueryHandler
             {
                 BomDefinitionId = x.BomDefinitionId,
                 ProductId = x.ProductId,
-                Code = x.Code,
+                Code = x.ExternalId,
                 Name = x.Name,
                 BomType = x.BomType,
                 Description = x.Description,

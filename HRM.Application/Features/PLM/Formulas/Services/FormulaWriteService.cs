@@ -20,6 +20,9 @@ internal sealed class FormulaWriteService
 {
     private const decimal MaxQuantity = 999999999999.9999999999m;
     private const decimal MaxPrice = 9999999999999999.999999m;
+    // Temporary: allow existing unavailable materials while formulas are still being developed.
+    // Set to true to restore purchase-availability validation on formula writes.
+    private const bool EnforceMaterialPurchaseAvailabilityOnFormulaWrite = false;
 
     private readonly IPLMWriteDbContext _dbContext;
     private readonly IExternalIdService _externalIdService;
@@ -541,7 +544,8 @@ internal sealed class FormulaWriteService
                     x.MaterialId == request.ItemId &&
                     x.CompanyId == companyId &&
                     x.IsActive == true &&
-                    (x.PurchaseAvailability == null ||
+                    (!EnforceMaterialPurchaseAvailabilityOnFormulaWrite ||
+                     x.PurchaseAvailability == null ||
                      x.PurchaseAvailability.Status != MaterialPurchaseStatus.Unavailable))
                 .Select(x => new ItemSnapshot(
                     x.CategoryId,
@@ -551,7 +555,9 @@ internal sealed class FormulaWriteService
                 .FirstOrDefaultAsync(cancellationToken);
 
             return material ?? throw new InvalidOperationException(
-                "Formula material was not found, is inactive, or is no longer available for purchase.");
+                EnforceMaterialPurchaseAvailabilityOnFormulaWrite
+                    ? "Formula material was not found, is inactive, or is no longer available for purchase."
+                    : "Formula material was not found or is inactive.");
         }
 
         var product = await _dbContext.Products

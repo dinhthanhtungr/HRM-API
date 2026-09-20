@@ -17,6 +17,11 @@ namespace HRM.Domain.Enums.Category
         KSP,    // Kiểm soát sản xuất (Production Control)
 
         MFG,    // Lệnh sản xuất
+        DHH,    // Định mức hao hụt (Manufacturing loss profile)
+        WI,     // Hướng dẫn công việc sản xuất
+        MPT,    // Quy trình sản xuất mẫu
+        MPS,    // Công đoạn của quy trình sản xuất mẫu
+        WIC,    // Mục checklist của hướng dẫn công việc
         VA,     // Công thức sản xuất (VA - formula)
         VU,     // Công thức phối màu (Vụ / Masterbatch color formula)
 

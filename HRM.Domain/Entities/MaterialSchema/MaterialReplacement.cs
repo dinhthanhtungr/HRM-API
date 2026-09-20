@@ -1,4 +1,5 @@
 using System.Text.Json;
+using HRM.Domain.Entities.BomSchema;
 using HRM.Domain.Entities.HrSchema;
 
 namespace HRM.Domain.Entities.MaterialSchema;
@@ -37,6 +38,8 @@ public sealed class MaterialReplacement
     public Material SourceMaterial { get; set; } = null!;
 
     public Material ReplacementMaterial { get; set; } = null!;
+
+    public ICollection<BomVersionItemAlternative> BomVersionItemAlternatives { get; set; } = new List<BomVersionItemAlternative>();
 
     public Employee? CreatedByNavigation { get; set; }
 

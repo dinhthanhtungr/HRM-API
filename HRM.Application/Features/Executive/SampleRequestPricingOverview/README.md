@@ -39,14 +39,19 @@ Filter nâng cao `view` dùng enum canonical của Product Pricing Workbench:
 
 - `All`: không lọc pricing; giữ toàn bộ danh sách Sample Request mà user được phép xem.
 - `NeedsPricing`: Product cần BGD xử lý giá: đã có quotation request định giá nhưng chưa có Approved pricing
-  version, hoặc đã có giá chuẩn nhưng đang `PendingReapproval`. `PendingReapproval` xảy ra khi lần duyệt giá
-  gần nhất đã quá `ApprovedPricingReviewAfterDays`, hoặc Lab xác nhận Formula active mới sau mốc
-  `ApprovedAt ?? UpdatedDate ?? CreatedDate` của bản giá chuẩn mới nhất. BGD chỉ cần duyệt lại giá đang chọn
-  hoặc tạo/duyệt giá theo nguồn khác; không bắt buộc phải dùng Formula Lab vừa xác nhận.
+  version, Sale gửi request mới hơn lần Approved gần nhất, hoặc đã có giá chuẩn nhưng đang `PendingReapproval`.
+  `PendingReapproval` còn xảy ra khi lần duyệt giá gần nhất đã quá `ApprovedPricingReviewAfterDays`, hoặc Lab xác
+  nhận Formula active mới sau mốc `ApprovedAt ?? UpdatedDate ?? CreatedDate` của bản giá chuẩn mới nhất, hoặc chi
+  phí NVL realtime của source Approved tăng ít nhất `MaterialCostChangeThresholdPercent`. Request đã thu hồi hoặc
+  cũ hơn version Approved mới nhất không còn được tính. `pricingAttentionSources` chỉ rõ một hay nhiều nguyên nhân:
+  `SaleQuotationRequested`, `LabFormulaConfirmed`, `ReviewExpired`, `MaterialCostIncreased`. BGD chỉ cần duyệt lại
+  giá đang chọn hoặc tạo/duyệt giá theo nguồn khác; không bắt buộc phải dùng Formula Lab vừa xác nhận.
 - `Draft`: Product có Draft pricing version active bằng currency đang chọn.
 - `Approved`: Product có Approved pricing version active bằng currency đang chọn.
-- `MaterialCostChanged`: Formula/VA đã lưu trên bản giá `Approved` mới nhất có chi phí NVL realtime tăng ít nhất
-  `MaterialCostChangeThresholdPercent` so với `MaterialCostSnapshot` của chính bản Approved đó.
+- `MaterialCostChanged`: Formula/VA đã lưu trên bản giá `Approved` mới nhất có chi phí NVL realtime tăng so với
+  `MaterialCostSnapshot` của chính bản Approved đó. View này không áp dụng ngưỡng 5%; mọi mức tăng dương đều khớp.
+  `NeedsPricing` vẫn chỉ coi biến động NVL là nguyên nhân cần xử lý khi mức tăng đạt
+  `MaterialCostChangeThresholdPercent`.
 - `ProductionMaterialCostChanged`: VA `Checking` được chọn ở lệnh sản xuất mới nhất của Product có chi phí NVL
   realtime tăng ít nhất ngưỡng trên so với `MaterialCostSnapshot` của bản Approved mới nhất. Không có VA sản xuất
   `Checking`, snapshot bằng 0, thiếu giá realtime, hoặc chi phí không tăng thì không khớp.
@@ -100,6 +105,46 @@ Ví dụ rút gọn:
         "manufacturingCost": 10000,
         "profitMarginRate": 27.91,
         "profitMarginPercent": 21.8182,
+        "pricingAttentionSources": [
+          "SaleQuotationRequested",
+          "LabFormulaConfirmed",
+          "ReviewExpired",
+          "MaterialCostIncreased"
+        ],
+        "realtimePriceComparison": {
+          "currency": "VND",
+          "approvedStandardPrice": 244514,
+          "realtimeAdjustedStandardPrice": 244514,
+          "standardPriceDifference": 0,
+          "standardPriceDifferencePercent": 0,
+          "approvedMaterialCostSnapshot": 187727,
+          "realtimeMaterialCost": 187727,
+          "materialCostDifference": 0,
+          "materialCostDifferencePercent": 0,
+          "movementStatus": "Unchanged",
+          "isMaterialCostComplete": true,
+          "isIncreaseWarning": false,
+          "warningThresholdPercent": 5,
+          "calculatedAt": "2026-09-17T11:59:14.7456778+07:00"
+        },
+        "materials": [
+          {
+            "formulaMaterialId": "3f29c14f-95bb-4b79-91f6-1b64f280622a",
+            "itemId": "53430574-1806-4d1e-98ed-af1b45d9d9f3",
+            "itemType": "Material",
+            "itemCode": "NVL_001",
+            "itemName": "Hạt nhựa PP",
+            "quantity": 1.2,
+            "unit": "KG",
+            "availabilitySummary": {
+              "status": "Unavailable",
+              "isPurchaseAvailable": false,
+              "reason": "Nhà cung cấp tạm ngừng bán",
+              "effectiveFrom": "2026-09-18T00:00:00+07:00",
+              "expectedAvailableDate": "2026-10-01T00:00:00+07:00"
+            }
+          }
+        ],
         "pricingStatus": "Approved",
         "pricingHealthStatus": "Ready",
         "requiresPricingAction": false,
@@ -161,6 +206,16 @@ Ví dụ rút gọn:
 - `pricing.publisherNote` là ghi chú công khai của `ProductPricingVersion` Approved đang cung cấp giá chuẩn;
   nó đi cùng `standardSellingPrice` và `approvedPricingVersionId`. Field là `null` khi chưa có bản Approved
   hoặc người duyệt không ghi chú; Draft và giá system-calculated không được dùng làm nguồn ghi chú public.
+- `pricing.realtimePriceComparison` dùng chung `StandardPriceRealtimeComparisonQueryService` với Product Pricing
+  Workbench. Read-model luôn lấy bản `Approved` mới nhất làm mốc, rồi tính lại giá chuẩn tham chiếu từ chi phí NVL
+  realtime của đúng Formula/VA đã duyệt; nó không ghi đè giá chuẩn và không tạo pricing version. Field là `null`
+  khi không có giá Approved dương hoặc current user không được xem giá Approved. Các field chi phí tuyệt đối trong
+  object tiếp tục được che theo pricing capability; `calculatedAt` là thời điểm batch comparison được tính.
+- `pricing.materials` là danh sách dòng phẳng của đúng Formula/VA trong `displayedFormula`; API không bung cây
+  thành phần con. `availabilitySummary` chỉ có trên dòng `Material` hoặc `MaterialFailure` đã resolve được NVL
+  cùng company; dòng `Product`/`ProductFailure` không serialize field này. NVL chưa có record trạng thái riêng được hiểu là
+  `Available` theo `MaterialPurchaseAvailabilityRules`; `Unavailable` trả thêm lý do và ngày dự kiến mua lại nếu có.
+  Danh sách này đi cùng quyền xem material cost; khi capability không cho phép thì trả mảng rỗng.
 - Không có version/source hợp lệ vẫn giữ item Sample Request. Các số giá và version id là `null`, status là
   `NoEligibleSource`, health là `NoEligibleSource`, `requiresPricingAction = true`.
 - `pricing.displayedFormula` là chính source mà Workbench đang dùng để tạo giá hiển thị, không query/chọn lại

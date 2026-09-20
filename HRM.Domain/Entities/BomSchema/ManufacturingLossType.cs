@@ -10,7 +10,7 @@ public class ManufacturingLossType
 {
     public Guid ManufacturingLossTypeId { get; set; }
     public Guid CompanyId { get; set; }
-    public string Code { get; set; } = string.Empty;
+    public string ExternalId { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
     public LossCalculationMethod DefaultCalculationMethod { get; set; }
@@ -23,4 +23,5 @@ public class ManufacturingLossType
 
     public virtual Company Company { get; set; } = null!;
     public virtual ICollection<ManufacturingBomLossRule> LossRules { get; set; } = new List<ManufacturingBomLossRule>();
+    public virtual ICollection<ManufacturingLossProfileRule> ProfileRules { get; set; } = new List<ManufacturingLossProfileRule>();
 }

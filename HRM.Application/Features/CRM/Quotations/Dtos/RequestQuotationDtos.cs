@@ -5,7 +5,7 @@ using HRM.Domain.Enums.CustomerEnum;
 public sealed class RequestQuotationRequest
 {
     public string Message { get; init; } = string.Empty;
-    public bool IsUrgent { get; init; }
+    public bool IsUrgent { get; init; } = true;
 }
 
 public sealed class RequestQuotationResultDto

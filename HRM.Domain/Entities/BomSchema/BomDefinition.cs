@@ -12,7 +12,7 @@ public class BomDefinition
     public Guid BomDefinitionId { get; set; }
     public Guid CompanyId { get; set; }
     public Guid ProductId { get; set; }
-    public string Code { get; set; } = string.Empty;
+    public string ExternalId { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public BomType BomType { get; set; }
     public string? Description { get; set; }

@@ -1,3 +1,4 @@
+using HRM.Application.Features.CRM.Quotations.Dtos;
 using HRM.Domain.Enums.CustomerEnum;
 
 namespace HRM.Application.Features.CRM.Quotations.Services;
@@ -15,7 +16,8 @@ internal sealed record ApprovedProductTierPricingReference(
     string SourceExternalId,
     string SourceName,
     IReadOnlyList<QuotationTierPriceReference> PriceTiers,
-    string? PublisherNote = null);
+    string? PublisherNote = null,
+    decimal? MaterialCostSnapshot = null);
 
 internal sealed record SystemCalculatedTierPricingReference(
     Guid ProductId,
@@ -42,7 +44,8 @@ internal sealed record ResolvedProductTierPricingReferences(
     ApprovedProductTierPricingReference? ApprovedPricing,
     SystemCalculatedTierPricingReference? SystemCalculatedPricing,
     LatestQuotedTierPricingReference? LatestQuotedPricing,
-    QuotationDefaultPriceTierSource? DefaultPriceTierSource)
+    QuotationDefaultPriceTierSource? DefaultPriceTierSource,
+    StandardPriceRealtimeComparisonDto? RealtimePriceComparison = null)
 {
     public IReadOnlyList<QuotationTierPriceReference> DefaultPriceTiers =>
         DefaultPriceTierSource == QuotationDefaultPriceTierSource.ApprovedPricingVersion

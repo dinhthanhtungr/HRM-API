@@ -16,13 +16,13 @@ public interface IIdentityAuthenticationService
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Lưu refresh token mới cho user sau khi đăng nhập thành công.
-    /// Refresh token này dùng để cấp lại access token khi access token hết hạn.
+    /// Stores the proposed refresh token, or returns the active database token when
+    /// shared-token compatibility mode is enabled and that token is still valid.
     /// </summary>
-    Task StoreRefreshTokenAsync(
-        Guid userId, 
-        string refreshToken, 
-        DateTime expiresAtUtc, 
+    Task<RefreshTokenSessionDto> StoreOrReuseRefreshTokenAsync(
+        Guid userId,
+        string proposedRefreshToken,
+        DateTime proposedExpiresAtUtc,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -35,14 +35,14 @@ public interface IIdentityAuthenticationService
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Atomically replaces the current refresh token. The operation succeeds only when
-    /// the expected token is still the active, unexpired token for the user.
+    /// Reuses the submitted active token in compatibility mode. When compatibility mode
+    /// is disabled, atomically rotates it to the proposed token.
     /// </summary>
-    Task<bool> RotateRefreshTokenAsync(
+    Task<RefreshTokenSessionDto?> RenewRefreshTokenAsync(
         Guid userId,
         string expectedRefreshToken,
-        string newRefreshToken,
-        DateTime expiresAtUtc,
+        string proposedRefreshToken,
+        DateTime proposedExpiresAtUtc,
         CancellationToken cancellationToken = default);
 
     /// <summary>

@@ -468,14 +468,9 @@ Participant mute nhận state đã đọc để vẫn thấy card ở Hub nhưng
 ## Material purchase unavailable
 
 Topic append-only `MaterialPurchaseUnavailable = 53` có `topicCode = plm.material.purchase_unavailable`, category
-`material`, event group `availability` và aggregate type `Material`. Topic được publish từ
-`UpdateMaterialPurchaseAvailabilityCommandHandler` qua `INotificationService.PublishAsync` khi một NVL chuyển từ
-`Available` sang `Unavailable`.
+`material`, event group `availability` và aggregate type `Material`. Topic vẫn được giữ trong catalog nhưng hiện
+`UpdateMaterialPurchaseAvailabilityCommandHandler` không publish notification khi một NVL chuyển sang `Unavailable`.
 
-Recipient là employee active có role global `LabUser` hoặc `LabAdmin` trong đúng company của NVL. Người cập nhật
-không bị loại riêng nếu đồng thời có role Lab. Fallback có `title = "Ngừng mua NVL"` và message ngắn; payload có
-`contentType = material_purchase_availability_changed`, nhóm `material` (id/mã/tên), `availability` (trạng thái,
-lý do, ngày hiệu lực, ngày dự kiến mua lại) và `action.href` trỏ vào màn hình rà soát giá với `materialId`. FE dùng
-`contentType` để render event card thay vì trình bày payload như tin nhắn hội thoại. Payload không chứa giá, cost,
-công thức hoặc dữ liệu nhạy cảm. SignalR và Web Push không đổi: service tạo UserState và outbox chuẩn, kênh
-realtime/push chỉ mang tín hiệu để FE tải lại notification feed/detail.
+Không có recipient, UserState, outbox, SignalR hoặc Web Push được tạo từ thao tác tạm dừng mua NVL. Contract cập
+nhật vẫn trả `notificationPublished = false`. Khi bật lại topic này, cần khôi phục recipient và payload theo policy
+của notification feature.

@@ -6,13 +6,15 @@ using HRM.Infrastructure.DatabaseContext.ApplicationDbs;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace HRM.Infrastructure.Authentication;
 
 public sealed class IdentityAuthenticationService(
     UserManager<ApplicationUser> userManager ,
     ApplicationDbContext dbContext,
-    ILogger<IdentityAuthenticationService> logger)
+    ILogger<IdentityAuthenticationService> logger,
+    IOptions<RefreshTokenSessionOptions> refreshTokenOptions)
     : IIdentityAuthenticationService
 {
     public async Task<AuthenticatedUserDto?> ValidateUserAsync(
@@ -66,10 +68,10 @@ public sealed class IdentityAuthenticationService(
         };
     }
 
-    public async Task StoreRefreshTokenAsync(
+    public async Task<RefreshTokenSessionDto> StoreOrReuseRefreshTokenAsync(
         Guid userId,
-        string refreshToken,
-        DateTime expiresAtUtc,
+        string proposedRefreshToken,
+        DateTime proposedExpiresAtUtc,
         CancellationToken cancellationToken = default)
     {
         var user = await userManager.Users
@@ -80,10 +82,23 @@ public sealed class IdentityAuthenticationService(
             throw new InvalidOperationException("User not found or inactive.");
         }
 
-        user.RefreshToken = refreshToken;
-        user.RefreshTokenExpirationDateTime = expiresAtUtc;
+        if (refreshTokenOptions.Value.ReuseActiveToken &&
+            !string.IsNullOrWhiteSpace(user.RefreshToken) &&
+            user.RefreshTokenExpirationDateTime > DateTime.Now)
+        {
+            return new RefreshTokenSessionDto(
+                user.RefreshToken,
+                user.RefreshTokenExpirationDateTime);
+        }
+
+        user.RefreshToken = proposedRefreshToken;
+        user.RefreshTokenExpirationDateTime = proposedExpiresAtUtc;
 
         await userManager.UpdateAsync(user);
+
+        return new RefreshTokenSessionDto(
+            proposedRefreshToken,
+            proposedExpiresAtUtc);
     }
 
     public async Task<AuthenticatedUserDto?> ValidateRefreshTokenAsync(
@@ -127,21 +142,37 @@ public sealed class IdentityAuthenticationService(
             };
         }
 
-    public async Task<bool> RotateRefreshTokenAsync(
+    public async Task<RefreshTokenSessionDto?> RenewRefreshTokenAsync(
         Guid userId,
         string expectedRefreshToken,
-        string newRefreshToken,
-        DateTime expiresAtUtc,
+        string proposedRefreshToken,
+        DateTime proposedExpiresAtUtc,
         CancellationToken cancellationToken = default)
     {
         if (userId == Guid.Empty ||
             string.IsNullOrWhiteSpace(expectedRefreshToken) ||
-            string.IsNullOrWhiteSpace(newRefreshToken))
+            string.IsNullOrWhiteSpace(proposedRefreshToken))
         {
-            return false;
+            return null;
         }
 
         var now = DateTime.Now;
+
+        if (refreshTokenOptions.Value.ReuseActiveToken)
+        {
+            var activeSession = await userManager.Users
+                .Where(user =>
+                    user.Id == userId &&
+                    user.RefreshToken == expectedRefreshToken &&
+                    user.RefreshTokenExpirationDateTime > now)
+                .Select(user => new RefreshTokenSessionDto(
+                    user.RefreshToken!,
+                    user.RefreshTokenExpirationDateTime))
+                .FirstOrDefaultAsync(cancellationToken);
+
+            return activeSession;
+        }
+
         var updatedRows = await userManager.Users
             .Where(user =>
                 user.Id == userId &&
@@ -149,11 +180,13 @@ public sealed class IdentityAuthenticationService(
                 user.RefreshTokenExpirationDateTime > now)
             .ExecuteUpdateAsync(
                 setters => setters
-                    .SetProperty(user => user.RefreshToken, newRefreshToken)
-                    .SetProperty(user => user.RefreshTokenExpirationDateTime, expiresAtUtc),
+                    .SetProperty(user => user.RefreshToken, proposedRefreshToken)
+                    .SetProperty(user => user.RefreshTokenExpirationDateTime, proposedExpiresAtUtc),
                 cancellationToken);
 
-        return updatedRows == 1;
+        return updatedRows == 1
+            ? new RefreshTokenSessionDto(proposedRefreshToken, proposedExpiresAtUtc)
+            : null;
     }
 
     public async Task RevokeRefreshTokenAsync(

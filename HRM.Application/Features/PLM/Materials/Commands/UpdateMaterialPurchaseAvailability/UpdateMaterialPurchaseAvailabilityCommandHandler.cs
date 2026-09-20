@@ -1,14 +1,9 @@
-using System.Text.Json;
 using HRM.Application.Abstractions.Commons.Time;
 using HRM.Application.Abstractions.Persistence.PLM;
 using HRM.Application.Abstractions.Security;
-using HRM.Application.Commons.Authorization;
-using HRM.Application.Features.Notifications.Dtos;
-using HRM.Application.Features.Notifications.Services;
 using HRM.Application.Features.PLM.Materials.Dtos;
 using HRM.Domain.Entities.MaterialSchema;
 using HRM.Domain.Enums.Materials;
-using HRM.Domain.Enums.Notifications;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -23,18 +18,15 @@ internal sealed class UpdateMaterialPurchaseAvailabilityCommandHandler
     private readonly IPLMWriteDbContext _dbContext;
     private readonly ICurrentUser _currentUser;
     private readonly IDateTimeProvider _dateTimeProvider;
-    private readonly INotificationService _notificationService;
 
     public UpdateMaterialPurchaseAvailabilityCommandHandler(
         IPLMWriteDbContext dbContext,
         ICurrentUser currentUser,
-        IDateTimeProvider dateTimeProvider,
-        INotificationService notificationService)
+        IDateTimeProvider dateTimeProvider)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
         _dateTimeProvider = dateTimeProvider;
-        _notificationService = notificationService;
     }
 
     public async Task<UpdateMaterialPurchaseAvailabilityResult> Handle(
@@ -60,10 +52,7 @@ internal sealed class UpdateMaterialPurchaseAvailabilityCommandHandler
                 x.IsActive == true)
             .Select(x => new
             {
-                Availability = x.PurchaseAvailability,
-                x.ExternalId,
-                x.CustomCode,
-                x.Name
+                Availability = x.PurchaseAvailability
             })
             .FirstOrDefaultAsync(cancellationToken);
 
@@ -74,7 +63,6 @@ internal sealed class UpdateMaterialPurchaseAvailabilityCommandHandler
         }
 
         var now = _dateTimeProvider.Now;
-        var previousStatus = material.Availability?.Status ?? MaterialPurchaseStatus.Available;
         var availability = material.Availability;
 
         if (availability is null)
@@ -102,53 +90,7 @@ internal sealed class UpdateMaterialPurchaseAvailabilityCommandHandler
         availability.UpdatedBy = employeeId;
         availability.UpdatedDate = now;
 
-        var shouldNotifyLab = previousStatus != MaterialPurchaseStatus.Unavailable &&
-            availability.Status == MaterialPurchaseStatus.Unavailable;
-
-        if (shouldNotifyLab)
-        {
-            var materialCode = FirstNotEmpty(material.ExternalId, material.CustomCode, material.Name)
-                ?? command.MaterialId.ToString();
-            var materialLabel = TrimToMaxLength(materialCode, 180);
-            var materialLink = $"/plm/material-price-reviews?materialId={command.MaterialId}";
-
-            await _notificationService.PublishAsync(new PublishNotificationRequest
-            {
-                CompanyId = companyId,
-                CreatedBy = employeeId,
-                CreatedByNameSnapshot = _currentUser.UserName,
-                Topic = TopicNotifications.MaterialPurchaseUnavailable,
-                Severity = NotificationSeverity.Warning,
-                Title = "Ngừng mua NVL",
-                Message = $"{materialLabel} không được dùng cho công thức mới từ {availability.EffectiveFrom:dd/MM/yyyy}.",
-                Link = materialLink,
-                AggregateId = command.MaterialId,
-                AggregateCode = materialLabel,
-                PayloadJson = JsonSerializer.Serialize(new
-                {
-                    contentType = "material_purchase_availability_changed",
-                    material = new
-                    {
-                        id = command.MaterialId,
-                        code = materialLabel,
-                        name = material.Name
-                    },
-                    availability = new
-                    {
-                        status = availability.Status.ToString(),
-                        reason = availability.Reason,
-                        effectiveFrom = availability.EffectiveFrom,
-                        expectedAvailableDate = availability.ExpectedAvailableDate
-                    },
-                    action = new { href = materialLink }
-                }),
-                TargetRoles = ApplicationRoleSets.PLM.MaterialAvailabilityLabRecipients
-            }, cancellationToken);
-        }
-        else
-        {
-            await _dbContext.SaveChangesAsync(cancellationToken);
-        }
+        await _dbContext.SaveChangesAsync(cancellationToken);
 
         return new UpdateMaterialPurchaseAvailabilityResult(
             UpdateMaterialPurchaseAvailabilityOutcome.Updated,
@@ -162,7 +104,7 @@ internal sealed class UpdateMaterialPurchaseAvailabilityCommandHandler
                 Note = availability.Note,
                 UpdatedBy = availability.UpdatedBy,
                 UpdatedDate = availability.UpdatedDate,
-                NotificationPublished = shouldNotifyLab
+                NotificationPublished = false
             });
     }
 
@@ -207,12 +149,6 @@ internal sealed class UpdateMaterialPurchaseAvailabilityCommandHandler
 
     private static string? Normalize(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
-
-    private static string? FirstNotEmpty(params string?[] values)
-        => values.Select(Normalize).FirstOrDefault(x => x is not null);
-
-    private static string TrimToMaxLength(string value, int maxLength)
-        => value.Length <= maxLength ? value : value[..maxLength];
 
     private static UpdateMaterialPurchaseAvailabilityResult Invalid(string message)
         => new(UpdateMaterialPurchaseAvailabilityOutcome.InvalidRequest, Message: message);

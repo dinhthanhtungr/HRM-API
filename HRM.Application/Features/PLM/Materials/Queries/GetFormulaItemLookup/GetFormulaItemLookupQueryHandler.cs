@@ -7,6 +7,7 @@ using HRM.Application.Commons.Pricing.Helpers;
 using HRM.Application.Commons.Pricing.Models;
 using HRM.Application.Features.PLM.Formulas.Dtos.Commons;
 using HRM.Application.Features.PLM.Materials.Dtos.Lookup;
+using HRM.Application.Features.PLM.Materials.Rules;
 using HRM.Domain.Enums.Formulas;
 using HRM.Domain.Enums.Materials;
 using HRM.Domain.Enums.SampleRequests;
@@ -115,7 +116,7 @@ internal sealed class GetFormulaItemLookupQueryHandler
             Package = x.Package,
             Unit = x.Unit,
             PurchaseStatus = x.PurchaseAvailability == null
-                ? MaterialPurchaseStatus.Available
+                ? null
                 : x.PurchaseAvailability.Status,
             PurchaseStatusReason = x.PurchaseAvailability == null
                 ? null
@@ -200,13 +201,13 @@ internal sealed class GetFormulaItemLookupQueryHandler
                     Weight = x.Weight,
                     Package = x.Package,
                     Unit = x.Unit,
-                    PurchaseStatus = x.PurchaseStatus,
-                    IsPurchaseAvailable = x.PurchaseStatus.HasValue
-                        ? x.PurchaseStatus != MaterialPurchaseStatus.Unavailable
+                    PurchaseAvailability = x.ItemType == ItemType.Material
+                        ? MaterialPurchaseAvailabilityRules.Resolve(
+                            x.PurchaseStatus,
+                            x.PurchaseStatusReason,
+                            x.PurchaseStatusEffectiveFrom,
+                            x.ExpectedAvailableDate)
                         : null,
-                    PurchaseStatusReason = x.PurchaseStatusReason,
-                    PurchaseStatusEffectiveFrom = x.PurchaseStatusEffectiveFrom,
-                    ExpectedAvailableDate = x.ExpectedAvailableDate,
                     Price = new LatestPriceSource
                     {
                         UnitPrice = unitPrice,

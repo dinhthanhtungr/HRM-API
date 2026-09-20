@@ -12,9 +12,9 @@ public class BomVersion
     public Guid BomDefinitionId { get; set; }
     public int VersionNo { get; set; }
     public BomVersionStatus Status { get; set; } = BomVersionStatus.Draft;
-    public decimal BaseOutputQuantity { get; set; }
-    public string OutputUnit { get; set; } = string.Empty;
-    public Guid? SourceEngineeringBomVersionId { get; set; }
+    public decimal BaseOutputQuantity { get; set; } // Sản lượng chuẩn mà toàn bộ định mức được tính
+    public string OutputUnit { get; set; } = string.Empty; // Đơn vị sản lượng chuẩn
+    public Guid? SourceEngineeringBomVersionId { get; set; } //ID phiên bản E-BOM nguồn dùng để tạo ra M-BOM này. Chỉ có giá trị khi đây là M-BOM được dẫn xuất từ E-BOM
     public DateTime? EffectiveFrom { get; set; }
     public DateTime? EffectiveTo { get; set; }
     public string? ChangeReason { get; set; }

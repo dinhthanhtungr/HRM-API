@@ -44,11 +44,13 @@ API tráº£ thÃ´ng tin NVL vÃ  metadata tá»‡p Ä‘Ã­nh kÃ¨m, khÃ�
   "customCode": "PU-001",
   "name": "Háº¡t nhá»±a PU",
   "categoryName": "Polyurethane",
-  "purchaseStatus": "Unavailable",
-  "isPurchaseAvailable": false,
-  "purchaseStatusReason": "Nhà cung cấp ngừng sản xuất",
-  "purchaseStatusEffectiveFrom": "2026-09-15T08:00:00",
-  "expectedAvailableDate": null,
+  "purchaseAvailability": {
+    "status": "Unavailable",
+    "isPurchaseAvailable": false,
+    "reason": "Nhà cung cấp ngừng sản xuất",
+    "effectiveFrom": "2026-09-15T08:00:00",
+    "expectedAvailableDate": null
+  },
   "lastPurchase": {
     "purchaseOrderId": "00000000-0000-0000-0000-000000000000",
     "purchaseOrderCode": "PO26070001",
@@ -74,6 +76,10 @@ API tráº£ thÃ´ng tin NVL vÃ  metadata tá»‡p Ä‘Ã­nh kÃ¨m, khÃ�
   ]
 }
 ```
+
+`purchaseAvailability` là contract đọc chuẩn dùng chung cho material preview, formula item lookup và từng dòng
+Material trong formula detail. Material chưa có bản ghi trạng thái vẫn trả object với `status = Available`,
+`isPurchaseAvailable = true` và các field thời gian/lý do bằng `null`; FE không cần tự áp fallback.
 
 `lastPurchase` láº¥y má»™t dÃ²ng Purchase Order Detail há»£p lá»‡ gáº§n nháº¥t, káº¿t há»£p Header vÃ  Supplier trong cÃ¹ng má»™t
 EF query. Purchase Order pháº£i active, thuá»™c cÃ´ng ty hiá»‡n táº¡i vÃ  khÃ´ng á»Ÿ tráº¡ng thÃ¡i `Canceled`/`Cancelled`.
@@ -312,12 +318,9 @@ sau lần tải lại.
 
 ## Nền dữ liệu tình trạng mua và NVL thay thế
 
-Khi NVL chuyển từ `Available` sang `Unavailable`, backend gửi notification warning cho Lab theo topic
-`plm.material.purchase_unavailable`. Notification là event trạng thái, không phải internal conversation: fallback
-hiển thị `Ngừng mua NVL` cùng mã NVL/ngày hiệu lực; payload có `contentType = material_purchase_availability_changed`,
-nhóm `material`, `availability` và deep-link `/plm/material-price-reviews?materialId={materialId}`. FE dùng
-`contentType` để hiển thị card trạng thái có lý do và ngày dự kiến mua lại. Không gửi giá, cost hay công thức trong
-payload; SignalR/Web Push tiếp tục chỉ báo hiệu để client tải lại feed.
+Khi NVL chuyển từ `Available` sang `Unavailable`, backend hiện chỉ lưu trạng thái và không phát notification,
+SignalR hoặc Web Push. Topic `plm.material.purchase_unavailable` vẫn được giữ trong catalog để có thể bật lại sau,
+nhưng command cập nhật tình trạng mua không publish topic này.
 
 Schema PostgreSQL `Material` có hai entity nền cho luồng Kế hoạch thông báo tình trạng mua và Lab tự chọn NVL thay thế:
 
@@ -350,21 +353,20 @@ Endpoint dùng policy `PLM.MaterialPurchaseAvailability.Manage`; role hiện hà
 company; id sai hoặc khác company trả `404`. `Unavailable` bắt buộc có `reason`; ngày dự kiến mua lại nếu có không
 được trước ngày hiệu lực. Với `Available`, backend xóa ngày hiệu lực và ngày dự kiến mua lại.
 
-Response trả trạng thái canonical đã lưu cùng `notificationPublished`. Cờ này chỉ bằng `true` khi trạng thái chuyển
-từ `Available` (hoặc chưa có record) sang `Unavailable`. Việc sửa lại lý do trên một NVL đang `Unavailable` không
-phát notification lặp. `GET /api/v1/plm/material-price-reviews` trả thêm `purchaseStatus`, lý do, ngày hiệu lực và
+Response trả trạng thái canonical đã lưu cùng `notificationPublished = false`; hiện mọi lần cập nhật đều không
+phát notification. `GET /api/v1/plm/material-price-reviews` trả thêm `purchaseStatus`, lý do, ngày hiệu lực và
 ngày dự kiến mua lại; NVL chưa có record được hiểu là `Available`.
 
-Formula item lookup vẫn trả NVL `Unavailable` để Lab thấy lý do và có thể nhận biết bản ghi cũ, nhưng trả thêm
-`purchaseStatus`, `isPurchaseAvailable`, `purchaseStatusReason`, `purchaseStatusEffectiveFrom` và
-`expectedAvailableDate`. FE phải disable lựa chọn khi `isPurchaseAvailable = false`. Với item Product, các field
-tình trạng mua là `null`. `FormulaWriteService` vẫn kiểm tra lại khi ghi công thức để không thể bỏ qua bằng cách gọi
-API trực tiếp. Các công thức/version lịch sử không bị tự động thay hoặc xóa. Thay đổi này không kèm migration;
+Formula item lookup vẫn trả NVL `Unavailable` để Lab thấy lý do và có thể nhận biết bản ghi cũ, nhưng trả trạng thái
+trong object `purchaseAvailability`. FE phải disable lựa chọn khi `purchaseAvailability.isPurchaseAvailable = false`.
+Với item Product, `purchaseAvailability = null`. Check này trong `FormulaWriteService` đang được tắt tạm bằng cờ
+`EnforceMaterialPurchaseAvailabilityOnFormulaWrite = false`; đổi thành `true` để bật lại. Các công thức/version lịch sử
+không bị tự động thay hoặc xóa. Thay đổi này không kèm migration;
 database phải có hai bảng đã thiết kế trước khi gọi API mới.
 
-`GET /api/v1/plm/materials/{materialId}/preview` cũng trả cùng năm field tình trạng mua. Vì endpoint này luôn trả
-NVL nên `purchaseStatus` và `isPurchaseAvailable` không nullable; NVL chưa có record tình trạng được hiểu là
-`Available` và `isPurchaseAvailable = true`. Các field lý do/ngày trả `null` khi Kế hoạch chưa khai báo.
+`GET /api/v1/plm/materials/{materialId}/preview` cũng trả object `purchaseAvailability`. Vì endpoint này luôn trả
+NVL nên object không nullable; NVL chưa có record tình trạng được hiểu là `Available` và
+`purchaseAvailability.isPurchaseAvailable = true`. Các field lý do/ngày trả `null` khi Kế hoạch chưa khai báo.
 
 ### Phương án NVL thay thế
 

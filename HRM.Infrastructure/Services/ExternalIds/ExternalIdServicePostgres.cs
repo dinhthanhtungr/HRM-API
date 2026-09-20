@@ -10,6 +10,7 @@ namespace HRM.Infrastructure.Services.ExternalIds;
 public sealed class ExternalIdServicePostgres : IExternalIdService
 {
     private const string GlobalPeriod = "GLOBAL";
+    private static readonly Guid SharedCounterCompanyId = Guid.Empty;
 
     private readonly ApplicationDbContext _context;
 
@@ -23,12 +24,14 @@ public sealed class ExternalIdServicePostgres : IExternalIdService
         string prefix,
         CancellationToken cancellationToken = default)
     {
+        _ = companyId;
+
         if (prefix.Equals(DocumentPrefix.TP.ToString(), StringComparison.OrdinalIgnoreCase))
         {
             return await GenerateSampleRequestCodeFromLegacySequenceAsync(prefix, cancellationToken);
         }
 
-        var nextNo = await GetNextNumberAsync(companyId, prefix, GlobalPeriod, cancellationToken);
+        var nextNo = await GetNextNumberAsync(prefix, GlobalPeriod, cancellationToken);
 
         return $"{prefix}_{nextNo}";
     }
@@ -38,16 +41,17 @@ public sealed class ExternalIdServicePostgres : IExternalIdService
         string prefix,
         CancellationToken cancellationToken = default)
     {
+        _ = companyId;
+
         var now = DateTime.Now;
         var period = now.ToString("yyMM");
 
-        var nextNo = await GetNextNumberAsync(companyId, prefix, period, cancellationToken);
+        var nextNo = await GetNextNumberAsync(prefix, period, cancellationToken);
 
         return $"{prefix}{now:yyMM}{nextNo:00000}";
     }
 
     private async Task<int> GetNextNumberAsync(
-        Guid companyId,
         string prefix,
         string period,
         CancellationToken cancellationToken)
@@ -60,28 +64,55 @@ public sealed class ExternalIdServicePostgres : IExternalIdService
             await connection.OpenAsync(cancellationToken);
         }
 
+        await using var localTransaction = _context.Database.CurrentTransaction is null
+            ? await connection.BeginTransactionAsync(cancellationToken)
+            : null;
+
         try
         {
-            await using var command = connection.CreateCommand();
+            var transaction = _context.Database.CurrentTransaction?.GetDbTransaction()
+                ?? localTransaction;
 
-            if (_context.Database.CurrentTransaction is IDbContextTransaction transaction)
+            await using (var lockCommand = connection.CreateCommand())
             {
-                command.Transaction = transaction.GetDbTransaction();
+                lockCommand.Transaction = transaction;
+                lockCommand.CommandText =
+                    "SELECT pg_advisory_xact_lock(hashtext(@Prefix), hashtext(@Period));";
+                lockCommand.Parameters.Add(new NpgsqlParameter("Prefix", prefix));
+                lockCommand.Parameters.Add(new NpgsqlParameter("Period", period));
+                await lockCommand.ExecuteNonQueryAsync(cancellationToken);
             }
 
-            command.CommandText = """
+            await using var counterCommand = connection.CreateCommand();
+            counterCommand.Transaction = transaction;
+            counterCommand.CommandText = """
+            WITH next_number AS
+            (
+                SELECT COALESCE(MAX("LastNo"), 0) + 1 AS "Value"
+                FROM public."IdCounters"
+                WHERE "Prefix" = @Prefix
+                  AND "Period" = @Period
+            )
             INSERT INTO public."IdCounters" ("CompanyId", "Prefix", "Period", "LastNo")
-            VALUES (@CompanyId, @Prefix, @Period, 1)
+            SELECT @SharedCompanyId, @Prefix, @Period, "Value"
+            FROM next_number
             ON CONFLICT ("CompanyId", "Prefix", "Period")
-            DO UPDATE SET "LastNo" = public."IdCounters"."LastNo" + 1
+            DO UPDATE SET "LastNo" = GREATEST(
+                public."IdCounters"."LastNo",
+                EXCLUDED."LastNo")
             RETURNING "LastNo";
             """;
 
-            command.Parameters.Add(new NpgsqlParameter("CompanyId", companyId));
-            command.Parameters.Add(new NpgsqlParameter("Prefix", prefix));
-            command.Parameters.Add(new NpgsqlParameter("Period", period));
+            counterCommand.Parameters.Add(new NpgsqlParameter("Prefix", prefix));
+            counterCommand.Parameters.Add(new NpgsqlParameter("Period", period));
+            counterCommand.Parameters.Add(new NpgsqlParameter("SharedCompanyId", SharedCounterCompanyId));
 
-            var result = await command.ExecuteScalarAsync(cancellationToken);
+            var result = await counterCommand.ExecuteScalarAsync(cancellationToken);
+
+            if (localTransaction is not null)
+            {
+                await localTransaction.CommitAsync(cancellationToken);
+            }
 
             return Convert.ToInt32(result);
         }
@@ -122,4 +153,5 @@ public sealed class ExternalIdServicePostgres : IExternalIdService
 
         return $"{basePrefix}{nextNumber}";
     }
+
 }

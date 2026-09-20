@@ -129,6 +129,113 @@ public sealed class ProductPricingWorkbenchMapperTests
     }
 
     [Fact]
+    public void MapSummary_RequestNewerThanApprovedRequiresRepricingAndReturnsSource()
+    {
+        var productId = Guid.NewGuid();
+        var approvedAt = new DateTime(2026, 9, 1, 8, 0, 0);
+        var approved = new PricingVersionRow
+        {
+            ProductPricingVersionId = Guid.NewGuid(),
+            ProductId = productId,
+            Status = ProductPricingStatus.Approved,
+            Version = 2,
+            ApprovedAt = approvedAt,
+            CreatedDate = approvedAt
+        };
+
+        var result = ProductPricingWorkbenchMapper.MapSummary(
+            new ProductRow { ProductId = productId },
+            "VND",
+            draft: null,
+            approved,
+            source: null,
+            [new ProductPricingRequestRow
+            {
+                ProductId = productId,
+                QuotationId = Guid.NewGuid(),
+                RequestedAt = approvedAt.AddHours(1)
+            }],
+            health: new ProductPricingHealthResult(
+                ProductPricingHealthStatus.Ready,
+                false,
+                approvedAt.AddDays(30),
+                ProductStandardPriceState.Active));
+
+        Assert.Equal(1, result.WaitingQuotationCount);
+        Assert.Equal(ProductPricingHealthStatus.PendingReapproval, result.PricingHealthStatus);
+        Assert.Equal(ProductStandardPriceState.PendingReapproval, result.StandardPriceState);
+        Assert.True(result.RequiresPricingAction);
+        Assert.Equal(
+            [ProductPricingAttentionSource.SaleQuotationRequested],
+            result.PricingAttentionSources);
+    }
+
+    [Fact]
+    public void MapSummary_ReturnsAllConcurrentAttentionSources()
+    {
+        var productId = Guid.NewGuid();
+        var approvedAt = new DateTime(2026, 9, 1, 8, 0, 0);
+        var approved = new PricingVersionRow
+        {
+            ProductPricingVersionId = Guid.NewGuid(),
+            ProductId = productId,
+            Status = ProductPricingStatus.Approved,
+            Version = 2,
+            ApprovedAt = approvedAt,
+            CreatedDate = approvedAt
+        };
+
+        var result = ProductPricingWorkbenchMapper.MapSummary(
+            new ProductRow { ProductId = productId },
+            "VND",
+            draft: null,
+            approved,
+            source: null,
+            [new ProductPricingRequestRow
+            {
+                ProductId = productId,
+                QuotationId = Guid.NewGuid(),
+                RequestedAt = approvedAt.AddHours(1)
+            }],
+            health: new ProductPricingHealthResult(
+                ProductPricingHealthStatus.PendingReapproval,
+                true,
+                approvedAt.AddDays(30),
+                ProductStandardPriceState.PendingReapproval,
+                HasFormulaConfirmationPending: true,
+                IsReviewExpired: true));
+
+        Assert.Equal(
+            [
+                ProductPricingAttentionSource.SaleQuotationRequested,
+                ProductPricingAttentionSource.LabFormulaConfirmed,
+                ProductPricingAttentionSource.ReviewExpired
+            ],
+            result.PricingAttentionSources);
+    }
+
+    [Fact]
+    public void MapSummary_MaterialCostChangedReturnsMaterialAttentionSource()
+    {
+        var result = ProductPricingWorkbenchMapper.MapSummary(
+            new ProductRow { ProductId = Guid.NewGuid() },
+            "VND",
+            draft: null,
+            approved: null,
+            source: null,
+            requests: [],
+            health: new ProductPricingHealthResult(
+                ProductPricingHealthStatus.MaterialCostChanged,
+                true,
+                null,
+                ProductStandardPriceState.Active));
+
+        Assert.Contains(
+            ProductPricingAttentionSource.MaterialCostIncreased,
+            result.PricingAttentionSources);
+    }
+
+    [Fact]
     public void MapSummary_UsesApprovedVersionValuesBeforeRealtimePreview()
     {
         var productId = Guid.NewGuid();

@@ -8,7 +8,7 @@ internal static class ManufacturingLossTypeMapper
     internal static ManufacturingLossTypeDto ToDto(ManufacturingLossType entity) => new()
     {
         ManufacturingLossTypeId = entity.ManufacturingLossTypeId,
-        Code = entity.Code,
+        Code = entity.ExternalId,
         Name = entity.Name,
         Description = entity.Description,
         DefaultCalculationMethod = entity.DefaultCalculationMethod,

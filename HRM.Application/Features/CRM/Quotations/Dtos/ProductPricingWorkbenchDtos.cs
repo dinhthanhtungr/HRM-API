@@ -13,6 +13,15 @@ public enum ProductPricingWorkbenchView
     ProductionMaterialCostChanged = 50
 }
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum ProductPricingAttentionSource
+{
+    SaleQuotationRequested = 10,
+    LabFormulaConfirmed = 20,
+    ReviewExpired = 30,
+    MaterialCostIncreased = 40
+}
+
 public sealed class ProductPricingWorkbenchItemDto
 {
     public bool CanOpenPricingDetail { get; init; }
@@ -38,6 +47,7 @@ public sealed class ProductPricingWorkbenchItemDto
     public ProductStandardPriceState StandardPriceState { get; init; }
     public bool HasFormulaConfirmationPending { get; init; }
     public bool IsPricingReviewExpired { get; init; }
+    public IReadOnlyList<ProductPricingAttentionSource> PricingAttentionSources { get; init; } = [];
 
     public int WaitingQuotationCount { get; init; }
     public DateTime? LatestRequestedAt { get; init; }
@@ -79,6 +89,7 @@ public sealed class ProductPricingWorkbenchItemDto
     public decimal? StandardSellingPriceDifference { get; init; }
     public decimal? StandardSellingPriceDifferencePercent { get; init; }
     public bool HasRealtimePriceComparison { get; init; }
+    public StandardPriceRealtimeComparisonDto? RealtimePriceComparison { get; init; }
     public decimal? ProfitMarginRate { get; init; }
 
     public Guid? DraftPricingVersionId { get; init; }

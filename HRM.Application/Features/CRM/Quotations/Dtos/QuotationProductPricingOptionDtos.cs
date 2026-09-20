@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using HRM.Application.Commons.Pricing.Dtos;
+using HRM.Application.Features.PLM.Materials.Dtos;
 using HRM.Domain.Enums.Formulas;
 using HRM.Domain.Enums.CustomerEnum;
 
@@ -109,6 +110,12 @@ public sealed class QuotationProductPricingMaterialDto
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public LatestPriceSourceType LatestPriceSource { get; init; } = LatestPriceSourceType.Unknown;
     public PriceCalculationDetailDto? PriceCalculation { get; init; }
+
+    /// <summary>
+    /// Trạng thái mua hiện tại của Material/MaterialFailure. Product/ProductFailure không serialize field này.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public MaterialPurchaseAvailabilityInfoDto? AvailabilitySummary { get; init; }
 
     public IReadOnlyList<QuotationProductPricingMaterialSupplierDto> SupplierPrices { get; init; } = [];
 }

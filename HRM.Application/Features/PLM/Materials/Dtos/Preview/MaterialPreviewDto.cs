@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
+using HRM.Application.Features.PLM.Materials.Dtos;
 using HRM.Domain.Enums.Attachment;
-using HRM.Domain.Enums.Materials;
 
 namespace HRM.Application.Features.PLM.Materials.Dtos.Preview;
 
@@ -15,13 +15,7 @@ public sealed class MaterialPreviewDto
     public string? Name { get; init; }
     public string? CategoryName { get; init; }
 
-    [JsonConverter(typeof(JsonStringEnumConverter))]
-    public MaterialPurchaseStatus PurchaseStatus { get; init; }
-
-    public bool IsPurchaseAvailable { get; init; }
-    public string? PurchaseStatusReason { get; init; }
-    public DateTime? PurchaseStatusEffectiveFrom { get; init; }
-    public DateTime? ExpectedAvailableDate { get; init; }
+    public MaterialPurchaseAvailabilityInfoDto PurchaseAvailability { get; init; } = new();
 
     public decimal TotalOnHandKg { get; init; }
     public MaterialLastPurchaseDto? LastPurchase { get; init; }

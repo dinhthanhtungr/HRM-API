@@ -14,7 +14,8 @@ public sealed class PricingVisibilityServiceTests
     [InlineData(ApplicationRoles.Sales.PriceView, true, true, false, false, false)]
     [InlineData(ApplicationRoles.Accounting.ACCUser, true, true, true, false, false)]
     [InlineData(ApplicationRoles.Production.PLPUUser, false, false, true, false, false)]
-    [InlineData(ApplicationRoles.Lab.LabUser, false, false, true, false, false)]
+    [InlineData(ApplicationRoles.Lab.LabUser, false, false, false, false, false)]
+    [InlineData(ApplicationRoles.SeePrice.SeePriceUser, true, true, true, false, false)]
     [InlineData(ApplicationRoles.Leader, false, false, false, false, false)]
     public void GetAccess_MapsRolesToPricingCapabilities(
         string role,

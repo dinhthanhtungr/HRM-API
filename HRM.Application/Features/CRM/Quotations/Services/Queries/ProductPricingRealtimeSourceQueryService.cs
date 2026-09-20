@@ -10,6 +10,7 @@ using HRM.Application.Features.PLM.Formulas.Helpers;
 using HRM.Domain.Enums.CustomerEnum;
 using HRM.Domain.Enums.Formulas;
 using HRM.Domain.Enums.Manufacturings;
+using HRM.Domain.Enums.Materials;
 using Microsoft.EntityFrameworkCore;
 
 namespace HRM.Application.Features.CRM.Quotations.Services;
@@ -167,7 +168,8 @@ internal sealed class ProductPricingRealtimeSourceQueryService
     /// <summary>
     /// Finds products whose realtime material cost increased by the requested threshold compared with
     /// the snapshot stored on their latest Approved price. This is intentionally called only by the
-    /// explicit material-cost views; default list views must not load realtime material prices for all products.
+    /// material-cost-aware views; default list views must not load realtime material prices for all products.
+    /// A zero threshold means any positive increase.
     /// </summary>
     public async Task<IReadOnlySet<Guid>> LoadMaterialCostChangedProductIdsAsync(
         IReadOnlyCollection<ProductPricingMaterialCostBaseline> baselines,
@@ -182,7 +184,7 @@ internal sealed class ProductPricingRealtimeSourceQueryService
             .GroupBy(x => x.ProductId)
             .Select(x => x.First())
             .ToArray();
-        if (validBaselines.Length == 0 || thresholdPercent <= 0m)
+        if (validBaselines.Length == 0 || thresholdPercent < 0m)
         {
             return new HashSet<Guid>();
         }
@@ -240,15 +242,38 @@ internal sealed class ProductPricingRealtimeSourceQueryService
             .Where(x =>
                 baselineByProduct.TryGetValue(x.Key.ProductId, out var baseline) &&
                 x.Value.IsCurrentMaterialCostComplete &&
-                x.Value.CurrentMaterialCost is > 0m &&
-                x.Value.CurrentMaterialCost.Value > baseline.MaterialCostSnapshot &&
-                decimal.Round(
-                    (x.Value.CurrentMaterialCost.Value - baseline.MaterialCostSnapshot) /
-                    baseline.MaterialCostSnapshot * 100m,
-                    4,
-                    MidpointRounding.AwayFromZero) >= thresholdPercent)
+                x.Value.CurrentMaterialCost.HasValue &&
+                HasMaterialCostIncrease(
+                    baseline.MaterialCostSnapshot,
+                    x.Value.CurrentMaterialCost.Value,
+                    thresholdPercent))
             .Select(x => x.Key.ProductId)
             .ToHashSet();
+    }
+
+    internal static bool HasMaterialCostIncrease(
+        decimal materialCostSnapshot,
+        decimal currentMaterialCost,
+        decimal thresholdPercent)
+    {
+        if (materialCostSnapshot <= 0m ||
+            currentMaterialCost <= materialCostSnapshot ||
+            thresholdPercent < 0m)
+        {
+            return false;
+        }
+
+        if (thresholdPercent == 0m)
+        {
+            return true;
+        }
+
+        var differencePercent = decimal.Round(
+            (currentMaterialCost - materialCostSnapshot) /
+            materialCostSnapshot * 100m,
+            4,
+            MidpointRounding.AwayFromZero);
+        return differencePercent >= thresholdPercent;
     }
 
     private async Task<IReadOnlyDictionary<ProductPricingSourceSelection, ProductPricingSourceOptionDto>>
@@ -604,6 +629,22 @@ internal sealed class ProductPricingRealtimeSourceQueryService
                     Unit = x.Unit ?? string.Empty,
                     SourceUnitPrice = x.UnitPrice,
                     SourceTotalPrice = x.TotalPrice,
+                    PurchaseStatus = x.Material != null && x.Material.CompanyId == companyId &&
+                        x.Material.PurchaseAvailability != null
+                            ? x.Material.PurchaseAvailability.Status
+                            : null,
+                    PurchaseStatusReason = x.Material != null && x.Material.CompanyId == companyId &&
+                        x.Material.PurchaseAvailability != null
+                            ? x.Material.PurchaseAvailability.Reason
+                            : null,
+                    PurchaseStatusEffectiveFrom = x.Material != null && x.Material.CompanyId == companyId &&
+                        x.Material.PurchaseAvailability != null
+                            ? x.Material.PurchaseAvailability.EffectiveFrom
+                            : null,
+                    ExpectedAvailableDate = x.Material != null && x.Material.CompanyId == companyId &&
+                        x.Material.PurchaseAvailability != null
+                            ? x.Material.PurchaseAvailability.ExpectedAvailableDate
+                            : null,
                     LineNo = x.LineNo
                 })
                 .ToListAsync(cancellationToken);
@@ -632,6 +673,22 @@ internal sealed class ProductPricingRealtimeSourceQueryService
                     Unit = x.Unit ?? string.Empty,
                     SourceUnitPrice = x.UnitPrice,
                     SourceTotalPrice = x.TotalPrice,
+                    PurchaseStatus = x.Material != null && x.Material.CompanyId == companyId &&
+                        x.Material.PurchaseAvailability != null
+                            ? x.Material.PurchaseAvailability.Status
+                            : null,
+                    PurchaseStatusReason = x.Material != null && x.Material.CompanyId == companyId &&
+                        x.Material.PurchaseAvailability != null
+                            ? x.Material.PurchaseAvailability.Reason
+                            : null,
+                    PurchaseStatusEffectiveFrom = x.Material != null && x.Material.CompanyId == companyId &&
+                        x.Material.PurchaseAvailability != null
+                            ? x.Material.PurchaseAvailability.EffectiveFrom
+                            : null,
+                    ExpectedAvailableDate = x.Material != null && x.Material.CompanyId == companyId &&
+                        x.Material.PurchaseAvailability != null
+                            ? x.Material.PurchaseAvailability.ExpectedAvailableDate
+                            : null,
                     LineNo = x.LineNo
                 })
                 .ToListAsync(cancellationToken);
@@ -816,7 +873,14 @@ internal sealed class ProductPricingRealtimeSourceQueryService
             LatestPriceSource = hasPrice
                 ? latestPrice!.PriceSource
                 : LatestPriceSourceType.Unknown,
-            PriceCalculation = hasPrice ? latestPrice?.Calculation : null
+            PriceCalculation = hasPrice ? latestPrice?.Calculation : null,
+            AvailabilitySummary = ProductPricingMaterialAvailabilityRules.Resolve(
+                material.ItemType,
+                material.ItemId,
+                material.PurchaseStatus,
+                material.PurchaseStatusReason,
+                material.PurchaseStatusEffectiveFrom,
+                material.ExpectedAvailableDate)
         };
     }
 
@@ -856,6 +920,10 @@ internal sealed class ProductPricingRealtimeSourceQueryService
         public string Unit { get; init; } = string.Empty;
         public decimal SourceUnitPrice { get; init; }
         public decimal SourceTotalPrice { get; init; }
+        public MaterialPurchaseStatus? PurchaseStatus { get; init; }
+        public string? PurchaseStatusReason { get; init; }
+        public DateTime? PurchaseStatusEffectiveFrom { get; init; }
+        public DateTime? ExpectedAvailableDate { get; init; }
         public int LineNo { get; init; }
         public SourceKey SourceKey => new(SourceType, SourceId);
     }

@@ -49,13 +49,13 @@ internal sealed class LoginCommandHandler : IRequestHandler<LoginCommand, LoginR
         }
 
         var accessToken = _tokenService.CreateAccessToken(user);
-        var refreshToken = _tokenService.CreateRefreshToken();
-        var refreshTokenExpiresAtUtc = DateTime.Now.AddDays(7);
+        var proposedRefreshToken = _tokenService.CreateRefreshToken();
+        var proposedRefreshTokenExpiresAtUtc = DateTime.Now.AddDays(7);
 
-        await _identityAuthenticationService.StoreRefreshTokenAsync(
+        var refreshSession = await _identityAuthenticationService.StoreOrReuseRefreshTokenAsync(
             user.UserId,
-            refreshToken,
-            refreshTokenExpiresAtUtc,
+            proposedRefreshToken,
+            proposedRefreshTokenExpiresAtUtc,
             cancellationToken);
 
 
@@ -63,8 +63,8 @@ internal sealed class LoginCommandHandler : IRequestHandler<LoginCommand, LoginR
         {
             AccessToken = accessToken.Token,
             ExpiresAtUtc = accessToken.ExpiresAtUtc,
-            RefreshToken = refreshToken,
-            RefreshTokenExpireAtUtc = refreshTokenExpiresAtUtc,
+            RefreshToken = refreshSession.RefreshToken,
+            RefreshTokenExpireAtUtc = refreshSession.ExpiresAtUtc,
             UserId = user.UserId,
             UserName = user.UserName,
             Email = user.Email,

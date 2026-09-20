@@ -5,6 +5,7 @@ using HRM.Application.Abstractions.Security;
 using HRM.Application.Features.PLM.Shared.Authorization;
 using HRM.Application.Commons.Pricing.Rules;
 using HRM.Application.Features.PLM.Materials.Dtos.Preview;
+using HRM.Application.Features.PLM.Materials.Rules;
 using HRM.Application.Features.Warehouse.Helpers.Publics;
 using HRM.Application.Features.Warehouse.Services;
 using HRM.Domain.Enums.WareHouses;
@@ -70,7 +71,7 @@ internal sealed class GetMaterialPreviewQueryHandler
                 Name = x.Name,
                 CategoryName = x.Category.Name,
                 PurchaseStatus = x.PurchaseAvailability == null
-                    ? MaterialPurchaseStatus.Available
+                    ? null
                     : x.PurchaseAvailability.Status,
                 PurchaseStatusReason = x.PurchaseAvailability == null
                     ? null
@@ -116,11 +117,11 @@ internal sealed class GetMaterialPreviewQueryHandler
             CustomCode = material.CustomCode,
             Name = material.Name,
             CategoryName = material.CategoryName,
-            PurchaseStatus = material.PurchaseStatus,
-            IsPurchaseAvailable = material.PurchaseStatus != MaterialPurchaseStatus.Unavailable,
-            PurchaseStatusReason = material.PurchaseStatusReason,
-            PurchaseStatusEffectiveFrom = material.PurchaseStatusEffectiveFrom,
-            ExpectedAvailableDate = material.ExpectedAvailableDate,
+            PurchaseAvailability = MaterialPurchaseAvailabilityRules.Resolve(
+                material.PurchaseStatus,
+                material.PurchaseStatusReason,
+                material.PurchaseStatusEffectiveFrom,
+                material.ExpectedAvailableDate),
             TotalOnHandKg = totalOnHandKg,
             LastPurchase = lastPurchase,
             Attachments = attachments
@@ -240,7 +241,7 @@ internal sealed class GetMaterialPreviewQueryHandler
         public string? CustomCode { get; init; }
         public string? Name { get; init; }
         public string? CategoryName { get; init; }
-        public MaterialPurchaseStatus PurchaseStatus { get; init; }
+        public MaterialPurchaseStatus? PurchaseStatus { get; init; }
         public string? PurchaseStatusReason { get; init; }
         public DateTime? PurchaseStatusEffectiveFrom { get; init; }
         public DateTime? ExpectedAvailableDate { get; init; }

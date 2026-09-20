@@ -49,13 +49,13 @@ internal sealed class ManufacturingBomStructureService
         {
             ManufacturingBomStageId = Guid.CreateVersion7(),
             BomVersionId = bomVersionId,
-            Code = stage.Code.Trim(),
+            ExternalId = stage.Code.Trim(),
             Name = stage.Name.Trim(),
             SequenceNo = stage.SequenceNo,
             Description = BomRules.NormalizeOptionalText(stage.Description),
             IsActive = true
         }).ToList();
-        var stagesByCode = stages.ToDictionary(x => x.Code, StringComparer.OrdinalIgnoreCase);
+        var stagesByCode = stages.ToDictionary(x => x.ExternalId, StringComparer.OrdinalIgnoreCase);
 
         var items = itemResolution.Items.Select((item, index) => new BomVersionItem
         {

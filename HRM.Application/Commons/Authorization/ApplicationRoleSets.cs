@@ -169,9 +169,7 @@ public static class ApplicationRoleSets
             ApplicationRoles.Admin,
             ApplicationRoles.Developer,
             ApplicationRoles.President,
-            ApplicationRoles.Production.PLPUUser,
-            ApplicationRoles.Accounting.ACCUser,
-            ApplicationRoles.Lab.LabUser
+            ApplicationRoles.SeePrice.SeePriceUser
         ];
 
         public static readonly string[] ManufacturingCostViewers =
@@ -297,9 +295,7 @@ public static class ApplicationRoleSets
             ApplicationRoles.Admin,
             ApplicationRoles.Developer,
             ApplicationRoles.President,
-            ApplicationRoles.Production.PLPUUser,
-            ApplicationRoles.Accounting.ACCUser,
-            ApplicationRoles.Lab.LabUser
+            ApplicationRoles.SeePrice.SeePriceUser
         ];
 
         public static readonly string[] FormulaPriceViewers =
@@ -323,9 +319,10 @@ public static class ApplicationRoleSets
 
         public static readonly string[] MaterialPriceReviewViewers =
         [
-            .. MaterialSupplierPriceEditors,
-            ApplicationRoles.Lab.LabUser,
-            ApplicationRoles.Lab.LabAdmin
+            ApplicationRoles.Admin,
+            ApplicationRoles.Developer,
+            ApplicationRoles.President,
+            ApplicationRoles.SeePrice.SeePriceUser
         ];
 
         public static readonly string[] MaterialPriceReviewDetailViewers = MaterialSupplierPriceEditors;
@@ -334,9 +331,10 @@ public static class ApplicationRoleSets
 
         public static readonly string[] MaterialReplacementViewers =
         [
-            .. MaterialSupplierPriceEditors,
-            ApplicationRoles.Lab.LabUser,
-            ApplicationRoles.Lab.LabAdmin
+            ApplicationRoles.Admin,
+            ApplicationRoles.Developer,
+            ApplicationRoles.President,
+            ApplicationRoles.SeePrice.SeePriceUser
         ];
 
         public static readonly string[] MaterialReplacementManagers = MaterialSupplierPriceEditors;

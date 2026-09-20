@@ -95,6 +95,22 @@ Response rút gọn:
     "isCurrentlyApplied": true,
     "createdAt": "2026-09-09T13:09:00"
   },
+  "realtimePriceComparison": {
+    "currency": "VND",
+    "approvedStandardPrice": 53000,
+    "realtimeAdjustedStandardPrice": 54250,
+    "standardPriceDifference": 1250,
+    "standardPriceDifferencePercent": 2.3585,
+    "approvedMaterialCostSnapshot": 28750,
+    "realtimeMaterialCost": 29428,
+    "materialCostDifference": 678,
+    "materialCostDifferencePercent": 2.3583,
+    "movementStatus": "Increased",
+    "isMaterialCostComplete": true,
+    "isIncreaseWarning": false,
+    "warningThresholdPercent": 5,
+    "calculatedAt": "2026-09-17T11:59:14+07:00"
+  },
   "overview": {
     "pricingVersionId": "pricing-version-guid",
     "pricingVersionNumber": 3,
@@ -114,6 +130,12 @@ Response rút gọn:
   "tabCounts": {}
 }
 ```
+
+`realtimePriceComparison` ở cấp root luôn so sánh giá và `MaterialCostSnapshot` của version `Approved` mới nhất
+với chi phí NVL realtime của đúng Formula/VA đã lưu trên version đó. Nó không đổi theo `sourceType/sourceId` mà
+drawer đang xem và không ghi dữ liệu vào database. Chưa có giá Approved dương thì field là `null`; nếu nguồn hoặc
+giá realtime không đầy đủ, object vẫn có giá Approved nhưng các giá trị không tính được là `null` và
+`isMaterialCostComplete=false`. Các field cost tuyệt đối tiếp tục tuân theo pricing visibility hiện hành.
 
 `selectedSource` là nguồn đang được drawer hiển thị/tính giá; `currentFormulaUse` là nguồn hệ thống
 đề xuất và hai field có thể khác nhau. Backend xếp tất cả candidate theo một **mốc sự kiện nghiệp vụ**
@@ -139,7 +161,7 @@ nguồn đang xem/nguồn ưu tiên, không được trả hàng loạt từ sou
 
 ### Trạng thái giá chuẩn chờ xác nhận lại
 
-Response `GET /products/{productId}` có thêm `standardPriceState`. Đây là trạng thái nghiệp vụ của giá chuẩn, khác với `ProductPricingVersion.Status` (lifecycle của từng record). Giá Approved cũ vẫn được trả để tham khảo, nhưng `state=PendingReapproval` và `requiresPricingAction=true` khi một Formula còn active được Lab xác nhận (`CheckDate`) sau lần xác nhận giá Approved gần nhất, hoặc khi `pricingReviewDueDate` đã qua. `hasFormulaConfirmationPending` và `isReviewExpired` cho FE biết nguyên nhân; đọc notification không thay đổi các giá trị này.
+Response `GET /products/{productId}` có thêm `standardPriceState`. Đây là trạng thái nghiệp vụ của giá chuẩn, khác với `ProductPricingVersion.Status` (lifecycle của từng record). Giá Approved cũ vẫn được trả để tham khảo, nhưng `state=PendingReapproval` và `requiresPricingAction=true` khi Sale gửi yêu cầu báo giá mới hơn lần duyệt gần nhất, một Formula còn active được Lab xác nhận (`CheckDate`) sau lần xác nhận giá Approved gần nhất, `pricingReviewDueDate` đã qua, hoặc chi phí NVL realtime của source Approved tăng ít nhất ngưỡng cấu hình. `pricingAttentionSources` trả một hay nhiều giá trị `SaleQuotationRequested`, `LabFormulaConfirmed`, `ReviewExpired`, `MaterialCostIncreased`; `hasFormulaConfirmationPending` và `isReviewExpired` được giữ để FE cũ tương thích. Đọc notification không thay đổi các giá trị này; request Sale được đóng khi thu hồi hoặc khi có Approved version mới hơn.
 
 President có thể duyệt một Draft mới với bất kỳ VU/VA hợp lệ, hoặc giữ giá cũ bằng:
 
@@ -203,8 +225,11 @@ Metadata phân loại được trả theo chính dòng detail của nguồn đan
 `categoryName` là tên category gốc được tra bằng ID đó. Hai field mới `categoryGroup` và `categoryGroupName` mới
 là khóa/nhãn chuẩn để FE chia đúng bốn section: `Pigment/Bột màu`, `Additive/Phụ gia`, `Resin/Nhựa`,
 `Other/Khác`. Nhiều `categoryId` gốc có thể cùng một `categoryGroup`; FE không được group bằng `categoryId`.
-`materialType` lấy từ `itemType` của detail (`Material`, `Product`, `MaterialFailure`, `ProductFailure`). Riêng
-`groupName` không tồn tại trên detail nên lấy tên group active đầu tiên theo thứ tự chữ cái từ Material master.
+`materialType` được chuẩn hóa thành đúng hai loại FE cần dùng: `MaterialFailure -> Material` và
+`ProductFailure -> Product`. Dòng Material trả `materialId` và `productId=null`; dòng Product trả `productId`
+và `materialId=null`. Thành phẩm lõi vẫn giữ nguyên mã, tên, số lượng, đơn giá và thành tiền đã resolve như
+Product thường. FE chỉ mở supplier price/price history khi `materialId` có giá trị. Riêng `groupName` không tồn tại
+trên detail nên lấy tên group active đầu tiên theo thứ tự chữ cái từ Material master và chỉ áp dụng cho Material.
 
 `overview`/`editor` ưu tiên aggregate đã persist ở Draft, rồi Approved; material rows vẫn realtime để President
 thấy tác động của giá vật tư mới. Khi không có version, các giá editor fallback từ pricing engine của nguồn.
@@ -276,6 +301,12 @@ response create/update/approve và `GET /versions` trả lại field này. `POST
 để ghi đè ghi chú ngay lúc duyệt; nếu không gửi thì giữ ghi chú đã lưu ở Draft. Chuỗi rỗng được chuẩn hóa thành
 `null`. `publisherNote` chỉ mô tả giá chuẩn đã duyệt khi version trở thành `Approved`; Draft vẫn có thể chuẩn bị
 ghi chú trước để duyệt sau.
+
+`GET /products/{productId}/versions` còn trả `realtimePriceComparison` cho từng version `Approved` hoặc
+`Superseded`. Object này dùng chung `StandardPriceRealtimeComparisonQueryService` với Product Pricing Workbench
+và Sample Request Pricing Overview: giá/snapshot của chính version lịch sử được so với chi phí NVL realtime của
+đúng Formula/VA đã gắn. Draft và Cancelled trả `null`; kết quả chỉ là read-model, không cập nhật version lịch sử.
+Các source trong một trang được resolve theo batch và các field chi phí tuyệt đối vẫn tuân theo pricing visibility.
 
 Do schema hiện tại chỉ snapshot aggregate, `materialPriceSelections` được validate và dùng tính
 `MaterialCostSnapshot` nhưng ID supplier được chọn **chưa được persist theo từng dòng**. `sourceVersionNumber` cũng
@@ -388,6 +419,8 @@ Các dòng được ghép bằng `ItemType` đã normalize (`MaterialFailure -> 
 `ItemId`; chỉ fallback sang mã item khi mất quan hệ id. Dòng trùng item trong một công thức được gộp số lượng và trả
 tất cả `formulaMaterialIds`. Mặc định dòng thiếu giá hiện tại đứng đầu, sau đó sort theo trị tuyệt đối của chênh lệch
 thành tiền và mã item; `limit` tối đa 20.
+Mỗi dòng comparison dùng cùng identity contract với drawer: Material có `materialId`, Product có `productId`, field
+ID còn lại là `null`; `itemType` chỉ trả `Material` hoặc `Product`.
 
 ```json
 {
@@ -440,6 +473,7 @@ thành tiền và mã item; `limit` tối đa 20.
     {
       "itemType": "Material",
       "materialId": "item-guid",
+      "productId": null,
       "materialCode": "NVL_NH_158",
       "materialName": "Hạt nhựa PP MI cao",
       "categoryId": "category-guid",

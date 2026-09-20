@@ -15,7 +15,7 @@ public class BomDefinitionConfiguration : IEntityTypeConfiguration<BomDefinition
         entity.Property(x => x.BomDefinitionId).HasColumnName("bom_definition_id").HasDefaultValueSql("gen_random_uuid()");
         entity.Property(x => x.CompanyId).HasColumnName("company_id").IsRequired();
         entity.Property(x => x.ProductId).HasColumnName("product_id").IsRequired();
-        entity.Property(x => x.Code).HasColumnName("code").HasColumnType("citext").HasMaxLength(64).IsRequired();
+        entity.Property(x => x.ExternalId).HasColumnName("external_id").HasColumnType("citext").HasMaxLength(64).IsRequired();
         entity.Property(x => x.Name).HasColumnName("name").HasMaxLength(200).IsRequired();
         entity.Property(x => x.BomType).HasColumnName("bom_type").HasConversion<string>().HasColumnType("citext").HasMaxLength(32).IsRequired();
         entity.Property(x => x.Description).HasColumnName("description").HasColumnType("text");
@@ -25,7 +25,7 @@ public class BomDefinitionConfiguration : IEntityTypeConfiguration<BomDefinition
         entity.Property(x => x.UpdatedDate).HasColumnName("updated_date");
         entity.Property(x => x.UpdatedBy).HasColumnName("updated_by");
 
-        entity.HasIndex(x => new { x.CompanyId, x.Code })
+        entity.HasIndex(x => new { x.CompanyId, x.ExternalId })
             .IsUnique().HasDatabaseName("ux_bom_definitions_company_code");
         entity.HasIndex(x => new { x.CompanyId, x.ProductId, x.BomType, x.IsActive })
             .HasDatabaseName("ix_bom_definitions_company_product_type_active");

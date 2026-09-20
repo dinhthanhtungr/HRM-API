@@ -11,13 +11,15 @@ public sealed class ManufacturingBomStageDto
     public string? Description { get; init; }
     public bool IsActive { get; init; }
     public IReadOnlyList<ManufacturingBomStageMachineDto> Machines { get; init; } = [];
+    public ManufacturingBomStageWorkInstructionDto? WorkInstruction { get; init; }
 }
 
 public sealed class ManufacturingBomStageMachineDto
 {
     public Guid ManufacturingBomStageMachineId { get; init; }
-    public string MachineCode { get; init; } = string.Empty;
-    public string MachineName { get; init; } = string.Empty;
+    public int EquipmentId { get; init; }
+    public string EquipmentExternalId { get; init; } = string.Empty;
+    public string EquipmentName { get; init; } = string.Empty;
     public bool IsDefault { get; init; }
     public int SequenceNo { get; init; }
     public string? Note { get; init; }

@@ -10,6 +10,7 @@ using HRM.Application.Commons.Pricing.Services;
 using HRM.Application.Features.CRM.Quotations.Services;
 using HRM.Application.Features.PLM.Formulas.Dtos.Commons;
 using HRM.Application.Features.PLM.Formulas.Helpers;
+using HRM.Application.Features.PLM.Materials.Rules;
 using HRM.Domain.Enums.CustomerEnum;
 using HRM.Domain.Enums.Formulas;
 using HRM.Domain.Enums.Materials;
@@ -146,14 +147,8 @@ internal sealed class GetFormulaByIdQueryHandler
                 PriceTotal = 0m,
                 ItemName = x.MaterialNameSnapshot,
                 ItemExternalId = x.MaterialExternalIdSnapshot,
-                PurchaseStatus = x.MaterialId.HasValue
-                    ? x.Material.PurchaseAvailability == null
-                        ? MaterialPurchaseStatus.Available
-                        : x.Material.PurchaseAvailability.Status
-                    : null,
-                IsPurchaseAvailable = x.MaterialId.HasValue
-                    ? x.Material.PurchaseAvailability == null ||
-                      x.Material.PurchaseAvailability.Status != MaterialPurchaseStatus.Unavailable
+                PurchaseStatus = x.MaterialId.HasValue && x.Material.PurchaseAvailability != null
+                    ? x.Material.PurchaseAvailability.Status
                     : null,
                 PurchaseStatusReason = x.MaterialId.HasValue && x.Material.PurchaseAvailability != null
                     ? x.Material.PurchaseAvailability.Reason
@@ -180,6 +175,15 @@ internal sealed class GetFormulaByIdQueryHandler
 
         foreach (var material in materials)
         {
+            if (IsMaterial(material.ItemType))
+            {
+                material.PurchaseAvailability = MaterialPurchaseAvailabilityRules.Resolve(
+                    material.PurchaseStatus,
+                    material.PurchaseStatusReason,
+                    material.PurchaseStatusEffectiveFrom,
+                    material.ExpectedAvailableDate);
+            }
+
             var display = FormulaItemDisplayResolver.Resolve(
                 new FormulaItemDisplaySource(
                     material.ItemId,

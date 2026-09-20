@@ -70,7 +70,7 @@ internal sealed class CreateManufacturingBomCommandHandler
 
         var code = request.Code.Trim();
         if (await _dbContext.BomDefinitions.AsNoTracking()
-            .AnyAsync(x => x.CompanyId == companyId && x.Code == code, cancellationToken))
+            .AnyAsync(x => x.CompanyId == companyId && x.ExternalId == code, cancellationToken))
         {
             return OperationResult<BomVersionDto>.Fail("BOM code already exists in your company.");
         }
@@ -81,7 +81,7 @@ internal sealed class CreateManufacturingBomCommandHandler
             BomDefinitionId = Guid.CreateVersion7(),
             CompanyId = companyId,
             ProductId = source.BomDefinition.ProductId,
-            Code = code,
+            ExternalId = code,
             Name = request.Name.Trim(),
             BomType = BomType.Manufacturing,
             Description = BomRules.NormalizeOptionalText(request.Description),

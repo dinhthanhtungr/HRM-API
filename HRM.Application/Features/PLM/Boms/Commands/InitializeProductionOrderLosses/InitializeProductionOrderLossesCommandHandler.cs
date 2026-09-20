@@ -59,9 +59,9 @@ internal sealed class InitializeProductionOrderLossesCommandHandler
             .Select(x => new
             {
                 Rule = x,
-                LossTypeCode = x.LossType.Code,
+                LossTypeCode = x.LossType.ExternalId,
                 LossTypeName = x.LossType.Name,
-                StageCode = x.ManufacturingStage != null ? x.ManufacturingStage.Code : null,
+                StageCode = x.ManufacturingStage != null ? x.ManufacturingStage.ExternalId : null,
                 MaterialCode = x.BomVersionItem != null ? x.BomVersionItem.MaterialExternalIdSnapshot : null,
                 MaterialQuantityPerOutput = x.BomVersionItem != null
                     ? x.BomVersionItem.Quantity / x.BomVersion.BaseOutputQuantity

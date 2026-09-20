@@ -61,6 +61,11 @@ internal static class ProductPricingWorkbenchVisibility
             StandardPriceState = source.StandardPriceState,
             HasFormulaConfirmationPending = access.CanManage && source.HasFormulaConfirmationPending,
             IsPricingReviewExpired = source.IsPricingReviewExpired,
+            PricingAttentionSources = access.CanManage
+                ? source.PricingAttentionSources
+                : source.PricingAttentionSources
+                    .Where(x => x != ProductPricingAttentionSource.LabFormulaConfirmed)
+                    .ToArray(),
             WaitingQuotationCount = source.WaitingQuotationCount,
             LatestRequestedAt = access.CanManage ? source.LatestRequestedAt : null,
             RelatedCustomers = access.CanManage
@@ -96,6 +101,9 @@ internal static class ProductPricingWorkbenchVisibility
                 : null,
             HasRealtimePriceComparison = access.CanViewSystemCalculatedPrice &&
                 source.HasRealtimePriceComparison,
+            RealtimePriceComparison = StandardPriceRealtimeComparisonVisibility.Apply(
+                source.RealtimePriceComparison,
+                access),
             ProfitMarginRate = access.CanViewMargin ? source.ProfitMarginRate : null,
             DraftPricingVersionId = access.CanViewHistory ? source.DraftPricingVersionId : null,
             ApprovedPricingVersionId = access.CanViewHistory ? source.ApprovedPricingVersionId : null,

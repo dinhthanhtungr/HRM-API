@@ -1,5 +1,6 @@
 using HRM.Domain.Entities.CustomerSchema;
 using HRM.Domain.Enums.CustomerEnum;
+using HRM.Application.Features.Pricing.Authorization;
 
 namespace HRM.Application.Features.CRM.Quotations.Services;
 
@@ -8,15 +9,21 @@ internal sealed class QuotationProductTierPricingResolver
     private readonly ApprovedProductPricingTierReader _approvedPricingReader;
     private readonly SystemCalculatedProductPricingTierResolver _systemPricingResolver;
     private readonly LatestQuotationPricingTierReader _latestQuotationPricingReader;
+    private readonly StandardPriceRealtimeComparisonQueryService _comparisonQueryService;
+    private readonly IPricingVisibilityService _pricingVisibilityService;
 
     public QuotationProductTierPricingResolver(
         ApprovedProductPricingTierReader approvedPricingReader,
         SystemCalculatedProductPricingTierResolver systemPricingResolver,
-        LatestQuotationPricingTierReader latestQuotationPricingReader)
+        LatestQuotationPricingTierReader latestQuotationPricingReader,
+        StandardPriceRealtimeComparisonQueryService comparisonQueryService,
+        IPricingVisibilityService pricingVisibilityService)
     {
         _approvedPricingReader = approvedPricingReader;
         _systemPricingResolver = systemPricingResolver;
         _latestQuotationPricingReader = latestQuotationPricingReader;
+        _comparisonQueryService = comparisonQueryService;
+        _pricingVisibilityService = pricingVisibilityService;
     }
 
     public async Task<IReadOnlyDictionary<Guid, ResolvedProductTierPricingReferences>> ResolveAsync(
@@ -48,6 +55,19 @@ internal sealed class QuotationProductTierPricingResolver
             companyId,
             currency,
             cancellationToken);
+        var comparisonsByProduct = await _comparisonQueryService.LoadVisibleAsync(
+            approvedByProduct.Values
+                .Select(x => new StandardPriceRealtimeComparisonRequest(
+                    x.ProductId,
+                    x.Currency,
+                    x.StandardSellingPrice,
+                    x.MaterialCostSnapshot,
+                    x.SourceType,
+                    x.SourceId))
+                .ToArray(),
+            companyId,
+            _pricingVisibilityService.GetAccess(),
+            cancellationToken);
         var latestByProduct = customerId.HasValue
             ? await _latestQuotationPricingReader.LoadAsync(
                 normalizedProductIds,
@@ -65,6 +85,7 @@ internal sealed class QuotationProductTierPricingResolver
                 approvedByProduct.TryGetValue(productId, out var approved);
                 systemByProduct.TryGetValue(productId, out var system);
                 latestByProduct.TryGetValue(productId, out var latest);
+                comparisonsByProduct.TryGetValue(productId, out var comparison);
 
                 QuotationDefaultPriceTierSource? defaultSource = approved is { PriceTiers.Count: > 0 }
                     ? QuotationDefaultPriceTierSource.ApprovedPricingVersion
@@ -76,7 +97,8 @@ internal sealed class QuotationProductTierPricingResolver
                     approved,
                     system,
                     latest,
-                    defaultSource);
+                    defaultSource,
+                    comparison);
             });
     }
 }

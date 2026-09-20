@@ -266,6 +266,7 @@ public sealed class FormulasController : ControllerBase
         return result.Success ? Ok(result.Data) : BadRequest(result);
     }
 
+
     [HttpPatch("{formulaId:guid}/status")]
     [Authorize(Policy = PlmPolicies.ManageFormula)]
     public async Task<IActionResult> UpdateStatus(

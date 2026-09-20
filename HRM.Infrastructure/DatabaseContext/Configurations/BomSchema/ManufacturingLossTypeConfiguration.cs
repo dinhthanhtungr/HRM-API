@@ -14,7 +14,7 @@ public class ManufacturingLossTypeConfiguration : IEntityTypeConfiguration<Manuf
 
         entity.Property(x => x.ManufacturingLossTypeId).HasColumnName("manufacturing_loss_type_id").HasDefaultValueSql("gen_random_uuid()");
         entity.Property(x => x.CompanyId).HasColumnName("company_id").IsRequired();
-        entity.Property(x => x.Code).HasColumnName("code").HasColumnType("citext").HasMaxLength(64).IsRequired();
+        entity.Property(x => x.ExternalId).HasColumnName("external_id").HasColumnType("citext").HasMaxLength(64).IsRequired();
         entity.Property(x => x.Name).HasColumnName("name").HasMaxLength(200).IsRequired();
         entity.Property(x => x.Description).HasColumnName("description").HasColumnType("text");
         entity.Property(x => x.DefaultCalculationMethod).HasColumnName("default_calculation_method")
@@ -26,7 +26,7 @@ public class ManufacturingLossTypeConfiguration : IEntityTypeConfiguration<Manuf
         entity.Property(x => x.UpdatedDate).HasColumnName("updated_date");
         entity.Property(x => x.UpdatedBy).HasColumnName("updated_by");
 
-        entity.HasIndex(x => new { x.CompanyId, x.Code })
+        entity.HasIndex(x => new { x.CompanyId, x.ExternalId })
             .IsUnique().HasDatabaseName("ux_manufacturing_loss_types_company_code");
         entity.HasIndex(x => new { x.CompanyId, x.IsActive })
             .HasDatabaseName("ix_manufacturing_loss_types_company_active");

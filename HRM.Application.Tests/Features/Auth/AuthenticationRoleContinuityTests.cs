@@ -17,7 +17,10 @@ public sealed class AuthenticationRoleContinuityTests
     {
         var identity = new StubIdentityAuthenticationService
         {
-            User = DeveloperUser()
+            User = DeveloperUser(),
+            LoginSession = new RefreshTokenSessionDto(
+                "shared-refresh-token",
+                DateTime.UtcNow.AddDays(7))
         };
         var tokens = new RecordingTokenService();
         var handler = new LoginCommandHandler(identity, tokens);
@@ -29,7 +32,8 @@ public sealed class AuthenticationRoleContinuityTests
         Assert.NotNull(result);
         Assert.Contains(ApplicationRoles.Developer, result.Roles);
         Assert.Contains(ApplicationRoles.Developer, tokens.AccessTokenUser!.Roles);
-        Assert.Equal(1, identity.StoreCalls);
+        Assert.Equal(1, identity.StoreOrReuseCalls);
+        Assert.Equal("shared-refresh-token", result.RefreshToken);
     }
 
     [Fact]
@@ -38,7 +42,9 @@ public sealed class AuthenticationRoleContinuityTests
         var identity = new StubIdentityAuthenticationService
         {
             User = DeveloperUser(),
-            RotateResult = true
+            RenewSession = new RefreshTokenSessionDto(
+                "new-refresh-token",
+                DateTime.UtcNow.AddDays(7))
         };
         var tokens = new RecordingTokenService();
         var handler = new RefreshTokenCommandHandler(identity, tokens);
@@ -51,7 +57,7 @@ public sealed class AuthenticationRoleContinuityTests
         Assert.Contains(ApplicationRoles.Developer, result.Roles);
         Assert.Contains(ApplicationRoles.Developer, tokens.AccessTokenUser!.Roles);
         Assert.Equal("current-refresh-token", identity.ExpectedRefreshToken);
-        Assert.Equal(1, identity.RotateCalls);
+        Assert.Equal(1, identity.RenewCalls);
     }
 
     [Fact]
@@ -60,7 +66,7 @@ public sealed class AuthenticationRoleContinuityTests
         var identity = new StubIdentityAuthenticationService
         {
             User = DeveloperUser(),
-            RotateResult = false
+            RenewSession = null
         };
         var tokens = new RecordingTokenService();
         var handler = new RefreshTokenCommandHandler(identity, tokens);
@@ -70,8 +76,30 @@ public sealed class AuthenticationRoleContinuityTests
             CancellationToken.None);
 
         Assert.Null(result);
-        Assert.Equal(1, identity.RotateCalls);
+        Assert.Equal(1, identity.RenewCalls);
         Assert.Equal(0, tokens.AccessTokenCalls);
+    }
+
+    [Fact]
+    public async Task Refresh_ReturnsSharedSessionSelectedByIdentityService()
+    {
+        var sharedExpiresAt = DateTime.UtcNow.AddDays(3);
+        var identity = new StubIdentityAuthenticationService
+        {
+            User = DeveloperUser(),
+            RenewSession = new RefreshTokenSessionDto(
+                "current-refresh-token",
+                sharedExpiresAt)
+        };
+        var handler = new RefreshTokenCommandHandler(identity, new RecordingTokenService());
+
+        var result = await handler.Handle(
+            new RefreshTokenCommand { RefreshToken = "current-refresh-token" },
+            CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal("current-refresh-token", result.RefreshToken);
+        Assert.Equal(sharedExpiresAt, result.RefreshTokenExpireAtUtc);
     }
 
     [Fact]
@@ -154,9 +182,10 @@ public sealed class AuthenticationRoleContinuityTests
     private sealed class StubIdentityAuthenticationService : IIdentityAuthenticationService
     {
         public AuthenticatedUserDto? User { get; init; }
-        public bool RotateResult { get; init; }
-        public int StoreCalls { get; private set; }
-        public int RotateCalls { get; private set; }
+        public RefreshTokenSessionDto? LoginSession { get; init; }
+        public RefreshTokenSessionDto? RenewSession { get; init; }
+        public int StoreOrReuseCalls { get; private set; }
+        public int RenewCalls { get; private set; }
         public string? ExpectedRefreshToken { get; private set; }
 
         public Task<AuthenticatedUserDto?> ValidateUserAsync(
@@ -164,30 +193,32 @@ public sealed class AuthenticationRoleContinuityTests
             string password,
             CancellationToken cancellationToken = default) => Task.FromResult(User);
 
-        public Task StoreRefreshTokenAsync(
+        public Task<RefreshTokenSessionDto> StoreOrReuseRefreshTokenAsync(
             Guid userId,
-            string refreshToken,
-            DateTime expiresAtUtc,
+            string proposedRefreshToken,
+            DateTime proposedExpiresAtUtc,
             CancellationToken cancellationToken = default)
         {
-            StoreCalls++;
-            return Task.CompletedTask;
+            StoreOrReuseCalls++;
+            return Task.FromResult(LoginSession ?? new RefreshTokenSessionDto(
+                proposedRefreshToken,
+                proposedExpiresAtUtc));
         }
 
         public Task<AuthenticatedUserDto?> ValidateRefreshTokenAsync(
             string refreshToken,
             CancellationToken cancellationToken = default) => Task.FromResult(User);
 
-        public Task<bool> RotateRefreshTokenAsync(
+        public Task<RefreshTokenSessionDto?> RenewRefreshTokenAsync(
             Guid userId,
             string expectedRefreshToken,
-            string newRefreshToken,
-            DateTime expiresAtUtc,
+            string proposedRefreshToken,
+            DateTime proposedExpiresAtUtc,
             CancellationToken cancellationToken = default)
         {
-            RotateCalls++;
+            RenewCalls++;
             ExpectedRefreshToken = expectedRefreshToken;
-            return Task.FromResult(RotateResult);
+            return Task.FromResult(RenewSession);
         }
 
         public Task RevokeRefreshTokenAsync(

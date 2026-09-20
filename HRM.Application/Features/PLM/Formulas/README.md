@@ -1,5 +1,25 @@
 # Giá công thức
 
+## Trạng thái mua NVL trong chi tiết Formula
+
+`GET /api/v1/plm/formulas/{formulaId}` trả trạng thái mua trên từng phần tử `materials[]` bằng contract lồng dùng chung:
+
+```json
+{
+  "itemType": "Material",
+  "purchaseAvailability": {
+    "status": "Unavailable",
+    "isPurchaseAvailable": false,
+    "reason": "Nhà cung cấp ngừng sản xuất",
+    "effectiveFrom": "2026-09-15T08:00:00",
+    "expectedAvailableDate": null
+  }
+}
+```
+
+Material chưa có bản ghi trạng thái được chuẩn hóa thành `Available` và vẫn có object. Dòng Product trả
+`purchaseAvailability = null`. Các field phẳng cũ đã bị loại bỏ; FE dùng `purchaseAvailability` làm nguồn canonical.
+
 ## Chi tiết công thức sản xuất
 
 ```http
@@ -502,4 +522,5 @@ POST lưu yêu cầu `PLM.Formula.Manage`; POST khôi phục yêu cầu đồng 
 
 Dữ liệu là trạng thái hiện tại từ `MaterialPurchaseAvailability`, không phải snapshot của version công thức. NVL
 chưa có record được hiểu là `Available`; item Product trả các field trên là `null`. Công thức cũ vẫn hiển thị NVL
-`Unavailable` để Lab biết dòng nào cần thay, nhưng backend không cho dùng NVL này khi ghi lại thành phần công thức.
+`Unavailable` để Lab biết dòng nào cần thay. Hiện check chặn NVL này khi ghi công thức đang được tắt tạm bằng
+`EnforceMaterialPurchaseAvailabilityOnFormulaWrite = false`; đổi cờ thành `true` để bật lại.

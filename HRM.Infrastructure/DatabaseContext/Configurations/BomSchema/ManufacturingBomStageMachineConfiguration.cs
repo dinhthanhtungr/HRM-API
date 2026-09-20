@@ -13,13 +13,16 @@ public class ManufacturingBomStageMachineConfiguration : IEntityTypeConfiguratio
         entity.HasKey(x => x.ManufacturingBomStageMachineId).HasName("pk_manufacturing_bom_stage_machines");
         entity.Property(x => x.ManufacturingBomStageMachineId).HasColumnName("manufacturing_bom_stage_machine_id").HasDefaultValueSql("gen_random_uuid()");
         entity.Property(x => x.ManufacturingBomStageId).HasColumnName("manufacturing_bom_stage_id").IsRequired();
-        entity.Property(x => x.MachineCode).HasColumnName("machine_code").HasColumnType("citext").HasMaxLength(64).IsRequired();
-        entity.Property(x => x.MachineName).HasColumnName("machine_name").HasMaxLength(200).IsRequired();
+        entity.Property(x => x.EquipmentId).HasColumnName("equipment_id").IsRequired();
+        entity.Property(x => x.EquipmentExternalIdSnapshot).HasColumnName("equipment_externalid_snapshot").HasColumnType("text").IsRequired();
+        entity.Property(x => x.EquipmentNameSnapshot).HasColumnName("equipment_name_snapshot").HasColumnType("text").IsRequired();
         entity.Property(x => x.IsDefault).HasColumnName("is_default").HasDefaultValue(false).IsRequired();
         entity.Property(x => x.SequenceNo).HasColumnName("sequence_no").IsRequired();
         entity.Property(x => x.Note).HasColumnName("note").HasColumnType("text");
-        entity.HasIndex(x => new { x.ManufacturingBomStageId, x.MachineCode }).IsUnique().HasDatabaseName("ux_manufacturing_bom_stage_machines_stage_code");
+        entity.HasIndex(x => new { x.ManufacturingBomStageId, x.EquipmentId }).IsUnique().HasDatabaseName("ux_manufacturing_bom_stage_machines_stage_equipment");
         entity.HasOne(x => x.ManufacturingStage).WithMany(x => x.Machines).HasForeignKey(x => x.ManufacturingBomStageId)
             .OnDelete(DeleteBehavior.Restrict).HasConstraintName("fk_manufacturing_bom_stage_machines_stage");
+        entity.HasOne(x => x.Equipment).WithMany().HasForeignKey(x => x.EquipmentId)
+            .OnDelete(DeleteBehavior.Restrict).HasConstraintName("fk_manufacturing_bom_stage_machines_equipment");
     }
 }

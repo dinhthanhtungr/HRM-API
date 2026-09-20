@@ -9,6 +9,7 @@ using HRM.Domain.Entities.DevandqaSchema;
 using HRM.Domain.Entities.HrSchema;
 using HRM.Domain.Entities.InternalMailSchema;
 using HRM.Domain.Entities.ManufacturingSchema;
+using HRM.Domain.Entities.MROSchema;
 using HRM.Domain.Entities.MaterialSchema;
 using HRM.Domain.Entities.OrderSchema;
 using HRM.Domain.Entities.PrintectSchema;
@@ -28,16 +29,28 @@ namespace HRM.Application.Abstractions.Persistence.PLM
         DbSet<ManufacturingBomStage> ManufacturingBomStages { get; }
         DbSet<ManufacturingBomStageMachine> ManufacturingBomStageMachines { get; }
         DbSet<ManufacturingBomStageTransition> ManufacturingBomStageTransitions { get; }
+        DbSet<ManufacturingProcessTemplate> ManufacturingProcessTemplates { get; }
+        DbSet<ManufacturingProcessTemplateStage> ManufacturingProcessTemplateStages { get; }
+        DbSet<ManufacturingProcessTemplateStageMachine> ManufacturingProcessTemplateStageMachines { get; }
+        DbSet<ManufacturingWorkInstructionTemplate> ManufacturingWorkInstructionTemplates { get; }
+        DbSet<ManufacturingWorkInstructionChecklistItem> ManufacturingWorkInstructionChecklistItems { get; }
+        DbSet<ManufacturingBomStageWorkInstruction> ManufacturingBomStageWorkInstructions { get; }
+        DbSet<ManufacturingBomStageChecklistItem> ManufacturingBomStageChecklistItems { get; }
         DbSet<ManufacturingLossType> ManufacturingLossTypes { get; }
+        DbSet<ManufacturingLossProfile> ManufacturingLossProfiles { get; }
+        DbSet<ManufacturingLossProfileRule> ManufacturingLossProfileRules { get; }
         DbSet<ManufacturingBomLossRule> ManufacturingBomLossRules { get; }
+        DbSet<BomVersionItemAlternative> BomVersionItemAlternatives { get; }
         DbSet<ProductStandardBomVersion> ProductStandardBomVersions { get; }
         DbSet<MfgProductionOrderLoss> MfgProductionOrderLosses { get; }
+        DbSet<EquipmentMRO> EquipmentsMro { get; }
         //DbSet<Customer> customers { get; }
         //DbSet<CustomerAssignment> customerAssignments { get; }
         //DbSet<CustomerClaim> customerClaims { get; }
         // ==================== Manufacturing ====================
         DbSet<ColorChipManufacturingRecord> ColorChipManufacturingRecords { get; }
         DbSet<MfgProductionOrder> MfgProductionOrders { get; }
+        DbSet<MfgProductionOrderBomItemSubstitution> MfgProductionOrderBomItemSubstitutions { get; }
         DbSet<ManufacturingFormulaMaterial> ManufacturingFormulaMaterials { get; }
         DbSet<ManufacturingFormula> ManufacturingFormulas { get; }
         DbSet<ManufacturingFormulaVersion> ManufacturingFormulaVersions { get; }

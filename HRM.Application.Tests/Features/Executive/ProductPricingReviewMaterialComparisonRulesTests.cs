@@ -117,6 +117,44 @@ public sealed class ProductPricingReviewMaterialComparisonRulesTests
         Assert.Equal("Bột màu", item.CategoryGroupName);
     }
 
+    [Theory]
+    [InlineData(ItemType.MaterialFailure, ItemType.Material, true)]
+    [InlineData(ItemType.ProductFailure, ItemType.Product, false)]
+    public void ItemIdentity_NormalizesFailureTypesAndSeparatesMaterialFromProduct(
+        ItemType sourceType,
+        ItemType expectedType,
+        bool isMaterial)
+    {
+        var itemId = Guid.NewGuid();
+
+        var identity = ProductPricingReviewItemIdentity.Resolve(sourceType, itemId);
+
+        Assert.Equal(expectedType, identity.ItemType);
+        Assert.Equal(isMaterial ? itemId : null, identity.MaterialId);
+        Assert.Equal(isMaterial ? null : itemId, identity.ProductId);
+    }
+
+    [Fact]
+    public void FormulaComparison_ReturnsProductFailureAsProductIdentity()
+    {
+        var productId = Guid.NewGuid();
+        var product = ComparisonMaterial(
+            productId,
+            "TP_13912",
+            0.173m,
+            89_875m,
+            itemType: ItemType.ProductFailure);
+        var viewed = Source(15_548m, true, product);
+
+        var item = ProductPricingReviewMaterialComparisonRules
+            .BuildFormulaComparisonItems(null, viewed)
+            .Single();
+
+        Assert.Equal(ItemType.Product, item.ItemType);
+        Assert.Null(item.MaterialId);
+        Assert.Equal(productId, item.ProductId);
+    }
+
     [Fact]
     public void FormulaComparison_ReportsAddedAndRemovedMaterials()
     {
@@ -241,12 +279,13 @@ public sealed class ProductPricingReviewMaterialComparisonRulesTests
         decimal quantity,
         decimal? currentUnitPrice,
         string unit = "Kg",
-        Guid? categoryId = null)
+        Guid? categoryId = null,
+        ItemType itemType = ItemType.Material)
         => new()
         {
             FormulaMaterialId = Guid.NewGuid(),
             ItemId = itemId,
-            ItemType = ItemType.Material,
+            ItemType = itemType,
             ItemCode = code,
             ItemName = code,
             CategoryId = categoryId,

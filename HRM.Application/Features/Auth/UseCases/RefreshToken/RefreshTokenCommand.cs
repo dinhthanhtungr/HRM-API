@@ -44,16 +44,16 @@ namespace HRM.Application.Features.Auth.UseCases.RefreshToken
                 return null;
             }
 
-            var newRefreshToken = _tokenService.CreateRefreshToken();
-            var refreshTokenExpiresAtUtc = DateTime.Now.AddDays(7);
+            var proposedRefreshToken = _tokenService.CreateRefreshToken();
+            var proposedRefreshTokenExpiresAtUtc = DateTime.Now.AddDays(7);
 
-            var rotated = await _identityAuthenticationService.RotateRefreshTokenAsync(
+            var refreshSession = await _identityAuthenticationService.RenewRefreshTokenAsync(
                 user.UserId,
                 request.RefreshToken,
-                newRefreshToken,
-                refreshTokenExpiresAtUtc,
+                proposedRefreshToken,
+                proposedRefreshTokenExpiresAtUtc,
                 cancellationToken);
-            if (!rotated)
+            if (refreshSession is null)
             {
                 return null;
             }
@@ -64,8 +64,8 @@ namespace HRM.Application.Features.Auth.UseCases.RefreshToken
             {
                 AccessToken = accessToken.Token,
                 ExpiresAtUtc = accessToken.ExpiresAtUtc,
-                RefreshToken = newRefreshToken,
-                RefreshTokenExpireAtUtc = refreshTokenExpiresAtUtc,
+                RefreshToken = refreshSession.RefreshToken,
+                RefreshTokenExpireAtUtc = refreshSession.ExpiresAtUtc,
                 UserId = user.UserId,
                 UserName = user.UserName,
                 Email = user.Email,

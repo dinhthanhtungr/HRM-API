@@ -111,6 +111,8 @@ public partial class Product
     public virtual ICollection<ProductStandard> ProductStandards { get; set; } = new List<ProductStandard>();
     public virtual ICollection<BomDefinition> BomDefinitions { get; set; } = new List<BomDefinition>();
     public virtual ICollection<BomVersionItem> ComponentBomVersionItems { get; set; } = new List<BomVersionItem>();
+    public virtual ICollection<BomVersionItemAlternative> AlternativeBomVersionItemAlternatives { get; set; } = new List<BomVersionItemAlternative>();
+    public virtual ICollection<MfgProductionOrderBomItemSubstitution> ProductionOrderBomItemSubstitutions { get; set; } = new List<MfgProductionOrderBomItemSubstitution>();
     public virtual ICollection<ProductStandardBomVersion> StandardBomVersions { get; set; } = new List<ProductStandardBomVersion>();
     public virtual ICollection<SampleRequest> SampleRequests { get; set; } = new List<SampleRequest>();
     public virtual Employee? UpdatedByNavigation { get; set; }

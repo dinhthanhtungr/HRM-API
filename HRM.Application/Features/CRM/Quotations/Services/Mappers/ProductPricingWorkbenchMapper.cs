@@ -16,7 +16,8 @@ internal static class ProductPricingWorkbenchMapper
         IReadOnlyList<ProductPricingRequestRow> requests,
         IReadOnlyList<ProductPricingWorkbenchCustomerContextDto>? relatedCustomers = null,
         ProductPricingHealthResult? health = null,
-        DateTime? now = null)
+        DateTime? now = null,
+        StandardPriceRealtimeComparisonDto? realtimePriceComparison = null)
     {
         var storedPricing = draft ?? approved;
         var effectivePricing = BuildEffectivePricing(storedPricing, source);
@@ -52,7 +53,27 @@ internal static class ProductPricingWorkbenchMapper
                 MidpointRounding.AwayFromZero)
             : null;
         var hasApproved = approved is not null;
-        IReadOnlyList<ProductPricingRequestRow> waitingRequests = hasApproved ? [] : requests;
+        var waitingRequests = ProductPricingAttentionRules.GetPendingQuotationRequests(
+            approved,
+            requests);
+        var hasPendingSaleRequest = waitingRequests.Count > 0;
+        var pricingAttentionSources = new List<ProductPricingAttentionSource>(4);
+        if (hasPendingSaleRequest)
+        {
+            pricingAttentionSources.Add(ProductPricingAttentionSource.SaleQuotationRequested);
+        }
+        if (health?.HasFormulaConfirmationPending == true)
+        {
+            pricingAttentionSources.Add(ProductPricingAttentionSource.LabFormulaConfirmed);
+        }
+        if (health?.IsReviewExpired == true)
+        {
+            pricingAttentionSources.Add(ProductPricingAttentionSource.ReviewExpired);
+        }
+        if (health?.Status == ProductPricingHealthStatus.MaterialCostChanged)
+        {
+            pricingAttentionSources.Add(ProductPricingAttentionSource.MaterialCostIncreased);
+        }
 
         DateTime? expiresAt = approved?.ApprovedAt.HasValue == true && approved.PriceValidityDays is > 0
             ? approved.ApprovedAt.Value.AddDays(approved.PriceValidityDays.Value)
@@ -81,12 +102,17 @@ internal static class ProductPricingWorkbenchMapper
                         ? ProductPricingLookupStatus.Draft
                         : ProductPricingLookupStatus.NoEligibleSource,
             IsSystemCalculatedDraft = storedPricing is null && source is not null,
-            PricingHealthStatus = health?.Status ?? ProductPricingHealthStatus.Unknown,
-            RequiresPricingAction = health?.RequiresPricingAction ?? false,
+            PricingHealthStatus = hasPendingSaleRequest && hasApproved
+                ? ProductPricingHealthStatus.PendingReapproval
+                : health?.Status ?? ProductPricingHealthStatus.Unknown,
+            RequiresPricingAction = hasPendingSaleRequest || health?.RequiresPricingAction == true,
             PricingReviewDueDate = health?.PricingReviewDueDate,
-            StandardPriceState = health?.StandardPriceState ?? ProductStandardPriceState.Missing,
+            StandardPriceState = hasPendingSaleRequest && hasApproved
+                ? ProductStandardPriceState.PendingReapproval
+                : health?.StandardPriceState ?? ProductStandardPriceState.Missing,
             HasFormulaConfirmationPending = health?.HasFormulaConfirmationPending ?? false,
             IsPricingReviewExpired = health?.IsReviewExpired ?? false,
+            PricingAttentionSources = pricingAttentionSources,
             WaitingQuotationCount = waitingRequests
                 .Select(x => x.QuotationId)
                 .Distinct()
@@ -121,6 +147,7 @@ internal static class ProductPricingWorkbenchMapper
             StandardSellingPriceDifference = standardSellingPriceDifference,
             StandardSellingPriceDifferencePercent = standardSellingPriceDifferencePercent,
             HasRealtimePriceComparison = hasRealtimePriceComparison,
+            RealtimePriceComparison = realtimePriceComparison,
             ProfitMarginRate = storedPricing?.ProfitMarginRate ??
                 effectivePricing?.ProfitMarginRate ??
                 source?.ProfitMarginRate,

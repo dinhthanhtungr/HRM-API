@@ -122,7 +122,7 @@ internal sealed class CreateBomFromSelectedFormulaCommandHandler
             BomDefinitionId = Guid.CreateVersion7(),
             CompanyId = companyId,
             ProductId = command.ProductId,
-            Code = BuildBomCode(formula),
+            ExternalId = BuildBomCode(formula),
             Name = BuildBomName(formula),
             BomType = BomType.Engineering,
             Description = $"Initialized from customer-selected Formula {formula.ExternalId}.",

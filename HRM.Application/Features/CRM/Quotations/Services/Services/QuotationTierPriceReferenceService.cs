@@ -50,6 +50,7 @@ internal sealed class QuotationTierPriceReferenceService
             line.DefaultPriceTierSource = references.DefaultPriceTierSource;
             line.ApprovedPricing = QuotationProductPricingPreviewMapper.MapApproved(
                 references.ApprovedPricing);
+            line.RealtimePriceComparison = references.RealtimePriceComparison;
             line.SystemCalculatedPricing = QuotationProductPricingPreviewMapper.MapSystem(
                 references.SystemCalculatedPricing);
             line.LatestQuotedPricing = QuotationProductPricingPreviewMapper.MapLatest(

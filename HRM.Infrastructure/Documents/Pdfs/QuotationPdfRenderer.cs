@@ -90,7 +90,8 @@ internal sealed class QuotationPdfRenderer : IQuotationPdfRenderer
                     _options,
                     bureauVeritasLogo,
                     grsLogo,
-                    qrCode));
+                    qrCode,
+                    quotation));
             });
         });
 
@@ -140,23 +141,38 @@ internal sealed class QuotationPdfRenderer : IQuotationPdfRenderer
 
         column.Item().Element(container => ComposePricingNotes(container, quotation));
         column.Item().Element(container => ComposeTerms(container, quotation));
-        column.Item().PaddingTop(PdfLayout.SignatureTopPadding).Text(
-            "Chúng tôi rất mong nhận được sự quan tâm, hồi đáp sớm của Quý vị.\n" +
-            "We look to your kind attention, favorable reply.\n" +
-            "Trân trọng kính chào / Best regards,");
-        column.Item().PaddingTop(PdfLayout.SignatureTopPadding).Text(quotation.SaleEmployeeName)
-            .Bold().FontColor(PdfColors.LinkBlue);
+        column.Item().PaddingTop(PdfLayout.SignatureTopPadding)
+            .Element(container => ComposeSignature(container, quotation));
+    }
 
-        var saleContact = string.Join(" | ", new[]
+    private static void ComposeSignature(
+        IContainer container,
+        QuotationPdfDocumentDto quotation)
+    {
+        container.Column(column =>
         {
-            quotation.SaleEmployeePhone,
-            quotation.SaleEmployeeEmail
-        }.Where(value => !string.IsNullOrWhiteSpace(value)));
-
-        if (!string.IsNullOrWhiteSpace(saleContact))
-        {
-            column.Item().Text(saleContact).FontSize(PdfTypography.SmallSize);
-        }
+            column.Item().Text(
+                    "Chúng tôi rất mong nhận được sự quan tâm, hồi đáp sớm của Quý vị.\n" +
+                    "We look to your kind attention, favorable reply.\n" +
+                    "Trân trọng kính chào / Best regards,")
+                .FontSize(PdfTypography.SmallSize);
+            column.Item().PaddingTop(2).Text(quotation.SaleEmployeeName)
+                .Bold().FontColor(PdfColors.LinkBlue);
+            column.Item().Text(text =>
+            {
+                text.DefaultTextStyle(PdfTypography.Small);
+                text.Span("Sales Rep.").Italic();
+                if (!string.IsNullOrWhiteSpace(quotation.SaleEmployeePhone))
+                {
+                    text.Span($" (HP: {quotation.SaleEmployeePhone}");
+                }
+                if (!string.IsNullOrWhiteSpace(quotation.SaleEmployeeEmail))
+                {
+                    text.Span($"; Email: {quotation.SaleEmployeeEmail}");
+                }
+                text.Span(")");
+            });
+        });
     }
 
     private static void ComposeQuotationInformation(

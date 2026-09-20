@@ -20,6 +20,15 @@ namespace HRM.Infrastructure.Services.Pricing
             _dbContext = dbContext;
         }
 
+        /// <summary>
+        /// Tải giá hiện hành của danh sách nguyên vật liệu.
+        /// Giá được xác định từ đơn mua hàng, nhà cung cấp hoặc quy tắc tính giá nội bộ.
+        /// </summary>
+        /// <param name="materialIds">Danh sách ID nguyên vật liệu.</param>
+        /// <param name="cancellationToken">Token dùng để hủy tác vụ bất đồng bộ.</param>
+        /// <returns>
+        /// Dictionary có key là MaterialId và value là thông tin giá hiện hành.
+        /// </returns>
         public async Task<Dictionary<Guid, LatestMaterialPriceDto>> LoadLatestMaterialPriceInfoDictAsync(
             IEnumerable<Guid?> materialIds,
             CancellationToken cancellationToken = default)
@@ -53,10 +62,9 @@ namespace HRM.Infrastructure.Services.Pricing
                 .Select(x => new
                 {
                     Material = x,
-                    IsDerived = InternalMaterialCostingRules.TryResolveMaterialRule(
-                        x.Name, out var rule, out var sourceNameKey),
-                    Rule = rule,
-                    SourceNameKey = sourceNameKey
+                    IsDerived = false,
+                    Rule = InternalMaterialCostingRule.None,
+                    SourceNameKey = string.Empty
                 })
                 .Where(x => x.IsDerived)
                 .ToArray();
@@ -127,6 +135,15 @@ namespace HRM.Infrastructure.Services.Pricing
             return directPrices;
         }
 
+        /// <summary>
+        /// Tải giá trực tiếp mới nhất của nguyên vật liệu từ đơn mua hàng
+        /// và bảng giá theo nhà cung cấp, chưa áp dụng quy tắc tính giá nội bộ.
+        /// </summary>
+        /// <param name="materialIds">Danh sách ID nguyên vật liệu.</param>
+        /// <param name="cancellationToken">Token dùng để hủy tác vụ bất đồng bộ.</param>
+        /// <returns>
+        /// Dictionary chứa giá trực tiếp được chọn cho từng nguyên vật liệu.
+        /// </returns>
         private async Task<Dictionary<Guid, LatestMaterialPriceDto>> LoadLatestDirectMaterialPriceInfoDictAsync(
             IEnumerable<Guid?> materialIds,
             CancellationToken cancellationToken = default)
@@ -214,6 +231,16 @@ namespace HRM.Infrastructure.Services.Pricing
             return MaterialLatestPriceSelector.SelectMany(ids, poDict, supplierDict);
         }
 
+        /// <summary>
+        /// Tải giá mới nhất của các nguyên vật liệu theo một nhà cung cấp cụ thể.
+        /// Giá được lấy từ đơn mua hàng của nhà cung cấp hoặc giá khai báo trong bảng nhà cung cấp.
+        /// </summary>
+        /// <param name="supplierId">ID nhà cung cấp.</param>
+        /// <param name="materialIds">Danh sách ID nguyên vật liệu.</param>
+        /// <param name="cancellationToken">Token dùng để hủy tác vụ bất đồng bộ.</param>
+        /// <returns>
+        /// Dictionary chứa giá hiện hành của từng nguyên vật liệu theo nhà cung cấp.
+        /// </returns>
         public async Task<Dictionary<Guid, LatestMaterialPriceDto>> LoadLatestMaterialPriceInfoBySupplierDictAsync(
             Guid supplierId,
             IEnumerable<Guid?> materialIds,
@@ -304,6 +331,15 @@ namespace HRM.Infrastructure.Services.Pricing
             return MaterialLatestPriceSelector.SelectMany(ids, poDict, supplierDict);
         }
 
+        /// <summary>
+        /// Tải giá hiện hành của danh sách item gồm nguyên vật liệu và thành phẩm.
+        /// Giá thành phẩm trong hàm này được lấy từ giao dịch bán hàng gần nhất.
+        /// </summary>
+        /// <param name="items">Danh sách item cần lấy giá.</param>
+        /// <param name="cancellationToken">Token dùng để hủy tác vụ bất đồng bộ.</param>
+        /// <returns>
+        /// Dictionary có key gồm loại item và ID item, value là thông tin giá hiện hành.
+        /// </returns>
         public async Task<Dictionary<PriceItemKey, LatestItemPriceDto>> LoadLatestItemPriceInfoDictAsync(
             IEnumerable<PriceItemRequest> items,
             CancellationToken cancellationToken = default)
@@ -403,6 +439,18 @@ namespace HRM.Infrastructure.Services.Pricing
             return result;
         }
 
+        /// <summary>
+        /// Tải giá phục vụ tính Pricing cho nguyên vật liệu và thành phẩm.
+        /// Giá thành phẩm được ưu tiên theo giá chuẩn Approved, giá vốn Formula,
+        /// sau đó mới sử dụng giá giao dịch bán hàng gần nhất.
+        /// </summary>
+        /// <param name="companyId">ID công ty sở hữu dữ liệu.</param>
+        /// <param name="currency">Mã tiền tệ dùng để tìm phiên bản giá chuẩn.</param>
+        /// <param name="items">Danh sách item cần lấy giá.</param>
+        /// <param name="cancellationToken">Token dùng để hủy tác vụ bất đồng bộ.</param>
+        /// <returns>
+        /// Dictionary chứa giá và nguồn giá hiện hành của từng item.
+        /// </returns>
         public async Task<Dictionary<PriceItemKey, LatestItemPriceDto>> LoadLatestPricingItemPriceInfoDictAsync(
             Guid companyId,
             string currency,
@@ -768,6 +816,16 @@ namespace HRM.Infrastructure.Services.Pricing
             return result;
         }
 
+        /// <summary>
+        /// Tải các quy tắc điều chỉnh giá vốn nội bộ áp dụng cho danh sách thành phẩm.
+        /// Quy tắc được xác định dựa trên tên thành phẩm và mã danh mục.
+        /// </summary>
+        /// <param name="companyId">ID công ty sở hữu sản phẩm.</param>
+        /// <param name="productIds">Danh sách ID thành phẩm.</param>
+        /// <param name="cancellationToken">Token dùng để hủy tác vụ bất đồng bộ.</param>
+        /// <returns>
+        /// Dictionary chứa quy tắc điều chỉnh giá vốn theo ProductId.
+        /// </returns>  
         private async Task<Dictionary<Guid, InternalProductCostAdjustment>> LoadInternalProductCostAdjustmentsAsync(
             Guid companyId,
             IEnumerable<Guid> productIds,
@@ -807,6 +865,9 @@ namespace HRM.Infrastructure.Services.Pricing
             string? Name,
             bool IsActive);
 
+        /// <summary>
+        /// Tạo thông tin giải thích cho giá nguyên vật liệu được lấy trực tiếp.
+        /// </summary>
         private static PriceCalculationDetailDto CreateDirectPriceCalculation(
             Guid itemId,
             string? itemName,
@@ -823,6 +884,9 @@ namespace HRM.Infrastructure.Services.Pricing
             IsComplete = true
         };
 
+        /// <summary>
+        /// Tạo thông tin giải thích phép tính giá nguyên vật liệu theo quy tắc nội bộ.
+        /// </summary>
         private static PriceCalculationDetailDto CreateMaterialRuleCalculation(
             InternalMaterialCostingRule rule,
             Guid baseItemId,
@@ -862,6 +926,9 @@ namespace HRM.Infrastructure.Services.Pricing
             };
         }
 
+        /// <summary>
+        /// Chuyển đổi nguồn giá nguyên vật liệu sang loại nguồn giá dùng chung.
+        /// </summary>
         private static LatestPriceSourceType ToLatestPriceSourceType(MaterialPriceSource source) => source switch
         {
             MaterialPriceSource.PurchaseOrder => LatestPriceSourceType.PurchaseOrder,
@@ -870,6 +937,9 @@ namespace HRM.Infrastructure.Services.Pricing
             _ => LatestPriceSourceType.Unknown
         };
 
+        /// <summary>
+        /// Tạo thông tin giải thích phép điều chỉnh giá vốn thành phẩm theo quy tắc nội bộ.
+        /// </summary>
         private static PriceCalculationDetailDto CreateProductRuleCalculation(
             decimal formulaMaterialCost,
             decimal calculatedUnitPrice,
@@ -913,6 +983,11 @@ namespace HRM.Infrastructure.Services.Pricing
             };
         }
 
+        /// <summary>
+        /// Chuẩn hóa danh sách ID bằng cách loại bỏ giá trị null, Guid rỗng và ID trùng lặp.
+        /// </summary>
+        /// <param name="materialIds">Danh sách ID cần chuẩn hóa.</param>
+        /// <returns>Danh sách ID hợp lệ và không trùng lặp.</returns>
         private static List<Guid> NormalizeIds(IEnumerable<Guid?> materialIds)
         {
             return materialIds

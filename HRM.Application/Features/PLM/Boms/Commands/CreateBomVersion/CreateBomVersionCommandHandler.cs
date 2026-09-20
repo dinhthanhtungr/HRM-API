@@ -92,7 +92,7 @@ internal sealed class CreateBomVersionCommandHandler
         {
             ManufacturingBomStageId = stageMap[x.ManufacturingBomStageId],
             BomVersionId = version.BomVersionId,
-            Code = x.Code,
+            ExternalId = x.ExternalId,
             Name = x.Name,
             SequenceNo = x.SequenceNo,
             Description = x.Description,

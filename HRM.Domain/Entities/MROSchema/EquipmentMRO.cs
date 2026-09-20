@@ -13,6 +13,7 @@ namespace HRM.Domain.Entities.MROSchema
         public int EquipmentId { get; set; }                  // PK
         public string EquipmentExternalId { get; set; } = default!;
         public string EquipmentName { get; set; } = default!;
+        public string? GroupType { get; set; }
 
         // Tham chiếu mềm bằng external id (KHÔNG FK)
 

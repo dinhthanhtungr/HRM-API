@@ -70,7 +70,7 @@ internal sealed class CreateBomCommandHandler
         var codeExists = await _dbContext.BomDefinitions
             .AsNoTracking()
             .AnyAsync(
-                x => x.CompanyId == companyId && x.Code == normalizedCode,
+                x => x.CompanyId == companyId && x.ExternalId == normalizedCode,
                 cancellationToken);
 
         if (codeExists)
@@ -123,7 +123,7 @@ internal sealed class CreateBomCommandHandler
             BomDefinitionId = Guid.CreateVersion7(),
             CompanyId = companyId,
             ProductId = request.ProductId,
-            Code = normalizedCode,
+            ExternalId = normalizedCode,
             Name = request.Name.Trim(),
             BomType = BomType.Engineering,
             Description = BomRules.NormalizeOptionalText(request.Description),

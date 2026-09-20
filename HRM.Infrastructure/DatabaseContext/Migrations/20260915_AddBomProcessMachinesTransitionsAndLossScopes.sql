@@ -1,13 +1,14 @@
 CREATE TABLE IF NOT EXISTS bom.manufacturing_bom_stage_machines (
     manufacturing_bom_stage_machine_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     manufacturing_bom_stage_id uuid NOT NULL REFERENCES bom.manufacturing_bom_stages(manufacturing_bom_stage_id) ON DELETE RESTRICT,
-    machine_code citext NOT NULL,
-    machine_name varchar(200) NOT NULL,
+    equipment_id integer NOT NULL REFERENCES mro.equipment(equipment_id) ON DELETE RESTRICT,
+    equipment_externalid_snapshot text NOT NULL,
+    equipment_name_snapshot text NOT NULL,
     is_default boolean NOT NULL DEFAULT false,
     sequence_no integer NOT NULL,
     note text NULL,
     CONSTRAINT ck_manufacturing_bom_stage_machines_sequence_positive CHECK (sequence_no > 0),
-    CONSTRAINT ux_manufacturing_bom_stage_machines_stage_code UNIQUE (manufacturing_bom_stage_id, machine_code)
+    CONSTRAINT ux_manufacturing_bom_stage_machines_stage_equipment UNIQUE (manufacturing_bom_stage_id, equipment_id)
 );
 
 CREATE TABLE IF NOT EXISTS bom.manufacturing_bom_stage_transitions (

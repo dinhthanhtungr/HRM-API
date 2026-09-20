@@ -12,6 +12,8 @@ internal sealed class ProductPricingRequestQueryService
 {
     private const string QuotationRequestedPayload =
         """{"contentType":"QuotationRequested"}""";
+    private const string QuotationRequestWithdrawnPayload =
+        """{"contentType":"QuotationPricingRequestWithdrawn"}""";
 
     private readonly ICRMReadDbContext _crmDbContext;
     private readonly IInternalMailDbContext _internalMailDbContext;
@@ -32,72 +34,74 @@ internal sealed class ProductPricingRequestQueryService
         IReadOnlyCollection<Guid>? productIds,
         CancellationToken cancellationToken)
     {
-        var requestRows = await _internalMailDbContext.InternalConversations
+        var requestedQuotations = _internalMailDbContext.InternalMessages
             .AsNoTracking()
-            .Where(x =>
-                x.CompanyId == companyId &&
-                x.IsActive &&
-                x.RelatedType == InternalMailRelatedType.Quotation &&
-                x.RelatedId.HasValue)
-            .Select(x => new
+            .Where(message =>
+                !message.IsDeleted &&
+                message.PayloadJson != null &&
+                EF.Functions.JsonContains(
+                    message.PayloadJson,
+                    QuotationRequestedPayload) &&
+                message.Conversation.CompanyId == companyId &&
+                message.Conversation.IsActive &&
+                message.Conversation.RelatedType == InternalMailRelatedType.Quotation &&
+                message.Conversation.RelatedId.HasValue)
+            .GroupBy(message => message.Conversation.RelatedId!.Value)
+            .Select(group => new
             {
-                QuotationId = x.RelatedId!.Value,
-                RequestedAt = x.Messages
-                    .Where(message =>
-                        !message.IsDeleted &&
-                        message.PayloadJson != null &&
-                        EF.Functions.JsonContains(
-                            message.PayloadJson,
-                            QuotationRequestedPayload))
-                    .Max(message => (DateTime?)message.SentAt)
-            })
-            .Where(x => x.RequestedAt.HasValue)
-            .ToListAsync(cancellationToken);
-        if (requestRows.Count == 0)
-        {
-            return [];
-        }
-
-        var requestedAtByQuotation = requestRows
-            .GroupBy(x => x.QuotationId)
-            .ToDictionary(x => x.Key, x => x.Max(y => y.RequestedAt)!.Value);
-        var quotationIds = requestedAtByQuotation.Keys.ToArray();
+                QuotationId = group.Key,
+                RequestedAt = group.Max(message => message.SentAt)
+            });
+        var activeRequestedQuotations = requestedQuotations.Where(requested =>
+            !_internalMailDbContext.InternalMessages
+                .AsNoTracking()
+                .Any(message =>
+                    !message.IsDeleted &&
+                    message.PayloadJson != null &&
+                    EF.Functions.JsonContains(
+                        message.PayloadJson,
+                        QuotationRequestWithdrawnPayload) &&
+                    message.Conversation.CompanyId == companyId &&
+                    message.Conversation.IsActive &&
+                    message.Conversation.RelatedType == InternalMailRelatedType.Quotation &&
+                    message.Conversation.RelatedId == requested.QuotationId &&
+                    message.SentAt >= requested.RequestedAt));
         var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
-        var query = _visibilityService
+        var visibleQuotations = _visibilityService
             .ApplyQuotationVisibility(
                 _crmDbContext.Quotations.AsNoTracking(),
                 _crmDbContext.Customers.AsNoTracking(),
                 scope)
             .Where(x =>
                 x.CompanyId == companyId &&
-                x.IsActive &&
-                quotationIds.Contains(x.QuotationId))
-            .SelectMany(x => x.Lines.Where(line => line.IsActive).Select(line => new ProductPricingRequestRow
+                x.IsActive);
+
+        var query =
+            from quotation in visibleQuotations
+            join requested in activeRequestedQuotations
+                on quotation.QuotationId equals requested.QuotationId
+            from line in quotation.Lines.Where(line => line.IsActive)
+            select new ProductPricingRequestRow
             {
                 ProductId = line.ProductId,
-                QuotationId = x.QuotationId,
-                QuotationExternalId = x.ExternalId,
-                CustomerId = x.CustomerId,
-                CustomerExternalId = x.Customer.ExternalId,
-                CustomerName = x.Customer.CustomerName,
-                SaleEmployeeId = x.SaleEmployeeId,
-                SaleEmployeeName = x.SaleEmployee.FullName,
+                QuotationId = quotation.QuotationId,
+                QuotationExternalId = quotation.ExternalId,
+                CustomerId = quotation.CustomerId,
+                CustomerExternalId = quotation.Customer.ExternalId,
+                CustomerName = quotation.Customer.CustomerName,
+                SaleEmployeeId = quotation.SaleEmployeeId,
+                SaleEmployeeName = quotation.SaleEmployee.FullName,
                 Quantity = line.Quantity,
-                Unit = line.Unit
-            }));
+                Unit = line.Unit,
+                RequestedAt = requested.RequestedAt
+            };
 
         if (productIds is { Count: > 0 })
         {
             query = query.Where(x => productIds.Contains(x.ProductId));
         }
 
-        var rows = await query.ToListAsync(cancellationToken);
-        foreach (var row in rows)
-        {
-            row.RequestedAt = requestedAtByQuotation[row.QuotationId];
-        }
-
-        return rows;
+        return await query.ToListAsync(cancellationToken);
     }
 
     /// <summary>

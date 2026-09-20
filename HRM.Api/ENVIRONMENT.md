@@ -25,6 +25,7 @@ hay tài liệu này.
 | `Jwt__Audience` | Audience JWT, thường là URL FE | `https://hrm.vietaus.com` | Không |
 | `Jwt__EXPIRATION_MINUTES` | Thời hạn access token (phút) | `3000` | Không |
 | `Jwt__Key` | Khóa ký JWT dài, ngẫu nhiên | Không hiển thị | Có |
+| `RefreshToken__ReuseActiveToken` | Fallback cho phép các tab/lần đăng nhập dùng lại refresh token còn hạn; mặc định `false` để dùng rotation | `false` | Không |
 | `AllowedOrigins__0`, `AllowedOrigins__1`, ... | Danh sách origin FE được CORS cho phép | Mỗi biến là một origin đầy đủ | Không |
 
 `AllowedOrigins` không được có dấu `/` cuối URL. Không dùng `*` khi API bật credentials/cookie.
@@ -93,9 +94,24 @@ Nếu chưa triển khai browser push thì đặt `WebPush__Enabled=false`; noti
 | `Pdf__Quotation__QrCodePath` | Đường dẫn QR |
 | `Pdf__Quotation__Factory01` | Địa chỉ nhà máy 1 |
 | `Pdf__Quotation__Factory02` | Địa chỉ nhà máy 2 |
+| `Pdf__Quotation__CompanyDisplayName` | Tên công ty hiển thị tại footer báo giá |
+| `Pdf__Quotation__HeadOffice` | Địa chỉ trụ sở chính tại footer |
+| `Pdf__Quotation__HeadOfficeContact` | Điện thoại trụ sở chính tại footer |
+| `Pdf__Quotation__HeadOfficeEmail` | Email trụ sở chính tại footer |
+| `Pdf__Quotation__HaNoiBranch` | Địa chỉ chi nhánh Hà Nội tại footer |
+| `Pdf__Quotation__HaNoiBranchContact` | Điện thoại chi nhánh Hà Nội tại footer |
+| `Pdf__Quotation__HaNoiBranchEmail` | Email chi nhánh Hà Nội tại footer |
+| `Pdf__Quotation__DaNangBranch` | Địa chỉ chi nhánh Đà Nẵng tại footer |
+| `Pdf__Quotation__DaNangBranchContact` | Điện thoại chi nhánh Đà Nẵng tại footer |
+| `Pdf__Quotation__DaNangBranchEmail` | Email chi nhánh Đà Nẵng tại footer |
+| `Pdf__Quotation__Factory01Contact` | Điện thoại nhà máy 1 tại footer |
+| `Pdf__Quotation__Factory01Email` | Email nhà máy 1 tại footer |
+| `Pdf__Quotation__Factory02Contact` | Điện thoại nhà máy 2 tại footer |
+| `Pdf__Quotation__Factory02Email` | Email nhà máy 2 tại footer |
 | `Pdf__Quotation__Website` | Website in PDF |
 | `Pdf__Quotation__Hotline` | Hotline in PDF |
 | `Pdf__Quotation__Slogan` | Slogan in PDF |
+| `Pdf__Quotation__IsoStandards` | Chuỗi chứng nhận ISO ở góc trái hàng cuối footer |
 | `Pdf__Quotation__FormCode` | Mã biểu mẫu PDF |
 | `Pdf__Quotation__EffectiveDate` | Ngày hiệu lực biểu mẫu |
 | `Logging__LogLevel__Default` | Log level chung, thường `Information` |

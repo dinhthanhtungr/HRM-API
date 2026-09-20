@@ -51,15 +51,22 @@ The API does not set a `Domain` attribute. Logout deletes the same host-only/pat
 anonymous-safe so an expired or invalid access token does not prevent the browser from clearing its cookie; the
 refresh token is revoked when a valid authenticated principal is available.
 
-## Refresh rotation
+## Refresh-token session mode
 
-The current schema stores one refresh token per identity account. Rotation uses an atomic compare-and-swap against
-the submitted active token, so concurrent requests using the same refresh token cannot both succeed. The winner
-receives the new access/refresh pair; later requests using the consumed token receive `401`.
+The current schema stores one refresh token per identity account. By default,
+`RefreshToken:ReuseActiveToken = false`, so refresh uses atomic rotation. Cross-tab coordination belongs to the FE:
+only one tab refreshes, then broadcasts the new authentication state to the other tabs.
 
-This prevents an out-of-order response from replacing the persisted refresh token with a second token issued from
-the same input. Fully independent long-lived sessions per browser/tab would require a separate session/token-family
-model and is outside the current single-token contract.
+When rotation is enabled, only one concurrent refresh using the same token succeeds; the winner receives the new
+token and later requests using the consumed token receive `401`. This protects against reuse of an older token.
+
+Set the environment variable `RefreshToken__ReuseActiveToken=true` and restart the API only as a temporary fallback
+when cross-tab refresh coordination is unavailable. In compatibility mode, successful login and refresh reuse the
+active unexpired token stored in the database. Logout or administrative revocation then invalidates that shared
+token for every tab/device, and a copied token remains usable until it expires or is revoked.
+
+Fully independent, individually revocable browser/device sessions still require a separate session/token-family
+table. The compatibility switch is an operational fallback, not the preferred security policy.
 
 ## Pricing visibility
 

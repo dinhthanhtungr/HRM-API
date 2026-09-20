@@ -45,7 +45,7 @@ internal static class BomMapper
             BomDefinitionId = definition.BomDefinitionId,
             BomVersionId = version.BomVersionId,
             ProductId = definition.ProductId,
-            Code = definition.Code,
+            Code = definition.ExternalId,
             Name = definition.Name,
             BomType = definition.BomType,
             VersionNo = version.VersionNo,

@@ -26,5 +26,6 @@ namespace HRM.Application.Abstractions.Commons.ExternalIds
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
         Task<string> GenerateMonthlyCodeAsync(Guid companyId, string prefix, CancellationToken cancellationToken = default);
+
     }
 }

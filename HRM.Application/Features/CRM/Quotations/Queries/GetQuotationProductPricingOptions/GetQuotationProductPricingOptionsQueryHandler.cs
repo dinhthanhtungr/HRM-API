@@ -326,6 +326,22 @@ internal sealed class GetQuotationProductPricingOptionsQueryHandler
                 ItemName = x.MaterialNameSnapshot ?? string.Empty,
                 Quantity = x.Quantity,
                 Unit = x.Unit ?? string.Empty,
+                PurchaseStatus = x.Material != null && x.Material.CompanyId == companyId &&
+                    x.Material.PurchaseAvailability != null
+                        ? x.Material.PurchaseAvailability.Status
+                        : null,
+                PurchaseStatusReason = x.Material != null && x.Material.CompanyId == companyId &&
+                    x.Material.PurchaseAvailability != null
+                        ? x.Material.PurchaseAvailability.Reason
+                        : null,
+                PurchaseStatusEffectiveFrom = x.Material != null && x.Material.CompanyId == companyId &&
+                    x.Material.PurchaseAvailability != null
+                        ? x.Material.PurchaseAvailability.EffectiveFrom
+                        : null,
+                ExpectedAvailableDate = x.Material != null && x.Material.CompanyId == companyId &&
+                    x.Material.PurchaseAvailability != null
+                        ? x.Material.PurchaseAvailability.ExpectedAvailableDate
+                        : null,
                 LineNo = x.LineNo
             })
             .OrderBy(x => x.FormulaId)
@@ -700,6 +716,13 @@ internal sealed class GetQuotationProductPricingOptionsQueryHandler
                 ? latestPrice!.PriceSource
                 : LatestPriceSourceType.Unknown,
             PriceCalculation = hasPrice ? latestPrice?.Calculation : null,
+            AvailabilitySummary = ProductPricingMaterialAvailabilityRules.Resolve(
+                material.ItemType,
+                material.ItemId,
+                material.PurchaseStatus,
+                material.PurchaseStatusReason,
+                material.PurchaseStatusEffectiveFrom,
+                material.ExpectedAvailableDate),
             SupplierPrices = IsMaterial(material.ItemType) && material.ItemId.HasValue
                 ? supplierPricesByMaterial.GetValueOrDefault(material.ItemId.Value) ?? []
                 : []

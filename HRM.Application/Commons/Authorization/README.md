@@ -73,9 +73,12 @@ Permission changes affect newly issued access tokens after login/refresh; they d
 ## PLM Current Defaults
 
 - Formula materials/NVL viewers:
-  - `Admin`, `Developer`, `President`, `PLPUUser`, `ACCUser`, `LabUser`
+  - `Admin`, `Developer`, `President`, `SeePriceUser`
 - Formula price viewers:
   - `Admin`, `Developer`, `President`, `PriceView`, `ACCUser`, `SeePriceUser`
+- Material cost, material price review and material replacement viewers:
+  - `Admin`, `Developer`, `President`, `SeePriceUser`
+  - `LabUser` and `LabAdmin` do not receive material price/cost visibility from these role sets.
 - Product technical editors:
   - `Admin`, `Developer`, `President`, `LabUser`, `PLPUUser`
   - Also allowed to view restricted product technical fields in Sample Request audit history.

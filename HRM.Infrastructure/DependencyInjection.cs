@@ -23,7 +23,7 @@ public static class DependencyInjection
     {
         services
             .AddPersistence(configuration)
-            .AddAuthenticationServices();
+            .AddAuthenticationServices(configuration);
 
         services.AddScoped<IExternalIdService, ExternalIdServicePostgres>();
         services.Configure<StorageOptions>(options =>

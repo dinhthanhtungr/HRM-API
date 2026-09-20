@@ -1,4 +1,4 @@
-using System;
+ using System;
 using System.Collections.Generic;
 using HRM.Domain.Entities.AttachmentSchema;
 using HRM.Domain.Entities.BomSchema;
@@ -58,6 +58,9 @@ public partial class Material
     public virtual Employee? UpdatedByNavigation { get; set; }
     public virtual ICollection<FormulaMaterial> FormulaMaterials { get; set; } = new List<FormulaMaterial>();
     public virtual ICollection<BomVersionItem> BomVersionItems { get; set; } = new List<BomVersionItem>();
+    public virtual ICollection<BomVersionItemAlternative> BomVersionItemAlternatives { get; set; } = new List<BomVersionItemAlternative>();
+    public virtual ICollection<ManufacturingLossProfileRule> ManufacturingLossProfileRules { get; set; } = new List<ManufacturingLossProfileRule>();
+    public virtual ICollection<MfgProductionOrderBomItemSubstitution> ProductionOrderBomItemSubstitutions { get; set; } = new List<MfgProductionOrderBomItemSubstitution>();
     public virtual ICollection<MaterialGroupName> MaterialGroupNames { get; set; } = new List<MaterialGroupName>();
 
     public virtual ICollection<ManufacturingFormulaMaterial> ManufacturingFormulaMaterials { get; set; } = new List<ManufacturingFormulaMaterial>();

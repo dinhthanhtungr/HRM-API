@@ -62,6 +62,7 @@ public static class DependencyInjection
         services.AddScoped<QuotationCurrentPricingResolver>();
         services.AddScoped<ProductPricingRealtimeSourceQueryService>();
         services.AddScoped<ProductPricingSourceQueryService>();
+        services.AddScoped<StandardPriceRealtimeComparisonQueryService>();
         services.AddScoped<ProductPricingRequestQueryService>();
         services.AddScoped<ProductPricingApprovalNotificationService>();
         services.AddScoped<QuotationPricingApprovalStateService>();
@@ -112,6 +113,7 @@ public static class DependencyInjection
         services.AddScoped<BomItemResolver>();
         services.AddScoped<BomLifecycleService>();
         services.AddScoped<ManufacturingBomStructureService>();
+        services.AddScoped<ManufacturingLossProfileWriteService>();
         services.AddScoped<DeliveryOrderLotInventoryService>();
         services.AddScoped<PurchaseOrderWorkflowService>();
         services.AddScoped<PurchaseOrderReceiptReader>();

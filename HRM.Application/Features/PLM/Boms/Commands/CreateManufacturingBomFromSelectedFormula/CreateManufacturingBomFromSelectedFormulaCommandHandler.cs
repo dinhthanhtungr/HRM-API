@@ -153,7 +153,7 @@ internal sealed class CreateManufacturingBomFromSelectedFormulaCommandHandler
                 BomDefinitionId = Guid.CreateVersion7(),
                 CompanyId = companyId,
                 ProductId = command.ProductId,
-                Code = BuildBomCode(formula),
+                ExternalId = BuildBomCode(formula),
                 Name = BuildBomName(formula),
                 BomType = BomType.Manufacturing,
                 Description = $"Formula-driven manufacturing BOM initialized from Formula {formula.ExternalId}.",
@@ -184,7 +184,6 @@ internal sealed class CreateManufacturingBomFromSelectedFormulaCommandHandler
             CreatedBy = employeeId
         };
         var items = BomMapper.CreateVersionItems(version.BomVersionId, resolution.Items);
-
         await _dbContext.BomVersions.AddAsync(version, cancellationToken);
         await _dbContext.BomVersionItems.AddRangeAsync(items, cancellationToken);
         _dbContext.AuditLogs.Add(BomAudit.Create(

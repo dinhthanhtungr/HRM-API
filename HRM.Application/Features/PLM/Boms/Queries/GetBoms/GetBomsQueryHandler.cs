@@ -40,14 +40,14 @@ internal sealed class GetBomsQueryHandler
                 x.IsActive &&
                 (!request.ProductId.HasValue || x.ProductId == request.ProductId) &&
                 (string.IsNullOrEmpty(keyword) ||
-                 EF.Functions.ILike(x.Code, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                 EF.Functions.ILike(x.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
                  EF.Functions.ILike(x.Name, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter)))
-            .OrderBy(x => x.Code)
+            .OrderBy(x => x.ExternalId)
             .Select(x => new BomListItemDto
             {
                 BomDefinitionId = x.BomDefinitionId,
                 ProductId = x.ProductId,
-                Code = x.Code,
+                Code = x.ExternalId,
                 Name = x.Name,
                 BomType = x.BomType,
                 IsActive = x.IsActive,

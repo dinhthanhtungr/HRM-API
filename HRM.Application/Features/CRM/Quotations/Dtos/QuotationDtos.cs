@@ -221,6 +221,11 @@ public sealed class QuotationLineDto
     /// <summary>Giá chuẩn President đã duyệt; không có thì null.</summary>
     public QuotationApprovedTierPricingDto? ApprovedPricing { get; set; }
 
+    /// <summary>
+    /// Giá chuẩn Approved quy đổi theo chi phí NVL realtime; chỉ là tham chiếu và không đổi snapshot của line.
+    /// </summary>
+    public StandardPriceRealtimeComparisonDto? RealtimePriceComparison { get; set; }
+
     /// <summary>Giá hệ thống tính theo công thức/NVL và policy hiện hành; không lưu vào báo giá.</summary>
     public QuotationSystemCalculatedTierPricingDto? SystemCalculatedPricing { get; set; }
 

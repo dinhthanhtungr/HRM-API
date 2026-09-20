@@ -18,12 +18,12 @@ public class ManufacturingBomStageTransitionConfiguration : IEntityTypeConfigura
         entity.Property(x => x.BomVersionId).HasColumnName("bom_version_id").IsRequired();
         entity.Property(x => x.FromManufacturingBomStageId).HasColumnName("from_manufacturing_bom_stage_id").IsRequired();
         entity.Property(x => x.ToManufacturingBomStageId).HasColumnName("to_manufacturing_bom_stage_id").IsRequired();
-        entity.Property(x => x.Code).HasColumnName("code").HasColumnType("citext").HasMaxLength(64).IsRequired();
+        entity.Property(x => x.ExternalId).HasColumnName("external_id").HasColumnType("citext").HasMaxLength(64).IsRequired();
         entity.Property(x => x.TransitionType).HasColumnName("transition_type").HasConversion<string>().HasColumnType("citext").HasMaxLength(32).IsRequired();
         entity.Property(x => x.DefaultEventCount).HasColumnName("default_event_count");
         entity.Property(x => x.SequenceNo).HasColumnName("sequence_no").IsRequired();
         entity.Property(x => x.Note).HasColumnName("note").HasColumnType("text");
-        entity.HasIndex(x => new { x.BomVersionId, x.Code }).IsUnique().HasDatabaseName("ux_manufacturing_bom_stage_transitions_version_code");
+        entity.HasIndex(x => new { x.BomVersionId, x.ExternalId }).IsUnique().HasDatabaseName("ux_manufacturing_bom_stage_transitions_version_code");
         entity.HasIndex(x => new { x.BomVersionId, x.SequenceNo }).IsUnique().HasDatabaseName("ux_manufacturing_bom_stage_transitions_version_sequence");
         entity.HasOne(x => x.BomVersion).WithMany(x => x.ManufacturingStageTransitions).HasForeignKey(x => x.BomVersionId).OnDelete(DeleteBehavior.Restrict).HasConstraintName("fk_manufacturing_bom_stage_transitions_version");
         entity.HasOne(x => x.FromStage).WithMany(x => x.OutgoingTransitions).HasForeignKey(x => x.FromManufacturingBomStageId).OnDelete(DeleteBehavior.Restrict).HasConstraintName("fk_manufacturing_bom_stage_transitions_from_stage");

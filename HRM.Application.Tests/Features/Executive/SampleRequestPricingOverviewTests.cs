@@ -96,6 +96,11 @@ public sealed class SampleRequestPricingOverviewTests
                 ProfitMarginRate = 21.8182m,
                 PricingStatus = ProductPricingLookupStatus.Approved,
                 PricingHealthStatus = ProductPricingHealthStatus.Ready,
+                PricingAttentionSources =
+                [
+                    ProductPricingAttentionSource.SaleQuotationRequested,
+                    ProductPricingAttentionSource.LabFormulaConfirmed
+                ],
                 ApprovedPricingVersionId = approvedId,
                 SourceType = ProductPricingSourceType.Formula,
                 SourceId = Guid.NewGuid(),
@@ -121,6 +126,12 @@ public sealed class SampleRequestPricingOverviewTests
         Assert.Equal(21.8182m, item.Pricing.ProfitMarginPercent);
         Assert.Equal(21.8182m, item.Pricing.ProfitMarginRate);
         Assert.Equal(approvedId, item.Pricing.ApprovedPricingVersionId);
+        Assert.Equal(
+            [
+                ProductPricingAttentionSource.SaleQuotationRequested,
+                ProductPricingAttentionSource.LabFormulaConfirmed
+            ],
+            item.Pricing.PricingAttentionSources);
         Assert.Equal("Standard", item.Pricing.DisplayedFormula!.PriceKind);
         Assert.Equal("CT_1001", item.Pricing.DisplayedFormula.Code);
         Assert.Equal(conversationId, item.Conversation.ConversationId);
@@ -150,6 +161,57 @@ public sealed class SampleRequestPricingOverviewTests
         Assert.Equal("SystemCalculated", pricing.DisplayedFormula.PriceKind);
         Assert.Null(pricing.DraftPricingVersionId);
         Assert.Null(pricing.ApprovedPricingVersionId);
+    }
+
+    [Fact]
+    public void MapPricing_ForwardsSharedRealtimePriceComparison()
+    {
+        var calculatedAt = new DateTime(2026, 9, 17, 11, 59, 14);
+        var comparison = new StandardPriceRealtimeComparisonDto
+        {
+            Currency = "VND",
+            ApprovedStandardPrice = 244_514m,
+            RealtimeAdjustedStandardPrice = 244_514m,
+            StandardPriceDifference = 0m,
+            StandardPriceDifferencePercent = 0m,
+            ApprovedMaterialCostSnapshot = 187_727m,
+            RealtimeMaterialCost = 187_727m,
+            MaterialCostDifference = 0m,
+            MaterialCostDifferencePercent = 0m,
+            MovementStatus = MaterialCostMovementStatus.Unchanged,
+            IsMaterialCostComplete = true,
+            IsIncreaseWarning = false,
+            WarningThresholdPercent = 5m,
+            CalculatedAt = calculatedAt
+        };
+
+        var pricing = GetSampleRequestPricingOverviewQueryHandler.MapPricing(
+            new ProductPricingWorkbenchItemDto
+            {
+                Currency = "VND",
+                RealtimePriceComparison = comparison
+            });
+
+        Assert.Same(comparison, pricing.RealtimePriceComparison);
+    }
+
+    [Fact]
+    public void MapPricing_ForwardsFlatSourceMaterials()
+    {
+        var materials = new[]
+        {
+            new QuotationProductPricingMaterialDto
+            {
+                FormulaMaterialId = Guid.NewGuid(),
+                ItemId = Guid.NewGuid()
+            }
+        };
+
+        var pricing = GetSampleRequestPricingOverviewQueryHandler.MapPricing(
+            new ProductPricingWorkbenchItemDto { Currency = "VND" },
+            materials);
+
+        Assert.Same(materials, pricing.Materials);
     }
 
     [Fact]

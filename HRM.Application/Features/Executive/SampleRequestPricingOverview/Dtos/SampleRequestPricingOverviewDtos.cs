@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using HRM.Application.Features.CRM.Quotations.Dtos;
 using HRM.Domain.Enums.CustomerEnum;
 
 namespace HRM.Application.Features.Executive.SampleRequestPricingOverview.Dtos;
@@ -62,6 +63,8 @@ public sealed class SampleRequestPricingDto
     public decimal? StandardSellingPriceDifference { get; init; }
     public decimal? StandardSellingPriceDifferencePercent { get; init; }
     public bool HasRealtimePriceComparison { get; init; }
+    public StandardPriceRealtimeComparisonDto? RealtimePriceComparison { get; init; }
+    public IReadOnlyList<QuotationProductPricingMaterialDto> Materials { get; init; } = [];
 
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public ProductPricingLookupStatus PricingStatus { get; init; }
@@ -75,6 +78,7 @@ public sealed class SampleRequestPricingDto
     public ProductStandardPriceState StandardPriceState { get; init; }
     public bool HasFormulaConfirmationPending { get; init; }
     public bool IsPricingReviewExpired { get; init; }
+    public IReadOnlyList<ProductPricingAttentionSource> PricingAttentionSources { get; init; } = [];
     public DateTime? PricingUpdatedDate { get; init; }
     public int WaitingQuotationCount { get; init; }
     public Guid? DraftPricingVersionId { get; init; }

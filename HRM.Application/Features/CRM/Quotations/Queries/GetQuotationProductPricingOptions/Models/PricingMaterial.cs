@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using HRM.Domain.Enums.Materials;
 
 namespace HRM.Application.Features.CRM.Quotations.Queries.GetQuotationProductPricingOptions.Models
 {
@@ -17,6 +18,10 @@ namespace HRM.Application.Features.CRM.Quotations.Queries.GetQuotationProductPri
         public string ItemName { get; set; } = string.Empty;
         public decimal Quantity { get; init; }
         public string Unit { get; init; } = string.Empty;
+        public MaterialPurchaseStatus? PurchaseStatus { get; init; }
+        public string? PurchaseStatusReason { get; init; }
+        public DateTime? PurchaseStatusEffectiveFrom { get; init; }
+        public DateTime? ExpectedAvailableDate { get; init; }
         public int LineNo { get; init; }
     }
 }

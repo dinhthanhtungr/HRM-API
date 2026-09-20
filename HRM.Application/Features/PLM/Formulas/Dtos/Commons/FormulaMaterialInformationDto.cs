@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using HRM.Application.Features.PLM.Materials.Dtos;
 using HRM.Domain.Enums.Formulas;
 using HRM.Domain.Enums.Materials;
 
@@ -33,13 +34,19 @@ namespace HRM.Application.Features.PLM.Formulas.Dtos.Commons
         public string? ItemName { get; set; }
         public string? ItemExternalId { get; set; }
 
-        [JsonConverter(typeof(JsonStringEnumConverter))]
-        public MaterialPurchaseStatus? PurchaseStatus { get; set; }
+        public MaterialPurchaseAvailabilityInfoDto? PurchaseAvailability { get; set; }
 
-        public bool? IsPurchaseAvailable { get; set; }
-        public string? PurchaseStatusReason { get; set; }
-        public DateTime? PurchaseStatusEffectiveFrom { get; set; }
-        public DateTime? ExpectedAvailableDate { get; set; }
+        [JsonIgnore]
+        internal MaterialPurchaseStatus? PurchaseStatus { get; set; }
+
+        [JsonIgnore]
+        internal string? PurchaseStatusReason { get; set; }
+
+        [JsonIgnore]
+        internal DateTime? PurchaseStatusEffectiveFrom { get; set; }
+
+        [JsonIgnore]
+        internal DateTime? ExpectedAvailableDate { get; set; }
     }
 
     public sealed class FormulaMaterialSupplierPriceDto

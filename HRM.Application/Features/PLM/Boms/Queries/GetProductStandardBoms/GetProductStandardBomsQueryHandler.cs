@@ -44,7 +44,7 @@ internal sealed class GetProductStandardBomsQueryHandler
                 ProductId = x.ProductId,
                 BomDefinitionId = x.BomVersion.BomDefinitionId,
                 BomVersionId = x.BomVersionId,
-                BomCode = x.BomVersion.BomDefinition.Code,
+                BomCode = x.BomVersion.BomDefinition.ExternalId,
                 BomName = x.BomVersion.BomDefinition.Name,
                 VersionNo = x.BomVersion.VersionNo,
                 ValidFrom = x.ValidFrom,

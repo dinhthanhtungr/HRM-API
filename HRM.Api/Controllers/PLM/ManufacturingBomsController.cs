@@ -1,5 +1,8 @@
 using HRM.Application.Commons.Authorization.PLM;
 using HRM.Application.Features.PLM.Boms.Commands.CreateManufacturingBom;
+using HRM.Application.Features.PLM.Boms.Commands.ApplyManufacturingProcessTemplate;
+using HRM.Application.Features.PLM.Boms.Commands.ApplyManufacturingLossProfile;
+using HRM.Application.Features.PLM.Boms.Commands.PreviewManufacturingLossProfile;
 using HRM.Application.Features.PLM.Boms.Commands.ReplaceManufacturingBom;
 using HRM.Application.Features.PLM.Boms.Commands.UpdateManufacturingBomProcessConfiguration;
 using HRM.Application.Features.PLM.Boms.Commands.GenerateManufacturingFormulaFromBom;
@@ -101,6 +104,48 @@ public sealed class ManufacturingBomsController : ControllerBase
     {
         var result = await _sender.Send(
             new UpdateManufacturingBomProcessConfigurationCommand(bomVersionId, request),
+            cancellationToken);
+        return result.Success ? Ok(result.Data) : BadRequest(result);
+    }
+
+    [HttpPost("versions/{bomVersionId:guid}/loss-rules/preview-profile")]
+    [Authorize(Policy = PlmPolicies.ManageBomDraft)]
+    public async Task<IActionResult> PreviewLossProfile(
+        Guid bomVersionId,
+        [FromBody] ApplyManufacturingLossProfileRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(
+            new PreviewManufacturingLossProfileCommand(bomVersionId, request.ProfileId),
+            cancellationToken);
+        return result.Success ? Ok(result.Data) : BadRequest(result);
+    }
+
+    [HttpPost("versions/{bomVersionId:guid}/process-template/preview")]
+    [Authorize(Policy = PlmPolicies.ManageBomDraft)]
+    public async Task<IActionResult> PreviewProcessTemplate(Guid bomVersionId, [FromBody] ApplyManufacturingProcessTemplateRequest request, CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new ApplyManufacturingProcessTemplateCommand(bomVersionId, request.ProcessTemplateId, true), cancellationToken);
+        return result.Success ? Ok(result.Data) : BadRequest(result);
+    }
+
+    [HttpPost("versions/{bomVersionId:guid}/process-template/apply")]
+    [Authorize(Policy = PlmPolicies.ManageBomDraft)]
+    public async Task<IActionResult> ApplyProcessTemplate(Guid bomVersionId, [FromBody] ApplyManufacturingProcessTemplateRequest request, CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new ApplyManufacturingProcessTemplateCommand(bomVersionId, request.ProcessTemplateId, false), cancellationToken);
+        return result.Success ? Ok(result.Data) : BadRequest(result);
+    }
+
+    [HttpPost("versions/{bomVersionId:guid}/loss-rules/apply-profile")]
+    [Authorize(Policy = PlmPolicies.ManageBomDraft)]
+    public async Task<IActionResult> ApplyLossProfile(
+        Guid bomVersionId,
+        [FromBody] ApplyManufacturingLossProfileRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(
+            new ApplyManufacturingLossProfileCommand(bomVersionId, request.ProfileId),
             cancellationToken);
         return result.Success ? Ok(result.Data) : BadRequest(result);
     }

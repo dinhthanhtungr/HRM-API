@@ -30,11 +30,11 @@ internal sealed class GetManufacturingLossTypesQueryHandler
         return await _dbContext.ManufacturingLossTypes
             .AsNoTracking()
             .Where(x => x.CompanyId == companyId && (request.IncludeInactive || x.IsActive))
-            .OrderBy(x => x.Code)
+            .OrderBy(x => x.ExternalId)
             .Select(x => new ManufacturingLossTypeDto
             {
                 ManufacturingLossTypeId = x.ManufacturingLossTypeId,
-                Code = x.Code,
+                Code = x.ExternalId,
                 Name = x.Name,
                 Description = x.Description,
                 DefaultCalculationMethod = x.DefaultCalculationMethod,

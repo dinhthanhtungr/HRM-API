@@ -44,7 +44,7 @@ internal sealed class GetBomVersionQueryHandler
                 BomDefinitionId = x.BomDefinitionId,
                 BomVersionId = x.BomVersionId,
                 ProductId = x.BomDefinition.ProductId,
-                Code = x.BomDefinition.Code,
+                Code = x.BomDefinition.ExternalId,
                 Name = x.BomDefinition.Name,
                 BomType = x.BomDefinition.BomType,
                 VersionNo = x.VersionNo,
@@ -78,11 +78,44 @@ internal sealed class GetBomVersionQueryHandler
                     .Select(stage => new ManufacturingBomStageDto
                     {
                         ManufacturingBomStageId = stage.ManufacturingBomStageId,
-                        Code = stage.Code,
+                        Code = stage.ExternalId,
                         Name = stage.Name,
                         SequenceNo = stage.SequenceNo,
                         Description = stage.Description,
-                        IsActive = stage.IsActive
+                        IsActive = stage.IsActive,
+                        Machines = stage.Machines.OrderBy(machine => machine.SequenceNo).Select(machine => new ManufacturingBomStageMachineDto
+                        {
+                            ManufacturingBomStageMachineId = machine.ManufacturingBomStageMachineId,
+                            EquipmentId = machine.EquipmentId,
+                            EquipmentExternalId = machine.EquipmentExternalIdSnapshot,
+                            EquipmentName = machine.EquipmentNameSnapshot,
+                            IsDefault = machine.IsDefault,
+                            SequenceNo = machine.SequenceNo,
+                            Note = machine.Note
+                        }).ToList(),
+                        WorkInstruction = stage.WorkInstruction == null ? null : new ManufacturingBomStageWorkInstructionDto
+                        {
+                            ManufacturingBomStageWorkInstructionId = stage.WorkInstruction.ManufacturingBomStageWorkInstructionId,
+                            SourceWorkInstructionTemplateId = stage.WorkInstruction.SourceWorkInstructionTemplateId,
+                            ExternalIdSnapshot = stage.WorkInstruction.ExternalIdSnapshot,
+                            NameSnapshot = stage.WorkInstruction.NameSnapshot,
+                            VersionNoSnapshot = stage.WorkInstruction.VersionNoSnapshot,
+                            PurposeSnapshot = stage.WorkInstruction.PurposeSnapshot,
+                            PreparationSnapshot = stage.WorkInstruction.PreparationSnapshot,
+                            ProcedureSnapshot = stage.WorkInstruction.ProcedureSnapshot,
+                            QualityRequirementsSnapshot = stage.WorkInstruction.QualityRequirementsSnapshot,
+                            SafetyNotesSnapshot = stage.WorkInstruction.SafetyNotesSnapshot,
+                            ChecklistItems = stage.WorkInstruction.ChecklistItems.OrderBy(item => item.SequenceNo).Select(item => new ManufacturingBomStageChecklistItemDto
+                            {
+                                ManufacturingBomStageChecklistItemId = item.ManufacturingBomStageChecklistItemId,
+                                ExternalIdSnapshot = item.ExternalIdSnapshot,
+                                ContentSnapshot = item.ContentSnapshot,
+                                SequenceNo = item.SequenceNo,
+                                IsRequired = item.IsRequired,
+                                ExpectedValueSnapshot = item.ExpectedValueSnapshot,
+                                UnitSnapshot = item.UnitSnapshot
+                            }).ToList()
+                        }
                     })
                     .ToList(),
                 LossRules = x.LossRules
@@ -91,10 +124,10 @@ internal sealed class GetBomVersionQueryHandler
                     {
                         ManufacturingBomLossRuleId = rule.ManufacturingBomLossRuleId,
                         ManufacturingLossTypeId = rule.ManufacturingLossTypeId,
-                        LossTypeCode = rule.LossType.Code,
+                        LossTypeCode = rule.LossType.ExternalId,
                         LossTypeName = rule.LossType.Name,
                         ItemLineNo = rule.BomVersionItem != null ? rule.BomVersionItem.LineNo : null,
-                        StageCode = rule.ManufacturingStage != null ? rule.ManufacturingStage.Code : null,
+                        StageCode = rule.ManufacturingStage != null ? rule.ManufacturingStage.ExternalId : null,
                         CalculationMethod = rule.CalculationMethod,
                         RatePercent = rule.RatePercent,
                         FixedQuantityKg = rule.FixedQuantityKg,

@@ -170,12 +170,10 @@ internal sealed class ProductPricingReviewCalculator
                 if (!material.HasLatestPrice || !material.LatestUnitPrice.HasValue)
                 {
                     missingPriceCount++;
-                    // President may still save or approve a manually chosen selling price.
-                    // Preserve the Formula/VA snapshot when present; otherwise the unresolved
-                    // item contributes zero while MissingPriceCount remains visible to the UI.
-                    unitPrice = material.HasSourcePriceSnapshot && material.SourceUnitPrice.HasValue
-                        ? material.SourceUnitPrice.Value
-                        : 0m;
+                    // A missing latest price is intentionally valued at zero for this preview.
+                    // Keep MissingPriceCount so the UI can disclose that the material cost is
+                    // incomplete; never silently fall back to the source snapshot here.
+                    unitPrice = 0m;
                 }
                 else
                 {

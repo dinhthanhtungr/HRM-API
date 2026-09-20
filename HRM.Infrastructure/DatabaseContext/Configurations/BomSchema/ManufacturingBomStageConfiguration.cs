@@ -14,13 +14,13 @@ public class ManufacturingBomStageConfiguration : IEntityTypeConfiguration<Manuf
 
         entity.Property(x => x.ManufacturingBomStageId).HasColumnName("manufacturing_bom_stage_id").HasDefaultValueSql("gen_random_uuid()");
         entity.Property(x => x.BomVersionId).HasColumnName("bom_version_id").IsRequired();
-        entity.Property(x => x.Code).HasColumnName("code").HasColumnType("citext").HasMaxLength(64).IsRequired();
+        entity.Property(x => x.ExternalId).HasColumnName("external_id").HasColumnType("citext").HasMaxLength(64).IsRequired();
         entity.Property(x => x.Name).HasColumnName("name").HasMaxLength(200).IsRequired();
         entity.Property(x => x.SequenceNo).HasColumnName("sequence_no").IsRequired();
         entity.Property(x => x.Description).HasColumnName("description").HasColumnType("text");
         entity.Property(x => x.IsActive).HasColumnName("is_active").HasDefaultValue(true).IsRequired();
 
-        entity.HasIndex(x => new { x.BomVersionId, x.Code })
+        entity.HasIndex(x => new { x.BomVersionId, x.ExternalId })
             .IsUnique().HasDatabaseName("ux_manufacturing_bom_stages_version_code");
         entity.HasIndex(x => new { x.BomVersionId, x.SequenceNo })
             .IsUnique().HasDatabaseName("ux_manufacturing_bom_stages_version_sequence");

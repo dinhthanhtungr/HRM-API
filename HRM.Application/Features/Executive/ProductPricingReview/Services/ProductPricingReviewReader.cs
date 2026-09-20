@@ -12,6 +12,7 @@ using HRM.Application.Commons.Searching;
 using HRM.Application.Features.CRM.Quotations.Dtos;
 using HRM.Application.Features.CRM.Quotations.Services;
 using HRM.Application.Features.Executive.ProductPricingReview.Dtos;
+using HRM.Application.Features.Pricing.Authorization;
 using HRM.Domain.Entities.CustomerSchema;
 using HRM.Domain.Enums.CustomerEnum;
 using HRM.Domain.Enums.Manufacturings;
@@ -33,6 +34,9 @@ internal sealed class ProductPricingReviewReader
     private readonly IFormulaPricingPolicyResolver _pricingPolicyResolver;
     private readonly ProductPricingRealtimeSourceQueryService _realtimeSources;
     private readonly QuotationFeatureOptions _featureOptions;
+    private readonly IPricingVisibilityService _pricingVisibilityService;
+    private readonly StandardPriceRealtimeComparisonQueryService _comparisonQueryService;
+    private readonly ProductPricingRequestQueryService _requestQueryService;
 
     public ProductPricingReviewReader(
         ICRMReadDbContext crm,
@@ -42,7 +46,10 @@ internal sealed class ProductPricingReviewReader
         FormulaPricingEngine pricingEngine,
         IFormulaPricingPolicyResolver pricingPolicyResolver,
         ProductPricingRealtimeSourceQueryService realtimeSources,
-        QuotationFeatureOptions featureOptions)
+        QuotationFeatureOptions featureOptions,
+        IPricingVisibilityService pricingVisibilityService,
+        StandardPriceRealtimeComparisonQueryService comparisonQueryService,
+        ProductPricingRequestQueryService requestQueryService)
     {
         _crm = crm;
         _plm = plm;
@@ -52,6 +59,9 @@ internal sealed class ProductPricingReviewReader
         _pricingPolicyResolver = pricingPolicyResolver;
         _realtimeSources = realtimeSources;
         _featureOptions = featureOptions;
+        _pricingVisibilityService = pricingVisibilityService;
+        _comparisonQueryService = comparisonQueryService;
+        _requestQueryService = requestQueryService;
     }
 
     /// <summary>
@@ -250,11 +260,52 @@ internal sealed class ProductPricingReviewReader
             latestFormulaConfirmedAt.Value > approvedAt.Value;
         var isPricingReviewExpired = pricingReviewDueDate.HasValue &&
             _clock.Now >= pricingReviewDueDate.Value;
+        var pricingRequests = await _requestQueryService.LoadAsync(
+            companyId,
+            [productId],
+            cancellationToken);
+        var materialCostChangedProductIds = approvedStandardPricing?.MaterialCostSnapshot is > 0m
+            ? await _realtimeSources.LoadMaterialCostChangedProductIdsAsync(
+                [new ProductPricingMaterialCostBaseline(
+                    productId,
+                    approvedStandardPricing.MaterialCostSnapshot.Value,
+                    approvedStandardPricing.SourceManufacturingFormulaId.HasValue
+                        ? new ProductPricingSourceSelection(
+                            productId,
+                            ProductPricingSourceType.ManufacturingFormula,
+                            approvedStandardPricing.SourceManufacturingFormulaId.Value)
+                        : approvedStandardPricing.SourceFormulaId.HasValue
+                            ? new ProductPricingSourceSelection(
+                                productId,
+                                ProductPricingSourceType.Formula,
+                                approvedStandardPricing.SourceFormulaId.Value)
+                            : null)],
+                companyId,
+                normalizedCurrency,
+                _featureOptions.MaterialCostChangeThresholdPercent,
+                useLatestProductionFormula: false,
+                cancellationToken)
+            : new HashSet<Guid>();
+        var pricingAttentionSources = ProductPricingAttentionRules.Resolve(
+            approvedAt,
+            pricingRequests,
+            latestFormulaConfirmedAt,
+            _clock.Now,
+            _featureOptions,
+            materialCostChangedProductIds.Contains(productId));
         var standardPriceState = approvedStandardPricing is null
             ? ProductStandardPriceState.PendingInitialApproval
-            : hasFormulaConfirmationPending || isPricingReviewExpired
+            : pricingAttentionSources.Count > 0
                 ? ProductStandardPriceState.PendingReapproval
                 : ProductStandardPriceState.Active;
+        var realtimePriceComparison = approvedStandardPricing is null
+            ? null
+            : await BuildRealtimeComparisonAsync(
+                approvedStandardPricing,
+                selected,
+                companyId,
+                normalizedCurrency,
+                cancellationToken);
         return OperationResult<ProductPricingReviewDto>.Ok(new ProductPricingReviewDto
         {
             Header = new PricingReviewHeaderDto
@@ -278,8 +329,10 @@ internal sealed class ProductPricingReviewReader
                 HasFormulaConfirmationPending = hasFormulaConfirmationPending,
                 IsReviewExpired = isPricingReviewExpired,
                 PricingReviewDueDate = pricingReviewDueDate,
-                LatestFormulaConfirmedAt = latestFormulaConfirmedAt
+                LatestFormulaConfirmedAt = latestFormulaConfirmedAt,
+                PricingAttentionSources = pricingAttentionSources
             },
+            RealtimePriceComparison = realtimePriceComparison,
             Overview = new PricingReviewOverviewDto
             {
                 PricingVersionId = currentVersion?.ProductPricingVersionId,
@@ -823,8 +876,33 @@ internal sealed class ProductPricingReviewReader
         var page = ProductPricingReviewRules.NormalizePageNumber(pageNumber);
         var size = ProductPricingReviewRules.NormalizePageSize(pageSize);
         var rows = await query.Skip((page - 1) * size).Take(size).ToListAsync(cancellationToken);
+        var pricingAccess = _pricingVisibilityService.GetAccess();
+        var comparableRows = rows
+            .Where(IsApprovedHistoryVersion)
+            .ToArray();
+        var selections = comparableRows
+            .Select(ToSourceSelection)
+            .Where(x => x is not null)
+            .Cast<ProductPricingSourceSelection>()
+            .Distinct()
+            .ToArray();
+        var sources = await _realtimeSources.LoadSelectedForExecutiveAsync(
+            selections,
+            companyId,
+            normalizedCurrency,
+            cancellationToken);
+        var comparisonsByVersion = comparableRows.ToDictionary(
+            x => x.ProductPricingVersionId,
+            x => BuildRealtimeComparison(x, sources, pricingAccess));
+
         return OperationResult<PagedResult<PricingReviewVersionDto>>.Ok(
-            new PagedResult<PricingReviewVersionDto>(rows.Select(MapVersion).ToArray(), total, page, size));
+            new PagedResult<PricingReviewVersionDto>(
+                rows.Select(x => MapVersion(
+                    x,
+                    comparisonsByVersion.GetValueOrDefault(x.ProductPricingVersionId))).ToArray(),
+                total,
+                page,
+                size));
     }
 
     public async Task<OperationResult<PagedResult<PricingReviewRelatedQuotationDto>>> GetRelatedQuotationsAsync(
@@ -917,7 +995,9 @@ internal sealed class ProductPricingReviewReader
             new PagedResult<PricingReviewVaLotDto>(rows, total, page, size));
     }
 
-    internal static PricingReviewVersionDto MapVersion(ProductPricingVersion x)
+    internal static PricingReviewVersionDto MapVersion(
+        ProductPricingVersion x,
+        StandardPriceRealtimeComparisonDto? realtimePriceComparison = null)
     {
         var costBase = x.MaterialCostSnapshot.HasValue && x.ManufacturingCost.HasValue
             ? x.MaterialCostSnapshot + x.ManufacturingCost
@@ -936,6 +1016,7 @@ internal sealed class ProductPricingReviewReader
             MaterialCost = x.MaterialCostSnapshot,
             ManufacturingCost = x.ManufacturingCost,
             StandardSellingPrice = x.StandardSellingPrice,
+            RealtimePriceComparison = realtimePriceComparison,
             ProfitAmount = x.StandardSellingPrice.HasValue && costBase.HasValue ? x.StandardSellingPrice - costBase : null,
             ProfitMarginPercent = PricingMarginCalculator.CalculateProfitMarginPercent(
                 x.StandardSellingPrice,
@@ -952,6 +1033,85 @@ internal sealed class ProductPricingReviewReader
             UpdatedAt = x.UpdatedDate,
             PriceTiers = x.PriceTiers.OrderBy(t => t.SortOrder).Select(MapTier).ToArray()
         };
+    }
+
+    private StandardPriceRealtimeComparisonDto? BuildRealtimeComparison(
+        ProductPricingVersion version,
+        IReadOnlyDictionary<ProductPricingSourceSelection, ProductPricingSourceOptionDto> sources,
+        PricingAccessDecision pricingAccess)
+    {
+        var comparison = _comparisonQueryService.BuildVisible(
+            [new StandardPriceRealtimeComparisonRequest(
+                version.ProductId,
+                version.Currency,
+                version.StandardSellingPrice,
+                version.MaterialCostSnapshot,
+                version.SourceManufacturingFormulaId.HasValue
+                    ? ProductPricingSourceType.ManufacturingFormula
+                    : version.SourceFormulaId.HasValue ? ProductPricingSourceType.Formula : null,
+                version.SourceManufacturingFormulaId ?? version.SourceFormulaId)],
+            sources,
+            pricingAccess);
+
+        return comparison.GetValueOrDefault(version.ProductId);
+    }
+
+    private async Task<StandardPriceRealtimeComparisonDto?> BuildRealtimeComparisonAsync(
+        ProductPricingVersion approvedVersion,
+        ProductPricingSourceOptionDto? selectedSource,
+        Guid companyId,
+        string currency,
+        CancellationToken cancellationToken)
+    {
+        var approvedSelection = ToSourceSelection(approvedVersion);
+        IReadOnlyDictionary<ProductPricingSourceSelection, ProductPricingSourceOptionDto> sources;
+        if (approvedSelection is null)
+        {
+            sources = new Dictionary<ProductPricingSourceSelection, ProductPricingSourceOptionDto>();
+        }
+        else if (selectedSource is not null &&
+                 selectedSource.SourceType == approvedSelection.Value.SourceType &&
+                 selectedSource.SourceId == approvedSelection.Value.SourceId)
+        {
+            sources = new Dictionary<ProductPricingSourceSelection, ProductPricingSourceOptionDto>
+            {
+                [approvedSelection.Value] = selectedSource
+            };
+        }
+        else
+        {
+            sources = await _realtimeSources.LoadSelectedForExecutiveAsync(
+                [approvedSelection.Value],
+                companyId,
+                currency,
+                cancellationToken);
+        }
+
+        return BuildRealtimeComparison(
+            approvedVersion,
+            sources,
+            _pricingVisibilityService.GetAccess());
+    }
+
+    private static bool IsApprovedHistoryVersion(ProductPricingVersion version)
+        => version.Status is ProductPricingStatus.Approved or ProductPricingStatus.Superseded;
+
+    private static ProductPricingSourceSelection? ToSourceSelection(ProductPricingVersion version)
+    {
+        if (version.SourceManufacturingFormulaId is { } manufacturingFormulaId)
+        {
+            return new ProductPricingSourceSelection(
+                version.ProductId,
+                ProductPricingSourceType.ManufacturingFormula,
+                manufacturingFormulaId);
+        }
+
+        return version.SourceFormulaId is { } formulaId
+            ? new ProductPricingSourceSelection(
+                version.ProductId,
+                ProductPricingSourceType.Formula,
+                formulaId)
+            : null;
     }
 
     internal static PricingReviewPriceTierDto MapTier(ProductPricingTier x) => new()
@@ -1065,6 +1225,7 @@ internal sealed class ProductPricingReviewReader
         PricingReviewFormulaItemCategory? category,
         string? groupName)
     {
+        var identity = ProductPricingReviewItemIdentity.Resolve(x.ItemType, x.ItemId);
         var status = !x.HasLatestPrice
             ? PricingReviewMaterialStatus.MissingPrice
             : x.LatestPriceDate.HasValue && x.LatestPriceDate < _clock.Now.AddDays(-ProductPricingReviewRules.StalePriceDays)
@@ -1076,14 +1237,15 @@ internal sealed class ProductPricingReviewReader
         return new PricingReviewMaterialDto
         {
             FormulaMaterialId = x.FormulaMaterialId,
-            MaterialId = x.ItemId,
+            MaterialId = identity.MaterialId,
+            ProductId = identity.ProductId,
             MaterialCode = x.ItemCode,
             MaterialName = x.ItemName,
             CategoryId = x.CategoryId,
             CategoryName = category?.CategoryName,
             CategoryGroup = categoryGroup,
             CategoryGroupName = ProductPricingReviewMaterialCategoryRules.GetDisplayName(categoryGroup),
-            MaterialType = x.ItemType.ToString(),
+            MaterialType = identity.ItemType.ToString(),
             GroupName = groupName,
             Quantity = x.Quantity,
             Unit = x.Unit,
@@ -1134,7 +1296,9 @@ internal sealed class ProductPricingReviewReader
         CancellationToken cancellationToken)
     {
         var materialIds = sourceMaterials
-            .Where(x => x.ItemId.HasValue)
+            .Where(x =>
+                x.ItemId.HasValue &&
+                ProductPricingReviewItemIdentity.Resolve(x.ItemType, x.ItemId).MaterialId.HasValue)
             .Select(x => x.ItemId!.Value)
             .Distinct()
             .ToArray();

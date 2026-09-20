@@ -825,7 +825,10 @@ Header trả `quotationId`, `quotationExternalId`, khách hàng, Sale phụ trá
 - `hasNewerApprovedPricing` để Sale biết snapshot hiện tại không còn là version Approved mới nhất.
 - `draftPricing`, `approvedPricing` đầy đủ cho President/Developer.
 - `pricingSources` đủ điều kiện, đã batch-load để FE không gọi N+1 theo từng sản phẩm. Mỗi nguồn chứa danh sách
-  NVL, số lượng chuẩn, đơn giá mới nhất, thành tiền, nguồn giá và ngày giá để dựng tooltip.
+  NVL, số lượng chuẩn, đơn giá mới nhất, thành tiền, nguồn giá và ngày giá để dựng tooltip. Dòng có `itemType`
+  là `Material` hoặc `MaterialFailure` trả thêm `availabilitySummary` theo trạng thái mua canonical của PLM;
+  `Product`/`ProductFailure` không serialize field này và không bung thành cây NVL con. Nếu NVL chưa có record
+  trạng thái riêng thì summary mặc định là `Available`.
 - `currentMaterialCost` là tổng NVL theo giá nguồn mới nhất; không lấy `Formula.TotalPrice`.
 - `storedMaterialCostSnapshot` và `storedPricingUpdatedDate` là dữ liệu của Draft/Approved gần nhất để FE hiển thị
   nhỏ bên dưới giá hiện tại.
@@ -864,6 +867,9 @@ từng hàng snapshot:
   đang tắt; FE dùng `isActive = false` để nhận biết tier không được áp dụng vào tính giá hiện tại.
 - `approvedPricing`: object giá President đã duyệt, gồm version, `status`, `approvedAt`, `standardSellingPrice`,
   công thức nguồn và `priceTiers`. Chưa từng duyệt thì `null`.
+- `realtimePriceComparison`: read-model so sánh giá chuẩn Approved với giá chuẩn tham chiếu đã
+  quy đổi theo chi phí NVL realtime của đúng Formula/VA lưu trên version Approved. Object này
+  không ghi đè `unitPrice`, tier hoặc snapshot của báo giá; chưa có giá Approved thì `null`.
 - `systemCalculatedPricing`: object giá realtime từ công thức/NVL/policy hiện hành, gồm `pricingStatus`,
   `calculatedAt`, `standardSellingPrice`, nguồn và `priceTiers`. Nó không ghi dữ liệu vào quotation.
 - `latestQuotedPricing`: object tiers của quotation `Sent` gần nhất cho cùng customer + product + currency,
@@ -913,6 +919,11 @@ GET /api/v1/crm/quotations/{quotationId}/pdf?download=true
   Khối `Các điều khoản khác` ưu tiên `Quotation.Terms` active theo `sortOrder`, ghép label/value Việt-Anh.
   Báo giá cũ chưa có bất kỳ term snapshot nào tiếp tục dùng mẫu legacy từ `DeliveryTerms`, `PaymentTerms`,
   `ValidUntil` và các giá trị mặc định trong renderer.
+- Lời chào, chữ ký và thông tin liên hệ của nhân viên Sale hiển thị ngay dưới khối `Các điều khoản khác`.
+  Footer PDF hiển thị thông tin trụ sở, chi nhánh, nhà máy VIETAUS lấy từ cấu hình `Pdf:Quotation`.
+  Dòng website/hotline và slogan
+  thương hiệu được đặt cuối trang với màu theo mẫu báo giá. Hàng cuối footer lần lượt hiển thị chuẩn ISO,
+  ngày hiệu lực biểu mẫu và mã biểu mẫu từ `IsoStandards`, `EffectiveDate`, `FormCode`.
 
 Các asset mặc định:
 
@@ -962,11 +973,20 @@ API quản lý bảng giá:
   có ngày hết hạn gần nhất; `sortBy` của FE chỉ sắp xếp trong từng nhóm ưu tiên này. `view` nhận `NeedsPricing`, `Draft`, `Approved`, `All`,
   `MaterialCostChanged` hoặc `ProductionMaterialCostChanged`;
   mặc định là `All`.
-  `MaterialCostChanged` chỉ trả Product mà chi phí NVL realtime của chính Formula/VA đã lưu trên bản giá
-  `Approved` mới nhất tăng ít nhất `MaterialCostChangeThresholdPercent` so với `MaterialCostSnapshot` của bản đó.
+  `NeedsPricing` trả Product có ít nhất một nguồn cần BGD xử lý: Sale vừa gửi yêu cầu báo giá mới hơn lần duyệt
+  giá gần nhất, Lab xác nhận Formula mới sau lần duyệt, giá đã đến hạn rà soát, hoặc chi phí NVL realtime của
+  source Approved tăng ít nhất `MaterialCostChangeThresholdPercent`. Mỗi item trả mảng `pricingAttentionSources`
+  gồm `SaleQuotationRequested`, `LabFormulaConfirmed`, `ReviewExpired`, `MaterialCostIncreased`; một Product có thể
+  đồng thời có nhiều giá trị. Request của Sale bị loại khi đã thu hồi hoặc khi có version Approved mới hơn.
+  Vì vậy việc duyệt giá mới hoặc xác nhận giữ giá hiện tại sẽ tự đóng nguyên nhân `SaleQuotationRequested`.
+  `MaterialCostChanged` trả Product mà chi phí NVL realtime của chính Formula/VA đã lưu trên bản giá
+  `Approved` mới nhất tăng so với `MaterialCostSnapshot` của bản đó; view này không áp dụng ngưỡng 5%, nên mọi
+  mức tăng dương đều khớp. `NeedsPricing` vẫn chỉ thêm nguồn `MaterialCostIncreased` khi mức tăng đạt
+  `MaterialCostChangeThresholdPercent`.
   `ProductionMaterialCostChanged` dùng VA `Checking` được chọn ở lệnh sản xuất mới nhất của Product làm chi phí
   realtime, nhưng vẫn so với cùng snapshot `Approved`. Snapshot bằng 0, thiếu giá realtime, giá không tăng, hoặc
-  tăng dưới ngưỡng đều không khớp. Hai view này mới chạy batch load giá realtime; bốn view cũ không chịu chi phí đó.
+  tăng dưới ngưỡng đều không khớp. Các view cost-change và `NeedsPricing` mới chạy batch load giá realtime; các view
+  `All`, `Draft`, `Approved` không chịu chi phí đó.
   Tiền tệ của quotation request không được dùng để lọc hàng đợi: mã BBG VND và USD đều có thể đưa Product vào
   workbench, nhưng bản ghi giá chuẩn hiển thị và quản lý tại đây vẫn là VND.
   `President` và `Developer` nhận đầy đủ dữ liệu quản lý giá. `SaleUser` được phép đọc nhưng response bị giới hạn:
@@ -974,6 +994,10 @@ API quản lý bảng giá:
   Danh sách giữ metadata nguồn, giá bán tiêu chuẩn và `publisherNote` của version Approved; các field giá hệ thống, chi phí,
   margin, version id và ngày nội bộ trả `null`/giá trị mặc định. `canOpenPricingDetail = true` cho phép FE giữ thao
   tác mở drawer; `canManagePricing = false` chỉ khóa các thao tác ghi, duyệt và đổi nguồn.
+  Mỗi item có giá Approved trả thêm `realtimePriceComparison`. Sale thấy giá chuẩn realtime,
+  chênh lệch giá chuẩn, phần trăm biến động NVL, trạng thái và cờ cảnh báo; ba số cost
+  tuyệt đối `approvedMaterialCostSnapshot`, `realtimeMaterialCost`, `materialCostDifference` vẫn `null`
+  khi không có capability `pricing.material-cost.view`.
   Có thể gửi `sortBy=createdDate&sortDirection=asc|desc` để đổi thứ tự này.
   `All` chỉ gồm sản phẩm có Formula/MFG Formula đủ điều kiện, đã có `ProductPricingVersion`, hoặc đang nằm trong
   báo giá đã gửi yêu cầu định giá. Khi không truyền `keyword`, workbench ẩn sản phẩm có Sample Request của khách nội bộ
@@ -982,6 +1006,19 @@ API quản lý bảng giá:
   Keyword tìm theo mã/tên Product và mã Sample Request active liên quan; tìm mã Sample Request không phân biệt hoa thường và vẫn giữ company/customer visibility của workbench.
   Product cũ không có nguồn, không có lịch sử giá và không có yêu cầu sẽ bị ẩn;
   sản phẩm đang được yêu cầu nhưng chưa có Formula vẫn được giữ để cảnh báo President.
+
+  Workbench hỗ trợ cùng bộ lọc nghiệp vụ với executive sample-request pricing overview:
+  `searchType`, `sampleStatuses`, `status`, `fromDate`, `toDate`, `customerId`, `productId`,
+  `saleEmployeeId`, `categoryId`, `color` và `additiveCode`. `searchType` nhận `All`, `Quotation`,
+  `Customer`, `SampleRequest`, `Product` hoặc `Formula`; nếu không truyền, backend tự suy ra từ prefix
+  `BBG`, `KH_`, `TP_`, `TL`, `VU`, còn keyword khác dùng `All`. Có thể truyền nhiều status bằng cách lặp
+  `sampleStatuses`, ví dụ `sampleStatuses=New&sampleStatuses=InProgress`; `status` là alias một giá trị và
+  được gộp với mảng. Khoảng ngày lọc theo `SampleRequest.CreatedDate`, gồm trọn cả `fromDate` và `toDate`.
+  Các filter `sampleStatuses/status/date/customerId/saleEmployeeId` phải cùng khớp trên ít nhất một Sample
+  Request active mà người gọi được phép xem; `productId/categoryId/color/additiveCode` lọc trực tiếp Product.
+  Kết quả vẫn product-centric, nên một Product chỉ xuất hiện một lần dù có nhiều Sample Request khớp.
+  Ví dụ:
+  `GET /api/v1/crm/quotations/product-pricing-workbench?view=All&currency=VND&customerId={id}&sampleStatuses=InProgress&fromDate=2026-09-01&toDate=2026-09-30&pageNumber=1&pageSize=15`.
 
   Với version `Approved` được tạo từ policy có `priceValidityDays`, response summary trả thêm
   `priceConfirmedAt` (mốc duyệt version), `priceExpiresAt` (= `priceConfirmedAt + priceValidityDays`),
@@ -1049,7 +1086,9 @@ mới. Publish policy mới không sửa bất kỳ snapshot hoặc version `App
 
 Chỉ `President` và `Developer` được xem lịch sử đầy đủ, tạo, sửa hoặc duyệt bảng giá. Endpoint
 `GET /products/{productId}/pricing?currency=VND` cho Sale đọc các tier giá bán, `approvedPricing.publisherNote`
-và metadata nguồn/duyệt, nhưng contract này không trả material cost, manufacturing cost hoặc margin. Field
+và metadata nguồn/duyệt. Endpoint trả `realtimePriceComparison` cùng contract với quotation detail
+và workbench; contract không trả manufacturing cost hoặc margin. Cost NVL tuyệt đối trong object so sánh
+chỉ hiển thị khi current user có `pricing.material-cost.view`. Field
 `canApplyToQuotation` true khi bộ `priceTiers` mặc định có ít nhất một
 tier và tất cả tier đều có `unitPrice`; nguồn có thể là `ApprovedPricingVersion` hoặc
 `SystemCalculated`. Giá `0` là hợp lệ, chỉ `null` mới được xem là thiếu giá.
@@ -1062,6 +1101,41 @@ khẩn, `priceTiers` được khởi tạo từ các template với giá `0`, FE
   `priceMode = 50` (`ManualAuthorized`). Note dòng là tùy chọn; nếu có, FE nên dùng để ghi căn cứ/người cho phép.
 Giá này chỉ được snapshot vào báo giá, không tạo `ProductPricingVersion` và không gắn giả
 vào Formula. Backend từ chối nếu các khoảng gửi lên không khớp policy.
+
+### Giá chuẩn quy đổi theo NVL realtime
+
+Ba response `GET /products/{productId}/pricing`, `GET /{quotationId}` tại `lines[]` và
+`GET /product-pricing-workbench` tại `items[]` dùng chung `realtimePriceComparison`:
+
+```json
+{
+  "currency": "VND",
+  "approvedStandardPrice": 120000,
+  "realtimeAdjustedStandardPrice": 132000,
+  "standardPriceDifference": 12000,
+  "standardPriceDifferencePercent": 10,
+  "approvedMaterialCostSnapshot": 80000,
+  "realtimeMaterialCost": 88000,
+  "materialCostDifference": 8000,
+  "materialCostDifferencePercent": 10,
+  "movementStatus": "Increased",
+  "isMaterialCostComplete": true,
+  "isIncreaseWarning": true,
+  "warningThresholdPercent": 5,
+  "calculatedAt": "2026-09-16T10:30:00"
+}
+```
+
+Backend tính `realtimeAdjustedStandardPrice = approvedStandardPrice * realtimeMaterialCost /
+approvedMaterialCostSnapshot`, sau đó làm tròn theo rule giá tính của hệ thống. Cách tính này giữ
+nguyên tỷ lệ Giá chuẩn/NVL mà President đã duyệt; nó không chạy lại pricing policy và không
+tự động persist giá mới. `movementStatus` là `Increased`, `Decreased`, `Unchanged` hoặc `Unknown`.
+`isIncreaseWarning` chỉ true khi NVL tăng ít nhất `MaterialCostChangeThresholdPercent`.
+
+Nếu thiếu snapshot, snapshot không dương hoặc thiếu giá realtime, object vẫn giữ
+`approvedStandardPrice` nhưng các giá trị tính toán là `null`, `movementStatus = Unknown`,
+`isMaterialCostComplete = false` và không cảnh báo. Nếu chưa có version Approved có giá dương,
+toàn bộ `realtimePriceComparison` là `null`.
 
 Ví dụ tạo Draft mới từ Formula:
 
@@ -1475,13 +1549,14 @@ message hoặc notification.
 
 ```json
 {
-  "message": "Vui lòng kiểm tra và cung cấp giá cho báo giá này.",
-  "isUrgent": false
+  "message": "Vui lòng kiểm tra và cung cấp giá cho báo giá này."
 }
 ```
 
 Endpoint chỉ áp dụng cho báo giá `Draft` mà người gọi được phép xem. Mỗi lần gọi tạo một action message mới và
 publish notification `QuotationRequested`; endpoint không đổi trạng thái báo giá và không gửi email ra ngoài.
+`isUrgent` mặc định là `true` khi FE không gửi field này: message được đánh dấu gấp và notification có severity
+`Warning`. FE vẫn có thể gửi rõ `"isUrgent": false` để tạo yêu cầu thường với severity `Info`.
 
 Yêu cầu nội bộ được phép gửi khi một hoặc nhiều line chưa có giá. Báo giá vẫn giữ trạng thái `Draft` để quản lý
 bổ sung giá và Sale tiếp tục chỉnh sửa.

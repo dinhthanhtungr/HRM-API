@@ -69,8 +69,10 @@ public partial class Company
     public virtual ICollection<ManufacturingFormula> ManufacturingFormulas { get; set; } = new List<ManufacturingFormula>();
     public virtual ICollection<BomDefinition> BomDefinitions { get; set; } = new List<BomDefinition>();
     public virtual ICollection<ManufacturingLossType> ManufacturingLossTypes { get; set; } = new List<ManufacturingLossType>();
+    public virtual ICollection<ManufacturingLossProfile> ManufacturingLossProfiles { get; set; } = new List<ManufacturingLossProfile>();
     public virtual ICollection<ProductStandardBomVersion> ProductStandardBomVersions { get; set; } = new List<ProductStandardBomVersion>();
     public virtual ICollection<MfgProductionOrderLoss> MfgProductionOrderLosses { get; set; } = new List<MfgProductionOrderLoss>();
+    public virtual ICollection<MfgProductionOrderBomItemSubstitution> MfgProductionOrderBomItemSubstitutions { get; set; } = new List<MfgProductionOrderBomItemSubstitution>();
 
     public virtual ICollection<MerchandiseOrder> MerchandiseOrders { get; set; } = new List<MerchandiseOrder>();
 

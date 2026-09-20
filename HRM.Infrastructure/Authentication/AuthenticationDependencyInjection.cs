@@ -4,14 +4,19 @@ using HRM.Domain.Identity;
 using HRM.Infrastructure.Authentication;
 using HRM.Infrastructure.DatabaseContext.ApplicationDbs;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace HRM.Infrastructure;
 
 internal static class AuthenticationDependencyInjection
 {
-    internal static IServiceCollection AddAuthenticationServices(this IServiceCollection services)
+    internal static IServiceCollection AddAuthenticationServices(
+        this IServiceCollection services,
+        IConfiguration configuration)
     {
+        services.Configure<RefreshTokenSessionOptions>(
+            configuration.GetSection(RefreshTokenSessionOptions.SectionName));
         services.AddScoped<IIdentityAuthenticationService, IdentityAuthenticationService>();
         services.AddScoped<IEmployeeIdentityAdministrationService, EmployeeIdentityAdministrationService>();
         services.AddScoped<IIdentityAccessValidator, IdentityAccessValidator>();

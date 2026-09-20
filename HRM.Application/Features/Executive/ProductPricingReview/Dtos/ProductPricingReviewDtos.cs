@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using HRM.Application.Commons.Pricing.Dtos;
+using HRM.Application.Features.CRM.Quotations.Dtos;
 using HRM.Domain.Enums.Formulas;
 using HRM.Domain.Enums.CustomerEnum;
 namespace HRM.Application.Features.Executive.ProductPricingReview.Dtos;
@@ -88,6 +89,7 @@ public sealed class ProductPricingReviewDto
     public PricingReviewCurrentFormulaUseDto? CurrentFormulaUse { get; init; }
     public PricingReviewOverviewDto Overview { get; init; } = new();
     public PricingReviewStandardPriceStateDto StandardPriceState { get; init; } = new();
+    public StandardPriceRealtimeComparisonDto? RealtimePriceComparison { get; init; }
     public IReadOnlyList<PricingReviewMaterialDto> Materials { get; init; } = [];
     public PricingReviewEditorDto Editor { get; init; } = new();
     public PricingReviewTabCountsDto TabCounts { get; init; } = new();
@@ -107,6 +109,7 @@ public sealed class PricingReviewStandardPriceStateDto
     public bool IsReviewExpired { get; init; }
     public DateTime? PricingReviewDueDate { get; init; }
     public DateTime? LatestFormulaConfirmedAt { get; init; }
+    public IReadOnlyList<ProductPricingAttentionSource> PricingAttentionSources { get; init; } = [];
 }
 
 public sealed class PricingReviewCurrentFormulaUseDto
@@ -259,6 +262,7 @@ public sealed class PricingReviewFormulaMaterialComparisonDto
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public ItemType ItemType { get; init; }
     public Guid? MaterialId { get; init; }
+    public Guid? ProductId { get; init; }
     public string MaterialCode { get; init; } = string.Empty;
     public string MaterialName { get; init; } = string.Empty;
     public Guid? CategoryId { get; init; }
@@ -296,6 +300,7 @@ public sealed class PricingReviewMaterialDto
 {
     public Guid FormulaMaterialId { get; init; }
     public Guid? MaterialId { get; init; }
+    public Guid? ProductId { get; init; }
     public string MaterialCode { get; init; } = string.Empty;
     public string MaterialName { get; init; } = string.Empty;
     public Guid? CategoryId { get; init; }
@@ -446,6 +451,7 @@ public sealed class PricingReviewVersionDto
     public decimal? MaterialCost { get; init; }
     public decimal? ManufacturingCost { get; init; }
     public decimal? StandardSellingPrice { get; init; }
+    public StandardPriceRealtimeComparisonDto? RealtimePriceComparison { get; init; }
     public decimal? ProfitAmount { get; init; }
     public decimal? ProfitMarginPercent { get; init; }
     public string? PublisherNote { get; init; }

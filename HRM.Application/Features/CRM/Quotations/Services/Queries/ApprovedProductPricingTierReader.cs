@@ -43,6 +43,7 @@ internal sealed class ApprovedProductPricingTierReader
                 Currency = x.Currency,
                 ApprovedAt = x.ApprovedAt,
                 StandardSellingPrice = x.StandardSellingPrice,
+                MaterialCostSnapshot = x.MaterialCostSnapshot,
                 PublisherNote = x.PublisherNote,
                 PriceDate = x.ApprovedAt ?? x.UpdatedDate ?? x.CreatedDate,
                 SourceType = x.SourceManufacturingFormulaId.HasValue
@@ -119,7 +120,8 @@ internal sealed class ApprovedProductPricingTierReader
                 x.SourceExternalId,
                 x.SourceName,
                 tiersByVersion.GetValueOrDefault(x.ProductPricingVersionId) ?? [],
-                x.PublisherNote));
+                x.PublisherNote,
+                x.MaterialCostSnapshot));
     }
 
     private sealed class ApprovedVersionRow
@@ -131,6 +133,7 @@ internal sealed class ApprovedProductPricingTierReader
         public string Currency { get; init; } = string.Empty;
         public DateTime? ApprovedAt { get; init; }
         public decimal? StandardSellingPrice { get; init; }
+        public decimal? MaterialCostSnapshot { get; init; }
         public string? PublisherNote { get; init; }
         public DateTime PriceDate { get; init; }
         public ProductPricingSourceType SourceType { get; init; }

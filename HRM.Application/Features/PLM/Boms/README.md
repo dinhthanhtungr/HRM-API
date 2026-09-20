@@ -7,6 +7,7 @@ Product
 └── BomDefinition
     └── BomVersion
         ├── BomVersionItem
+        ├── BomVersionItemAlternative
         ├── ManufacturingBomStage
         ├── ManufacturingBomLossRule
         └── ProductStandardBomVersion
@@ -21,7 +22,60 @@ Product
 - `ManufacturingFormula` là công thức thực thi. Việc sinh từ M-BOM là action tường minh và lưu `SourceBomVersionId`; không tự thay Product Standard Formula hay Production Select Version.
 - Dữ liệu sản xuất đang chuẩn hóa theo `kg`. Chưa hỗ trợ quy đổi UOM.
 
+### Template hao hụt và thay thế đầu vào
+
+- `ManufacturingLossProfile` và `ManufacturingLossProfileRule` là bộ định mức hao hụt dùng lại theo Company. Profile rule target công đoạn bằng `stageCode`, hoặc transition bằng cặp `fromStageCode`/`toStageCode`, để khi áp dụng có thể map sang stage của một M-BOM Draft bất kỳ.
+- Áp dụng profile phải sao chép rule sang `ManufacturingBomLossRule`; M-BOM Released không tham chiếu động đến profile và không bị thay đổi khi profile đổi sau này.
+- `BomVersionItemAlternative` là phương án thay thế đã chốt cho một dòng BOM. Nó có thể trỏ tới Material hoặc Product/bán thành phẩm, và snapshot tỷ lệ, điều kiện kỹ thuật cùng ghi chú của phương án.
+- `MaterialReplacement` chỉ là đề xuất kỹ thuật cấp Material. Nó không tự cấp quyền thay thế trong sản xuất; một Material replacement chỉ dùng được trên BOM khi được đưa vào `BomVersionItemAlternative`.
+- `MfgProductionOrderBomItemSubstitution` là log thay thế đầu vào thực tế của Production Order. Nó lưu input nguồn snapshot, input thực dùng, lượng/tỷ lệ thực tế, lý do và toàn bộ trạng thái đề nghị/duyệt/áp dụng. Không dùng bảng này cho đổi machine, công đoạn hoặc batch/lot.
+- Profile chỉ sửa được khi `Draft`; `release` yêu cầu ít nhất một rule active. Chỉ profile `Released`, cùng Company và nằm trong khoảng hiệu lực (`effectiveFrom <= now <= effectiveTo`, đầu/cuối null là không giới hạn) mới preview/apply được.
+- `preview-profile` chỉ resolve target và trả read-model, không ghi DB. `apply-profile` thay toàn bộ loss rule hiện có của M-BOM Draft bằng bản copy độc lập từ các rule active của profile. Material target phải map đúng một dòng BOM; stage code không phân biệt hoa thường; transition phải map đúng một cặp stage và đúng một transition trong BOM đích.
+
 Mọi query/mutation khóa theo `CurrentUser.CompanyId`; mutation yêu cầu `EmployeeId`. DTO public được project riêng, không trả EF entity.
+
+## Routing template và Work Instruction
+
+- `ManufacturingWorkInstructionTemplate` là hướng dẫn thao tác có version theo Company. Mã nghiệp vụ dùng `ExternalId`; chỉ bản `Draft` được sửa, bản `Released` mới được gắn vào quy trình và bản `Obsolete` chỉ còn dùng để xem lịch sử.
+- Checklist thuộc Work Instruction, có `ExternalId`, thứ tự, trạng thái bắt buộc, giá trị kỳ vọng và đơn vị. `ExternalId` và `SequenceNo` phải duy nhất trong một version hướng dẫn.
+- `ManufacturingProcessTemplate` là routing có version; mỗi stage dùng `ExternalId`, có thể chọn một Work Instruction Released và nhiều equipment cùng Company. Mỗi stage chỉ có tối đa một máy mặc định.
+- Khi apply process template, hệ thống copy stage, equipment snapshot, Work Instruction và checklist snapshot vào M-BOM Draft. M-BOM không đọc động nội dung template nguồn, vì vậy sửa/obsolete template không làm đổi lịch sử M-BOM.
+- Apply thay toàn bộ process hiện tại. Để tránh mất liên kết, backend từ chối apply nếu stage hiện tại còn item assignment, transition hoặc loss rule. Preview không ghi dữ liệu.
+- FE không gửi `ExternalId` hoặc `VersionNo` khi tạo/cập nhật template. Backend dùng `IExternalIdService` sinh mã toàn cục theo Company: `WI` cho Work Instruction, `WIC` cho checklist, `MPT` cho Process Template và `MPS` cho stage; version đầu tiên luôn là `1`.
+- Khi update Draft, checklist/stage có ID thì giữ nguyên `ExternalId`; phần tử mới gửi ID `null` để backend sinh mã mới. Khi tạo version mới, template và child giữ nguyên `ExternalId`, nhận database ID mới và chỉ tăng `VersionNo` của template.
+
+```http
+GET  /api/v1/plm/work-instruction-templates?status=Released
+POST /api/v1/plm/work-instruction-templates
+GET  /api/v1/plm/work-instruction-templates/{templateId}
+PUT  /api/v1/plm/work-instruction-templates/{templateId}
+POST /api/v1/plm/work-instruction-templates/{templateId}/release
+POST /api/v1/plm/work-instruction-templates/{templateId}/obsolete
+POST /api/v1/plm/work-instruction-templates/{templateId}/new-version
+GET  /api/v1/plm/work-instruction-templates/options
+
+GET  /api/v1/plm/process-templates?status=Released
+POST /api/v1/plm/process-templates
+GET  /api/v1/plm/process-templates/{templateId}
+PUT  /api/v1/plm/process-templates/{templateId}
+POST /api/v1/plm/process-templates/{templateId}/release
+POST /api/v1/plm/process-templates/{templateId}/obsolete
+POST /api/v1/plm/process-templates/{templateId}/new-version
+GET  /api/v1/plm/process-templates/options
+
+POST /api/v1/plm/manufacturing-boms/versions/{bomVersionId}/process-template/preview
+POST /api/v1/plm/manufacturing-boms/versions/{bomVersionId}/process-template/apply
+
+```
+
+Body của preview/apply:
+
+```json
+{ "processTemplateId": "0199..." }
+```
+
+`isPreview=true` nghĩa là stage, machine và Work Instruction trong response mới chỉ là dữ liệu tính trước. `isPreview=false` nghĩa là snapshot đã được lưu. M-BOM cũ chưa có Work Instruction trả `workInstruction: null`.
+
 
 ## Lifecycle và E-BOM API
 
@@ -53,6 +107,8 @@ GET  /api/v1/plm/manufacturing-boms/versions/{bomVersionId}
 PUT  /api/v1/plm/manufacturing-boms/versions/{bomVersionId}
 PUT  /api/v1/plm/manufacturing-boms/versions/{bomVersionId}/process-configuration
 POST /api/v1/plm/manufacturing-boms/versions/{bomVersionId}/manufacturing-formulas
+POST /api/v1/plm/manufacturing-boms/versions/{bomVersionId}/loss-rules/preview-profile
+POST /api/v1/plm/manufacturing-boms/versions/{bomVersionId}/loss-rules/apply-profile
 
 GET  /api/v1/plm/formula-driven-manufacturing-boms
 POST /api/v1/plm/formula-driven-manufacturing-boms/from-selected-formula/{productId}
@@ -69,6 +125,47 @@ Các phương pháp hao hụt:
 - `FixedPerRun`, `FixedPerBatch`: cần `fixedQuantityKg`.
 - `FixedPerEvent`: cần `quantityPerEventKg`; có thể có `defaultEventCount`.
 - `ActualOnly`: kế hoạch bằng 0 và không được cộng vào nhu cầu vật tư.
+
+### Loss profile API và contract áp dụng
+
+```http
+GET  /api/v1/plm/manufacturing-loss-profiles?status=Released
+POST /api/v1/plm/manufacturing-loss-profiles
+GET  /api/v1/plm/manufacturing-loss-profiles/{profileId}
+PUT  /api/v1/plm/manufacturing-loss-profiles/{profileId}
+POST /api/v1/plm/manufacturing-loss-profiles/{profileId}/release
+POST /api/v1/plm/manufacturing-loss-profiles/{profileId}/obsolete
+```
+
+Hai action trên M-BOM nhận cùng body:
+
+```json
+{ "profileId": "0199..." }
+```
+
+Response preview/apply có cùng shape; `isPreview=true` cho dữ liệu chỉ tính tạm, `false` cho dữ liệu đã persist:
+
+```json
+{
+  "bomVersionId": "0199...",
+  "profileId": "0199...",
+  "profileCode": "STANDARD-LOSS",
+  "isPreview": true,
+  "rules": [
+    {
+      "manufacturingBomLossRuleId": "0199...",
+      "sequenceNo": 1,
+      "scope": "Stage",
+      "stageCode": "MIX",
+      "transitionCode": null,
+      "itemLineNo": null,
+      "ratePercent": 1.5
+    }
+  ]
+}
+```
+
+`itemLineNo`, `stageCode`, `transitionCode` là target đã resolve trong M-BOM đích; field không thuộc scope có giá trị `null`. ID trong preview chỉ là ID dự kiến trong memory và chưa tồn tại trong DB. Apply tạo ID snapshot mới, thay loss rules hiện tại và audit profile nguồn tại thời điểm action; bảng BOM loss rule không giữ foreign key đến profile nên profile thay đổi/obsolete sau đó không tác động BOM đã áp.
 
 ## Danh mục hao hụt và BOM chuẩn
 

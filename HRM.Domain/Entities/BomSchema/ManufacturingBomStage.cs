@@ -7,7 +7,7 @@ public class ManufacturingBomStage
 {
     public Guid ManufacturingBomStageId { get; set; }
     public Guid BomVersionId { get; set; }
-    public string Code { get; set; } = string.Empty;
+    public string ExternalId { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public int SequenceNo { get; set; }
     public string? Description { get; set; }
@@ -19,4 +19,5 @@ public class ManufacturingBomStage
     public virtual ICollection<ManufacturingBomStageTransition> OutgoingTransitions { get; set; } = new List<ManufacturingBomStageTransition>();
     public virtual ICollection<ManufacturingBomStageTransition> IncomingTransitions { get; set; } = new List<ManufacturingBomStageTransition>();
     public virtual ICollection<ManufacturingBomLossRule> LossRules { get; set; } = new List<ManufacturingBomLossRule>();
+    public virtual ManufacturingBomStageWorkInstruction? WorkInstruction { get; set; }
 }

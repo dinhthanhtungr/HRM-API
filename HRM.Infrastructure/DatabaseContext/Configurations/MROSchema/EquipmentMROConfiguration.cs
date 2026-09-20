@@ -23,6 +23,10 @@ public class EquipmentMROConfiguration : IEntityTypeConfiguration<EquipmentMRO>
               .HasColumnType("text")
               .IsRequired();
 
+        entity.Property(x => x.GroupType)
+              .HasColumnName("grouptype")
+              .HasColumnType("citext");
+
         entity.Property(x => x.AreaExternalId).HasColumnName("area_externalid").HasColumnType("text");
         entity.Property(x => x.FactoryExternalId).HasColumnName("factory_externalid").HasColumnType("text");
         entity.Property(x => x.PartExternalId).HasColumnName("part_externalid").HasColumnType("citext");

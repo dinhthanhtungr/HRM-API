@@ -45,6 +45,7 @@ internal static class QuotationProductPricingPreviewMapper
             WarningMessage = warningMessage,
             DefaultPriceTierSource = references.DefaultPriceTierSource,
             ApprovedPricing = MapApproved(approved),
+            RealtimePriceComparison = references.RealtimePriceComparison,
             SystemCalculatedPricing = MapSystem(references.SystemCalculatedPricing),
             LatestQuotedPricing = MapLatest(references.LatestQuotedPricing),
             ManualPriceTierTemplates = manualPriceTierTemplates

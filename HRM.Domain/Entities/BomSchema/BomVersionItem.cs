@@ -1,4 +1,5 @@
 using HRM.Domain.Entities.MaterialSchema;
+using HRM.Domain.Entities.ManufacturingSchema;
 using HRM.Domain.Entities.SampleRequestSchema;
 using HRM.Domain.Enums.Formulas;
 
@@ -28,5 +29,7 @@ public class BomVersionItem
     public virtual Product? ComponentProduct { get; set; }
     public virtual Category? Category { get; set; }
     public virtual ManufacturingBomStage? ManufacturingStage { get; set; }
+    public virtual ICollection<BomVersionItemAlternative> Alternatives { get; set; } = new List<BomVersionItemAlternative>();
     public virtual ICollection<ManufacturingBomLossRule> LossRules { get; set; } = new List<ManufacturingBomLossRule>();
+    public virtual ICollection<MfgProductionOrderBomItemSubstitution> ProductionOrderSubstitutions { get; set; } = new List<MfgProductionOrderBomItemSubstitution>();
 }

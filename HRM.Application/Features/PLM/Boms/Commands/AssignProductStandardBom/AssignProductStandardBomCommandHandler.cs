@@ -52,7 +52,7 @@ internal sealed class AssignProductStandardBomCommandHandler
                 x.BomVersionId,
                 x.BomDefinitionId,
                 x.VersionNo,
-                x.BomDefinition.Code,
+                x.BomDefinition.ExternalId,
                 x.BomDefinition.Name
             })
             .FirstOrDefaultAsync(cancellationToken);
@@ -107,7 +107,7 @@ internal sealed class AssignProductStandardBomCommandHandler
             ProductId = assignment.ProductId,
             BomDefinitionId = version.BomDefinitionId,
             BomVersionId = version.BomVersionId,
-            BomCode = version.Code,
+            BomCode = version.ExternalId,
             BomName = version.Name,
             VersionNo = version.VersionNo,
             ValidFrom = assignment.ValidFrom,

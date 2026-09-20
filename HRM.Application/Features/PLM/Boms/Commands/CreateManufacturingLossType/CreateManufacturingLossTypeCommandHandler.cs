@@ -45,7 +45,7 @@ internal sealed class CreateManufacturingLossTypeCommandHandler
 
         var code = request.Code.Trim();
         if (await _dbContext.ManufacturingLossTypes.AsNoTracking()
-            .AnyAsync(x => x.CompanyId == companyId && x.Code == code, cancellationToken))
+            .AnyAsync(x => x.CompanyId == companyId && x.ExternalId == code, cancellationToken))
         {
             return OperationResult<ManufacturingLossTypeDto>.Fail("Loss type code already exists in your company.");
         }
@@ -54,7 +54,7 @@ internal sealed class CreateManufacturingLossTypeCommandHandler
         {
             ManufacturingLossTypeId = Guid.CreateVersion7(),
             CompanyId = companyId,
-            Code = code,
+            ExternalId = code,
             Name = request.Name.Trim(),
             Description = BomRules.NormalizeOptionalText(request.Description),
             DefaultCalculationMethod = request.DefaultCalculationMethod,
@@ -70,7 +70,7 @@ internal sealed class CreateManufacturingLossTypeCommandHandler
             "manufacturing_loss_types",
             entity.ManufacturingLossTypeId,
             "CreateManufacturingLossType",
-            new { entity.Code, entity.Name, entity.DefaultCalculationMethod },
+            new { entity.ExternalId, entity.Name, entity.DefaultCalculationMethod },
             actionType: AuditActionType.Create));
         await _dbContext.SaveChangesAsync(cancellationToken);
         return OperationResult<ManufacturingLossTypeDto>.Ok(ManufacturingLossTypeMapper.ToDto(entity));

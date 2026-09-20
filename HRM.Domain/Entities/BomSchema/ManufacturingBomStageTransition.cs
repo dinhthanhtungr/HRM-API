@@ -9,7 +9,7 @@ public class ManufacturingBomStageTransition
     public Guid BomVersionId { get; set; }
     public Guid FromManufacturingBomStageId { get; set; }
     public Guid ToManufacturingBomStageId { get; set; }
-    public string Code { get; set; } = string.Empty;
+    public string ExternalId { get; set; } = string.Empty;
     public ManufacturingStageTransitionType TransitionType { get; set; }
     public int? DefaultEventCount { get; set; }
     public int SequenceNo { get; set; }

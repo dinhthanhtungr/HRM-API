@@ -35,6 +35,7 @@ public sealed class QuotationProductPricingLinePreviewDto
     public QuotationDefaultPriceTierSource? DefaultPriceTierSource { get; init; }
 
     public QuotationApprovedTierPricingDto? ApprovedPricing { get; init; }
+    public StandardPriceRealtimeComparisonDto? RealtimePriceComparison { get; init; }
     public QuotationSystemCalculatedTierPricingDto? SystemCalculatedPricing { get; init; }
     public QuotationLatestQuotedTierPricingDto? LatestQuotedPricing { get; init; }
     public IReadOnlyList<QuotationReferencePriceTierDto> ManualPriceTierTemplates { get; init; } = [];
