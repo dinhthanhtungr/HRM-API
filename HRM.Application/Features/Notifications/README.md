@@ -10,6 +10,10 @@ Module Notification cung cấp hộp thư thông báo theo từng nhân viên v�
 Notification trong database luôn là nguồn dữ liệu chính. SignalR và Web Push chỉ báo rằng
 có dữ liệu mới; FE vẫn phải gọi API có xác thực để lấy feed hoặc chi tiết.
 
+Developer active cùng `CompanyId` luôn được thêm làm recipient thường của mọi notification mới. Với notification
+gắn `conversationId`, backend cũng bảo đảm Developer là participant `Watcher` active của conversation để có thể mở
+thread và đánh dấu đã đọc. Rule chỉ áp dụng lúc publish, không backfill notification hoặc participant lịch sử.
+
 ```text
 Business handler
 -> INotificationService.PublishAsync

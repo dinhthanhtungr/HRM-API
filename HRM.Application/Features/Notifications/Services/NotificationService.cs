@@ -4,7 +4,9 @@ using HRM.Application.Abstractions.Security;
 using HRM.Application.Abstractions.Notifications;
 using HRM.Application.Commons.Authorization;
 using HRM.Application.Features.Notifications.Dtos;
+using HRM.Domain.Entities.InternalMailSchema;
 using HRM.Domain.Entities.Notifications;
+using HRM.Domain.Enums.InternalMailEnums;
 using HRM.Domain.Enums.Notifications;
 using Microsoft.EntityFrameworkCore;
 
@@ -71,12 +73,23 @@ internal sealed class NotificationService : INotificationService
 
         await _dbContext.Notifications.AddAsync(notification, cancellationToken);
 
-        var targetUserIds = NormalizeIds(request.TargetUserIds);
+        var developerEmployeeIds = await ResolveActiveDeveloperEmployeeIdsAsync(companyId, cancellationToken);
+        var targetUserIds = NormalizeIds(request.TargetUserIds)
+            .Concat(developerEmployeeIds)
+            .Distinct()
+            .ToArray();
         var silentUserIds = NormalizeIds(request.SilentUserIds)
             .Where(x => !targetUserIds.Contains(x))
             .ToArray();
         var targetRoles = NormalizeRoles(request.TargetRoles);
         var targetTeamIds = NormalizeIds(request.TargetTeamIds);
+
+        await EnsureDeveloperConversationParticipantsAsync(
+            request.ConversationId,
+            companyId,
+            developerEmployeeIds,
+            now,
+            cancellationToken);
 
         // Recipient lưu lại ý định gửi ban đầu để audit/debug.
         // Việc user có thấy trong inbox hay không được quyết định bởi NotificationUserState bên dưới.
@@ -195,6 +208,101 @@ internal sealed class NotificationService : INotificationService
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         return notification.Id;
+    }
+
+    /// <summary>
+    /// Developer active trong cùng company luôn nhận notification để có khả năng theo dõi và hỗ trợ vận hành.
+    /// </summary>
+    private async Task<IReadOnlyList<Guid>> ResolveActiveDeveloperEmployeeIdsAsync(
+        Guid companyId,
+        CancellationToken cancellationToken)
+    {
+        var normalizedDeveloperRole = ApplicationRoles.Developer.ToUpperInvariant();
+
+        return await (
+                from employee in _dbContext.Employees.AsNoTracking()
+                join user in _dbContext.Users.AsNoTracking()
+                    on employee.EmployeeId equals user.EmployeeId
+                join userRole in _dbContext.UserRoles.AsNoTracking()
+                    on user.Id equals userRole.UserId
+                join role in _dbContext.Roles.AsNoTracking()
+                    on userRole.RoleId equals role.Id
+                where employee.CompanyId == companyId &&
+                      employee.IsActive &&
+                      userRole.IsActive &&
+                      ((role.Name != null && role.Name == ApplicationRoles.Developer) ||
+                       (role.NormalizedName != null && role.NormalizedName == normalizedDeveloperRole))
+                select employee.EmployeeId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Notification co conversation phai cap quyen participant cho Developer cung company;
+    /// neu khong, FE co the hien notification nhung API doc/mark-read cua thread lai bi tu choi.
+    /// </summary>
+    private async Task EnsureDeveloperConversationParticipantsAsync(
+        Guid? conversationId,
+        Guid companyId,
+        IReadOnlyCollection<Guid> developerEmployeeIds,
+        DateTime now,
+        CancellationToken cancellationToken)
+    {
+        if (conversationId is not { } validConversationId ||
+            validConversationId == Guid.Empty ||
+            developerEmployeeIds.Count == 0)
+        {
+            return;
+        }
+
+        var conversationExists = await _dbContext.InternalConversations
+            .AsNoTracking()
+            .AnyAsync(
+                conversation =>
+                    conversation.InternalConversationId == validConversationId &&
+                    conversation.CompanyId == companyId &&
+                    conversation.IsActive,
+                cancellationToken);
+        if (!conversationExists)
+        {
+            return;
+        }
+
+        var participants = await _dbContext.InternalConversationParticipants
+            .Where(participant =>
+                participant.InternalConversationId == validConversationId &&
+                developerEmployeeIds.Contains(participant.EmployeeId))
+            .ToListAsync(cancellationToken);
+
+        foreach (var participant in participants.Where(participant => !participant.IsActive))
+        {
+            participant.IsActive = true;
+            participant.DeletedAt = null;
+            participant.DeletedByEmployeeId = null;
+            participant.IsArchived = false;
+            participant.ArchivedAt = null;
+            participant.Role = InternalConversationParticipantRole.Watcher;
+            participant.IsMuted = false;
+            participant.JoinedAt = now;
+        }
+
+        var existingEmployeeIds = participants
+            .Select(participant => participant.EmployeeId)
+            .ToHashSet();
+        foreach (var developerEmployeeId in developerEmployeeIds.Where(existingEmployeeIds.Add))
+        {
+            await _dbContext.InternalConversationParticipants.AddAsync(
+                new InternalConversationParticipant
+                {
+                    InternalConversationId = validConversationId,
+                    EmployeeId = developerEmployeeId,
+                    Role = InternalConversationParticipantRole.Watcher,
+                    JoinedAt = now,
+                    IsArchived = false,
+                    IsMuted = false
+                },
+                cancellationToken);
+        }
     }
 
     public async Task<IReadOnlyList<NotificationDto>> GetFeedAsync(
