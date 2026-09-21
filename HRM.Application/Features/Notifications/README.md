@@ -251,6 +251,8 @@ dùng để API vẫn đọc an toàn dữ liệu lịch sử lạ, không đư�
 topic giao hàng và complaint của đơn hàng dùng `categoryCode = sales_order`, lần lượt có
 `eventGroupCode = delivery` và `eventGroupCode = complaint`.
 
+`MerchandiseOrderBelowStandardPriceApproved = 54` được phát khi duyệt đơn Hàng hóa của khách ngoài có dòng giá chốt thấp hơn giá chuẩn VND Approved hiện hành. Topic `sales.merchandise_order.below_standard_price_approved` thuộc `sales_order/pricing`, severity `Warning`, gửi đến President active cùng công ty và mở chi tiết SaleOrder. Notification độc lập, không tạo InternalMail conversation nên không xuất hiện trong tab Gấp.
+
 Các topic `0-28` được giữ nguyên để giải mã dữ liệu lịch sử. Code mới append các topic cụ thể:
 
 ```text

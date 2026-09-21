@@ -80,6 +80,7 @@ namespace HRM.Domain.Enums.Notifications
         QuotationPricingExpired = 50,
         SampleRequestReferencePriceAvailable = 51,
         SampleRequestCancelled = 52,
-        MaterialPurchaseUnavailable = 53
+        MaterialPurchaseUnavailable = 53,
+        MerchandiseOrderBelowStandardPriceApproved = 54
     }
 }

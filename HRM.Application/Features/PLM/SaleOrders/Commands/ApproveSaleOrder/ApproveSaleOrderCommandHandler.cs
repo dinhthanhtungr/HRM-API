@@ -2,7 +2,11 @@ using HRM.Application.Abstractions.Commons.Time;
 using HRM.Application.Abstractions.Persistence.PLM.SaleOrders;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Models;
+using HRM.Application.Commons.Authorization;
+using HRM.Application.Features.Notifications.Dtos;
+using HRM.Application.Features.Notifications.Services;
 using HRM.Application.Features.PLM.SaleOrders.Services;
+using HRM.Domain.Enums.Notifications;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -18,17 +22,20 @@ internal sealed class ApproveSaleOrderCommandHandler : IRequestHandler<ApproveSa
     private readonly ICurrentUser _currentUser;
     private readonly IDateTimeProvider _dateTimeProvider;
     private readonly SaleOrderApprovalService _approvalService;
+    private readonly INotificationService _notificationService;
 
     public ApproveSaleOrderCommandHandler(
         ISaleOrderDbContext dbContext,
         ICurrentUser currentUser,
         IDateTimeProvider dateTimeProvider,
-        SaleOrderApprovalService approvalService)
+        SaleOrderApprovalService approvalService,
+        INotificationService notificationService)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
         _dateTimeProvider = dateTimeProvider;
         _approvalService = approvalService;
+        _notificationService = notificationService;
     }
 
     public async Task<OperationResult> Handle(ApproveSaleOrderCommand command, CancellationToken cancellationToken)
@@ -62,6 +69,23 @@ internal sealed class ApproveSaleOrderCommandHandler : IRequestHandler<ApproveSa
 
         await _dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+        if (SaleOrderApprovalPriceWarningRules.IsWarningMessage(approvalResult.Message))
+        {
+            await _notificationService.PublishAsync(new PublishNotificationRequest
+            {
+                CompanyId = order.CompanyId,
+                CreatedBy = employeeId,
+                CreatedByNameSnapshot = _currentUser.UserName,
+                Topic = TopicNotifications.MerchandiseOrderBelowStandardPriceApproved,
+                Severity = NotificationSeverity.Warning,
+                Title = $"Cảnh báo giá thấp {order.ExternalId}",
+                Message = approvalResult.Message!,
+                Link = $"/plm/sale-orders/{order.MerchandiseOrderId}",
+                AggregateId = order.MerchandiseOrderId,
+                AggregateCode = order.ExternalId,
+                TargetRoles = [ApplicationRoles.President]
+            }, cancellationToken);
+        }
         return approvalResult;
     }
 }

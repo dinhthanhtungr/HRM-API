@@ -2,13 +2,17 @@ using HRM.Application.Abstractions.Commons.Time;
 using HRM.Application.Abstractions.FileStorage;
 using HRM.Application.Abstractions.Persistence.PLM.SaleOrders;
 using HRM.Application.Abstractions.Security;
+using HRM.Application.Commons.Authorization;
 using HRM.Application.Commons.Models;
 using HRM.Application.Features.Attachments.Dtos;
 using HRM.Application.Features.Attachments.Services;
 using HRM.Application.Features.PLM.SaleOrders.Commands.CreateSaleOrder.Services;
 using HRM.Application.Features.PLM.SaleOrders.Dtos;
 using HRM.Application.Features.PLM.SaleOrders.Services;
+using HRM.Application.Features.Notifications.Dtos;
+using HRM.Application.Features.Notifications.Services;
 using HRM.Domain.Enums.Attachment;
+using HRM.Domain.Enums.Notifications;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -30,6 +34,7 @@ internal sealed class CreateSaleOrderWithAttachmentsCommandHandler
     private readonly IDateTimeProvider _dateTimeProvider;
     private readonly SaleOrderCreationService _creationService;
     private readonly SaleOrderApprovalService _approvalService;
+    private readonly INotificationService _notificationService;
     private readonly ILogger<CreateSaleOrderWithAttachmentsCommandHandler> _logger;
 
     public CreateSaleOrderWithAttachmentsCommandHandler(
@@ -40,6 +45,7 @@ internal sealed class CreateSaleOrderWithAttachmentsCommandHandler
         IDateTimeProvider dateTimeProvider,
         SaleOrderCreationService creationService,
         SaleOrderApprovalService approvalService,
+        INotificationService notificationService,
         ILogger<CreateSaleOrderWithAttachmentsCommandHandler> logger)
     {
         _dbContext = dbContext;
@@ -49,6 +55,7 @@ internal sealed class CreateSaleOrderWithAttachmentsCommandHandler
         _dateTimeProvider = dateTimeProvider;
         _creationService = creationService;
         _approvalService = approvalService;
+        _notificationService = notificationService;
         _logger = logger;
     }
 
@@ -67,6 +74,7 @@ internal sealed class CreateSaleOrderWithAttachmentsCommandHandler
         var autoApprove = SaleOrderApprovalRules.CanAutoApproveOnCreate(_currentUser);
         var now = _dateTimeProvider.Now;
         IReadOnlyList<AttachmentDto> uploadedAttachments = Array.Empty<AttachmentDto>();
+        OperationResult? approvalResult = null;
         await using var transaction = await _dbContext.BeginTransactionAsync(cancellationToken);
 
         try
@@ -106,7 +114,7 @@ internal sealed class CreateSaleOrderWithAttachmentsCommandHandler
 
             if (autoApprove)
             {
-                var approvalResult = await _approvalService.ApproveAsync(
+                approvalResult = await _approvalService.ApproveAsync(
                     order,
                     employeeId,
                     now,
@@ -123,6 +131,25 @@ internal sealed class CreateSaleOrderWithAttachmentsCommandHandler
 
             await _dbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
+
+            if (approvalResult is not null &&
+                SaleOrderApprovalPriceWarningRules.IsWarningMessage(approvalResult.Message))
+            {
+                await _notificationService.PublishAsync(new PublishNotificationRequest
+                {
+                    CompanyId = order.CompanyId,
+                    CreatedBy = employeeId,
+                    CreatedByNameSnapshot = _currentUser.UserName,
+                    Topic = TopicNotifications.MerchandiseOrderBelowStandardPriceApproved,
+                    Severity = NotificationSeverity.Warning,
+                    Title = $"Cảnh báo giá thấp {order.ExternalId}",
+                    Message = approvalResult.Message!,
+                    Link = $"/plm/sale-orders/{order.MerchandiseOrderId}",
+                    AggregateId = order.MerchandiseOrderId,
+                    AggregateCode = order.ExternalId,
+                    TargetRoles = [ApplicationRoles.President]
+                }, cancellationToken);
+            }
 
             return OperationResult<CreateSaleOrderResultDto>.Ok(
                 SaleOrderCreationService.ToResultDto(order),

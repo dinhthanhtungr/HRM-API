@@ -156,6 +156,6 @@ internal sealed class SaleOrderApprovalService
 
         return belowStandardLines.Length == 0
             ? null
-            : $"Đã duyệt và tạo lệnh sản xuất. Cảnh báo giá thấp hơn giá chuẩn đã duyệt: {string.Join("; ", belowStandardLines)}.";
+            : $"{SaleOrderApprovalPriceWarningRules.MessagePrefix} {string.Join("; ", belowStandardLines)}.";
     }
 }

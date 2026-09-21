@@ -8,9 +8,14 @@ namespace HRM.Application.Features.PLM.SaleOrders.Services;
 /// </summary>
 internal static class SaleOrderApprovalPriceWarningRules
 {
+    public const string MessagePrefix = "Đã duyệt và tạo lệnh sản xuất. Cảnh báo giá thấp hơn giá chuẩn đã duyệt:";
+
     public static bool ShouldCheck(OrderType orderType, bool isInternalCustomer)
         => orderType == OrderType.Merchandise && !isInternalCustomer;
 
     public static bool IsBelowApprovedStandardPrice(decimal unitPriceAgreed, decimal approvedStandardSellingPrice)
         => unitPriceAgreed < approvedStandardSellingPrice;
+
+    public static bool IsWarningMessage(string? message)
+        => message?.StartsWith(MessagePrefix, StringComparison.Ordinal) == true;
 }

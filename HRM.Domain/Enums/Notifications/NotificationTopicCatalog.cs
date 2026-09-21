@@ -86,6 +86,8 @@ public static class NotificationTopicCatalog
                 SampleRequest("plm.sample_request.cancelled", "lifecycle"),
             TopicNotifications.MaterialPurchaseUnavailable =>
                 Material("plm.material.purchase_unavailable", "availability"),
+            TopicNotifications.MerchandiseOrderBelowStandardPriceApproved =>
+                SalesOrder("sales.merchandise_order.below_standard_price_approved", "pricing"),
 
             _ => System($"{UnknownCodePrefix}{(int)topic}", "unknown", null)
         };
