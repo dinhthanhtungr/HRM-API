@@ -39,6 +39,7 @@ public interface ISaleOrderDbContext
     DbSet<MfgOrderPO> MfgOrderPOs { get; }
     DbSet<MfgProductionOrder> MfgProductionOrders { get; }
     DbSet<Product> Products { get; }
+    DbSet<ProductPricingVersion> ProductPricingVersions { get; }
     DbSet<ProductStandardFormula> ProductStandardFormulas { get; }
     DbSet<SampleRequest> SampleRequests { get; }
     DbSet<SampleRequestSampleTrial> SampleRequestSampleTrials { get; }

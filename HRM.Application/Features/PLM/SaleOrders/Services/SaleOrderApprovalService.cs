@@ -1,9 +1,11 @@
 using HRM.Application.Abstractions.Persistence.PLM.SaleOrders;
 using HRM.Application.Commons.Models;
 using HRM.Application.Features.PLM.ComplaintReports.Services;
+using HRM.Application.Features.PLM.Shared.Rules;
 using HRM.Application.Features.Timeline.Dtos;
 using HRM.Application.Features.Timeline.Services;
 using HRM.Domain.Entities.OrderSchema;
+using HRM.Domain.Enums.CustomerEnum;
 using HRM.Domain.Enums.Logs;
 using HRM.Domain.Enums.Merchadises;
 using HRM.Domain.Enums.Orders;
@@ -62,6 +64,8 @@ internal sealed class SaleOrderApprovalService
             return OperationResult.Fail("Chỉ đơn hàng ở trạng thái New mới được duyệt.");
         }
 
+        var priceWarning = await GetApprovedPriceWarningAsync(order, activeDetails, cancellationToken);
+
         var existingLinkedDetailIds = await _dbContext.MfgOrderPOs
             .AsNoTracking()
             .Where(x => x.IsActive && detailIds.Contains(x.MerchandiseOrderDetailId))
@@ -104,6 +108,54 @@ internal sealed class SaleOrderApprovalService
             CreatedDate = now
         }, cancellationToken);
 
-        return OperationResult.Ok("Đã duyệt và tạo lệnh sản xuất.");
+        return OperationResult.Ok(priceWarning ?? "Đã duyệt và tạo lệnh sản xuất.");
+    }
+
+    private async Task<string?> GetApprovedPriceWarningAsync(
+        MerchandiseOrder order,
+        IReadOnlyCollection<MerchandiseOrderDetail> activeDetails,
+        CancellationToken cancellationToken)
+    {
+        var isInternalCustomer = PLMCustomerRules.IsInternalCustomerExternalId(
+            order.CustomerExternalIdSnapshot);
+        if (!SaleOrderApprovalPriceWarningRules.ShouldCheck(order.OrderType, isInternalCustomer))
+        {
+            return null;
+        }
+
+        var productIds = activeDetails.Select(x => x.ProductId).Distinct().ToArray();
+        var approvedPrices = await _dbContext.ProductPricingVersions
+            .AsNoTracking()
+            .Where(x =>
+                x.CompanyId == order.CompanyId &&
+                productIds.Contains(x.ProductId) &&
+                x.Currency == "VND" &&
+                x.IsActive &&
+                x.Status == ProductPricingStatus.Approved &&
+                x.StandardSellingPrice.HasValue)
+            .GroupBy(x => x.ProductId)
+            .Select(group => group
+                .OrderByDescending(x => x.Version)
+                .ThenByDescending(x => x.ApprovedAt ?? x.UpdatedDate ?? x.CreatedDate)
+                .Select(x => new { x.ProductId, StandardSellingPrice = x.StandardSellingPrice!.Value })
+                .First())
+            .ToDictionaryAsync(x => x.ProductId, x => x.StandardSellingPrice, cancellationToken);
+
+        var belowStandardLines = activeDetails
+            .Where(detail =>
+                approvedPrices.TryGetValue(detail.ProductId, out var standardSellingPrice) &&
+                SaleOrderApprovalPriceWarningRules.IsBelowApprovedStandardPrice(
+                    detail.UnitPriceAgreed,
+                    standardSellingPrice))
+            .Select(detail =>
+            {
+                var standardSellingPrice = approvedPrices[detail.ProductId];
+                return $"{detail.ProductExternalIdSnapshot}: giá chốt {detail.UnitPriceAgreed:N0} thấp hơn giá chuẩn {standardSellingPrice:N0}";
+            })
+            .ToArray();
+
+        return belowStandardLines.Length == 0
+            ? null
+            : $"Đã duyệt và tạo lệnh sản xuất. Cảnh báo giá thấp hơn giá chuẩn đã duyệt: {string.Join("; ", belowStandardLines)}.";
     }
 }
