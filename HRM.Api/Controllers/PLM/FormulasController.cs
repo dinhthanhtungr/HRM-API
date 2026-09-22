@@ -17,6 +17,8 @@ using HRM.Application.Features.PLM.Formulas.Queries.GetFormulaRelatedAttachments
 using HRM.Application.Features.PLM.Formulas.Queries.GetFormulas;
 using HRM.Application.Features.PLM.Formulas.Queries.GetFormulaVersionByNumber;
 using HRM.Application.Features.PLM.Formulas.Queries.GetFormulaVersions;
+using HRM.Application.Features.PLM.Formulas.Queries.CompareFormulas;
+using HRM.Application.Features.PLM.Formulas.Dtos.Comparison;
 using HRM.Application.Features.PLM.Materials.Queries.GetFormulaItemLookup;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -55,6 +57,27 @@ public sealed class FormulasController : ControllerBase
         var result = await _sender.Send(query, cancellationToken);
 
         return Ok(result);
+    }
+
+    /// <summary>
+    /// So sánh thành phần và chi phí hiện tại của hai công thức trong cùng công ty.
+    /// </summary>
+    [HttpPost("compare")]
+    [Authorize(Policy = PlmPolicies.ViewFormulaDetail)]
+    [Authorize(Policy = PlmPolicies.ViewFormulaMaterials)]
+    [Authorize(Policy = PlmPolicies.ViewFormulaPrices)]
+    public async Task<IActionResult> Compare(
+        [FromBody] CompareFormulasRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(
+            new CompareFormulasQuery(
+                request.BaseFormulaId,
+                request.ComparedFormulaId,
+                request.Currency),
+            cancellationToken);
+
+        return result.Success ? Ok(result.Data) : BadRequest(result);
     }
 
     [HttpGet("{formulaId:guid}")]

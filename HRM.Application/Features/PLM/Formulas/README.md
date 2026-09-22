@@ -1,5 +1,115 @@
 # Giá công thức
 
+## So sánh hai công thức
+
+```http
+POST /api/v1/plm/formulas/compare
+```
+
+Endpoint so sánh tùy ý hai Formula active trong công ty hiện tại. Request:
+
+```json
+{
+  "baseFormulaId": "00000000-0000-0000-0000-000000000001",
+  "comparedFormulaId": "00000000-0000-0000-0000-000000000002",
+  "currency": "VND"
+}
+```
+
+`baseFormulaId` là công thức mốc; mọi chênh lệch được tính theo `compared - base`. Hai id phải khác nhau.
+`currency` mặc định là `VND`. Endpoint yêu cầu đồng thời quyền xem chi tiết, vật tư và giá Formula, đồng thời
+luôn lọc Formula active theo `CurrentUser.CompanyId` và Product active cùng công ty.
+
+Response trả metadata `baseFormula`/`comparedFormula`, `summary` và toàn bộ `items` hợp nhất. Các dòng được ghép theo
+`ItemType` đã normalize (`MaterialFailure -> Material`, `ProductFailure -> Product`) cùng item id; dữ liệu cũ mất id
+mới fallback sang mã snapshot. Dòng trùng item trong cùng công thức được cộng định lượng và giữ toàn bộ
+`formulaMaterialIds`. Tên/mã hiển thị dùng `FormulaItemDisplayResolver`: ưu tiên dữ liệu Material/Product hiện tại,
+snapshot chỉ là fallback.
+
+```json
+{
+  "currency": "VND",
+  "baseFormula": {
+    "formulaId": "00000000-0000-0000-0000-000000000001",
+    "productId": "00000000-0000-0000-0000-000000000010",
+    "externalId": "VU260900001",
+    "name": "Công thức gốc",
+    "status": "Approved",
+    "stepOfProduct": 2
+  },
+  "comparedFormula": {
+    "formulaId": "00000000-0000-0000-0000-000000000002",
+    "productId": "00000000-0000-0000-0000-000000000010",
+    "externalId": "VU260900002",
+    "name": "Công thức đối chiếu",
+    "status": "Draft",
+    "stepOfProduct": 2
+  },
+  "summary": {
+    "priceBasis": "CurrentResolvedPrice",
+    "calculatedAt": "2026-09-22T08:00:00Z",
+    "baseFormulaMaterialCost": 71702,
+    "comparedFormulaMaterialCost": 74980,
+    "differenceAmount": 3278,
+    "differencePercent": 4.5717,
+    "comparisonStatus": "Increased",
+    "baseItemCount": 7,
+    "comparedItemCount": 8,
+    "matchedItemCount": 6,
+    "addedToComparedCount": 2,
+    "removedFromComparedCount": 1,
+    "quantityChangedCount": 3,
+    "unchangedCount": 3,
+    "missingPriceCount": 0,
+    "unitMismatchCount": 0,
+    "canCompare": true,
+    "unavailableReason": null
+  },
+  "items": [
+    {
+      "itemType": "Material",
+      "materialId": "00000000-0000-0000-0000-000000000020",
+      "productId": null,
+      "itemCode": "NVL_NH_158",
+      "itemName": "Hạt nhựa PP MI cao",
+      "categoryId": "00000000-0000-0000-0000-000000000030",
+      "unit": "Kg",
+      "currentPrice": {
+        "unitPrice": 37037,
+        "priceSource": "PurchaseOrder",
+        "priceDate": "2026-09-20T08:00:00Z",
+        "calculation": null
+      },
+      "baseFormula": {
+        "formulaMaterialIds": ["00000000-0000-0000-0000-000000000040"],
+        "isPresent": true,
+        "quantity": 0.7,
+        "amount": 25926
+      },
+      "comparedFormula": {
+        "formulaMaterialIds": ["00000000-0000-0000-0000-000000000050"],
+        "isPresent": true,
+        "quantity": 0.75,
+        "amount": 27778
+      },
+      "quantityDifference": 0.05,
+      "amountDifference": 1852,
+      "differencePercent": 7.1434,
+      "status": "QuantityChanged"
+    }
+  ]
+}
+```
+
+Giá được resolve một lần cho cả hai công thức bằng cùng nguồn giá hiện tại. API không dùng `Formula.TotalPrice` hay
+`FormulaMaterial.UnitPrice/TotalPrice` đã lưu để so sánh, nên kết quả phản ánh việc thêm/bớt item và thay đổi định
+lượng thay vì trộn biến động giá lịch sử. `amountDifference` và `differenceAmount` luôn là bên đối chiếu trừ bên mốc.
+
+Status dòng là `Unchanged`, `QuantityChanged`, `AddedToComparedFormula`, `RemovedFromComparedFormula`,
+`MissingCurrentPrice` hoặc `UnitMismatch`. Khi thiếu giá hiện tại hoặc đơn vị không tương thích, `canCompare=false`,
+các tổng và chênh lệch tiền là `null`; `unavailableReason` cho biết nguyên nhân. Danh sách `items` vẫn được trả để FE
+hiển thị khác biệt thành phần. Endpoint chỉ preview, không ghi dữ liệu và không tạo Pricing Version.
+
 ## Trạng thái mua NVL trong chi tiết Formula
 
 `GET /api/v1/plm/formulas/{formulaId}` trả trạng thái mua trên từng phần tử `materials[]` bằng contract lồng dùng chung:
