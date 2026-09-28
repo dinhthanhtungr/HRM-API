@@ -63,7 +63,8 @@ Neu can doi nghiep vu, uu tien sua tai day thay vi hard-code trong tung handler.
 Hien tai:
 
 - Sample request finished: `Completed`, `SampleSent`
-- Sample request excluded: `Cancelled`
+- Sample request excluded: `New`, `Cancelled`
+- Yêu cầu mẫu trạng thái Mới (`New`) không tính vào tổng, số chưa hoàn thành hoặc mẫu số tỷ lệ hoàn thành. Rule áp dụng thống nhất cho `summary`, `monthly-summary`, `drilldown`, `pivot-hub` và `task-breakdown`, kể cả khi truyền filter `status=New`.
 - Production order finished: `Finished`, `Stocked`
 - Production order excluded: `Canceled`, `Cancelled`
 - Internal customer `KH_VIETAUS` is excluded by default. For Sample Request dashboard sources, `LabUser` can see `KH_VIETAUS`; production order and sale order dashboard sources still exclude it.
