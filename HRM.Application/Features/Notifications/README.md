@@ -480,3 +480,7 @@ Topic append-only `MaterialPurchaseUnavailable = 53` có `topicCode = plm.materi
 Không có recipient, UserState, outbox, SignalR hoặc Web Push được tạo từ thao tác tạm dừng mua NVL. Contract cập
 nhật vẫn trả `notificationPublished = false`. Khi bật lại topic này, cần khôi phục recipient và payload theo policy
 của notification feature.
+
+### Formula đã có giá chuẩn thay đổi NVL
+
+`FormulaPricingReviewService` dùng chung publish flow với lần Lab xác nhận Formula đầu tiên: `SendSampleRequestMessageCommand` -> `INotificationService.PublishAsync` -> inbox/outbox. PUT hoặc status có sửa NVL của Formula Approved là nguồn giá chuẩn VND Approved hiện hành tạo lại `SampleRequestPriceQuoteRequested` (enum 23, `plm.sample_request.price_quote.requested`, category `quotation`, mapping `NotificationTopicCatalog`). Payload giữ `FormulaSelectionSource=LabConfirmed` và action mở Executive Pricing Review; không đưa cost, margin hoặc giá NVL vào thông báo. President active trong company được thêm vào conversation và participant active nhận notification theo rule hiện hành; sender, mute, SignalR/Web Push không đổi. Chi tiết điều kiện/no-op/resolve Sample Request nằm trong README Formulas.

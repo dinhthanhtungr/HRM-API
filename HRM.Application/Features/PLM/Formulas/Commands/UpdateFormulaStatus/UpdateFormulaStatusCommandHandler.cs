@@ -1,12 +1,10 @@
 using HRM.Application.Abstractions.Persistence.PLM;
 using HRM.Application.Abstractions.Security;
-using HRM.Application.Commons.Authorization;
 using HRM.Application.Commons.Models;
 using HRM.Application.Features.InternalMail.Dtos;
 using HRM.Application.Features.PLM.Formulas.Dtos.Commons;
 using HRM.Application.Features.PLM.Formulas.Services;
 using HRM.Application.Features.PLM.SampleRequests.Commands.SendSampleRequestMessage;
-using HRM.Application.Features.PLM.SampleRequests.PriceQuoteRequests;
 using HRM.Application.Features.PLM.SampleRequests.SampleReceiptConfirmations;
 using HRM.Domain.Enums.Notifications;
 using HRM.Domain.Enums.Products;
@@ -24,19 +22,22 @@ internal sealed class UpdateFormulaStatusCommandHandler
     private readonly FormulaWriteService _formulaWriteService;
     private readonly FormulaVersionService _formulaVersionService;
     private readonly ISender _sender;
+    private readonly FormulaPricingReviewService _pricingReview;
 
     public UpdateFormulaStatusCommandHandler(
         IPLMWriteDbContext dbContext,
         ICurrentUser currentUser,
         FormulaWriteService formulaWriteService,
         FormulaVersionService formulaVersionService,
-        ISender sender)
+        ISender sender,
+        FormulaPricingReviewService pricingReview)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
         _formulaWriteService = formulaWriteService;
         _formulaVersionService = formulaVersionService;
         _sender = sender;
+        _pricingReview = pricingReview;
     }
 
     public async Task<OperationResult<FormulaWriteResultDto>> Handle(
@@ -107,6 +108,8 @@ internal sealed class UpdateFormulaStatusCommandHandler
         }
 
         var now = DateTime.Now;
+        var materialsChanged = await _pricingReview.RequiresMaterialReviewAsync(
+            formula, command.Request.FormulaUpdate, companyId, cancellationToken);
 
         try
         {
@@ -161,7 +164,7 @@ internal sealed class UpdateFormulaStatusCommandHandler
         formula.UpdatedBy = employeeId;
         formula.UpdatedDate = now;
 
-        if (targetStatus == FormulaStatus.Approved)
+        if (targetStatus == FormulaStatus.Approved || materialsChanged)
         {
             formula.CheckBy = employeeId;
             formula.CheckDate = now;
@@ -240,6 +243,18 @@ internal sealed class UpdateFormulaStatusCommandHandler
                 "Formula version was created concurrently. Reload and try again.");
         }
 
+        if (materialsChanged)
+        {
+            var materialMessageResult = await _pricingReview.SendMaterialChangeAsync(
+                formula, companyId, command.Request.SampleRequestId, cancellationToken);
+            if (!materialMessageResult.Success)
+            {
+                return OperationResult<FormulaWriteResultDto>.Ok(
+                    FormulaWriteService.ToResult(formula, sampleSentTargets.Count, sampleRequestSampleTrialId),
+                    $"Updated formula successfully, but could not send material-change notification: {materialMessageResult.Message}");
+            }
+        }
+
         foreach (var sampleRequest in sampleSentTargets)
         {
             var sendResult = await SendSampleSentMessageAsync(
@@ -267,13 +282,14 @@ internal sealed class UpdateFormulaStatusCommandHandler
             command.Request.SampleRequestId is { } sampleRequestId &&
             sampleRequestId != Guid.Empty)
         {
-            var approvedMessageResult = await SendFormulaApprovedPricingReviewMessageAsync(
+            var approvedMessageResult = await _pricingReview.SendAsync(
                 sampleRequestId,
                 formula.ProductId,
                 companyId,
                 formula.FormulaId,
                 formula.ExternalId,
                 formula.Name,
+                materialsChanged: false,
                 cancellationToken);
 
             if (!approvedMessageResult.Success)
@@ -389,93 +405,4 @@ internal sealed class UpdateFormulaStatusCommandHandler
         }, cancellationToken);
     }
 
-    private async Task<OperationResult<SendInternalMessageResultDto>> SendFormulaApprovedPricingReviewMessageAsync(
-        Guid sampleRequestId,
-        Guid formulaProductId,
-        Guid companyId,
-        Guid formulaId,
-        string formulaExternalId,
-        string formulaName,
-        CancellationToken cancellationToken)
-    {
-        var sampleRequest = await _dbContext.SampleRequests
-            .AsNoTracking()
-            .Where(x =>
-                x.SampleRequestId == sampleRequestId &&
-                x.CompanyId == companyId &&
-                x.ProductId == formulaProductId &&
-                x.IsActive)
-            .Select(x => new
-            {
-                x.SampleRequestId,
-                x.ExternalId,
-                x.ProductId,
-                ProductCode = x.Product.ColourCode ?? x.Product.Code ?? string.Empty,
-                ProductName = x.Product.Name ?? string.Empty
-            })
-            .FirstOrDefaultAsync(cancellationToken);
-
-        if (sampleRequest is null)
-        {
-            return OperationResult<SendInternalMessageResultDto>.Fail(
-                "Sample request was not found or does not belong to the formula product.");
-        }
-
-        var presidentEmployeeIds = await _dbContext.Employees.AsNoTracking()
-            .Where(employee =>
-                employee.CompanyId == companyId &&
-                employee.IsActive &&
-                employee.ApplicationUsers.Any(user => user.UserRoles.Any(role =>
-                    role.IsActive && role.Role.Name == ApplicationRoles.President)))
-            .Select(employee => employee.EmployeeId)
-            .Distinct()
-            .ToListAsync(cancellationToken);
-        if (presidentEmployeeIds.Count == 0)
-        {
-            return OperationResult<SendInternalMessageResultDto>.Fail(
-                "No active President employee was found in the current company.");
-        }
-
-        var pricingLink = "/executive/sample-request-pricing-overview?productId=" +
-            Uri.EscapeDataString(sampleRequest.ProductId.ToString()) +
-            "&sampleRequestId=" + Uri.EscapeDataString(sampleRequest.SampleRequestId.ToString()) +
-            "&sourceType=VU&sourceId=" + Uri.EscapeDataString(formulaId.ToString());
-
-        var payload = new SampleRequestPriceQuotePayload
-        {
-            SampleRequestId = sampleRequest.SampleRequestId,
-            SampleRequestExternalId = sampleRequest.ExternalId,
-            ProductId = sampleRequest.ProductId,
-            ProductCode = sampleRequest.ProductCode,
-            ProductName = sampleRequest.ProductName,
-            FormulaId = formulaId,
-            FormulaExternalId = formulaExternalId,
-            FormulaName = formulaName,
-            FormulaSelectionSource = "LabConfirmed",
-            Action = new SampleRequestPriceQuoteActionDto
-            {
-                Code = "Executive.OpenProductPricingReview",
-                Parameters = new SampleRequestPriceQuoteActionParametersDto
-                {
-                    SampleRequestId = sampleRequest.SampleRequestId,
-                    SampleRequestExternalId = sampleRequest.ExternalId,
-                    ProductId = sampleRequest.ProductId,
-                    ProductCode = sampleRequest.ProductCode,
-                    FormulaId = formulaId
-                }
-            }
-        };
-
-        return await _sender.Send(new SendSampleRequestMessageCommand
-        {
-            SampleRequestId = sampleRequest.SampleRequestId,
-            Type = SampleRequestNotificationType.PriceQuoteRequest,
-            Message = $"Lab đã xác nhận công thức [{formulaExternalId}] - {formulaName} cho yêu cầu phối mẫu {sampleRequest.ExternalId}. Giá chuẩn của sản phẩm cần được Ban Giám đốc xác nhận lại.",
-            ExtraRecipientEmployeeIds = presidentEmployeeIds,
-            TopicOverride = TopicNotifications.SampleRequestPriceQuoteRequested,
-            TitleOverride = "Yêu cầu xác nhận lại giá chuẩn",
-            LinkOverride = pricingLink,
-            PriceQuoteRequest = payload
-        }, cancellationToken);
-    }
 }

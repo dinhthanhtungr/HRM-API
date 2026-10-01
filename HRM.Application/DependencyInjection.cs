@@ -100,6 +100,7 @@ public static class DependencyInjection
         services.AddScoped<SampleRequestConversationSubjectService>();
         services.AddScoped<FormulaWriteService>();
         services.AddScoped<FormulaVersionService>();
+        services.AddScoped<FormulaPricingReviewService>();
         services.AddScoped<SaleOrderLeadConversionService>();
         services.AddScoped<SaleOrderCreationService>();
         services.AddScoped<SaleOrderManufacturingService>();

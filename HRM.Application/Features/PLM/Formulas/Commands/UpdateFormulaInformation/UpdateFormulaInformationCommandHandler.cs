@@ -15,17 +15,20 @@ internal sealed class UpdateFormulaInformationCommandHandler
     private readonly ICurrentUser _currentUser;
     private readonly FormulaWriteService _formulaWriteService;
     private readonly FormulaVersionService _formulaVersionService;
+    private readonly FormulaPricingReviewService _pricingReview;
 
     public UpdateFormulaInformationCommandHandler(
         IPLMWriteDbContext dbContext,
         ICurrentUser currentUser,
         FormulaWriteService formulaWriteService,
-        FormulaVersionService formulaVersionService)
+        FormulaVersionService formulaVersionService,
+        FormulaPricingReviewService pricingReview)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
         _formulaWriteService = formulaWriteService;
         _formulaVersionService = formulaVersionService;
+        _pricingReview = pricingReview;
     }
 
     public async Task<OperationResult<FormulaWriteResultDto>> Handle(
@@ -73,6 +76,8 @@ internal sealed class UpdateFormulaInformationCommandHandler
             }
 
             var now = DateTime.Now;
+            var materialsChanged = await _pricingReview.RequiresMaterialReviewAsync(
+                formula, command.Request, companyId, cancellationToken);
             await _formulaWriteService.ApplyFormulaUpdateAsync(
                 formula,
                 command.Request,
@@ -81,6 +86,12 @@ internal sealed class UpdateFormulaInformationCommandHandler
                 now,
                 cancellationToken);
 
+            if (materialsChanged)
+            {
+                formula.CheckBy = employeeId;
+                formula.CheckDate = now;
+            }
+
             await _formulaVersionService.SaveSnapshotAsync(
                 formula,
                 employeeId,
@@ -88,6 +99,18 @@ internal sealed class UpdateFormulaInformationCommandHandler
                 "Updated formula information",
                 force: false,
                 cancellationToken);
+
+            if (materialsChanged)
+            {
+                var sendResult = await _pricingReview.SendMaterialChangeAsync(
+                    formula, companyId, sampleRequestId: null, cancellationToken);
+                if (!sendResult.Success)
+                {
+                    return OperationResult<FormulaWriteResultDto>.Ok(
+                        FormulaWriteService.ToResult(formula),
+                        $"Updated formula successfully, but could not send material-change notification: {sendResult.Message}");
+                }
+            }
 
             return OperationResult<FormulaWriteResultDto>.Ok(
                 FormulaWriteService.ToResult(formula),

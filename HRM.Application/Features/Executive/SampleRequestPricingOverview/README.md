@@ -263,3 +263,7 @@ Các index tương đương đã có: Product Pricing
 Nên xác minh execution plan thực tế trước khi bổ sung composite index Sample Request
 `(CompanyId, IsActive, Status, CreatedDate)` với include/use kế tiếp cho `ProductId`, `CustomerId`, `ManagerBy`;
 không tự tạo vì repo chưa có migration được user duyệt và cần tránh index trùng trong database thật.
+
+## NVL của công thức nguồn giá chuẩn thay đổi sau xác nhận
+
+Khi Lab lưu thay đổi NVL/định lượng của Formula `Approved` đang là nguồn của giá chuẩn VND Approved hiện hành, backend ghi lại `CheckBy`/`CheckDate` như một lần xác nhận lại công thức và gửi đúng luồng yêu cầu duyệt lại giá chuẩn. Vì `CheckDate` mới lớn hơn lần duyệt giá gần nhất, Sample Request của Product khớp `view=NeedsPricing`; `pricingAttentionSources` có `LabFormulaConfirmed`. Duyệt giá mới sau mốc này sẽ giải quyết yêu cầu theo rule hiện có. Đây là trường hợp tái xác nhận tường minh trong luồng lưu công thức; chỉ có candidate `recommendedFormula` hoặc lưu NVL không đổi vẫn không đủ để vào queue này.

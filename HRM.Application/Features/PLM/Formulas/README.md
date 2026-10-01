@@ -634,3 +634,13 @@ Dữ liệu là trạng thái hiện tại từ `MaterialPurchaseAvailability`, 
 chưa có record được hiểu là `Available`; item Product trả các field trên là `null`. Công thức cũ vẫn hiển thị NVL
 `Unavailable` để Lab biết dòng nào cần thay. Hiện check chặn NVL này khi ghi công thức đang được tắt tạm bằng
 `EnforceMaterialPurchaseAvailabilityOnFormulaWrite = false`; đổi cờ thành `true` để bật lại.
+
+## Tự yêu cầu xác nhận lại giá chuẩn khi Lab thay đổi NVL
+
+`PUT /api/v1/plm/formulas/{formulaId}` và cập nhật `formulaUpdate.materials` qua API status dùng chung `FormulaPricingReviewService` với luồng xác nhận Formula lần đầu. Trigger chỉ chạy khi Formula trước khi lưu là `Approved`, vẫn giữ Product cũ, và bản giá chuẩn VND Approved active mới nhất có giá bán lớn hơn 0 và lấy chính Formula này làm nguồn (`SourceFormulaId`). Draft, công thức chưa có giá chuẩn hoặc công thức không phải nguồn của giá chuẩn hiện hành không tự gửi yêu cầu này.
+
+Backend so sánh `itemType`, `itemId`, `quantity` ở độ chính xác 10 chữ số thập phân như khi lưu. Thêm/bớt/thay item hoặc thay định lượng là thay đổi; chỉ đổi thứ tự dòng, giá gửi từ client, tên/mã snapshot hoặc ghi chú không kích hoạt. Không gửi `materials` hoặc gửi `null` giữ nguyên NVL.
+
+Lần lưu đủ điều kiện cập nhật `CheckBy`/`CheckDate` như một lần Lab xác nhận lại thành phần, cùng transaction với Formula và FormulaVersion. Giá chuẩn Approved và snapshot giá cũ được giữ nguyên. Vì bộ lọc Executive Sample Request Pricing Overview `view=NeedsPricing` so sánh `CheckDate` với lần Approved giá gần nhất, sản phẩm xuất hiện trong danh sách yêu cầu cập nhật giá chuẩn và có attention source `LabFormulaConfirmed` cho tới khi BGD duyệt giá mới. Không cần FE gọi thêm requote API sau khi lưu.
+
+Sau khi lưu thành công, backend gửi message **Yêu cầu xác nhận lại giá chuẩn** theo đúng topic, payload `LabConfirmed`, action `Executive.OpenProductPricingReview`, recipient và quy tắc mute của lần xác nhận đầu. Nội dung nêu Lab đã thay đổi NVL. API status dùng `sampleRequestId` nếu có; PUT ưu tiên Sample Request active cùng company/Product đang gắn Formula, rồi bản mới nhất của Product nếu chưa có liên kết. Mỗi lần lưu gửi một yêu cầu vào conversation đã chọn. Sample Request nội bộ tiếp tục no-op theo `SampleRequestMessageRules`. Nếu không có Sample Request/President hoặc gửi thông báo thất bại, dữ liệu đã lưu vẫn thành công và response message nêu rõ phần thông báo chưa gửi được.
