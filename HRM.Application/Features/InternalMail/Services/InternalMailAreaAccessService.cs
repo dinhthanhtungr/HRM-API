@@ -93,6 +93,11 @@ public sealed class InternalMailAreaAccessService(IInternalMailDbContext db, ICu
             a.InternalMessageAttachments.Any(link => visibleMessages.Contains(link.InternalMessageId)));
     }
 
+    internal IQueryable<Notification> LatestHubEvents(IQueryable<Notification> visible,
+        IQueryable<Notification> inbox, string? eventGroupCode)
+        => HRM.Application.Features.NotificationHub.Queries.GetItems.NotificationHubLatestEventQuery.Apply(
+            visible, inbox, db.QueryInternalMailNotificationLinks(user.CompanyId ?? Guid.Empty), eventGroupCode);
+
     public IQueryable<NotificationUserState> States()
     {
         var ids = Notifications(db.NotificationUserStates.Select(s => s.Notification)).Select(n => n.Id);

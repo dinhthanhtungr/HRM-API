@@ -108,7 +108,7 @@ internal sealed class GetNotificationHubItemsQueryHandler
         // Reuse feed service để category/event-group, unread visibility, keyset ordering
         // và legacy-data semantics luôn giống endpoint notification hiện hữu.
         var notifications = await _notificationService.GetFeedAsync(
-            take, afterId, afterCreated, request.CategoryCode, request.EventGroupCode, cancellationToken);
+            take, afterId, afterCreated, request.CategoryCode, request.EventGroupCode, cancellationToken, latestForHub: true);
 
         var conversationInfoById = await LoadConversationInfoAsync(
             notifications.Select(item => item.ConversationId), companyId, employeeId, cancellationToken);

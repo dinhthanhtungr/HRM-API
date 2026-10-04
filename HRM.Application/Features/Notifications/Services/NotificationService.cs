@@ -329,17 +329,20 @@ internal sealed class NotificationService : INotificationService
         DateTime? afterCreated = null,
         string? categoryCode = null,
         string? eventGroupCode = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool latestForHub = false)
     {
         var companyId = GetCurrentCompanyId();
         var employeeId = GetCurrentEmployeeId();
         var normalizedTake = Math.Clamp(take, 1, 100);
 
-        var query = _areas.Notifications(_dbContext.Notifications)
-            .AsNoTracking()
-            .Where(x =>
-                x.CompanyId == companyId &&
-                x.UserStates.Any(state => state.UserId == employeeId && !state.IsArchived))
+        var inbox = _dbContext.Notifications.AsNoTracking().Where(x =>
+            x.CompanyId == companyId &&
+            x.UserStates.Any(state => state.UserId == employeeId && !state.IsArchived));
+        var visible = _areas.Notifications(inbox);
+        if (latestForHub && NotificationTopicCatalog.NormalizeCode(categoryCode) != NotificationCategoryCodes.LegacyData)
+            visible = _areas.LatestHubEvents(visible, inbox, NotificationTopicCatalog.NormalizeCode(eventGroupCode));
+        var query = visible
             .Select(x => new NotificationDto
             {
                 Id = x.Id,

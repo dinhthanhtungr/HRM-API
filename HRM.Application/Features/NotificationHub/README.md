@@ -100,3 +100,16 @@ riêng cho message và notification vì hai thời điểm tạo có thể khác
 LastReadAt không bị lùi. Nếu transaction xung đột, toàn bộ thao tác rollback và client giữ trạng thái cũ để thử lại.
 FE chỉ cập nhật lạc quan những item đã có trước request, giữ thread có tin mới đến giữa chừng, rồi reload unread
 summary. Không ép badge tổng về 0 từ response này.
+
+### Phân loại theo sự kiện mới nhất
+
+`GET /api/v1/notification-hub/items` chọn một notification đại diện cho mỗi conversation
+trong inbox chưa archived của employee hiện tại, sau khi kiểm tra company và quyền xem.
+Chọn theo `CreatedDate DESC, Id DESC` trước khi lọc category/eventGroup và cursor.
+Các eventGroup nghiệp vụ (request, pricing, status, pricing-alert...) lấy sự kiện cuối
+không thuộc nhóm `message`; chat mới không làm mất vị trí trong tab nghiệp vụ.
+Tab `message` chỉ hiện khi sự kiện cuối thực sự là message. Tất cả lấy sự kiện cuối thực sự.
+Notification không có conversation vẫn là item riêng. Tab legacy_data giữ feed lịch sử.
+Lịch sử hội thoại, unread counts, publish, recipient, SignalR/Web Push không thay đổi.
+API feed notification thông thường vẫn trả lịch sử; quy tắc mới chỉ áp dụng Hub items.
+Việc chọn đại diện chạy trong SQL, không tải toàn bộ inbox về bộ nhớ; metadata vẫn theo trang.
