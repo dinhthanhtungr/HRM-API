@@ -8,5 +8,6 @@ public sealed class GetInternalConversationAttachmentsQuery
     : PaginationQuery, IRequest<PagedResult<InternalConversationAttachmentDto>?>
 {
     public Guid ConversationId { get; init; }
+    public string? AreaCode { get; init; }
     public string? Kind { get; init; }
 }

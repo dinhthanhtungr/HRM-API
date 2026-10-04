@@ -2,6 +2,7 @@ using HRM.Application.Abstractions.Commons.Time;
 using HRM.Application.Abstractions.Persistence.InternalMail;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Models;
+using HRM.Application.Features.InternalMail.Services;
 using HRM.Domain.Enums.InternalMailEnums;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -14,15 +15,18 @@ internal sealed class UpdateInternalMessageCommandHandler
     private const int MaxBodyLength = 2000;
     private readonly IInternalMailDbContext _dbContext;
     private readonly ICurrentUser _currentUser;
+    private readonly InternalMailAreaAccessService _areas;
     private readonly IDateTimeProvider _dateTimeProvider;
 
     public UpdateInternalMessageCommandHandler(
         IInternalMailDbContext dbContext,
         ICurrentUser currentUser,
-        IDateTimeProvider dateTimeProvider)
+        IDateTimeProvider dateTimeProvider,
+        InternalMailAreaAccessService areas)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
+        _areas = areas;
         _dateTimeProvider = dateTimeProvider;
     }
 
@@ -46,7 +50,7 @@ internal sealed class UpdateInternalMessageCommandHandler
             return OperationResult.Fail("Current employee or company is invalid.");
         }
 
-        var message = await _dbContext.InternalMessages
+        var message = await _areas.Messages()
             .FirstOrDefaultAsync(x =>
                 x.InternalMessageId == request.MessageId &&
                 x.SenderEmployeeId == employeeId.Value &&

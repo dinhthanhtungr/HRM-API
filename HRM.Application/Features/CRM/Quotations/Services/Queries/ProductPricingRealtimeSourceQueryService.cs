@@ -149,8 +149,9 @@ internal sealed class ProductPricingRealtimeSourceQueryService
             cancellationToken);
 
     /// <summary>
-    /// Executive pricing may review a VA used by a production order even when that VA has not been assigned
-    /// through ProductStandardFormula. The legacy quotation loader intentionally keeps its narrower rule.
+    /// Executive pricing may review an active VA assigned through ProductStandardFormula regardless of its
+    /// workflow status, or a VA used by an active production order. The legacy quotation loader intentionally
+    /// keeps its narrower eligibility rule.
     /// </summary>
     public Task<IReadOnlyDictionary<ProductPricingSourceSelection, ProductPricingSourceOptionDto>>
         LoadSelectedForExecutiveAsync(
@@ -304,6 +305,7 @@ internal sealed class ProductPricingRealtimeSourceQueryService
             : await LoadSelectedSourceRowsAsync(
                 normalizedSelections,
                 companyId,
+                useExecutiveVaEligibility: false,
                 cancellationToken);
         if (sourceRows.Count == 0)
         {
@@ -426,6 +428,7 @@ internal sealed class ProductPricingRealtimeSourceQueryService
     private async Task<IReadOnlyList<SourceRow>> LoadSelectedSourceRowsAsync(
         IReadOnlyCollection<ProductPricingSourceSelection> selections,
         Guid companyId,
+        bool useExecutiveVaEligibility,
         CancellationToken cancellationToken)
     {
         var productIds = selections.Select(x => x.ProductId).Distinct().ToArray();
@@ -494,7 +497,8 @@ internal sealed class ProductPricingRealtimeSourceQueryService
                     Name = x.ManufacturingFormula.Name,
                     Status = x.ManufacturingFormula.Status,
                     IsEligible = x.ManufacturingFormula.IsActive &&
-                        (ProductPricingSourceRules.EligibleManufacturingFormulaStatuses.Contains(
+                        (useExecutiveVaEligibility ||
+                         ProductPricingSourceRules.EligibleManufacturingFormulaStatuses.Contains(
                              x.ManufacturingFormula.Status) ||
                          x.ManufacturingFormula.ManufacturingFormulaVersions.Any(version =>
                              version.Status == ProductPricingSourceRules.ReleasedManufacturingVersionStatus)),
@@ -527,6 +531,7 @@ internal sealed class ProductPricingRealtimeSourceQueryService
         var canonicalRows = await LoadSelectedSourceRowsAsync(
             selections,
             companyId,
+            useExecutiveVaEligibility: true,
             cancellationToken);
         var vaSelections = selections
             .Where(x => x.SourceType == ProductPricingSourceType.ManufacturingFormula)

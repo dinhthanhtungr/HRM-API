@@ -155,6 +155,12 @@ internal sealed class GetSampleRequestSummaryQueryHandler
 
                 ExpectedDeliveryDate = sampleRequest.ExpectedDeliveryDate,
                 RequestDeliveryDate = sampleRequest.RequestDeliveryDate,
+                LabReceivedDate = sampleRequest.LabReceivedDate,
+                IsDelayed = sampleRequest.IsDelayed == true,
+                LabReceivedByEmployeeId = sampleRequest.LabReceivedByEmployeeId,
+                LabReceivedByName = sampleRequest.LabReceivedByNavigation != null
+                    ? sampleRequest.LabReceivedByNavigation.FullName
+                    : null,
                 RealDeliveryDate = sampleRequest.RealDeliveryDate,
                 RealPriceQuoteDate = sampleRequest.RealPriceQuoteDate,
                 ExpectedPriceQuoteDate = sampleRequest.ExpectedPriceQuoteDate

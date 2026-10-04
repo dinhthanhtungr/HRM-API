@@ -15,7 +15,7 @@ using HRM.Application.Features.PLM.SampleRequests.FormulaChangeRequests;
 using HRM.Application.Features.PLM.SampleRequests.Rules;
 using HRM.Application.Features.PLM.SampleRequests.Services;
 using HRM.Application.Features.PLM.SampleRequests.SampleTrials;
-using HRM.Application.Features.PLM.Boms.Commands.CreateManufacturingBomFromSelectedFormula;
+using HRM.Application.Features.PLM.Boms.Commands.CreateBomFromSelectedFormula;
 using HRM.Domain.Enums.Notifications;
 using HRM.Domain.Entities.SampleRequestSchema;
 using HRM.Domain.Enums.InternalMailEnums;
@@ -42,6 +42,7 @@ internal sealed class PatchSampleRequestCommandHandler
         "sample_request.number_delivery_sample_date",
         "sample_request.customer_product_code",
         "sample_request.request_delivery_date",
+        "sample_request.lab_received_date",
         "sample_request.expected_delivery_date",
         "sample_request.real_delivery_date",
         "sample_request.request_test_sample_date",
@@ -143,6 +144,27 @@ internal sealed class PatchSampleRequestCommandHandler
             return OperationResult<Guid>.Fail(clearValidationError);
         }
 
+        var changesLabProgress = request.LabReceivedDate.HasValue ||
+            request.IsDelayed.HasValue ||
+            clearFields.Contains("sample_request.lab_received_date");
+        if (changesLabProgress &&
+            (request.IsDataChangeApproval ||
+             !_currentUser.IsInAnyRole(ApplicationRoleSets.PLM.SampleRequestLabProgressEditors)))
+        {
+            return OperationResult<Guid>.Fail("Only Lab, Developer or President can update Lab receipt and delay.");
+        }
+        if (request.LabReceivedDate.HasValue &&
+            (request.LabReceivedDate.Value > DateTime.Now.AddMinutes(5) ||
+             request.LabReceivedDate.Value == DateTime.MinValue))
+        {
+            return OperationResult<Guid>.Fail("LabReceivedDate is invalid or in the future.");
+        }
+        if (changesLabProgress &&
+            (!_currentUser.EmployeeId.HasValue || _currentUser.EmployeeId.Value == Guid.Empty))
+        {
+            return OperationResult<Guid>.Fail("Current employee is invalid.");
+        }
+
         var sampleRequestVisibilityScope = await _visibilityService.BuildScopeAsync(cancellationToken);
         // Mọi SaleUser trong cùng công ty được PATCH hồ sơ nội bộ KH_VIETAUS.
         // Chỉ mở đúng internal-customer flag; ownership của khách thường và mọi business guard vẫn giữ nguyên.
@@ -158,6 +180,18 @@ internal sealed class PatchSampleRequestCommandHandler
         if (sampleRequest is null)
         {
             return OperationResult<Guid>.Fail("Sample request was not found.");
+        }
+
+        if (changesLabProgress)
+        {
+            var employeeExists = await _dbContext.Employees.AsNoTracking().AnyAsync(
+                x => x.EmployeeId == _currentUser.EmployeeId!.Value &&
+                     x.CompanyId == companyId.Value && x.IsActive,
+                cancellationToken);
+            if (!employeeExists)
+            {
+                return OperationResult<Guid>.Fail("Current employee was not found in this company.");
+            }
         }
 
         if (!request.IsDataChangeApproval &&
@@ -423,6 +457,17 @@ internal sealed class PatchSampleRequestCommandHandler
         {
             ApplySampleRequestPatch(sampleRequest, request);
             ApplySampleRequestClearFields(sampleRequest, clearFields);
+            if (request.LabReceivedDate.HasValue)
+            {
+                PatchHelper.SetNullable(request.LabReceivedDate,
+                    () => sampleRequest.LabReceivedDate,
+                    value => sampleRequest.LabReceivedDate = value);
+                sampleRequest.LabReceivedByEmployeeId = _currentUser.EmployeeId;
+            }
+            if (request.IsDelayed.HasValue)
+            {
+                sampleRequest.IsDelayed = request.IsDelayed.Value;
+            }
         }
 
         Product? patchedProduct = null;
@@ -656,13 +701,13 @@ internal sealed class PatchSampleRequestCommandHandler
             if (completedByFormulaSelection)
             {
                 var bomResult = await _sender.Send(
-                    new CreateManufacturingBomFromSelectedFormulaCommand(sampleRequest.ProductId),
+                    new CreateBomFromSelectedFormulaCommand(sampleRequest.ProductId),
                     cancellationToken);
                 if (!bomResult.Success)
                 {
                     return OperationResult<Guid>.Ok(
                         sampleRequest.SampleRequestId,
-                        $"Updated sample request successfully, but could not initialize the Manufacturing BOM: {bomResult.Message}");
+                        $"Updated sample request successfully, but could not initialize the Engineering BOM: {bomResult.Message}");
                 }
             }
 
@@ -1259,6 +1304,7 @@ internal sealed class PatchSampleRequestCommandHandler
             "sample_request.number_delivery_sample_date" => request.NumberDeliverySampleDate.HasValue,
             "sample_request.customer_product_code" => request.CustomerProductCode is not null,
             "sample_request.request_delivery_date" => request.RequestDeliveryDate.HasValue,
+            "sample_request.lab_received_date" => request.LabReceivedDate.HasValue,
             "sample_request.expected_delivery_date" => request.ExpectedDeliveryDate.HasValue,
             "sample_request.real_delivery_date" => request.RealDeliveryDate.HasValue,
             "sample_request.request_test_sample_date" => request.RequestTestSampleDate.HasValue,
@@ -1331,6 +1377,10 @@ internal sealed class PatchSampleRequestCommandHandler
                     break;
                 case "sample_request.request_delivery_date":
                     PatchHelper.SetNullable<DateTime>(null, () => sampleRequest.RequestDeliveryDate, value => sampleRequest.RequestDeliveryDate = value);
+                    break;
+                case "sample_request.lab_received_date":
+                    PatchHelper.SetNullable<DateTime>(null, () => sampleRequest.LabReceivedDate, value => sampleRequest.LabReceivedDate = value);
+                    sampleRequest.LabReceivedByEmployeeId = null;
                     break;
                 case "sample_request.expected_delivery_date":
                     PatchHelper.SetNullable<DateTime>(null, () => sampleRequest.ExpectedDeliveryDate, value => sampleRequest.ExpectedDeliveryDate = value);

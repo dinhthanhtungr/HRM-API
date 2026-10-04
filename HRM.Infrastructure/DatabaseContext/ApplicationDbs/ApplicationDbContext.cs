@@ -450,6 +450,9 @@ namespace HRM.Infrastructure.DatabaseContext.ApplicationDbs
 
                 entity.Property(e => e.RequestDeliveryDate).HasColumnName("RequestDeliveryDate");
 
+                entity.Property(e => e.LabReceivedDate).HasColumnName("LabReceivedDate");
+                entity.Property(e => e.LabReceivedByEmployeeId).HasColumnName("LabReceivedByEmployeeId");
+
                 entity.Property(e => e.RequestTestSampleDate).HasColumnName("RequestTestSampleDate");
 
                 entity.Property(e => e.ResponseDeliveryDate).HasColumnName("ResponseDeliveryDate");
@@ -494,6 +497,8 @@ namespace HRM.Infrastructure.DatabaseContext.ApplicationDbs
                 entity.Property(e => e.CompanyId).HasColumnName("CompanyId");
                 entity.Property(e => e.IsActive).HasColumnName("IsActive")
                     .HasDefaultValue(true);
+                entity.Property(e => e.IsDelayed).HasColumnName("IsDelayed")
+                    .HasDefaultValue(false);
 
                 // ==== Indexes ====
                 //entity.HasIndex(e => e.CompanyId).HasDatabaseName("IX_SampleRequests_CompanyId");
@@ -501,6 +506,8 @@ namespace HRM.Infrastructure.DatabaseContext.ApplicationDbs
                 entity.HasIndex(e => e.FormulaId).HasDatabaseName("IX_SampleRequests_FormulaId");
                 entity.HasIndex(e => e.ManagerBy).HasDatabaseName("IX_SampleRequests_ManagerBy");
                 entity.HasIndex(e => e.SendBy).HasDatabaseName("IX_SampleRequests_SendBy");
+                entity.HasIndex(e => e.LabReceivedByEmployeeId)
+                    .HasDatabaseName("IX_SampleRequests_LabReceivedByEmployeeId");
                 entity.HasIndex(e => e.UpdatedBy).HasDatabaseName("IX_SampleRequests_UpdatedBy");
                 entity.HasIndex(o => o.AttachmentCollectionId).HasDatabaseName("IX_SampleRequests_AttachmentCollection");
 
@@ -576,6 +583,12 @@ namespace HRM.Infrastructure.DatabaseContext.ApplicationDbs
                     .HasForeignKey(d => d.SendBy)
                     .OnDelete(DeleteBehavior.SetNull)
                     .HasConstraintName("FK_SampleRequests_SendBy");
+
+                entity.HasOne(d => d.LabReceivedByNavigation)
+                    .WithMany(p => p.SampleRequestLabReceivedByNavigations)
+                    .HasForeignKey(d => d.LabReceivedByEmployeeId)
+                    .OnDelete(DeleteBehavior.SetNull)
+                    .HasConstraintName("FK_SampleRequests_LabReceivedByEmployee");
             });
 
 

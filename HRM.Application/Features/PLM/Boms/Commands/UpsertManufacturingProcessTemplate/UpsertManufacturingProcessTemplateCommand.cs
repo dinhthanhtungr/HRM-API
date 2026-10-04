@@ -5,4 +5,4 @@ using MediatR;
 namespace HRM.Application.Features.PLM.Boms.Commands.UpsertManufacturingProcessTemplate;
 
 public sealed record UpsertManufacturingProcessTemplateCommand(Guid? TemplateId, UpsertManufacturingProcessTemplateRequest Request)
-    : IRequest<OperationResult<ManufacturingProcessTemplateDto>>;
+    : IRequest<OperationResult<ManufacturingProcessTemplateEditorDto>>;

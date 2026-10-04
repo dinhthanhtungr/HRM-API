@@ -24,6 +24,9 @@ using HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestLookup
 using HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestMessages;
 using HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestSampleTrials;
 using HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestSummary;
+using HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestDailyWork;
+using HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestDailySuggestions;
+using HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestPeriodReport;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -42,6 +45,59 @@ public sealed class SampleRequestsController : ControllerBase
     {
         _sender = sender;
         _currentUser = currentUser;
+    }
+
+    /// <summary>Việc cần làm và cần theo dõi trong ngày; không thay đổi luồng Trial cũ.</summary>
+    [HttpGet("reports/daily")]
+    public async Task<IActionResult> GetDailyWork(
+        [FromQuery] GetSampleRequestDailyWorkQuery query,
+        CancellationToken cancellationToken)
+    {
+        if (query.Date == DateOnly.MaxValue)
+        {
+            return BadRequest("date is out of supported range.");
+        }
+        if (!Enum.IsDefined(query.View))
+        {
+            return BadRequest("view must be today or all.");
+        }
+        if (query.Keyword?.Length > 80)
+        {
+            return BadRequest("keyword must be at most 80 characters.");
+        }
+        return Ok(await _sender.Send(query, cancellationToken));
+    }
+
+    /// <summary>Gợi ý Sale, khách hàng và mã yêu cầu trong đúng phạm vi báo cáo ngày.</summary>
+    [HttpGet("reports/daily/suggestions")]
+    public async Task<IActionResult> GetDailyWorkSuggestions(
+        [FromQuery] GetSampleRequestDailySuggestionsQuery query,
+        CancellationToken cancellationToken)
+    {
+        if (query.Date == DateOnly.MaxValue)
+            return BadRequest("date is out of supported range.");
+        if (!Enum.IsDefined(query.View))
+            return BadRequest("view must be today or all.");
+        if (string.IsNullOrWhiteSpace(query.Q))
+            return BadRequest("q must contain at least 2 characters.");
+
+        return Ok(await _sender.Send(query, cancellationToken));
+    }
+
+    /// <summary>Kết quả Trial theo ngày phản hồi và delay đang được đánh dấu theo hạn trong kỳ.</summary>
+    [HttpGet("reports/period")]
+    public async Task<IActionResult> GetPeriodReport(
+        [FromQuery] GetSampleRequestPeriodReportQuery query,
+        CancellationToken cancellationToken)
+    {
+        if (query.FromDate == default || query.ToDate == default ||
+            query.ToDate < query.FromDate || query.ToDate == DateOnly.MaxValue ||
+            query.ToDate.DayNumber - query.FromDate.DayNumber > 366)
+        {
+            return BadRequest("fromDate/toDate must form a valid period of at most 367 days.");
+        }
+
+        return Ok(await _sender.Send(query, cancellationToken));
     }
 
     [HttpGet("summary")]

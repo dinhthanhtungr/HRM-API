@@ -1,0 +1,347 @@
+using HRM.Application.Abstractions.Persistence.PLM;
+using HRM.Application.Abstractions.Security;
+using HRM.Application.Features.PLM.Formulas.Dtos.GetFormulas;
+using HRM.Application.Features.PLM.Formulas.Queries.GetFormulas;
+using HRM.Application.Features.PLM.Shared.Authorization;
+using HRM.Domain.Enums.Products;
+using Microsoft.EntityFrameworkCore;
+
+namespace HRM.Application.Features.PLM.Formulas.Services;
+
+/// <summary>
+/// Đọc ba nhóm công thức theo cùng contract dùng bởi danh sách Formula và các màn hình liên quan.
+/// </summary>
+public sealed class FormulaListQueryService
+{
+    private readonly IPLMReadDbContext _dbContext;
+    private readonly IPLMFieldVisibilityService _fieldVisibility;
+    private readonly ICurrentUser _currentUser;
+
+    public FormulaListQueryService(
+        IPLMReadDbContext dbContext,
+        IPLMFieldVisibilityService fieldVisibility,
+        ICurrentUser currentUser)
+    {
+        _dbContext = dbContext;
+        _fieldVisibility = fieldVisibility;
+        _currentUser = currentUser;
+    }
+
+    public async Task<FormulaList> GetAsync(
+        GetFormulasQuery request,
+        int? maxItemsPerGroup = null,
+        CancellationToken cancellationToken = default)
+    {
+        var companyId = _currentUser.CompanyId
+            ?? throw new UnauthorizedAccessException("Current user has no CompanyId.");
+        var productId = await ResolveProductIdAsync(request, companyId, cancellationToken);
+        if (productId == Guid.Empty || maxItemsPerGroup <= 0)
+        {
+            return new FormulaList();
+        }
+
+        var canViewFormulaPrices = _fieldVisibility.CanViewFormulaPrices();
+
+        if (request.IsMerchadiseOrder)
+        {
+            return new FormulaList
+            {
+                FormulaDevs = await GetFormulaDevsAsync(
+                    request,
+                    productId,
+                    companyId,
+                    canViewFormulaPrices,
+                    maxItemsPerGroup,
+                    cancellationToken)
+            };
+        }
+
+        return new FormulaList
+        {
+            FormulaSelects = await GetFormulaSelectsAsync(
+                request,
+                productId,
+                companyId,
+                canViewFormulaPrices,
+                maxItemsPerGroup,
+                cancellationToken),
+            FormulaDevs = await GetFormulaDevsAsync(
+                request,
+                productId,
+                companyId,
+                canViewFormulaPrices,
+                maxItemsPerGroup,
+                cancellationToken),
+            FormulaStandard = await GetFormulaStandardAsync(
+                request,
+                productId,
+                companyId,
+                canViewFormulaPrices,
+                maxItemsPerGroup,
+                cancellationToken)
+        };
+    }
+
+    private async Task<Guid> ResolveProductIdAsync(
+        GetFormulasQuery request,
+        Guid companyId,
+        CancellationToken cancellationToken)
+    {
+        if (request.ProductId is { } productId && productId != Guid.Empty)
+        {
+            return productId;
+        }
+
+        if (request.SampleRequestId is not { } sampleRequestId || sampleRequestId == Guid.Empty)
+        {
+            return Guid.Empty;
+        }
+
+        return await _dbContext.SampleRequests
+            .AsNoTracking()
+            .Where(x =>
+                x.SampleRequestId == sampleRequestId &&
+                x.IsActive &&
+                x.CompanyId == companyId &&
+                x.Product.IsActive &&
+                x.Product.CompanyId == companyId)
+            .Select(x => x.ProductId)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    private async Task<IReadOnlyList<FormulaId>> GetFormulaSelectsAsync(
+        GetFormulasQuery request,
+        Guid productId,
+        Guid companyId,
+        bool canViewFormulaPrices,
+        int? maxItemsPerGroup,
+        CancellationToken cancellationToken)
+    {
+        var query = _dbContext.ProductionSelectVersions
+            .AsNoTracking()
+            .Where(x =>
+                x.ManufacturingFormulaId.HasValue &&
+                x.ManufacturingFormula != null &&
+                x.ManufacturingFormula.IsActive &&
+                x.CompanyId == companyId &&
+                x.MfgProductionOrder.IsActive &&
+                x.MfgProductionOrder.ProductId == productId);
+
+        if (request.CompanyId is { } requestedCompanyId && requestedCompanyId != Guid.Empty)
+        {
+            query = query.Where(x => x.CompanyId == requestedCompanyId);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Status))
+        {
+            query = query.Where(x => x.ManufacturingFormula!.Status == request.Status);
+        }
+
+        if (request.FormulaId is { } formulaId && formulaId != Guid.Empty)
+        {
+            query = query.Where(x => x.ManufacturingFormulaId == formulaId);
+        }
+
+        if (request.NormalizedKeyword is { } keyword)
+        {
+            var pattern = $"%{keyword}%";
+            query = query.Where(x =>
+                EF.Functions.ILike(x.ManufacturingFormula!.ExternalId, pattern) ||
+                EF.Functions.ILike(x.ManufacturingFormula.Note ?? string.Empty, pattern));
+        }
+
+        var rows = await query
+            .Select(x => new
+            {
+                Id = x.ManufacturingFormulaId!.Value,
+                ExternalId = x.ManufacturingFormula!.ExternalId,
+                CreatedByName = x.ManufacturingFormula.CreatedByNavigation != null
+                    ? x.ManufacturingFormula.CreatedByNavigation.FullName
+                    : null,
+                Status = x.ManufacturingFormula.Status,
+                Note = x.ManufacturingFormula.Note,
+                Price = canViewFormulaPrices ? x.ManufacturingFormula.TotalPrice : null,
+                ItemCount = x.ManufacturingFormula.ManufacturingFormulaMaterials.Count(m => m.IsActive),
+                LastDateUse = x.MfgProductionOrder.ManufacturingDate
+                    ?? x.MfgProductionOrder.UpdatedDate
+            })
+            .ToListAsync(cancellationToken);
+
+        var result = rows
+            .GroupBy(x => x.Id)
+            .Select(x => x.OrderByDescending(f => f.LastDateUse).First())
+            .Select(x => new FormulaId
+            {
+                Id = x.Id,
+                ExternalId = x.ExternalId,
+                CreatedByName = x.CreatedByName,
+                Status = x.Status,
+                Note = x.Note ?? string.Empty,
+                Price = x.Price,
+                ItemCount = x.ItemCount,
+                LastDateUse = x.LastDateUse
+            })
+            .OrderByDescending(x => x.LastDateUse);
+
+        return ApplyLimit(result, maxItemsPerGroup);
+    }
+
+    private async Task<IReadOnlyList<FormulaId>> GetFormulaDevsAsync(
+        GetFormulasQuery request,
+        Guid productId,
+        Guid companyId,
+        bool canViewFormulaPrices,
+        int? maxItemsPerGroup,
+        CancellationToken cancellationToken)
+    {
+        var query = _dbContext.Formulas
+            .AsNoTracking()
+            .Where(x =>
+                x.IsActive &&
+                x.CompanyId == companyId &&
+                x.ProductId == productId);
+
+        if (request.IsMerchadiseOrder)
+        {
+            query = query.Where(formula =>
+                formula.Status == FormulaStatus.SampleSent.ToString() ||
+                formula.Status == FormulaStatus.Completed.ToString());
+        }
+
+        if (request.CompanyId is { } requestedCompanyId && requestedCompanyId != Guid.Empty)
+        {
+            query = query.Where(x => x.CompanyId == requestedCompanyId);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Status))
+        {
+            query = query.Where(x => x.Status == request.Status);
+        }
+
+        if (request.FormulaId is { } formulaId && formulaId != Guid.Empty)
+        {
+            query = query.Where(x => x.FormulaId == formulaId);
+        }
+
+        if (request.NormalizedKeyword is { } keyword)
+        {
+            var pattern = $"%{keyword}%";
+            query = query.Where(x =>
+                EF.Functions.ILike(x.ExternalId, pattern) ||
+                EF.Functions.ILike(x.Note ?? string.Empty, pattern));
+        }
+
+        var orderedQuery = query.OrderByDescending(x => x.UpdatedDate ?? x.CreatedDate);
+        var limitedQuery = maxItemsPerGroup.HasValue
+            ? orderedQuery.Take(maxItemsPerGroup.Value)
+            : orderedQuery;
+
+        return await limitedQuery
+            .Select(x => new FormulaId
+            {
+                Id = x.FormulaId,
+                ExternalId = x.ExternalId,
+                Name = x.Name,
+                CreatedByName = x.CreatedByNavigation != null
+                    ? x.CreatedByNavigation.FullName
+                    : null,
+                Note = x.Note ?? string.Empty,
+                Status = x.Status,
+                Price = canViewFormulaPrices ? x.TotalPrice : null,
+                ItemCount = x.FormulaMaterials.Count(m => m.IsActive),
+                LastDateUse = x.UpdatedDate ?? x.CreatedDate
+            })
+            .ToListAsync(cancellationToken);
+    }
+
+    private async Task<IReadOnlyList<FormulaId>> GetFormulaStandardAsync(
+        GetFormulasQuery request,
+        Guid productId,
+        Guid companyId,
+        bool canViewFormulaPrices,
+        int? maxItemsPerGroup,
+        CancellationToken cancellationToken)
+    {
+        var query = _dbContext.ProductStandardFormulas
+            .AsNoTracking()
+            .Where(x =>
+                x.ProductId == productId &&
+                x.ManufacturingFormulaId.HasValue &&
+                x.ManufacturingFormula != null &&
+                x.ManufacturingFormula.IsActive &&
+                x.CompanyId == companyId);
+
+        if (request.CompanyId is { } requestedCompanyId && requestedCompanyId != Guid.Empty)
+        {
+            query = query.Where(x => x.CompanyId == requestedCompanyId);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Status))
+        {
+            query = query.Where(x => x.ManufacturingFormula!.Status == request.Status);
+        }
+
+        if (request.FormulaId is { } formulaId && formulaId != Guid.Empty)
+        {
+            query = query.Where(x => x.ManufacturingFormulaId == formulaId);
+        }
+
+        if (request.NormalizedKeyword is { } keyword)
+        {
+            var pattern = $"%{keyword}%";
+            query = query.Where(x =>
+                EF.Functions.ILike(x.ManufacturingFormula!.ExternalId, pattern) ||
+                EF.Functions.ILike(x.ManufacturingFormula.Note ?? string.Empty, pattern));
+        }
+
+        var rows = await query
+            .Select(x => new
+            {
+                Id = x.ManufacturingFormulaId!.Value,
+                ExternalId = x.ManufacturingFormula!.ExternalId,
+                CreatedByName = x.ManufacturingFormula.CreatedByNavigation != null
+                    ? x.ManufacturingFormula.CreatedByNavigation.FullName
+                    : null,
+                Note = x.ManufacturingFormula.Note,
+                Price = canViewFormulaPrices ? x.ManufacturingFormula.TotalPrice : null,
+                ItemCount = x.ManufacturingFormula.ManufacturingFormulaMaterials.Count(m => m.IsActive),
+                LastDateUse = (DateTime?)x.ValidFrom,
+                IsCurrent = x.ValidTo == null
+            })
+            .ToListAsync(cancellationToken);
+
+        var currentIds = rows
+            .Where(x => x.IsCurrent)
+            .Select(x => x.Id)
+            .ToHashSet();
+        var result = rows
+            .GroupBy(x => x.Id)
+            .Select(x => x
+                .OrderByDescending(f => f.IsCurrent)
+                .ThenByDescending(f => f.LastDateUse)
+                .First())
+            .Select(x => new FormulaId
+            {
+                Id = x.Id,
+                ExternalId = x.ExternalId,
+                CreatedByName = x.CreatedByName,
+                Note = x.Note ?? string.Empty,
+                Price = x.Price,
+                ItemCount = x.ItemCount,
+                LastDateUse = x.LastDateUse
+            })
+            .OrderByDescending(x => currentIds.Contains(x.Id))
+            .ThenByDescending(x => x.LastDateUse);
+
+        return ApplyLimit(result, maxItemsPerGroup);
+    }
+
+    private static IReadOnlyList<FormulaId> ApplyLimit(
+        IEnumerable<FormulaId> formulas,
+        int? maxItemsPerGroup)
+    {
+        return maxItemsPerGroup.HasValue
+            ? formulas.Take(maxItemsPerGroup.Value).ToList()
+            : formulas.ToList();
+    }
+}

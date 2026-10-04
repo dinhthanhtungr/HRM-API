@@ -46,19 +46,6 @@ internal sealed class CreateBomFromSelectedFormulaCommandHandler
             return OperationResult<BomVersionDto>.Fail("Current company or employee is invalid.");
         }
 
-        var existingBom = await _dbContext.BomDefinitions
-            .AsNoTracking()
-            .AnyAsync(
-                x => x.CompanyId == companyId &&
-                     x.ProductId == command.ProductId &&
-                     x.BomType == BomType.Engineering,
-                cancellationToken);
-        if (existingBom)
-        {
-            return OperationResult<BomVersionDto>.Fail(
-                "This Product already has an Engineering BOM. Create a new version instead.");
-        }
-
         var formula = await _dbContext.Formulas
             .AsNoTracking()
             .Where(x =>
@@ -76,6 +63,27 @@ internal sealed class CreateBomFromSelectedFormulaCommandHandler
         {
             return OperationResult<BomVersionDto>.Fail(
                 "No active customer-selected completed Formula was found for this Product.");
+        }
+
+        var existingVersion = await _dbContext.BomVersions
+            .AsNoTracking()
+            .Include(x => x.BomDefinition)
+            .Include(x => x.Items)
+            .Where(x =>
+                x.SourceFormulaId == formula.FormulaId &&
+                x.BomDefinition.CompanyId == companyId &&
+                x.BomDefinition.ProductId == command.ProductId &&
+                x.BomDefinition.BomType == BomType.Engineering &&
+                x.BomDefinition.IsActive)
+            .OrderByDescending(x => x.VersionNo)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (existingVersion is not null)
+        {
+            return OperationResult<BomVersionDto>.Ok(
+                BomMapper.ToWriteResponseDto(
+                    existingVersion.BomDefinition,
+                    existingVersion,
+                    existingVersion.Items));
         }
 
         var sourceItems = await _dbContext.FormulaMaterials
@@ -117,34 +125,57 @@ internal sealed class CreateBomFromSelectedFormulaCommandHandler
         }
 
         var now = DateTime.Now;
-        var definition = new BomDefinition
+        var definition = await _dbContext.BomDefinitions
+            .FirstOrDefaultAsync(
+                x => x.CompanyId == companyId &&
+                     x.ProductId == command.ProductId &&
+                     x.BomType == BomType.Engineering &&
+                     x.IsActive,
+                cancellationToken);
+
+        var versionNo = 1;
+        if (definition is null)
         {
-            BomDefinitionId = Guid.CreateVersion7(),
-            CompanyId = companyId,
-            ProductId = command.ProductId,
-            ExternalId = BuildBomCode(formula),
-            Name = BuildBomName(formula),
-            BomType = BomType.Engineering,
-            Description = $"Initialized from customer-selected Formula {formula.ExternalId}.",
-            IsActive = true,
-            CreatedDate = now,
-            CreatedBy = employeeId
-        };
+            definition = new BomDefinition
+            {
+                BomDefinitionId = Guid.CreateVersion7(),
+                CompanyId = companyId,
+                ProductId = command.ProductId,
+                ExternalId = BuildBomCode(formula),
+                Name = BuildBomName(formula),
+                BomType = BomType.Engineering,
+                Description = $"Initialized from customer-selected Formula {formula.ExternalId}.",
+                IsActive = true,
+                CreatedDate = now,
+                CreatedBy = employeeId
+            };
+            await _dbContext.BomDefinitions.AddAsync(definition, cancellationToken);
+        }
+        else
+        {
+            versionNo = (await _dbContext.BomVersions
+                .Where(x => x.BomDefinitionId == definition.BomDefinitionId)
+                .Select(x => (int?)x.VersionNo)
+                .MaxAsync(cancellationToken) ?? 0) + 1;
+            definition.UpdatedDate = now;
+            definition.UpdatedBy = employeeId;
+        }
+
         var version = new BomVersion
         {
             BomVersionId = Guid.CreateVersion7(),
             BomDefinitionId = definition.BomDefinitionId,
-            VersionNo = 1,
+            VersionNo = versionNo,
             Status = BomVersionStatus.Draft,
             BaseOutputQuantity = 1m,
             OutputUnit = "kg",
+            SourceFormulaId = formula.FormulaId,
             ChangeReason = $"Initialized from customer-selected Formula {formula.ExternalId} ({formula.FormulaId}).",
             CreatedDate = now,
             CreatedBy = employeeId
         };
         var items = BomMapper.CreateVersionItems(version.BomVersionId, resolution.Items);
 
-        await _dbContext.BomDefinitions.AddAsync(definition, cancellationToken);
         await _dbContext.BomVersions.AddAsync(version, cancellationToken);
         await _dbContext.BomVersionItems.AddRangeAsync(items, cancellationToken);
         _dbContext.AuditLogs.Add(BomAudit.Create(

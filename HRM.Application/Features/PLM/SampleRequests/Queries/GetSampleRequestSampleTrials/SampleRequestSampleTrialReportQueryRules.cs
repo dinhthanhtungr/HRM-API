@@ -1,4 +1,5 @@
 using HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestSampleTrials.Models;
+using HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestDailyWork;
 using HRM.Domain.Enums.SampleRequests;
 
 namespace HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestSampleTrials;
@@ -9,6 +10,25 @@ internal static class SampleRequestSampleTrialReportQueryRules
         IQueryable<SampleRequestSampleTrialReportRow> query,
         GetSampleRequestSampleTrialsQuery request)
     {
+        if (request.DailyWorkDate is { } date)
+        {
+            if (request.DailyWorkView == SampleRequestDailyView.All)
+                return query;
+
+            var start = date.ToDateTime(TimeOnly.MinValue);
+            var end = start.AddDays(1);
+            return query.Where(x =>
+                (x.Trial != null && x.Trial.Status == SampleTrialStatus.Failed &&
+                 x.Trial.CustomerReplyDate >= start && x.Trial.CustomerReplyDate < end) ||
+                (x.SampleRequest.Status != "Completed" && x.SampleRequest.Status != "Cancelled" &&
+                 (x.Trial == null || (x.Trial.Status != SampleTrialStatus.Approved &&
+                                      x.Trial.Status != SampleTrialStatus.Cancelled)) &&
+                 ((x.SampleRequest.InfoType == "Quotation" || x.SampleRequest.InfoType == "Báo giá")
+                     ? x.SampleRequest.RealPriceQuoteDate == null &&
+                       x.SampleRequest.ExpectedPriceQuoteDate >= start && x.SampleRequest.ExpectedPriceQuoteDate < end
+                     : x.SampleRequest.ExpectedDeliveryDate >= start && x.SampleRequest.ExpectedDeliveryDate < end)));
+        }
+
         if (request.IncludeTrialHistory)
         {
             return query;
@@ -37,6 +57,11 @@ internal static class SampleRequestSampleTrialReportQueryRules
         IQueryable<SampleRequestSampleTrialReportRow> query,
         GetSampleRequestSampleTrialsQuery request)
     {
+        if (request.DailyWorkDate.HasValue)
+        {
+            return query;
+        }
+
         if (!request.FromDate.HasValue && !request.ToDate.HasValue)
         {
             return query;
@@ -123,6 +148,13 @@ internal static class SampleRequestSampleTrialReportQueryRules
         IQueryable<SampleRequestSampleTrialReportRow> query,
         GetSampleRequestSampleTrialsQuery request)
     {
+        if (request.DailyWorkDate.HasValue)
+        {
+            return query
+                .OrderByDescending(x => x.SampleRequest.CreatedDate)
+                .ThenBy(x => x.SampleRequest.ExternalId);
+        }
+
         if (request.IncludeTrialHistory)
         {
             return query.OrderByDescending(x => x.Trial != null ? x.Trial.TrialNo : (int?)null);

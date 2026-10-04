@@ -5,6 +5,7 @@ using HRM.Application.Commons.Models;
 using HRM.Application.Features.Notifications.Dtos;
 using HRM.Application.Features.Notifications.Services;
 using HRM.Application.Features.InternalMail.Dtos;
+using HRM.Application.Features.InternalMail.Services;
 using HRM.Application.Features.PLM.SampleRequests.Dtos.InternalMail;
 using HRM.Application.Features.PLM.SampleRequests.DataChangeRequests;
 using HRM.Application.Features.PLM.SampleRequests.DirectPatchNotifications;
@@ -34,6 +35,7 @@ internal sealed class SendSampleRequestMessageCommandHandler
 
     private readonly IPLMWriteDbContext _dbContext;
     private readonly ICurrentUser _currentUser;
+    private readonly InternalMailAreaAccessService _areas;
     private readonly INotificationService _notificationService;
     private readonly SampleRequestRecipientResolver _sampleRequestRecipientResolver;
 
@@ -41,10 +43,12 @@ internal sealed class SendSampleRequestMessageCommandHandler
         IPLMWriteDbContext dbContext,
         ICurrentUser currentUser,
         INotificationService notificationService,
-        SampleRequestRecipientResolver sampleRequestRecipientResolver)
+        SampleRequestRecipientResolver sampleRequestRecipientResolver,
+        InternalMailAreaAccessService areas)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
+        _areas = areas;
         _notificationService = notificationService;
         _sampleRequestRecipientResolver = sampleRequestRecipientResolver;
     }
@@ -235,6 +239,16 @@ internal sealed class SendSampleRequestMessageCommandHandler
                 "A silent watcher cannot also be a message recipient.");
         }
 
+        // Business publishers keep the existing root thread; private areas are explicitly addressed by conversation ID.
+        var areaCode = InternalMailAreas.General;
+        if (request.AreaCode is not null && request.AreaCode != areaCode)
+            return OperationResult<SendInternalMessageResultDto>.Fail("Use the area's conversation endpoint to send private messages.");
+        if (!await _areas.Recipients(sampleRequest.CompanyId, InternalMailAreas.General, conversation.InternalConversationId)
+                .ContainsAsync(currentEmployeeId.Value, cancellationToken))
+            return OperationResult<SendInternalMessageResultDto>.Fail("This product is outside your communication scope.");
+        var eligible = await _areas.Recipients(sampleRequest.CompanyId, areaCode, conversation.InternalConversationId).ToHashSetAsync(cancellationToken);
+        targetUserIds.IntersectWith(eligible);
+        silentWatcherIds = silentWatcherIds.Where(eligible.Contains).ToArray();
         var participantIds = targetUserIds
             .Concat(silentWatcherIds)
             .Distinct()
@@ -243,7 +257,7 @@ internal sealed class SendSampleRequestMessageCommandHandler
         var replyToMessageId = request.ReplyToMessageId;
         if (replyToMessageId is { } replyId && replyId != Guid.Empty)
         {
-            var replyExists = await _dbContext.InternalMessages
+            var replyExists = await _areas.Messages(areaCode)
                 .AsNoTracking()
                 .AnyAsync(x =>
                     x.InternalMessageId == replyId &&

@@ -221,7 +221,8 @@ internal sealed class ProductPricingReviewCalculator
             SourceId = source.SourceId,
             SourceCode = source.ExternalId,
             SourceName = source.Name,
-            DisplayName = source.ExternalId + " · " + source.Name,
+            DisplayName = ProductPricingReviewRules.BuildSourceDisplayName(
+                request.SourceType, source.ExternalId, source.Name),
             VersionNumber = versionNumber,
             Status = source.Status,
             IsEligible = isExecutiveEligible,

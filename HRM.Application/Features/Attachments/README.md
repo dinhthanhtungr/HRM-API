@@ -9,6 +9,8 @@ Attachment flow is split into two responsibilities:
 
 Do not return file bytes or base64 content from list, summary, or dashboard APIs. It makes paging heavy and prevents the browser from caching images normally.
 
+Chat attachments also enforce `InternalMailAreaAccessService.Attachments` on generic content and collection-list endpoints. Knowing an attachment/collection ID does not bypass company, active conversation membership, private-area membership, or the RD/color restriction. Deleted-message and orphan InternalMail files are hidden. Upload and deletion of chat files go through the message use case; generic uploads reject chat slots/collections and generic delete operations leave chat files unchanged. Non-chat business attachment behavior is unchanged. See [conversation areas](../InternalMail/AREAS.md).
+
 ## Clean Architecture Layout
 
 Application owns the attachment use case:

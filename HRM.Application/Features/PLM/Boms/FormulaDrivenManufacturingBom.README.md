@@ -10,9 +10,8 @@ POST /api/v1/plm/formula-driven-manufacturing-boms/from-selected-formula/{produc
 
 API không có request body. Người gọi cần `PLM.Bom.Draft.Manage`; backend kiểm tra `CurrentUser.CompanyId` và `EmployeeId`.
 
-Ngoài endpoint manual/retry, các luồng đã xác nhận Formula của Sample Request cũng gọi command này sau khi Formula
-được đặt `Completed` và `IsSelect = true`: customer trial approved, PATCH Sample Request chọn Formula hoàn tất, và
-quyết định chấp thuận Formula change. Các route/payload Formula và Sample Request hiện hữu không thay đổi.
+Endpoint này được giữ cho thao tác manual/retry tương thích. Các luồng xác nhận Formula của Sample Request tạo
+E-BOM Draft qua `POST /api/v1/plm/boms/from-selected-formula/{productId}`; M-BOM chuẩn được tạo từ E-BOM Released.
 
 Process lấy queue qua `GET /api/v1/plm/formula-driven-manufacturing-boms`. Mỗi row trả Formula nguồn,
 M-BOM version tương ứng (nếu đã tạo) và `needsProcessConfiguration`; endpoint chỉ yêu cầu `PLM.Bom.View`.

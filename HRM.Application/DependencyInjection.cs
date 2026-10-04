@@ -45,6 +45,7 @@ public static class DependencyInjection
         services.AddScoped<InternalConversationSampleRequestInfoResolver>();
         services.AddScoped<InternalConversationQuotationInfoResolver>();
         services.AddScoped<IInternalConversationAccessService, InternalConversationAccessService>();
+        services.AddScoped<InternalMailAreaAccessService>();
         services.AddScoped<ISampleRequestAttachmentService, SampleRequestAttachmentService>();
         services.AddScoped<ICustomerVisibilityService, CustomerVisibilityService>();
         services.AddScoped<IWarehouseStockVisibilityService, WarehouseStockVisibilityService>();
@@ -59,6 +60,10 @@ public static class DependencyInjection
         services.AddScoped<CustomerActivationService>();
         services.AddScoped<ISaleGroupRecipientResolver, SaleGroupRecipientResolver>();
         services.AddScoped<QuotationLineBuilder>();
+        services.AddScoped<QuotationHeaderUpdateService>();
+        services.AddScoped<QuotationAtomicSaveService>();
+        services.AddScoped<QuotationLinesReplaceService>();
+        services.AddScoped<QuotationCustomerPriceUpdateService>();
         services.AddScoped<QuotationCurrentPricingResolver>();
         services.AddScoped<ProductPricingRealtimeSourceQueryService>();
         services.AddScoped<ProductPricingSourceQueryService>();
@@ -70,6 +75,7 @@ public static class DependencyInjection
         services.AddScoped<IQuotationPricingExpiryReminderProcessor, QuotationPricingExpiryReminderProcessor>();
         services.AddScoped<ProductPricingSourceValidator>();
         services.AddScoped<ProductPricingReviewReader>();
+        services.AddScoped<SuggestedPricingFormulaQueryService>();
         services.AddScoped<ProductPricingReviewMaterialReader>();
         services.AddScoped<ProductPricingReviewCalculator>();
         services.AddScoped<ProductPricingReviewWriter>();
@@ -92,6 +98,8 @@ public static class DependencyInjection
         services.AddScoped<ICustomerFollowUpTaskDueReminderProcessor, CustomerFollowUpTaskDueReminderProcessor>();
         services.AddScoped<IPLMFieldVisibilityService, PLMFieldVisibilityService>();
         services.AddScoped<ICurrentUserPermissionService, CurrentUserPermissionService>();
+        services.AddScoped<HRM.Application.Features.MRO.Equipment.Services.IEquipmentManagementService,
+            HRM.Application.Features.MRO.Equipment.Services.EquipmentManagementService>();
         services.AddScoped<IPricingVisibilityService, PricingVisibilityService>();
         services.AddScoped<INotificationService, NotificationService>();
         services.AddScoped<IEventLogWriter, EventLogWriter>();
@@ -101,6 +109,7 @@ public static class DependencyInjection
         services.AddScoped<FormulaWriteService>();
         services.AddScoped<FormulaVersionService>();
         services.AddScoped<FormulaPricingReviewService>();
+        services.AddScoped<FormulaListQueryService>();
         services.AddScoped<SaleOrderLeadConversionService>();
         services.AddScoped<SaleOrderCreationService>();
         services.AddScoped<SaleOrderManufacturingService>();

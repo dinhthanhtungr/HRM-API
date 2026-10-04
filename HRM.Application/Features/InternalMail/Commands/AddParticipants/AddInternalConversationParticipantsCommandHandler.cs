@@ -2,6 +2,7 @@ using HRM.Application.Abstractions.Commons.Time;
 using HRM.Application.Abstractions.Persistence.InternalMail;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Models;
+using HRM.Application.Features.InternalMail.Services;
 using HRM.Domain.Entities.InternalMailSchema;
 using HRM.Domain.Enums.InternalMailEnums;
 using MediatR;
@@ -15,15 +16,18 @@ internal sealed class AddInternalConversationParticipantsCommandHandler
     private readonly IInternalMailDbContext _dbContext;
     private readonly ICurrentUser _currentUser;
     private readonly IDateTimeProvider _dateTimeProvider;
+    private readonly InternalMailAreaAccessService _areas;
 
     public AddInternalConversationParticipantsCommandHandler(
         IInternalMailDbContext dbContext,
         ICurrentUser currentUser,
-        IDateTimeProvider dateTimeProvider)
+        IDateTimeProvider dateTimeProvider,
+        InternalMailAreaAccessService areas)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
         _dateTimeProvider = dateTimeProvider;
+        _areas = areas;
     }
 
     public async Task<OperationResult> Handle(
@@ -58,16 +62,19 @@ internal sealed class AddInternalConversationParticipantsCommandHandler
                 x.Conversation.CompanyId == companyId.Value &&
                 x.Conversation.IsActive,
                 cancellationToken);
-        if (!actorIsParticipant)
+        if (!actorIsParticipant || !await _areas.Conversations().AnyAsync(c => c.InternalConversationId == request.ConversationId, cancellationToken))
         {
             return OperationResult.Fail("Only active conversation participants can add participants.");
         }
 
-        var validEmployeeIds = await _dbContext.Employees
-            .AsNoTracking()
-            .Where(x => employeeIds.Contains(x.EmployeeId) && x.CompanyId == companyId.Value && x.IsActive)
-            .Select(x => x.EmployeeId)
+        var validEmployeeIds = await _areas.Recipients(companyId.Value, InternalMailAreas.General, request.ConversationId)
+            .Where(id => employeeIds.Contains(id))
             .ToListAsync(cancellationToken);
+        var privateArea = await _dbContext.InternalConversations.AnyAsync(c => c.InternalConversationId == request.ConversationId &&
+            (c.RelatedType == InternalMailRelatedType.ConversationTechnical || c.RelatedType == InternalMailRelatedType.ConversationPricing), cancellationToken);
+        if (privateArea && !await _dbContext.InternalConversationParticipants.AnyAsync(p => p.InternalConversationId == request.ConversationId &&
+                p.EmployeeId == actorId.Value && p.IsActive && p.Role == InternalConversationParticipantRole.Owner, cancellationToken))
+            return OperationResult.Fail("Only the area owner can invite participants.");
         if (validEmployeeIds.Count != employeeIds.Length)
         {
             return OperationResult.Fail("Some employees do not exist or are inactive.");

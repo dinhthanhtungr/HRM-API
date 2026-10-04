@@ -28,10 +28,14 @@ namespace HRM.Application.Abstractions.Persistence.PLM
         DbSet<BomVersionItem> BomVersionItems { get; }
         DbSet<ManufacturingBomStage> ManufacturingBomStages { get; }
         DbSet<ManufacturingBomStageMachine> ManufacturingBomStageMachines { get; }
+        DbSet<ManufacturingBomStageMachineParameter> ManufacturingBomStageMachineParameters { get; }
         DbSet<ManufacturingBomStageTransition> ManufacturingBomStageTransitions { get; }
         DbSet<ManufacturingProcessTemplate> ManufacturingProcessTemplates { get; }
+        DbSet<ManufacturingProcessTemplateApplicability> ManufacturingProcessTemplateApplicabilities { get; }
         DbSet<ManufacturingProcessTemplateStage> ManufacturingProcessTemplateStages { get; }
         DbSet<ManufacturingProcessTemplateStageMachine> ManufacturingProcessTemplateStageMachines { get; }
+        DbSet<ManufacturingProcessTemplateStageMachineParameter> ManufacturingProcessTemplateStageMachineParameters { get; }
+        DbSet<ManufacturingProcessTemplateStageTransition> ManufacturingProcessTemplateStageTransitions { get; }
         DbSet<ManufacturingWorkInstructionTemplate> ManufacturingWorkInstructionTemplates { get; }
         DbSet<ManufacturingWorkInstructionChecklistItem> ManufacturingWorkInstructionChecklistItems { get; }
         DbSet<ManufacturingBomStageWorkInstruction> ManufacturingBomStageWorkInstructions { get; }

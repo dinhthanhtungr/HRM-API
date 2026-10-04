@@ -25,7 +25,7 @@ public class EquipmentMROConfiguration : IEntityTypeConfiguration<EquipmentMRO>
 
         entity.Property(x => x.GroupType)
               .HasColumnName("grouptype")
-              .HasColumnType("citext");
+              .HasColumnType("text");
 
         entity.Property(x => x.AreaExternalId).HasColumnName("area_externalid").HasColumnType("text");
         entity.Property(x => x.FactoryExternalId).HasColumnName("factory_externalid").HasColumnType("text");
@@ -46,21 +46,21 @@ public class EquipmentMROConfiguration : IEntityTypeConfiguration<EquipmentMRO>
         entity.HasOne(x => x.Area)
               .WithMany(a => a.Equipments)
               .HasForeignKey(x => x.AreaId)
-              .IsRequired(false)
+              .IsRequired()
               .OnDelete(DeleteBehavior.Restrict)
               .HasConstraintName("fk_equipment_area_id");
 
         entity.HasOne(x => x.Factory)
               .WithMany()
               .HasForeignKey(x => x.FactoryId)
-              .IsRequired(false)
+              .IsRequired()
               .OnDelete(DeleteBehavior.Restrict)
               .HasConstraintName("fk_equipment_factory_id");
 
         entity.HasOne(x => x.Part)
               .WithMany()
               .HasForeignKey(x => x.PartId)
-              .IsRequired(false)
+              .IsRequired()
               .OnDelete(DeleteBehavior.Restrict)
               .HasConstraintName("fk_equipment_part_id");
     }

@@ -50,6 +50,10 @@ internal sealed class RemoveInternalConversationParticipantCommandHandler
                 cancellationToken);
         var canManageParticipants = _currentUser.IsInAnyRole(
             ApplicationRoleSets.Notifications.ConversationParticipantManagers);
+        var privateArea = await _dbContext.InternalConversations.AnyAsync(c => c.InternalConversationId == request.ConversationId &&
+            c.CompanyId == companyId.Value && (c.RelatedType == InternalMailRelatedType.ConversationTechnical ||
+            c.RelatedType == InternalMailRelatedType.ConversationPricing), cancellationToken);
+        if (privateArea) canManageParticipants = false;
         if (!actorIsOwner && !canManageParticipants)
         {
             return OperationResult.Fail(

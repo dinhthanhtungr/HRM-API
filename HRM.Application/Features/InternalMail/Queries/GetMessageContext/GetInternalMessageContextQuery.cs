@@ -9,6 +9,7 @@ namespace HRM.Application.Features.InternalMail.Queries.GetMessageContext;
 public sealed class GetInternalMessageContextQuery : IRequest<InternalMessageContextDto?>
 {
     public Guid ConversationId { get; init; }
+    public string? AreaCode { get; init; }
     public Guid MessageId { get; init; }
     public int Before { get; init; } = 10;
     public int After { get; init; } = 10;

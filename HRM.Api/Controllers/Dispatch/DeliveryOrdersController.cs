@@ -11,6 +11,7 @@ using HRM.Application.Features.Dispatch.DeliveryOrders.Queries.GetDeliveryOrders
 using HRM.Application.Features.Dispatch.DeliveryOrders.Queries.GetSelectableDeliveryLines;
 using HRM.Application.Features.Dispatch.DeliveryOrders.Queries.GetAvailableLots;
 using MediatR;
+using HRM.Application.Features.Dispatch.DeliveryOrders.Queries.ExportDeliveryOrder;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using HRM.Domain.Security.Rules.Roles;
@@ -30,6 +31,20 @@ public sealed class DeliveryOrdersController : ControllerBase
     }
 
     // =================================================== Queries ===================================================
+
+    [HttpGet("delivery-orders/{id:guid}/pdf")]
+    public async Task<IActionResult> ExportPdf(Guid id, CancellationToken cancellationToken)
+    {
+        var file = await _sender.Send(new ExportDeliveryOrderQuery(id), cancellationToken);
+        return file is null ? NotFound() : File(file.Content, file.ContentType, file.FileName);
+    }
+
+    [HttpGet("delivery-orders/{id:guid}/excel")]
+    public async Task<IActionResult> ExportExcel(Guid id, CancellationToken cancellationToken)
+    {
+        var file = await _sender.Send(new ExportDeliveryOrderQuery(id, Excel: true), cancellationToken);
+        return file is null ? NotFound() : File(file.Content, file.ContentType, file.FileName);
+    }
 
     [HttpGet("delivery-orders")]
     public async Task<IActionResult> GetDeliveryOrders(

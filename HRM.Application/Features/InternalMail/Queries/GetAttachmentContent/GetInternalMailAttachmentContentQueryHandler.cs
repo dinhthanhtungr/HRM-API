@@ -4,8 +4,8 @@ using HRM.Application.Abstractions.Security;
 using HRM.Application.Features.Attachments.Dtos;
 using HRM.Application.Features.InternalMail.Dtos;
 using HRM.Application.Features.InternalMail.Services;
-using HRM.Domain.Enums.InternalMailEnums;
 using MediatR;
+using HRM.Domain.Enums.InternalMailEnums;
 using Microsoft.EntityFrameworkCore;
 
 namespace HRM.Application.Features.InternalMail.Queries.GetAttachmentContent;
@@ -15,6 +15,7 @@ internal sealed class GetInternalMailAttachmentContentQueryHandler
 {
     private readonly IInternalMailDbContext _dbContext;
     private readonly ICurrentUser _currentUser;
+    private readonly InternalMailAreaAccessService _areas;
     private readonly IInternalConversationAccessService _conversationAccessService;
     private readonly IFileStorage _fileStorage;
     private readonly IImageThumbnailGenerator _thumbnailGenerator;
@@ -24,10 +25,12 @@ internal sealed class GetInternalMailAttachmentContentQueryHandler
         ICurrentUser currentUser,
         IInternalConversationAccessService conversationAccessService,
         IFileStorage fileStorage,
-        IImageThumbnailGenerator thumbnailGenerator)
+        IImageThumbnailGenerator thumbnailGenerator,
+        InternalMailAreaAccessService areas)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
+        _areas = areas;
         _conversationAccessService = conversationAccessService;
         _fileStorage = fileStorage;
         _thumbnailGenerator = thumbnailGenerator;
@@ -60,8 +63,10 @@ internal sealed class GetInternalMailAttachmentContentQueryHandler
             return null;
         }
 
+        var visibleIds = _areas.Messages().Select(m => m.InternalMessageId);
         var attachment = await _dbContext.InternalMessageAttachments
             .AsNoTracking()
+            .Where(x => visibleIds.Contains(x.InternalMessageId))
             .Where(x =>
                 x.AttachmentId == request.AttachmentId &&
                 x.Attachment.IsActive &&

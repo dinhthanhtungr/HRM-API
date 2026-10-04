@@ -23,6 +23,21 @@ public sealed class ManufacturingBomStageMachineDto
     public bool IsDefault { get; init; }
     public int SequenceNo { get; init; }
     public string? Note { get; init; }
+    public IReadOnlyList<ManufacturingBomStageMachineParameterDto> Parameters { get; init; } = [];
+}
+
+public sealed class ManufacturingBomStageMachineParameterDto
+{
+    public Guid ManufacturingBomStageMachineParameterId { get; init; }
+    public string ParameterCode { get; init; } = string.Empty;
+    public string ParameterName { get; init; } = string.Empty;
+    public decimal? TargetValue { get; init; }
+    public decimal? MinValue { get; init; }
+    public decimal? MaxValue { get; init; }
+    public string Unit { get; init; } = string.Empty;
+    public bool IsRequired { get; init; }
+    public int SequenceNo { get; init; }
+    public string? Note { get; init; }
 }
 
 public sealed class ManufacturingBomStageTransitionDto

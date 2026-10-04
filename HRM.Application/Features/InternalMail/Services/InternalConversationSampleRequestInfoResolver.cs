@@ -44,6 +44,19 @@ internal sealed class InternalConversationSampleRequestInfoResolver
                 SampleRequestId = sampleRequest.SampleRequestId,
                 RequestCode = sampleRequest.ExternalId,
                 ColourCode = sampleRequest.Product.ColourCode,
+                ProductCategory = sampleRequest.Product.CompanyId == companyId &&
+                                  sampleRequest.Product.IsActive &&
+                                  sampleRequest.Product.Category != null &&
+                                  sampleRequest.Product.Category.CompanyId == companyId &&
+                                  sampleRequest.Product.Category.IsActive == true &&
+                                  sampleRequest.Product.Category.Types == "Product"
+                    ? new ConversationProductCategoryDto
+                    {
+                        CategoryId = sampleRequest.Product.Category.CategoryId,
+                        Code = sampleRequest.Product.Category.ExternalId,
+                        Name = sampleRequest.Product.Category.Name
+                    }
+                    : null,
                 CustomerId = sampleRequest.CustomerId,
                 CustomerCode = sampleRequest.Customer.ExternalId,
                 CustomerName = sampleRequest.Customer.CustomerName,

@@ -1,5 +1,7 @@
 using System.Text.Json;
 using HRM.Application.Features.InternalMail.Commands.AddParticipants;
+using HRM.Application.Features.InternalMail.Commands.CreateArea;
+using HRM.Application.Features.InternalMail.Commands.ForwardMessage;
 using HRM.Application.Features.InternalMail.Commands.CreateConversation;
 using HRM.Application.Features.InternalMail.Commands.DeleteMessage;
 using HRM.Application.Features.InternalMail.Commands.MarkConversationRead;
@@ -64,14 +66,24 @@ public sealed class InternalMailController : ControllerBase
     [HttpGet("conversations/{conversationId:guid}")]
     public async Task<IActionResult> GetConversationDetail(
         Guid conversationId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        [FromQuery] string? areaCode = null)
     {
         var result = await _sender.Send(new GetInternalConversationDetailQuery
         {
+            AreaCode = areaCode,
             ConversationId = conversationId
         }, cancellationToken);
 
         return result is null ? NotFound() : Ok(result);
+    }
+
+    [HttpPost("conversations/{conversationId:guid}/areas")]
+    public async Task<IActionResult> CreateArea(Guid conversationId, [FromBody] CreateInternalConversationAreaCommand command, CancellationToken cancellationToken)
+    {
+        command.ConversationId = conversationId;
+        var result = await _sender.Send(command, cancellationToken);
+        return result.Success ? Ok(result) : BadRequest(result);
     }
 
     [HttpGet("conversations/{conversationId:guid}/messages")]
@@ -79,10 +91,12 @@ public sealed class InternalMailController : ControllerBase
         Guid conversationId,
         [FromQuery] int pageNumber = 1,
         [FromQuery] int pageSize = 30,
+        [FromQuery] string? areaCode = null,
         CancellationToken cancellationToken = default)
     {
         var result = await _sender.Send(new GetInternalMessagesQuery
         {
+            AreaCode = areaCode,
             ConversationId = conversationId,
             PageNumber = pageNumber,
             PageSize = pageSize
@@ -99,6 +113,7 @@ public sealed class InternalMailController : ControllerBase
     {
         var result = await _sender.Send(new GetInternalConversationAttachmentsQuery
         {
+            AreaCode = query.AreaCode,
             ConversationId = conversationId,
             Kind = query.Kind,
             PageNumber = query.PageNumber,
@@ -116,6 +131,7 @@ public sealed class InternalMailController : ControllerBase
     {
         var result = await _sender.Send(new SearchInternalMessagesQuery
         {
+            AreaCode = query.AreaCode,
             ConversationId = conversationId,
             Q = query.Q,
             Search = query.Search,
@@ -133,10 +149,12 @@ public sealed class InternalMailController : ControllerBase
         Guid messageId,
         [FromQuery] int before = 10,
         [FromQuery] int after = 10,
+        [FromQuery] string? areaCode = null,
         CancellationToken cancellationToken = default)
     {
         var result = await _sender.Send(new GetInternalMessageContextQuery
         {
+            AreaCode = areaCode,
             ConversationId = conversationId,
             MessageId = messageId,
             Before = before,
@@ -198,6 +216,7 @@ public sealed class InternalMailController : ControllerBase
             {
                 ConversationId = conversationId,
                 Body = form["body"].FirstOrDefault() ?? string.Empty,
+                AreaCode = form["areaCode"].FirstOrDefault(),
                 ReplyToMessageId = replyToMessageId == Guid.Empty ? null : replyToMessageId,
                 IsUrgent = isUrgent,
                 Attachments = uploadFiles
@@ -303,6 +322,14 @@ public sealed class InternalMailController : ControllerBase
         return result.Success ? Ok(result) : BadRequest(result);
     }
 
+    [HttpPost("messages/{messageId:guid}/forward")]
+    public async Task<IActionResult> ForwardMessage(Guid messageId, [FromBody] ForwardInternalMessageCommand command, CancellationToken cancellationToken)
+    {
+        command.MessageId = messageId;
+        var result = await _sender.Send(command, cancellationToken);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
     [HttpDelete("messages/{messageId:guid}")]
     public async Task<IActionResult> DeleteMessage(Guid messageId, CancellationToken cancellationToken)
     {
@@ -315,11 +342,15 @@ public sealed class InternalMailController : ControllerBase
     }
 
     [HttpPost("conversations/{conversationId:guid}/read")]
-    public async Task<IActionResult> MarkRead(Guid conversationId, CancellationToken cancellationToken)
+    public async Task<IActionResult> MarkRead(
+        Guid conversationId, CancellationToken cancellationToken, [FromQuery] Guid? throughMessageId = null,
+        [FromQuery] string? areaCode = null)
     {
         var result = await _sender.Send(new MarkInternalConversationReadCommand
         {
-            ConversationId = conversationId
+            AreaCode = areaCode,
+            ConversationId = conversationId,
+            ThroughMessageId = throughMessageId
         }, cancellationToken);
 
         return result.Success ? NoContent() : BadRequest(result);
@@ -337,10 +368,12 @@ public sealed class InternalMailController : ControllerBase
     }
 
     [HttpGet("conversations/{conversationId:guid}/participants")]
-    public async Task<IActionResult> GetParticipants(Guid conversationId, CancellationToken cancellationToken)
+    public async Task<IActionResult> GetParticipants(Guid conversationId, CancellationToken cancellationToken,
+        [FromQuery] string? areaCode = null)
     {
         var result = await _sender.Send(new GetInternalConversationDetailQuery
         {
+            AreaCode = areaCode,
             ConversationId = conversationId
         }, cancellationToken);
 

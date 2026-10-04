@@ -1,5 +1,7 @@
 # Authorization Organization
 
+Private conversation areas use explicit active participants, not department roles or new permission claims. See [area contract](../../Features/InternalMail/AREAS.md). Company, parent activity and RD/color scopes still apply. Inviting a person grants that area's chat history, not access to other areas or pricing approval in business modules.
+
 This folder is the backend source of truth for role names, role groups, policy names, and field visibility rules.
 
 ## Concepts
@@ -40,7 +42,8 @@ field visibility and mutation authorization are separate checks; satisfying one 
 
 Pricing capabilities distinguish approved selling price, system-calculated price, material/manufacturing cost,
 margin, history, management and approval. `SaleUser` is intentionally allowed to view only the approved selling
-price capability. Product Pricing Workbench list/detail, Product Pricing Options, Quotation Pricing Workspace and
+price capability. Trong module giá, `ACCUser` có cùng các capability pricing với `President`, bao gồm workbench,
+cost, margin, history, quản lý và duyệt giá. Product Pricing Workbench list/detail, Product Pricing Options, Quotation Pricing Workspace and
 Pricing Queue use `IPricingVisibilityService`. Other pricing endpoints must be migrated explicitly; defining a
 capability alone does not protect a response.
 
@@ -84,7 +87,8 @@ Permission changes affect newly issued access tokens after login/refresh; they d
   - Also allowed to view restricted product technical fields in Sample Request audit history.
 - Formula selectors:
   - `Admin`, `Developer`, `President`, `SaleUser`, `Leader`
-- Sample production order viewers reuse `ApplicationRoleSets.PLM.FormulaMaterialViewers`.
+- Formula material viewers gồm `Admin`, `Developer`, `President`, `LabUser` và
+  `SeePriceUser`; nhóm này cũng được dùng cho quyền xem sample production order.
 - Sample production order managers reuse `ApplicationRoleSets.PLM.ProductTechnicalEditors`.
 
 ## Employee Administration Defaults

@@ -3,9 +3,11 @@ using HRM.Domain.Entities.CompanySchema;
 using HRM.Domain.Entities.CustomerSchema;
 using HRM.Domain.Entities.HrSchema;
 using HRM.Domain.Entities.InternalMailSchema;
+using HRM.Domain.Entities.Notifications;
 using HRM.Domain.Entities.SampleRequestSchema;
 using HRM.Domain.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace HRM.Application.Abstractions.Persistence.InternalMail;
 
@@ -20,6 +22,7 @@ public interface IInternalMailDbContext
     DbSet<InternalMessageAttachment> InternalMessageAttachments { get; }
     DbSet<InternalMessageReference> InternalMessageReferences { get; }
     DbSet<InternalMessageReadState> InternalMessageReadStates { get; }
+    DbSet<NotificationUserState> NotificationUserStates { get; }
     DbSet<AttachmentCollection> AttachmentCollections { get; }
     DbSet<AttachmentModel> AttachmentModels { get; }
     DbSet<SampleRequest> SampleRequests { get; }
@@ -30,6 +33,14 @@ public interface IInternalMailDbContext
     DbSet<ApplicationUser> Users { get; }
     DbSet<ApplicationRole> Roles { get; }
     DbSet<ApplicationUserRole> UserRoles { get; }
+    IQueryable<InternalMailNotificationLink> QueryInternalMailNotificationLinks(Guid companyId);
+    Task LockInternalConversationAsync(Guid companyId, Guid conversationId, CancellationToken cancellationToken);
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
+    Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default);
+    IQueryable<InternalConversationNotificationUnreadCount> QueryInternalConversationNotificationUnreadCounts(
+        Guid companyId, Guid employeeId);
+    Task<int> UpsertInternalMessageReadStatesAsync(
+        Guid companyId, Guid employeeId, Guid conversationId, Guid[] messageIds,
+        DateTime readAt, CancellationToken cancellationToken = default);
 }

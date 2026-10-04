@@ -1,5 +1,98 @@
 # Báo giá CRM
 
+## Lưu form trong một transaction
+
+`PUT /api/v1/crm/quotations/{quotationId}/save` dành cho nút Lưu trên form sửa báo giá.
+FE validate toàn bộ form rồi gửi một mutation, thay cho PATCH header rồi PUT lines/customer-price-tiers.
+Tạo báo giá mới vẫn dùng `POST /api/v1/crm/quotations`. Các API cũ tiếp tục hoạt động riêng lẻ;
+gọi nhiều API cũ không có bảo đảm transaction chung.
+
+API mới giữ `[Authorize]`, company scope và customer visibility như các API cập nhật hiện hành.
+Chỉ báo giá active ở Draft/PendingApproval/Approved được lưu. Không thêm hoặc đổi capability/role mapping.
+Header, terms và lines/tiers được stage qua service dùng chung với API cũ; chỉ gọi SaveChanges một lần
+trong transaction, bao gồm đồng bộ tiêu đề conversation nếu thay dòng. Validation hoặc concurrency thất bại
+thì rollback và bỏ tracked changes. Không phát notification hay đổi trạng thái báo giá.
+
+Request sửa header và thay dòng ở Draft:
+
+```json
+{
+  "expectedUpdatedDate": "2026-10-04T09:00:00.123456",
+  "header": {
+    "note": "Giao theo lịch đã thống nhất",
+    "terms": []
+  },
+  "clearFields": ["contactPhone"],
+  "lines": [
+    {
+      "productId": "22222222-2222-4222-8222-222222222222",
+      "sampleRequestId": null,
+      "productPricingVersionId": null,
+      "priceMode": 50,
+      "quantity": 100,
+      "unit": "Kg",
+      "unitPrice": 100000,
+      "discountPercent": 0,
+      "isActive": true,
+      "priceTiers": [
+        {
+          "quantityRangeLabel": "Tất cả số lượng",
+          "minQuantity": null,
+          "maxQuantity": null,
+          "unitPrice": 100000,
+          "commissionAmount": 0,
+          "sortOrder": 0,
+          "isActive": true
+        }
+      ]
+    }
+  ]
+}
+```
+
+- `expectedUpdatedDate` bắt buộc ở top level, lấy nguyên token từ detail/lần lưu thành công.
+  Không gửi `header.expectedUpdatedDate`. Token sai trả HTTP 409; FE giữ draft và cho đối chiếu/tải lại.
+- `header` không gửi hoặc `null`: giữ nguyên header/terms. Header dùng field của `UpdateQuotationRequest`;
+  field không gửi/`null` giữ nguyên theo PATCH hiện hành; chuỗi trắng của field nullable bị từ chối.
+  FE cần xóa field thì dùng `clearFields`, không dựa vào `null`.
+- `header.terms` không gửi/`null`: giữ điều khoản. `[]`: ngừng áp dụng toàn bộ điều khoản tùy chỉnh.
+- `clearFields` mặc định `[]`, không được `null`; whitelist: `contactId`, `contactName`, `contactPhone`,
+  `customerAddressSnapshot`, `validUntil`, `paymentTerms`, `deliveryTerms`, `note`.
+  Không vừa gửi value cho field vừa liệt kê field đó trong clearFields. Xóa contactId không tự xóa
+  contactName/contactPhone; muốn xóa cả snapshot thì liệt kê cả ba field.
+- `lines` không gửi/`null`: giữ dòng. Gửi danh sách: thay toàn bộ dòng, chỉ Draft. `[]` xóa toàn bộ dòng;
+  báo giá không có dòng active vẫn không được yêu cầu giá/đánh dấu đã gửi.
+- `customerPriceLines` không gửi/`null`: giữ mức giá khách. Chỉ PendingApproval/Approved được gửi
+  danh sách này; phải có ít nhất một dòng. Không gửi đồng thời `lines` và `customerPriceLines`.
+  Mỗi phần tử theo `UpdateQuotationCustomerPriceTierLineRequest`:
+  `{ "quotationLineId": "<id dòng đã lưu>", "note": null, "priceTiers": [...] }`.
+  Chỉ cập nhật dòng được liệt kê; `note: null`/không gửi xóa note theo contract tier-only hiện hành.
+  Không cập nhật product, sample, version, mode, quantity hoặc unit ở nhánh này.
+- PendingApproval/Approved cho echo customer/currency/rate/quotationDate không đổi, nhưng không cho
+  thay các field đó. API lưu cũ không bị thay đổi rule do endpoint mới.
+- Giá thủ công không yêu cầu policy Published. Mẫu nội bộ VietAus cùng công ty tiếp tục được dùng chung.
+  Đổi tiền tệ khi đã có pricing snapshot và mẫu riêng không tương thích khách mới vẫn bị chặn.
+  Việc lưu nguyên tử không thay cách tính giá/tổng tiền hiện hành.
+
+Response HTTP 200 trả trực tiếp totals snapshot đã lưu và token mới:
+
+```json
+{
+  "subTotal": 10000000,
+  "discountAmount": 0,
+  "taxPercent": 0,
+  "taxAmount": 0,
+  "totalAmount": 10000000,
+  "updatedDate": "2026-10-04T09:01:00.123456"
+}
+```
+
+Response không trả EF entity, cost hoặc margin. Nó không phải full detail: FE GET detail để hydrate baseline
+sau khi lưu thành công; nếu GET thất bại thì báo lưu đã thành công nhưng chưa tải được dữ liệu mới,
+không gửi lại mutation mù. HTTP 400 trả OperationResult với `success: false`, `message` theo validation
+hiện hành; HTTP 409 dùng cùng envelope cho concurrency. Lỗi mạng/timeout không xác định được server đã
+commit hay chưa: FE kiểm tra lại detail trước khi retry. Endpoint không cung cấp idempotency key.
+
 ## 1. Module này dùng để làm gì?
 
 Module Quotation quản lý một báo giá từ lúc sale tạo bản nháp đến khi ghi nhận đã gửi cho khách hàng.
@@ -303,7 +396,10 @@ Backend kiểm tra khoảng khối lượng rồi lưu đúng các đơn giá Sa
 `QuotationLineRequest.UnitPrice` khi dùng giá thủ công được cho phép. Tier khớp quantity không quyết định giá line.
 Việc sửa giá trong báo giá không cập nhật ngược `ProductPricingVersion`.
 
-`sampleRequestId` là tùy chọn nhưng nếu có phải cùng company, customer và product.
+`sampleRequestId` là tùy chọn (`null` nghĩa là dòng không liên kết yêu cầu mẫu). Nếu có, mẫu phải còn active,
+cùng company và đúng product của dòng; customer của mẫu phải là khách đang báo giá **hoặc khách nội bộ
+`KH_VIETAUS` cùng company**. Mẫu nội bộ được dùng để báo giá cho mọi khách trong công ty; mẫu của khách thường
+khác vẫn bị từ chối. Quy tắc này áp dụng khi tạo, cập nhật và thay thế dòng báo giá.
 
 ### 5.4. Ghi giá mới sau khi xin giá
 
@@ -896,6 +992,9 @@ GET /api/v1/crm/quotations/{quotationId}/pdf?download=true
 - Áp dụng cùng company/customer visibility với API xem chi tiết để chống IDOR.
 - PDF chỉ dùng snapshot sản phẩm, price tiers, commission và totals đang lưu trên Quotation;
   không tải lại Formula hoặc giá NVL realtime.
+- Header nhóm giá hiển thị đơn vị sản phẩm và currency snapshot của Quotation theo dạng
+  `Đơn giá/Unit price (KG/VND)` hoặc `Đơn giá/Unit price (KG/USD)`. Nếu các dòng dùng nhiều đơn vị
+  khác nhau thì PDF không ghép một nhãn đơn vị chung để tránh diễn giải sai.
 - Giá tier in cho khách là `unitPrice + commissionAmount`; API vẫn trả riêng hai field để FE chỉnh và hiển thị.
   Khi tổng hai field bằng `0`, PDF để trống ô giá để không thể hiện nhầm là giá bán 0 đồng.
 - Báo giá `Draft` có watermark nền `BẢN NHÁP / DRAFT` và dòng nhắc tài liệu nội bộ; khi trạng thái là `Sent`
@@ -974,10 +1073,11 @@ API quản lý bảng giá:
   `MaterialCostChanged` hoặc `ProductionMaterialCostChanged`;
   mặc định là `All`.
   `NeedsPricing` trả Product có ít nhất một nguồn cần BGD xử lý: Sale vừa gửi yêu cầu báo giá mới hơn lần duyệt
-  giá gần nhất, Lab xác nhận Formula mới sau lần duyệt, giá đã đến hạn rà soát, hoặc chi phí NVL realtime của
+  giá gần nhất, giá đã đến hạn rà soát, hoặc chi phí NVL realtime của
   source Approved tăng ít nhất `MaterialCostChangeThresholdPercent`. Mỗi item trả mảng `pricingAttentionSources`
-  gồm `SaleQuotationRequested`, `LabFormulaConfirmed`, `ReviewExpired`, `MaterialCostIncreased`; một Product có thể
-  đồng thời có nhiều giá trị. Request của Sale bị loại khi đã thu hồi hoặc khi có version Approved mới hơn.
+  gồm `SaleQuotationRequested`, `ReviewExpired`, `MaterialCostIncreased`; một Product có thể đồng thời có nhiều
+  giá trị. Tạm thời `LabFormulaConfirmed` (công thức cần cập nhật) không tự đưa Product vào view này. Request của
+  Sale bị loại khi đã thu hồi hoặc khi có version Approved mới hơn.
   Vì vậy việc duyệt giá mới hoặc xác nhận giữ giá hiện tại sẽ tự đóng nguyên nhân `SaleQuotationRequested`.
   `MaterialCostChanged` trả Product mà chi phí NVL realtime của chính Formula/VA đã lưu trên bản giá
   `Approved` mới nhất tăng so với `MaterialCostSnapshot` của bản đó; view này không áp dụng ngưỡng 5%, nên mọi
@@ -1100,7 +1200,14 @@ FE không được hard-code hay tự thay đổi min/max/inclusive/sortOrder. N
 khẩn, `priceTiers` được khởi tạo từ các template với giá `0`, FE gửi
   `priceMode = 50` (`ManualAuthorized`). Note dòng là tùy chọn; nếu có, FE nên dùng để ghi căn cứ/người cho phép.
 Giá này chỉ được snapshot vào báo giá, không tạo `ProductPricingVersion` và không gắn giả
-vào Formula. Backend từ chối nếu các khoảng gửi lên không khớp policy.
+vào Formula. Lưu giá thủ công (`ManualAuthorized`) không yêu cầu policy Published và không
+đối chiếu khoảng khối lượng với policy. Policy cung cấp template gợi ý; request vẫn phải
+đáp ứng validation price tiers và company/customer scope hiện hành. Giá thủ công không được
+tham chiếu `ProductPricingVersionId`.
+
+Khi đổi khách hàng trên báo giá, dòng tham chiếu mẫu nội bộ VietAus (`KH_VIETAUS`)
+được giữ lại nếu mẫu và khách nội bộ cùng công ty hiện tại. Dòng tham chiếu mẫu riêng
+của khách hàng khác hoặc mẫu khác công ty vẫn chặn thao tác đổi khách hàng.
 
 ### Giá chuẩn quy đổi theo NVL realtime
 
@@ -1111,9 +1218,10 @@ Ba response `GET /products/{productId}/pricing`, `GET /{quotationId}` tại `lin
 {
   "currency": "VND",
   "approvedStandardPrice": 120000,
-  "realtimeAdjustedStandardPrice": 132000,
-  "standardPriceDifference": 12000,
-  "standardPriceDifferencePercent": 10,
+  "realtimeAdjustedStandardPrice": 130000,
+  "standardPriceDifference": 10000,
+  "standardPriceDifferencePercent": 8.3333,
+  "realtimeAdjustedPriceFormula": "(88000 + 16000) / (1 - 0.2) = 130000 VND",
   "approvedMaterialCostSnapshot": 80000,
   "realtimeMaterialCost": 88000,
   "materialCostDifference": 8000,
@@ -1126,13 +1234,20 @@ Ba response `GET /products/{productId}/pricing`, `GET /{quotationId}` tại `lin
 }
 ```
 
-Backend tính `realtimeAdjustedStandardPrice = approvedStandardPrice * realtimeMaterialCost /
-approvedMaterialCostSnapshot`, sau đó làm tròn theo rule giá tính của hệ thống. Cách tính này giữ
-nguyên tỷ lệ Giá chuẩn/NVL mà President đã duyệt; nó không chạy lại pricing policy và không
-tự động persist giá mới. `movementStatus` là `Increased`, `Decreased`, `Unchanged` hoặc `Unknown`.
+Backend lấy `manufacturingCost` và `profitMarginRate` đã lưu trên bản `Approved`, rồi tính
+`realtimeAdjustedStandardPrice = (realtimeMaterialCost + approvedManufacturingCost) /
+(1 - profitMarginRate / 100)`, sau đó làm tròn theo rule giá tính của hệ thống. Do đó giá tham chiếu
+giữ nguyên chi phí sản xuất và biên lợi nhuận trên giá bán đã duyệt; chỉ phần NVL được cập nhật realtime
+từ đúng Formula/VA. Đây là read-model, không tự động persist giá mới.
+`movementStatus` là `Increased`, `Decreased`, `Unchanged` hoặc `Unknown`.
+`realtimeAdjustedPriceFormula` là chuỗi chỉ dùng để hiển thị tooltip, giải thích trực tiếp các đầu vào
+và kết quả của giá realtime; FE không parse chuỗi này để tính toán. Field là `null` khi user không đồng thời
+có quyền xem chi phí NVL, chi phí sản xuất và margin. Trong chuỗi display, margin được đổi sẵn từ phần trăm
+sang hệ số thập phân, ví dụ `1,2838%` được hiển thị là `0.012838`.
 `isIncreaseWarning` chỉ true khi NVL tăng ít nhất `MaterialCostChangeThresholdPercent`.
 
-Nếu thiếu snapshot, snapshot không dương hoặc thiếu giá realtime, object vẫn giữ
+Nếu thiếu snapshot NVL/chi phí sản xuất, không suy được margin hợp lệ từ bản Approved, hoặc thiếu giá realtime,
+object vẫn giữ
 `approvedStandardPrice` nhưng các giá trị tính toán là `null`, `movementStatus = Unknown`,
 `isMaterialCostComplete = false` và không cảnh báo. Nếu chưa có version Approved có giá dương,
 toàn bộ `realtimePriceComparison` là `null`.
@@ -1803,7 +1918,7 @@ Visibility theo capability từ `IPricingVisibilityService`:
   mã/tên khách hàng, số chứng từ liên quan và ngày liên quan gần nhất; `healthSummary` luôn là `null`.
 - President/Developer thấy toàn bộ product active cùng company và nhận thêm `healthSummary`, material completeness,
   cost, margin, material/supplier details và history.
-- Quotation Pricing Workspace và Pricing Queue yêu cầu capability `pricing.manage`; mặc định chỉ President/Developer
+- Quotation Pricing Workspace và Pricing Queue yêu cầu capability `pricing.manage`; mặc định President/Developer/ACCUser
   có quyền này.
 - Quotation detail giữ nguyên snapshot nếu đã có; line chưa có snapshot được bổ sung tier gợi ý realtime chỉ để
   hiển thị/nhập liệu với `isSnapshot = false`. PDF tiếp tục chỉ đọc snapshot đã lưu.

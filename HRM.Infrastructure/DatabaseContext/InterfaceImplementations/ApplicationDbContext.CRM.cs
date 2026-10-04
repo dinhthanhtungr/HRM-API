@@ -6,6 +6,10 @@ namespace HRM.Infrastructure.DatabaseContext.ApplicationDbs
         ICRMReadDbContext,
         ICRMWriteDbContext
     {
+        public Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginQuotationTransactionAsync(
+            CancellationToken cancellationToken = default)
+            => Database.BeginTransactionAsync(cancellationToken);
+
         public void ClearTrackedChanges()
         {
             ChangeTracker.Clear();

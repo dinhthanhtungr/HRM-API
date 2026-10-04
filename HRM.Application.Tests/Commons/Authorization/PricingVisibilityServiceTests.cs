@@ -12,7 +12,7 @@ public sealed class PricingVisibilityServiceTests
     [InlineData(ApplicationRoles.Developer, true, true, true, true, true)]
     [InlineData(ApplicationRoles.Admin, true, true, true, true, false)]
     [InlineData(ApplicationRoles.Sales.PriceView, true, true, false, false, false)]
-    [InlineData(ApplicationRoles.Accounting.ACCUser, true, true, true, false, false)]
+    [InlineData(ApplicationRoles.Accounting.ACCUser, true, true, true, true, true)]
     [InlineData(ApplicationRoles.Production.PLPUUser, false, false, true, false, false)]
     [InlineData(ApplicationRoles.Lab.LabUser, false, false, false, false, false)]
     [InlineData(ApplicationRoles.SeePrice.SeePriceUser, true, true, true, false, false)]
@@ -31,7 +31,8 @@ public sealed class PricingVisibilityServiceTests
         var access = service.GetAccess();
 
         Assert.Equal(
-            role is ApplicationRoles.Sales.SaleUser or ApplicationRoles.President or ApplicationRoles.Developer,
+            role is ApplicationRoles.Sales.SaleUser or ApplicationRoles.President or
+                ApplicationRoles.Developer or ApplicationRoles.Accounting.ACCUser,
             access.CanViewWorkbench);
         Assert.Equal(canViewApprovedPrice, access.CanViewApprovedSellingPrice);
         Assert.Equal(canViewSystemPrice, access.CanViewSystemCalculatedPrice);

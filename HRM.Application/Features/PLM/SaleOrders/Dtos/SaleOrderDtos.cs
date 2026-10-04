@@ -143,6 +143,7 @@ public sealed class SaleOrderDetailDto : SaleOrderListItemDto
     public decimal? Vat { get; init; }
     public string? Currency { get; init; }
     public decimal? ExchangeRate { get; init; }
+    public OrderType OrderType { get; init; }
     public DateTime? PaymentDate { get; init; }
     public string? Note { get; init; }
     public string? ShippingMethod { get; init; }

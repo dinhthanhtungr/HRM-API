@@ -44,6 +44,8 @@ internal sealed class ApprovedProductPricingTierReader
                 ApprovedAt = x.ApprovedAt,
                 StandardSellingPrice = x.StandardSellingPrice,
                 MaterialCostSnapshot = x.MaterialCostSnapshot,
+                ManufacturingCost = x.ManufacturingCost,
+                ProfitMarginRate = x.ProfitMarginRate,
                 PublisherNote = x.PublisherNote,
                 PriceDate = x.ApprovedAt ?? x.UpdatedDate ?? x.CreatedDate,
                 SourceType = x.SourceManufacturingFormulaId.HasValue
@@ -121,7 +123,9 @@ internal sealed class ApprovedProductPricingTierReader
                 x.SourceName,
                 tiersByVersion.GetValueOrDefault(x.ProductPricingVersionId) ?? [],
                 x.PublisherNote,
-                x.MaterialCostSnapshot));
+                x.MaterialCostSnapshot,
+                x.ManufacturingCost,
+                x.ProfitMarginRate));
     }
 
     private sealed class ApprovedVersionRow
@@ -134,6 +138,8 @@ internal sealed class ApprovedProductPricingTierReader
         public DateTime? ApprovedAt { get; init; }
         public decimal? StandardSellingPrice { get; init; }
         public decimal? MaterialCostSnapshot { get; init; }
+        public decimal? ManufacturingCost { get; init; }
+        public decimal? ProfitMarginRate { get; init; }
         public string? PublisherNote { get; init; }
         public DateTime PriceDate { get; init; }
         public ProductPricingSourceType SourceType { get; init; }

@@ -1,7 +1,6 @@
 using HRM.Application.Abstractions.Identity;
 using HRM.Application.Abstractions.Persistence.Employees;
 using HRM.Application.Abstractions.Security;
-using HRM.Application.Features.Employees.Administration.GetEmployeeAccountPermissions;
 using HRM.Application.Features.Employees.Dtos;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -49,9 +48,20 @@ internal sealed class SetEmployeeStatusCommandHandler
                 "Không thể tự ngừng hoạt động nhân viên đang đăng nhập.");
         }
 
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var endDate = request.EndDate ?? today;
+        if (!EmployeeAccountLifecycleRules.IsValidEndDate(request.IsActive, request.EndDate, employee.DateHired, today))
+        {
+            return Fail(EmployeeAdministrationError.Validation,
+                "Ngày nghỉ phải từ ngày vào làm đến hôm nay; kích hoạt lại không nhận ngày nghỉ.");
+        }
+
+        await using var transaction = await _dbContext.BeginTransactionAsync(cancellationToken);
+        var wasActive = employee.IsActive;
         if (employee.IsActive != request.IsActive)
         {
             employee.IsActive = request.IsActive;
+            employee.EndDate = request.IsActive ? null : endDate;
             employee.UpdatedBy = _currentUser.EmployeeId;
             employee.UpdatedDate = DateTime.Now;
             await _dbContext.SaveChangesAsync(cancellationToken);
@@ -59,8 +69,7 @@ internal sealed class SetEmployeeStatusCommandHandler
 
         var account = await _identityService.GetAccountAsync(employee.EmployeeId, cancellationToken);
         if (account is not null &&
-            EmployeeAccountLifecycleRules.MustDisableAccount(employee.IsActive) &&
-            account.IsActive)
+            (EmployeeAccountLifecycleRules.MustDisableAccount(employee.IsActive) || !wasActive))
         {
             var disableResult = await _identityService.SetAccountActiveAsync(
                 employee.EmployeeId,
@@ -69,30 +78,22 @@ internal sealed class SetEmployeeStatusCommandHandler
             if (!disableResult.Success)
             {
                 return Fail(EmployeeAdministrationError.Conflict,
-                    disableResult.Error ?? "Nhân viên đã ngừng hoạt động nhưng không thể vô hiệu hóa tài khoản.");
+                    disableResult.Error ?? "Không thể cập nhật nhân viên vì khóa tài khoản thất bại; thay đổi đã được hủy.");
             }
 
             account = disableResult.Data;
         }
 
+        await transaction.CommitAsync(cancellationToken);
         return EmployeeAdministrationResult<EmployeeAccountPermissionsDto>.Ok(
-            GetEmployeeAccountPermissionsQueryHandler.MapAccount(
+            EmployeeAccountPermissionsMapper.Map(
                 employee.EmployeeId,
                 employee.IsActive,
-                account));
+                account, employee.EndDate));
     }
 
     private IQueryable<HRM.Domain.Entities.HrSchema.Employee> BuildEmployeeScope()
-    {
-        var query = _dbContext.Employees.AsQueryable();
-        if (!EmployeeAdministrationRules.CanManageAllCompanies(_currentUser))
-        {
-            var companyId = _currentUser.CompanyId ?? Guid.Empty;
-            query = query.Where(employee => employee.CompanyId == companyId);
-        }
-
-        return query;
-    }
+        => EmployeeAdministrationRules.ScopeEmployees(_dbContext.Employees, _currentUser);
 
     private static EmployeeAdministrationResult<EmployeeAccountPermissionsDto> Fail(
         EmployeeAdministrationError error,

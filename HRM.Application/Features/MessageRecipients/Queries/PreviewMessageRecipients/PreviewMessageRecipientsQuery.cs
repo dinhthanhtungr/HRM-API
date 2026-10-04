@@ -14,6 +14,7 @@ public sealed class PreviewMessageRecipientsQuery
     public string ContextType { get; set; } = string.Empty;
     public string ActionType { get; set; } = string.Empty;
     public Guid? ContextId { get; set; }
+    public string? AreaCode { get; set; }
     public Guid? DraftManagerBy { get; set; }
     public Guid? DraftCategoryId { get; set; }
     // null means first preview and lets the feature select optional defaults; [] means user removed them all.

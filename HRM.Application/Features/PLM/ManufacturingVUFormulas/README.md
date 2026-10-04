@@ -26,7 +26,7 @@ Base route: `/api/v1/plm/sample-production-orders`.
 
 - Tất cả endpoint yêu cầu đăng nhập.
 - List, detail và PDF dùng policy `PLM.SampleProductionOrder.View`, ánh xạ tới
-  nhóm role `ApplicationRoleSets.PLM.FormulaMaterialViewers`.
+  nhóm role `ApplicationRoleSets.PLM.FormulaMaterialViewers` (bao gồm `LabUser`).
 - Create, patch và cancel dùng policy `PLM.SampleProductionOrder.Manage`, ánh xạ
   tới nhóm role `ApplicationRoleSets.PLM.ProductTechnicalEditors`.
 - Formula prefill dùng cùng policy manage vì phục vụ trực tiếp form tạo lệnh.

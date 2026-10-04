@@ -1,6 +1,7 @@
 using System.Text.Json;
 using HRM.Application.Abstractions.Persistence.PLM;
 using HRM.Application.Abstractions.Security;
+using HRM.Application.Features.InternalMail.Services;
 using HRM.Application.Features.CRM.CustomerCare.Visibility;
 using HRM.Application.Features.PLM.SampleRequests.Dtos.InternalMail;
 using HRM.Application.Features.PLM.SampleRequests.DataChangeRequests;
@@ -24,15 +25,18 @@ internal sealed class GetSampleRequestMessagesQueryHandler
 {
     private readonly IPLMReadDbContext _plmDbContext;
     private readonly ICurrentUser _currentUser;
+    private readonly InternalMailAreaAccessService _areas;
     private readonly ICustomerVisibilityService _visibilityService;
 
     public GetSampleRequestMessagesQueryHandler(
         IPLMReadDbContext plmDbContext,
         ICurrentUser currentUser,
-        ICustomerVisibilityService visibilityService)
+        ICustomerVisibilityService visibilityService,
+        InternalMailAreaAccessService areas)
     {
         _plmDbContext = plmDbContext;
         _currentUser = currentUser;
+        _areas = areas;
         _visibilityService = visibilityService;
     }
 
@@ -63,7 +67,7 @@ internal sealed class GetSampleRequestMessagesQueryHandler
             return null;
         }
 
-        var conversation = await _plmDbContext.InternalConversations
+        var conversation = await _areas.Conversations()
             .AsNoTracking()
             .Where(x =>
                 x.CompanyId == companyId &&
@@ -83,7 +87,7 @@ internal sealed class GetSampleRequestMessagesQueryHandler
             return Array.Empty<SampleRequestMessageDto>();
         }
 
-        var rows = await _plmDbContext.InternalMessages
+        var rows = await _areas.Messages()
             .AsNoTracking()
             .Where(x =>
                 x.InternalConversationId == conversation.InternalConversationId &&

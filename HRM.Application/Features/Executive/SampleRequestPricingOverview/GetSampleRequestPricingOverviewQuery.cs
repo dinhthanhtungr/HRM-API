@@ -2,7 +2,6 @@ using System.Text.Json.Serialization;
 using HRM.Application.Commons.Models;
 using HRM.Application.Commons.Pagination;
 using HRM.Application.Features.Executive.SampleRequestPricingOverview.Dtos;
-using HRM.Application.Features.CRM.Quotations.Dtos;
 using HRM.Domain.Enums.SampleRequests;
 using MediatR;
 
@@ -28,7 +27,7 @@ public sealed class GetSampleRequestPricingOverviewQuery
     public SampleRequestStatus? Status { get; init; }
 
     [JsonConverter(typeof(JsonStringEnumConverter))]
-    public ProductPricingWorkbenchView View { get; init; } = ProductPricingWorkbenchView.All;
+    public SampleRequestPricingOverviewView View { get; init; } = SampleRequestPricingOverviewView.All;
 
     public DateTime? FromDate { get; init; }
     public DateTime? ToDate { get; init; }

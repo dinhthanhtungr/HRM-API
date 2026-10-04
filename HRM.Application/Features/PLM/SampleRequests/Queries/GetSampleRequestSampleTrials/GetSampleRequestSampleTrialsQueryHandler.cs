@@ -71,6 +71,12 @@ internal sealed class GetSampleRequestSampleTrialsQueryHandler
                 x => x.CustomerId == request.CustomerId.Value);
         }
 
+        if (request.SaleEmployeeId.HasValue)
+        {
+            visibleSampleRequests = visibleSampleRequests.Where(
+                x => x.ManagerBy == request.SaleEmployeeId.Value);
+        }
+
         var sampleRequestCreatedRange =
             SampleRequestSampleTrialReportRules.ResolveCreatedRange(
                 request.SampleRequestCreatedToDate,
@@ -143,6 +149,26 @@ internal sealed class GetSampleRequestSampleTrialsQueryHandler
         if (!string.IsNullOrWhiteSpace(request.NormalizedKeyword))
         {
             var keyword = request.NormalizedKeyword;
+            if (request.DailyWorkDate.HasValue)
+            {
+                foreach (var token in keyword.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                {
+                    var tokenPattern = PostgresSearchPattern.ContainsLiteral(token);
+                    query = query.Where(x =>
+                        EF.Functions.ILike(x.SampleRequest.ManagerByNavigation.FullName, tokenPattern, PostgresSearchPattern.EscapeCharacter) ||
+                        EF.Functions.ILike(x.SampleRequest.Customer.CustomerName, tokenPattern, PostgresSearchPattern.EscapeCharacter) ||
+                        EF.Functions.ILike(x.SampleRequest.ExternalId, tokenPattern, PostgresSearchPattern.EscapeCharacter) ||
+                        EF.Functions.ILike(x.SampleRequest.Product.Name ?? string.Empty, tokenPattern, PostgresSearchPattern.EscapeCharacter) ||
+                        EF.Functions.ILike(x.SampleRequest.Product.ColourCode ?? string.Empty, tokenPattern, PostgresSearchPattern.EscapeCharacter) ||
+                        (x.Trial != null && EF.Functions.ILike(x.Trial.BatchNo ?? string.Empty, tokenPattern, PostgresSearchPattern.EscapeCharacter)) ||
+                        (x.Trial != null && EF.Functions.ILike(x.Trial.LabNote ?? string.Empty, tokenPattern, PostgresSearchPattern.EscapeCharacter)) ||
+                        (x.Trial != null && EF.Functions.ILike(x.Trial.CustomerReplyNote ?? string.Empty, tokenPattern, PostgresSearchPattern.EscapeCharacter)) ||
+                        (x.SampleRequest.Formula != null && EF.Functions.ILike(x.SampleRequest.Formula.ExternalId, tokenPattern, PostgresSearchPattern.EscapeCharacter)) ||
+                        (x.Trial != null && x.Trial.Formula != null && EF.Functions.ILike(x.Trial.Formula.ExternalId, tokenPattern, PostgresSearchPattern.EscapeCharacter)));
+                }
+            }
+            else
+            {
             query = query.Where(x =>
                 EF.Functions.ILike(((x.Trial != null ? x.Trial.CustomerNameSnapshot : null) ?? x.SampleRequest.Customer.CustomerName), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
                 EF.Functions.ILike(((x.Trial != null ? x.Trial.SampleRequestExternalIdSnapshot : null) ?? x.SampleRequest.ExternalId), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
@@ -153,6 +179,7 @@ internal sealed class GetSampleRequestSampleTrialsQueryHandler
                 (x.Trial != null && EF.Functions.ILike((x.Trial.BatchNo ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter)) ||
                 (x.Trial != null && EF.Functions.ILike((x.Trial.CustomerReplyNote ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter)) ||
                 (x.Trial != null && EF.Functions.ILike((x.Trial.LabNote ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter)));
+            }
         }
 
         query = SampleRequestSampleTrialReportQueryRules.ApplySorting(query, request);
@@ -171,6 +198,13 @@ internal sealed class GetSampleRequestSampleTrialsQueryHandler
             {
                 SampleRequestSampleTrialId = x.Trial != null ? x.Trial.SampleRequestSampleTrialId : null,
                 SampleRequestId = x.SampleRequest.SampleRequestId,
+                ProductId = x.SampleRequest.ProductId,
+                ManagerSalesEmployeeId = x.SampleRequest.ManagerBy,
+                InfoType = x.SampleRequest.InfoType,
+                FormulaStatus = x.Trial != null && x.Trial.Formula != null
+                    ? x.Trial.Formula.Status
+                    : x.SampleRequest.Formula != null ? x.SampleRequest.Formula.Status : null,
+                RealPriceQuoteDate = x.SampleRequest.RealPriceQuoteDate,
                 FormulaId = x.Trial != null ? x.Trial.FormulaId : x.SampleRequest.FormulaId,
                 FormulaExternalId = x.Trial != null
                     ? x.Trial.Formula != null
@@ -205,6 +239,12 @@ internal sealed class GetSampleRequestSampleTrialsQueryHandler
                 ColourCode = x.SampleRequest.Product.ColourCode,
                 BatchNo = x.Trial != null ? x.Trial.BatchNo : null,
                 RequestDeliveryDate = x.SampleRequest.RequestDeliveryDate,
+                LabReceivedDate = x.SampleRequest.LabReceivedDate,
+                IsDelayed = x.SampleRequest.IsDelayed == true,
+                LabReceivedByEmployeeId = x.SampleRequest.LabReceivedByEmployeeId,
+                LabReceivedByName = x.SampleRequest.LabReceivedByNavigation != null
+                    ? x.SampleRequest.LabReceivedByNavigation.FullName
+                    : null,
                 ExpectedDeliveryDate = x.SampleRequest.ExpectedDeliveryDate,
                 ExpectedPriceQuoteDate = x.SampleRequest.ExpectedPriceQuoteDate,
                 RequestReceivedDate = x.Trial != null ? x.Trial.RequestReceivedDate : null,

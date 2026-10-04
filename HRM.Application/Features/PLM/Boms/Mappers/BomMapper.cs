@@ -50,6 +50,7 @@ internal static class BomMapper
             BomType = definition.BomType,
             VersionNo = version.VersionNo,
             Status = version.Status,
+            SourceFormulaId = version.SourceFormulaId,
             SourceEngineeringBomVersionId = version.SourceEngineeringBomVersionId,
             BaseOutputQuantity = version.BaseOutputQuantity,
             OutputUnit = version.OutputUnit,

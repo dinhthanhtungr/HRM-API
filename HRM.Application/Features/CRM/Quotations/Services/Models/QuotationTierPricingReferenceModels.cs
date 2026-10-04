@@ -17,7 +17,9 @@ internal sealed record ApprovedProductTierPricingReference(
     string SourceName,
     IReadOnlyList<QuotationTierPriceReference> PriceTiers,
     string? PublisherNote = null,
-    decimal? MaterialCostSnapshot = null);
+    decimal? MaterialCostSnapshot = null,
+    decimal? ManufacturingCost = null,
+    decimal? ProfitMarginRate = null);
 
 internal sealed record SystemCalculatedTierPricingReference(
     Guid ProductId,

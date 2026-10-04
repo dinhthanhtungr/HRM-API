@@ -1,7 +1,6 @@
 using HRM.Application.Abstractions.Identity;
 using HRM.Application.Abstractions.Persistence.Employees;
 using HRM.Application.Abstractions.Security;
-using HRM.Application.Features.Employees.Administration.GetEmployeeAccountPermissions;
 using HRM.Application.Features.Employees.Dtos;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -57,7 +56,7 @@ internal sealed class AssignEmployeeRoleCommandHandler
             request.EmployeeId,
             cancellationToken);
         return EmployeeAdministrationResult<EmployeeAccountPermissionsDto>.Ok(
-            GetEmployeeAccountPermissionsQueryHandler.MapAccount(
+            EmployeeAccountPermissionsMapper.Map(
                 request.EmployeeId,
                 true,
                 account));

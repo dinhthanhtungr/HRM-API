@@ -111,6 +111,8 @@ internal sealed class StandardPriceRealtimeComparisonQueryService
                 request.Currency,
                 request.ApprovedStandardPrice,
                 request.ApprovedMaterialCostSnapshot,
+                request.ApprovedManufacturingCost,
+                request.ApprovedProfitMarginRate,
                 source?.CurrentMaterialCost,
                 source?.IsCurrentMaterialCostComplete == true,
                 _featureOptions.MaterialCostChangeThresholdPercent,
@@ -132,4 +134,6 @@ internal sealed record StandardPriceRealtimeComparisonRequest(
     decimal? ApprovedStandardPrice,
     decimal? ApprovedMaterialCostSnapshot,
     ProductPricingSourceType? SourceType,
-    Guid? SourceId);
+    Guid? SourceId,
+    decimal? ApprovedManufacturingCost = null,
+    decimal? ApprovedProfitMarginRate = null);

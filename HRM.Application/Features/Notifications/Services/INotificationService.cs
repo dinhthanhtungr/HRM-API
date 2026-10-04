@@ -54,6 +54,7 @@ public interface INotificationService
     /// Archive notification trong inbox cua chinh nhan vien hien tai.
     /// </summary>
     Task<bool> ArchiveCurrentAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<bool> ArchiveCurrentGroupAsync(Guid id, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Thu hoi notification khoi inbox cua mot nhan vien bang cach archive UserState, khong xoa du lieu that.

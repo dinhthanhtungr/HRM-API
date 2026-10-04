@@ -51,6 +51,7 @@ public sealed class OutboxProcessor : BackgroundService
         using var scope = _serviceProvider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var hubContext = scope.ServiceProvider.GetRequiredService<IHubContext<NotificationHub>>();
+        var areaAccess = scope.ServiceProvider.GetRequiredService<HRM.Application.Features.InternalMail.Services.InternalMailAreaAccessService>();
 
         // Xử lý message cũ trước để giữ thứ tự notification khi đẩy realtime.
         var messages = await dbContext.OutboxMessages
@@ -73,7 +74,16 @@ public sealed class OutboxProcessor : BackgroundService
                 var envelope = JsonSerializer.Deserialize<OutboxEnvelope>(message.PayloadJson)
                     ?? throw new InvalidOperationException("Notification outbox envelope is invalid.");
 
-                await PushNotificationAsync(hubContext, envelope, cancellationToken);
+                var notification = await dbContext.Notifications.AsNoTracking().FirstOrDefaultAsync(
+                    n => n.Id == envelope.NotificationId && n.CompanyId == envelope.CompanyId, cancellationToken);
+                if (notification is not null)
+                {
+                    var queuedRecipients = envelope.TargetUserIds?.ToArray() ?? Array.Empty<Guid>();
+                    var recipients = await areaAccess.DeliveryRecipients(notification)
+                        .Where(id => queuedRecipients.Contains(id)).ToArrayAsync(cancellationToken);
+                    foreach (var employeeId in recipients)
+                        await hubContext.Clients.Group($"user:{employeeId}").SendAsync("notify", new { notificationId = notification.Id }, cancellationToken);
+                }
 
                 message.Attempts++;
                 message.Error = null;
@@ -95,38 +105,4 @@ public sealed class OutboxProcessor : BackgroundService
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
-    private static async Task PushNotificationAsync(
-        IHubContext<NotificationHub> hubContext,
-        OutboxEnvelope envelope,
-        CancellationToken cancellationToken)
-    {
-        // Giữ realtime payload thật nhỏ; FE dùng id này để gọi API notification có phân quyền.
-        var payload = new { notificationId = envelope.NotificationId };
-        var companyKey = envelope.CompanyId.ToString("N");
-
-        if (envelope.TargetRoles is { Count: > 0 })
-        {
-            foreach (var role in envelope.TargetRoles)
-            {
-                if (string.IsNullOrWhiteSpace(role))
-                {
-                    continue;
-                }
-
-                await hubContext.Clients
-                    .Group($"role:{companyKey}:{role.Trim().ToUpperInvariant()}")
-                    .SendAsync("notify", payload, cancellationToken);
-            }
-        }
-
-        if (envelope.TargetUserIds is { Count: > 0 })
-        {
-            foreach (var userId in envelope.TargetUserIds.Where(x => x != Guid.Empty))
-            {
-                await hubContext.Clients
-                    .Group($"user:{userId}")
-                    .SendAsync("notify", payload, cancellationToken);
-            }
-        }
-    }
 }

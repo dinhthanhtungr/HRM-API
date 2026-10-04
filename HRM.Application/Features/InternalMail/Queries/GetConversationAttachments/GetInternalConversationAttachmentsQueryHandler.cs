@@ -3,8 +3,8 @@ using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Pagination;
 using HRM.Application.Features.InternalMail.Dtos;
 using HRM.Application.Features.InternalMail.Services;
-using HRM.Domain.Enums.InternalMailEnums;
 using MediatR;
+using HRM.Domain.Enums.InternalMailEnums;
 using Microsoft.EntityFrameworkCore;
 
 namespace HRM.Application.Features.InternalMail.Queries.GetConversationAttachments;
@@ -14,15 +14,18 @@ internal sealed class GetInternalConversationAttachmentsQueryHandler
 {
     private readonly IInternalMailDbContext _dbContext;
     private readonly ICurrentUser _currentUser;
+    private readonly InternalMailAreaAccessService _areas;
     private readonly IInternalConversationAccessService _conversationAccessService;
 
     public GetInternalConversationAttachmentsQueryHandler(
         IInternalMailDbContext dbContext,
         ICurrentUser currentUser,
-        IInternalConversationAccessService conversationAccessService)
+        IInternalConversationAccessService conversationAccessService,
+        InternalMailAreaAccessService areas)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
+        _areas = areas;
         _conversationAccessService = conversationAccessService;
     }
 
@@ -43,8 +46,10 @@ internal sealed class GetInternalConversationAttachmentsQueryHandler
             return null;
         }
 
+        var visibleIds = _areas.Messages(request.AreaCode).Select(m => m.InternalMessageId);
         var chatAttachments = await _dbContext.InternalMessageAttachments
             .AsNoTracking()
+            .Where(x => visibleIds.Contains(x.InternalMessageId))
             .Where(x =>
                 x.Message.InternalConversationId == request.ConversationId &&
                 !x.Message.IsDeleted &&

@@ -14,15 +14,18 @@ internal sealed class GetInternalMessagesQueryHandler
     private const int MaxReplyPreviewLength = 300;
     private readonly IInternalMailDbContext _dbContext;
     private readonly ICurrentUser _currentUser;
+    private readonly InternalMailAreaAccessService _areas;
     private readonly IInternalConversationAccessService _conversationAccessService;
 
     public GetInternalMessagesQueryHandler(
         IInternalMailDbContext dbContext,
         ICurrentUser currentUser,
-        IInternalConversationAccessService conversationAccessService)
+        IInternalConversationAccessService conversationAccessService,
+        InternalMailAreaAccessService areas)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
+        _areas = areas;
         _conversationAccessService = conversationAccessService;
     }
 
@@ -44,7 +47,8 @@ internal sealed class GetInternalMessagesQueryHandler
             return null;
         }
 
-        var messageQuery = _dbContext.InternalMessages
+        var visibleIds = _areas.Messages().Select(m => m.InternalMessageId);
+        var messageQuery = _areas.Messages(request.AreaCode)
             .AsNoTracking()
             .Where(x => x.InternalConversationId == request.ConversationId);
 
@@ -60,14 +64,15 @@ internal sealed class GetInternalMessagesQueryHandler
             .Select(x => new InternalMessageDto
             {
                 MessageId = x.InternalMessageId,
+                AreaCode = x.Conversation.RelatedType == HRM.Domain.Enums.InternalMailEnums.InternalMailRelatedType.ConversationTechnical ? "technical" : x.Conversation.RelatedType == HRM.Domain.Enums.InternalMailEnums.InternalMailRelatedType.ConversationPricing ? "pricing" : "general",
                 ConversationId = x.InternalConversationId,
                 SenderEmployeeId = x.SenderEmployeeId,
                 SenderName = x.SenderEmployee.FullName,
                 MessageType = x.MessageType,
                 Body = x.IsDeleted ? string.Empty : x.Body,
                 PayloadJson = x.IsDeleted ? null : x.PayloadJson,
-                ReplyToMessageId = x.ReplyToMessageId,
-                ReplyTo = x.ReplyToMessageId == null ? null : new InternalMessageReplyDto
+                ReplyToMessageId = x.ReplyToMessageId != null && (x.ReplyToMessage!.InternalConversationId == x.InternalConversationId || visibleIds.Contains(x.ReplyToMessageId.Value)) ? x.ReplyToMessageId : null,
+                ReplyTo = x.ReplyToMessageId == null || (x.ReplyToMessage!.InternalConversationId != x.InternalConversationId && !visibleIds.Contains(x.ReplyToMessageId.Value)) ? null : new InternalMessageReplyDto
                 {
                     MessageId = x.ReplyToMessage!.InternalMessageId,
                     SenderEmployeeId = x.ReplyToMessage.SenderEmployeeId,

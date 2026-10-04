@@ -34,7 +34,7 @@ namespace HRM.Domain.Entities.MROSchema
         public Part? Part { get; set; }                       // nếu có entity Part
         public AreaMRO? Area { get; set; }                       // nếu có entity
                                                                  // Area
-        public ICollection<EquipmentDetailMRO> EquipmentDetails { get; set; } = new List<EquipmentDetailMRO>();
+        public EquipmentDetailMRO? EquipmentDetail { get; set; }
         //public virtual ICollection<IncidentHeaderMRO> IncidentHeaderMROs { get; set; } = new List<IncidentHeaderMRO>();
     }
 }

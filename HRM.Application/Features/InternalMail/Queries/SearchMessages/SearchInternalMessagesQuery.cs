@@ -13,6 +13,7 @@ public sealed class SearchInternalMessagesQuery
     : PaginationQuery, IRequest<PagedResult<InternalMessageSearchResultDto>?>
 {
     public Guid ConversationId { get; init; }
+    public string? AreaCode { get; init; }
     public string? Q { get; init; }
     public string? Search { get; init; }
 

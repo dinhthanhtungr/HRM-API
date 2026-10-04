@@ -19,7 +19,11 @@ Má»—i item tráº£ `itemId`, `itemType`, mÃ£, tÃªn, category, Ä‘Æ¡
 GiÃ¡ Ä‘Æ°á»£c táº£i theo batch qua `IMaterialPriceQueryService`, cÃ¹ng nguá»“n vá»›i GET chi tiáº¿t Formula:
 
 - NVL: chá»n giÃ¡ má»›i nháº¥t giá»¯a Purchase Order vÃ  Material - Supplier.
-- Product: giÃ¡ Merchandise Order má»›i nháº¥t.
+- Product: ưu tiên `ProductPricingVersion.StandardSellingPrice` active/Approved còn trong hạn rà soát.
+  Hạn được tính từ `ApprovedAt`, fallback `UpdatedDate`, rồi `CreatedDate`, cộng
+  `Features:Quotations:ApprovedPricingReviewAfterDays` (mặc định 30 ngày). Khi đã quá hạn hoặc chưa có giá
+  Approved hợp lệ, backend tính lại từ Formula đang chọn/SampleSent và áp luật nội bộ (nghiền, pha loãng,
+  category CMB/CMP); chỉ khi không tính được mới fallback giá Merchandise Order mới nhất.
 - KhÃ´ng tÃ¬m tháº¥y giÃ¡: `unitPrice = 0`, `source = Unknown`, `latestPriceDate = null`.
 
 Endpoint yÃªu cáº§u policy `PLM.FormulaPricing.Update` vÃ  khÃ´ng nháº­n `companyId` tá»« FE Ä‘á»ƒ trÃ¡nh tra cá»©u chÃ©o cÃ´ng ty.

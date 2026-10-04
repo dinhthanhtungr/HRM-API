@@ -1,5 +1,6 @@
 using HRM.Application.Commons.Concurrency;
 using HRM.Application.Features.CRM.Quotations.Commands.CreateQuotation;
+using HRM.Application.Features.CRM.Quotations.Commands.SaveQuotation;
 using HRM.Application.Features.CRM.Quotations.Commands.CreateProductPricingVersion;
 using HRM.Application.Features.CRM.Quotations.Commands.UpdateProductPricingVersion;
 using HRM.Application.Features.CRM.Quotations.Commands.ApproveProductPricingVersion;
@@ -64,6 +65,16 @@ public sealed class QuotationsController : ControllerBase
                 new { quotationId = result.Data.QuotationId },
                 result)
             : BadRequest(result);
+    }
+
+    [HttpPut("{quotationId:guid}/save")]
+    public async Task<IActionResult> SaveQuotation(
+        Guid quotationId,
+        [FromBody] SaveQuotationRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new SaveQuotationCommand(quotationId, request), cancellationToken);
+        return result.Success ? Ok(result.Data) : MutationFailure(result);
     }
 
     [HttpPatch("{quotationId:guid}")]

@@ -15,6 +15,7 @@ public class BomVersionConfiguration : IEntityTypeConfiguration<BomVersion>
             table.HasCheckConstraint("ck_bom_versions_version_no_positive", "version_no > 0");
             table.HasCheckConstraint("ck_bom_versions_base_output_positive", "base_output_quantity > 0");
             table.HasCheckConstraint("ck_bom_versions_effective_period", "effective_to IS NULL OR effective_from IS NULL OR effective_to > effective_from");
+            table.HasCheckConstraint("ck_bom_versions_single_source", "source_formula_id IS NULL OR source_engineering_bom_version_id IS NULL");
         });
         entity.HasKey(x => x.BomVersionId).HasName("pk_bom_versions");
 
@@ -25,6 +26,7 @@ public class BomVersionConfiguration : IEntityTypeConfiguration<BomVersion>
             .HasMaxLength(32).HasDefaultValue(BomVersionStatus.Draft).IsRequired();
         entity.Property(x => x.BaseOutputQuantity).HasColumnName("base_output_quantity").HasPrecision(18, 3).IsRequired();
         entity.Property(x => x.OutputUnit).HasColumnName("output_unit").HasColumnType("citext").HasMaxLength(32).IsRequired();
+        entity.Property(x => x.SourceFormulaId).HasColumnName("source_formula_id");
         entity.Property(x => x.SourceEngineeringBomVersionId).HasColumnName("source_engineering_bom_version_id");
         entity.Property(x => x.EffectiveFrom).HasColumnName("effective_from");
         entity.Property(x => x.EffectiveTo).HasColumnName("effective_to");
@@ -41,12 +43,17 @@ public class BomVersionConfiguration : IEntityTypeConfiguration<BomVersion>
             .HasDatabaseName("ix_bom_versions_definition_status");
         entity.HasIndex(x => x.SourceEngineeringBomVersionId)
             .HasDatabaseName("ix_bom_versions_source_engineering");
+        entity.HasIndex(x => x.SourceFormulaId)
+            .HasDatabaseName("ix_bom_versions_source_formula");
 
         entity.HasOne(x => x.BomDefinition).WithMany(x => x.Versions).HasForeignKey(x => x.BomDefinitionId)
             .OnDelete(DeleteBehavior.Restrict).HasConstraintName("fk_bom_versions_definition");
         entity.HasOne(x => x.SourceEngineeringBomVersion).WithMany(x => x.DerivedManufacturingBomVersions)
             .HasForeignKey(x => x.SourceEngineeringBomVersionId).OnDelete(DeleteBehavior.Restrict)
             .HasConstraintName("fk_bom_versions_source_engineering");
+        entity.HasOne(x => x.SourceFormula).WithMany()
+            .HasForeignKey(x => x.SourceFormulaId).OnDelete(DeleteBehavior.Restrict)
+            .HasConstraintName("fk_bom_versions_source_formula");
         entity.HasOne<Employee>().WithMany().HasForeignKey(x => x.CreatedBy)
             .OnDelete(DeleteBehavior.Restrict).HasConstraintName("fk_bom_versions_created_by");
         entity.HasOne<Employee>().WithMany().HasForeignKey(x => x.ReleasedBy)

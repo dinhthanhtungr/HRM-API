@@ -4,4 +4,7 @@ using MediatR;
 
 namespace HRM.Application.Features.PLM.Boms.Commands.CreateManufacturingWorkInstructionVersion;
 
-public sealed record CreateManufacturingWorkInstructionVersionCommand(Guid SourceTemplateId, string? ChangeReason) : IRequest<OperationResult<ManufacturingWorkInstructionTemplateDto>>;
+public sealed record CreateManufacturingWorkInstructionVersionCommand(
+    Guid SourceTemplateId,
+    string? ChangeReason)
+    : IRequest<OperationResult<ManufacturingWorkInstructionTemplateDto>>;

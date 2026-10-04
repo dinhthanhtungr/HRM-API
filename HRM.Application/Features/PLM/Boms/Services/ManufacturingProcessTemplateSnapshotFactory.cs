@@ -10,7 +10,7 @@ internal static class ManufacturingProcessTemplateSnapshotFactory
         {
             ManufacturingBomStageId = Guid.CreateVersion7(),
             BomVersionId = bomVersionId,
-            ExternalId = source.ExternalId,
+            ExternalId = source.Code,
             Name = source.Name,
             SequenceNo = source.SequenceNo,
             Description = source.Description,
@@ -22,7 +22,20 @@ internal static class ManufacturingProcessTemplateSnapshotFactory
                 EquipmentNameSnapshot = x.Equipment.EquipmentName,
                 IsDefault = x.IsDefault,
                 SequenceNo = x.SequenceNo,
-                Note = x.Note
+                Note = x.Note,
+                Parameters = x.Parameters.OrderBy(parameter => parameter.SequenceNo).Select(parameter => new ManufacturingBomStageMachineParameter
+                {
+                    ManufacturingBomStageMachineParameterId = Guid.CreateVersion7(),
+                    ParameterCodeSnapshot = parameter.ParameterCode,
+                    ParameterNameSnapshot = parameter.ParameterName,
+                    TargetValueSnapshot = parameter.TargetValue,
+                    MinValueSnapshot = parameter.MinValue,
+                    MaxValueSnapshot = parameter.MaxValue,
+                    UnitSnapshot = parameter.Unit,
+                    IsRequiredSnapshot = parameter.IsRequired,
+                    SequenceNo = parameter.SequenceNo,
+                    NoteSnapshot = parameter.Note
+                }).ToList()
             }).ToList()
         };
 
@@ -58,4 +71,21 @@ internal static class ManufacturingProcessTemplateSnapshotFactory
 
         return stage;
     }
+
+    internal static ManufacturingBomStageTransition CreateTransition(
+        Guid bomVersionId,
+        ManufacturingProcessTemplateStageTransition source,
+        Guid fromStageId,
+        Guid toStageId) => new()
+    {
+        ManufacturingBomStageTransitionId = Guid.CreateVersion7(),
+        BomVersionId = bomVersionId,
+        FromManufacturingBomStageId = fromStageId,
+        ToManufacturingBomStageId = toStageId,
+        ExternalId = source.Code,
+        TransitionType = source.TransitionType,
+        DefaultEventCount = source.DefaultEventCount,
+        SequenceNo = source.SequenceNo,
+        Note = source.Note
+    };
 }

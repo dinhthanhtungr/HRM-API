@@ -5,6 +5,7 @@ using HRM.Application.Commons.Models;
 using HRM.Application.Features.MessageRecipients.Dtos;
 using HRM.Application.Features.MessageRecipients.Queries.PreviewMessageRecipients;
 using HRM.Application.Features.MessageRecipients.Services;
+using HRM.Application.Features.InternalMail.Services;
 using HRM.Application.Features.PLM.SampleRequests.Rules;
 using HRM.Domain.Enums.InternalMailEnums;
 using Microsoft.EntityFrameworkCore;
@@ -19,17 +20,20 @@ internal sealed class SampleRequestMessageRecipientResolver : IMessageRecipientR
     private readonly IInternalMailDbContext _internalMailDbContext;
     private readonly ICurrentUser _currentUser;
     private readonly SampleRequestRecipientResolver _sampleRequestRecipientResolver;
+    private readonly InternalMailAreaAccessService _areas;
 
     public SampleRequestMessageRecipientResolver(
         IPLMReadDbContext plmDbContext,
         IInternalMailDbContext internalMailDbContext,
         ICurrentUser currentUser,
-        SampleRequestRecipientResolver sampleRequestRecipientResolver)
+        SampleRequestRecipientResolver sampleRequestRecipientResolver,
+        InternalMailAreaAccessService areas)
     {
         _plmDbContext = plmDbContext;
         _internalMailDbContext = internalMailDbContext;
         _currentUser = currentUser;
         _sampleRequestRecipientResolver = sampleRequestRecipientResolver;
+        _areas = areas;
     }
 
     public bool CanResolve(string contextType)
@@ -309,14 +313,29 @@ internal sealed class SampleRequestMessageRecipientResolver : IMessageRecipientR
             selectedRecipient.Locked = defaultRecipient.Locked;
         }
 
+        var conversationId = await _internalMailDbContext.InternalConversations
+            .Where(c => c.CompanyId == companyId.Value && c.IsActive &&
+                c.RelatedType == InternalMailRelatedType.SampleRequest && c.RelatedId == request.ContextId)
+            .Select(c => (Guid?)c.InternalConversationId).FirstOrDefaultAsync(cancellationToken);
+        if (request.AreaCode is not null && !InternalMailAreas.IsKnown(request.AreaCode))
+            return OperationResult<MessageRecipientPreviewDto>.Fail("You cannot send to this area.");
+        var eligible = await _areas.Recipients(companyId.Value, request.AreaCode ?? InternalMailAreas.General, conversationId)
+            .ToHashSetAsync(cancellationToken);
+        if (request.AreaCode is not null && conversationId.HasValue && request.ActionType == "GeneralMessage")
+            eligible.IntersectWith(await _internalMailDbContext.InternalConversationParticipants
+                .Where(p => p.InternalConversationId == conversationId.Value && p.IsActive)
+                .Select(p => p.EmployeeId).ToArrayAsync(cancellationToken));
+        if (InternalMailAreaAccessService.IsColorCategory(productCategoryExternalId))
+            eligible.ExceptWith(await _areas.RdLeaderIds(companyId.Value).ToArrayAsync(cancellationToken));
+
         return OperationResult<MessageRecipientPreviewDto>.Ok(new MessageRecipientPreviewDto
         {
             ContextType = ContextType,
             ActionType = request.ActionType.Trim(),
-            RequiredRecipients = requiredRecipients,
-            SuggestedRecipients = suggestedRecipients,
-            SelectedRecipients = selectedRecipients,
-            SelectedSilentWatchers = selectedSilentWatchers,
+            RequiredRecipients = requiredRecipients.Where(x => eligible.Contains(x.EmployeeId)).ToArray(),
+            SuggestedRecipients = suggestedRecipients.Where(x => eligible.Contains(x.EmployeeId)).ToArray(),
+            SelectedRecipients = selectedRecipients.Where(x => eligible.Contains(x.EmployeeId)).ToArray(),
+            SelectedSilentWatchers = selectedSilentWatchers.Where(x => eligible.Contains(x.EmployeeId)).ToArray(),
             CanAddRecipients = true,
             CanAddSilentWatchers = true,
             CanRemoveSuggestedRecipients = true

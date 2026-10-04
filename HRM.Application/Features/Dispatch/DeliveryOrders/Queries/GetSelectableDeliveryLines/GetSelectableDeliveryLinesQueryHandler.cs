@@ -41,12 +41,7 @@ internal sealed class GetSelectableDeliveryLinesQueryHandler
 
         var deliveredQuantityQuery = _dbContext.DeliveryOrderDetails
             .AsNoTracking()
-            .Where(d =>
-                d.IsActive &&
-                !d.IsAttach &&
-                d.DeliveryOrder.IsActive &&
-                d.DeliveryOrder.CompanyId == companyId &&
-                d.MerchandiseOrderDetailId.HasValue)
+            .CountedForAllocation(companyId)
             .GroupBy(d => d.MerchandiseOrderDetailId!.Value)
             .Select(g => new
             {
@@ -166,7 +161,10 @@ internal sealed class GetSelectableDeliveryLinesQueryHandler
             .GroupBy(x => x.ProductCode, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(
                 g => g.Key,
-                g => g.Select(x => new DeliveryLotOptionDto
+                g => new
+                {
+                    AvailableQuantity = DeliveryOrderLotInventoryRules.CalculateAvailableQuantity(g),
+                    Lots = g.Select(x => new DeliveryLotOptionDto
                     {
                         LotNo = x.LotNo,
                         LotKey = x.LotNo,
@@ -176,7 +174,8 @@ internal sealed class GetSelectableDeliveryLinesQueryHandler
                     })
                     .OrderBy(x => x.LotNo)
                     .ThenBy(x => x.LotKey)
-                    .ToList(),
+                    .ToList()
+                },
                 StringComparer.OrdinalIgnoreCase);
 
         var linesByOrder = pageLines
@@ -185,9 +184,8 @@ internal sealed class GetSelectableDeliveryLinesQueryHandler
                 g => g.Key,
                 g => g.Select(line =>
                     {
-                        var lotOptions = stockLookup.TryGetValue(line.ProductExternalId, out var lots)
-                            ? lots
-                            : new List<DeliveryLotOptionDto>();
+                        var stock = stockLookup.GetValueOrDefault(line.ProductExternalId);
+                        var lotOptions = stock?.Lots ?? new List<DeliveryLotOptionDto>();
 
                         return new SelectableDeliveryOrderLineDto
                         {
@@ -200,7 +198,7 @@ internal sealed class GetSelectableDeliveryLinesQueryHandler
                             OrderedQuantity = line.OrderedQuantity,
                             DeliveredQuantity = line.DeliveredQuantity,
                             RemainingQuantity = Math.Max(0m, line.RemainingQuantity),
-                            AvailableStockQuantity = lotOptions.Sum(x => x.Quantity),
+                            AvailableStockQuantity = stock?.AvailableQuantity ?? 0m,
                             LotOptions = lotOptions
                         };
                     })

@@ -31,7 +31,7 @@ namespace HRM.Application.Features.PLM.Dashboard.Shared.Services.Rules
 
         public static readonly string[] SampleRequestExcludedStatuses =
         [
-            SampleRequestStatus.New.ToString(),
+            //SampleRequestStatus.New.ToString(),
             SampleRequestStatus.Cancelled.ToString()
         ];
 

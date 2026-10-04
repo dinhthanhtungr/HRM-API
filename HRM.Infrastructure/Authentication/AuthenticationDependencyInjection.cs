@@ -19,6 +19,7 @@ internal static class AuthenticationDependencyInjection
             configuration.GetSection(RefreshTokenSessionOptions.SectionName));
         services.AddScoped<IIdentityAuthenticationService, IdentityAuthenticationService>();
         services.AddScoped<IEmployeeIdentityAdministrationService, EmployeeIdentityAdministrationService>();
+        services.AddScoped<IEmployeeRolePermissionService, EmployeeRolePermissionService>();
         services.AddScoped<IIdentityAccessValidator, IdentityAccessValidator>();
         services.AddSingleton<ITokenService, JwtTokenService>();
 

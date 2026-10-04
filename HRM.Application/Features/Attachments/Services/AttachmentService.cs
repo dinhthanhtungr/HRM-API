@@ -1,6 +1,7 @@
 using HRM.Application.Abstractions.FileStorage;
 using HRM.Application.Abstractions.Persistence.PLM;
 using HRM.Application.Features.Attachments.Dtos;
+using HRM.Application.Features.InternalMail.Services;
 using HRM.Domain.Entities.AttachmentSchema;
 using HRM.Domain.Enums.Attachment;
 using HRM.Domain.Security.Rules.Attachment;
@@ -12,11 +13,13 @@ internal sealed class AttachmentService : IAttachmentService
 {
     private readonly IPLMWriteDbContext _dbContext;
     private readonly IFileStorage _fileStorage;
+    private readonly InternalMailAreaAccessService _areas;
 
-    public AttachmentService(IPLMWriteDbContext dbContext, IFileStorage fileStorage)
+    public AttachmentService(IPLMWriteDbContext dbContext, IFileStorage fileStorage, InternalMailAreaAccessService areas)
     {
         _dbContext = dbContext;
         _fileStorage = fileStorage;
+        _areas = areas;
     }
 
     public async Task<IReadOnlyList<AttachmentDto>> UploadListAsync(
@@ -30,6 +33,10 @@ internal sealed class AttachmentService : IAttachmentService
         {
             return Array.Empty<AttachmentDto>();
         }
+
+        if (slot == AttachmentSlot.InternalMail || await _dbContext.AttachmentModels.AnyAsync(a =>
+            a.AttachmentCollectionId == collectionId && (a.Slot == AttachmentSlot.InternalMail || a.InternalMessageAttachments.Any()), cancellationToken))
+            throw new InvalidOperationException("Upload chat files through the conversation message endpoint.");
 
         var collectionExists = await _dbContext.AttachmentCollections
             .AnyAsync(x => x.AttachmentCollectionId == collectionId, cancellationToken);
@@ -101,7 +108,7 @@ internal sealed class AttachmentService : IAttachmentService
         AttachmentSlot? slot,
         CancellationToken cancellationToken = default)
     {
-        var query = _dbContext.AttachmentModels
+        var query = _areas.Attachments(_dbContext.AttachmentModels)
             .AsNoTracking()
             .Where(x => x.AttachmentCollectionId == collectionId && x.IsActive);
 
@@ -119,7 +126,7 @@ internal sealed class AttachmentService : IAttachmentService
 
     public async Task<AttachmentContent> GetContentAsync(Guid attachmentId, CancellationToken cancellationToken = default)
     {
-        var attachment = await _dbContext.AttachmentModels
+        var attachment = await _areas.Attachments(_dbContext.AttachmentModels)
             .AsNoTracking()
             .FirstOrDefaultAsync(x => x.AttachmentId == attachmentId && x.IsActive, cancellationToken);
 
@@ -140,6 +147,7 @@ internal sealed class AttachmentService : IAttachmentService
     public async Task DeleteAsync(Guid attachmentId, CancellationToken cancellationToken = default)
     {
         var attachment = await _dbContext.AttachmentModels
+            .Where(x => x.Slot != AttachmentSlot.InternalMail && !x.InternalMessageAttachments.Any())
             .FirstOrDefaultAsync(x => x.AttachmentId == attachmentId && x.IsActive, cancellationToken);
 
         if (attachment is null)
@@ -154,6 +162,7 @@ internal sealed class AttachmentService : IAttachmentService
     public async Task HardDeleteAsync(Guid attachmentId, CancellationToken cancellationToken = default)
     {
         var attachment = await _dbContext.AttachmentModels
+            .Where(x => x.Slot != AttachmentSlot.InternalMail && !x.InternalMessageAttachments.Any())
             .FirstOrDefaultAsync(x => x.AttachmentId == attachmentId, cancellationToken);
 
         if (attachment is null)

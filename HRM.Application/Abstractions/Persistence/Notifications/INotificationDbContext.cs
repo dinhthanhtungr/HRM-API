@@ -35,4 +35,6 @@ public interface INotificationDbContext
     DbSet<ApplicationUserRole> UserRoles { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
+    Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginTransactionAsync(
+        CancellationToken cancellationToken = default);
 }

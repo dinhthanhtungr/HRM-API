@@ -11,6 +11,20 @@ internal static class DeliveryOrderLotInventoryRules
     public static decimal CalculateTotalCost(decimal quantity, decimal unitCost)
         => decimal.Round(quantity * unitCost, 2, MidpointRounding.AwayFromZero);
 
+    /// <summary>
+    /// Tổng lot không được vượt giới hạn product: reserve chưa gắn lot vẫn chiếm tồn.
+    /// Chỉ truyền các snapshot thuộc cùng một product.
+    /// </summary>
+    public static decimal CalculateAvailableQuantity(IEnumerable<DeliveryOrderLotInventorySnapshot> lots)
+    {
+        var rows = lots.ToArray();
+        return rows.Length == 0
+            ? 0m
+            : Math.Max(0m, Math.Min(
+                rows.Sum(x => Math.Max(0m, x.AvailableQuantity)),
+                rows.Min(x => x.ProductAvailableQuantity)));
+    }
+
     public static string? Validate(
         IReadOnlyCollection<DeliveryOrderRequestedLot> requestedLots,
         IReadOnlyDictionary<string, DeliveryOrderLotInventorySnapshot> inventory)

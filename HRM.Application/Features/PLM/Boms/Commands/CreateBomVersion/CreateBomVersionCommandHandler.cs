@@ -77,6 +77,7 @@ internal sealed class CreateBomVersionCommandHandler
             Status = BomVersionStatus.Draft,
             BaseOutputQuantity = command.Request.BaseOutputQuantity ?? source.BaseOutputQuantity,
             OutputUnit = outputUnit.Trim(),
+            SourceFormulaId = source.SourceFormulaId,
             SourceEngineeringBomVersionId = source.SourceEngineeringBomVersionId,
             EffectiveFrom = command.Request.EffectiveFrom,
             EffectiveTo = command.Request.EffectiveTo,

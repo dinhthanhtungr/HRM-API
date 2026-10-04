@@ -32,8 +32,8 @@ public class EquipmentDetailMROConfiguration : IEntityTypeConfiguration<Equipmen
               .HasDatabaseName("ix_equipment_details_equipmenttype_id");
 
         entity.HasOne(d => d.Equipment)
-              .WithMany(p => p.EquipmentDetails)
-              .HasForeignKey(d => d.EquipmentId)
+              .WithOne(p => p.EquipmentDetail)
+              .HasForeignKey<EquipmentDetailMRO>(d => d.EquipmentId)
               .OnDelete(DeleteBehavior.Cascade)
               .HasConstraintName("fk_equipment_details_equipment");
 

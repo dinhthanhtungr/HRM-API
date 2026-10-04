@@ -63,7 +63,9 @@ internal sealed class QuotationProductTierPricingResolver
                     x.StandardSellingPrice,
                     x.MaterialCostSnapshot,
                     x.SourceType,
-                    x.SourceId))
+                    x.SourceId,
+                    x.ManufacturingCost,
+                    x.ProfitMarginRate))
                 .ToArray(),
             companyId,
             _pricingVisibilityService.GetAccess(),

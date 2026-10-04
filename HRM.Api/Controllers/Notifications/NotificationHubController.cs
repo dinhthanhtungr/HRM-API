@@ -1,3 +1,4 @@
+using HRM.Application.Features.NotificationHub.Commands.MarkAllRead;
 using HRM.Application.Features.NotificationHub.Dtos;
 using HRM.Application.Features.NotificationHub.Queries.GetItems;
 using HRM.Domain.Enums.Notifications;
@@ -69,5 +70,19 @@ public sealed class NotificationHubController : ControllerBase
             AfterCreated = string.IsNullOrWhiteSpace(cursor) ? null : afterCreated,
             AfterId = string.IsNullOrWhiteSpace(cursor) ? null : afterId
         }, cancellationToken));
+    }
+
+    /// <summary>
+    /// Đánh dấu toàn bộ notification và message trong các conversation current employee
+    /// còn quyền đọc là đã đọc. Các cập nhật được thực hiện theo batch trong một transaction.
+    /// </summary>
+    [HttpPost("read-all")]
+    [ProducesResponseType(typeof(NotificationHubMarkAllReadResultDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<NotificationHubMarkAllReadResultDto>> MarkAllRead(
+        CancellationToken cancellationToken)
+    {
+        return Ok(await _sender.Send(
+            new MarkAllNotificationHubItemsReadCommand(),
+            cancellationToken));
     }
 }

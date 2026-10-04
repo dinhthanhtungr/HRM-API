@@ -12,6 +12,7 @@ public partial class SampleRequest
     public Guid SampleRequestId { get; set; }
 
     public string ExternalId { get; set; } = string.Empty;
+    public bool? IsDelayed { get; set; } = false;
 
     public Guid CustomerId { get; set; }
 
@@ -24,6 +25,12 @@ public partial class SampleRequest
     public DateTime? ExpectedDeliveryDate { get; set; }
 
     public DateTime? RequestDeliveryDate { get; set; }
+    /// <summary>
+    /// Thời điểm Lab thực tế nhận mẫu đầu vào từ Sale để bắt đầu xử lý yêu cầu.
+    /// Không phải thời điểm Sale nhận mẫu đã hoàn thành từ Lab.
+    /// </summary>
+    public DateTime? LabReceivedDate { get; set; }
+    public Guid? LabReceivedByEmployeeId { get; set; }
     public DateTime? RequestTestSampleDate { get; set; }
     public DateTime? ResponseDeliveryDate { get; set; }
 
@@ -90,4 +97,5 @@ public partial class SampleRequest
 
     public virtual Employee? UpdatedByNavigation { get; set; }
     public virtual Employee? SendByNavigation { get; set; }
+    public virtual Employee? LabReceivedByNavigation { get; set; }
 }

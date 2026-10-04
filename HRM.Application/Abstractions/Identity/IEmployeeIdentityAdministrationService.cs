@@ -5,7 +5,10 @@ public sealed record EmployeeIdentityAccount(
     string? UserName,
     string? Email,
     bool IsActive,
-    IReadOnlyList<string> ActiveRoles);
+    IReadOnlyList<string> ActiveRoles)
+{
+    public IReadOnlyList<string> Permissions { get; init; } = [];
+}
 
 public sealed record EmployeeIdentityRole(
     Guid RoleId,

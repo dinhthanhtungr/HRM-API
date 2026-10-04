@@ -3,6 +3,7 @@ using HRM.Application.Abstractions.Persistence.Notifications;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Abstractions.Notifications;
 using HRM.Application.Commons.Authorization;
+using HRM.Application.Features.InternalMail.Services;
 using HRM.Application.Features.Notifications.Dtos;
 using HRM.Domain.Entities.InternalMailSchema;
 using HRM.Domain.Entities.Notifications;
@@ -21,15 +22,21 @@ internal sealed class NotificationService : INotificationService
     private readonly INotificationDbContext _dbContext;
     private readonly ICurrentUser _currentUser;
     private readonly IWebPushSender _webPushSender;
+    private readonly INotificationInboxArchiver _inboxArchiver;
+    private readonly InternalMailAreaAccessService _areas;
 
     public NotificationService(
         INotificationDbContext dbContext,
         ICurrentUser currentUser,
-        IWebPushSender webPushSender)
+        IWebPushSender webPushSender,
+        INotificationInboxArchiver inboxArchiver,
+        InternalMailAreaAccessService areas)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
         _webPushSender = webPushSender;
+        _inboxArchiver = inboxArchiver;
+        _areas = areas;
     }
 
     public async Task<Guid> PublishAsync(
@@ -56,6 +63,9 @@ internal sealed class NotificationService : INotificationService
         }
 
         var now = DateTime.Now;
+        var isPrivateArea = request.ConversationId.HasValue && await _dbContext.InternalConversations.AnyAsync(c =>
+            c.InternalConversationId == request.ConversationId && c.CompanyId == companyId &&
+            (c.RelatedType == InternalMailRelatedType.ConversationTechnical || c.RelatedType == InternalMailRelatedType.ConversationPricing), cancellationToken);
         var notification = new Notification
         {
             Id = Guid.CreateVersion7(),
@@ -73,7 +83,7 @@ internal sealed class NotificationService : INotificationService
 
         await _dbContext.Notifications.AddAsync(notification, cancellationToken);
 
-        var developerEmployeeIds = await ResolveActiveDeveloperEmployeeIdsAsync(companyId, cancellationToken);
+        var developerEmployeeIds = isPrivateArea ? Array.Empty<Guid>() : await ResolveActiveDeveloperEmployeeIdsAsync(companyId, cancellationToken);
         var targetUserIds = NormalizeIds(request.TargetUserIds)
             .Concat(developerEmployeeIds)
             .Distinct()
@@ -145,6 +155,14 @@ internal sealed class NotificationService : INotificationService
             silentUserIds,
             Array.Empty<string>(),
             cancellationToken);
+        var allowedRecipients = await _areas.Recipients(companyId, null, request.ConversationId)
+            .ToHashSetAsync(cancellationToken);
+        if (isPrivateArea)
+            allowedRecipients.IntersectWith(await _dbContext.InternalConversationParticipants
+                .Where(p => p.InternalConversationId == request.ConversationId && p.IsActive && !p.IsMuted)
+                .Select(p => p.EmployeeId).ToArrayAsync(cancellationToken));
+        resolvedEmployeeIds.IntersectWith(allowedRecipients);
+        resolvedSilentEmployeeIds.IntersectWith(allowedRecipients);
         var resolvedSilentEmployeeIdSet = resolvedSilentEmployeeIds
             .Where(x => !resolvedEmployeeIds.Contains(x))
             .ToHashSet();
@@ -184,9 +202,9 @@ internal sealed class NotificationService : INotificationService
             {
                 CompanyId = companyId,
                 NotificationId = notification.Id,
-                TargetUserIds = targetUserIds,
-                TargetRoles = targetRoles,
-                TargetTeamIds = targetTeamIds
+                TargetUserIds = resolvedEmployeeIds.ToArray(),
+                TargetRoles = Array.Empty<string>(),
+                TargetTeamIds = Array.Empty<Guid>()
             }),
             CreatedAt = now
         }, cancellationToken);
@@ -317,7 +335,7 @@ internal sealed class NotificationService : INotificationService
         var employeeId = GetCurrentEmployeeId();
         var normalizedTake = Math.Clamp(take, 1, 100);
 
-        var query = _dbContext.Notifications
+        var query = _areas.Notifications(_dbContext.Notifications)
             .AsNoTracking()
             .Where(x =>
                 x.CompanyId == companyId &&
@@ -434,7 +452,7 @@ internal sealed class NotificationService : INotificationService
         var companyId = GetCurrentCompanyId();
         var employeeId = GetCurrentEmployeeId();
 
-        return await _dbContext.NotificationUserStates
+        return await _areas.States()
             .AsNoTracking()
             .CountAsync(x =>
                 x.UserId == employeeId &&
@@ -450,7 +468,7 @@ internal sealed class NotificationService : INotificationService
         var companyId = GetCurrentCompanyId();
         var employeeId = GetCurrentEmployeeId();
 
-        var topicCounts = await _dbContext.NotificationUserStates
+        var topicCounts = await _areas.States()
             .AsNoTracking()
             .Where(x =>
                 x.UserId == employeeId &&
@@ -515,7 +533,7 @@ internal sealed class NotificationService : INotificationService
         var companyId = GetCurrentCompanyId();
         var employeeId = GetCurrentEmployeeId();
 
-        var result = await _dbContext.Notifications
+        var result = await _areas.Notifications(_dbContext.Notifications)
             .AsNoTracking()
             .Where(x =>
                 x.Id == id &&
@@ -558,7 +576,7 @@ internal sealed class NotificationService : INotificationService
         var companyId = GetCurrentCompanyId();
         var employeeId = GetCurrentEmployeeId();
 
-        await _dbContext.NotificationUserStates
+        await _areas.States()
             .Where(x =>
                 x.NotificationId == id &&
                 x.UserId == employeeId &&
@@ -575,7 +593,7 @@ internal sealed class NotificationService : INotificationService
         var companyId = GetCurrentCompanyId();
         var employeeId = GetCurrentEmployeeId();
 
-        return await _dbContext.NotificationUserStates
+        return await _areas.States()
             .Where(x =>
                 x.UserId == employeeId &&
                 !x.IsRead &&
@@ -585,6 +603,21 @@ internal sealed class NotificationService : INotificationService
                 .SetProperty(x => x.IsRead, true)
                 .SetProperty(x => x.ReadDate, DateTime.Now),
                 cancellationToken);
+    }
+
+    public async Task<bool> ArchiveCurrentGroupAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        if (id == Guid.Empty) return false;
+        var companyId = GetCurrentCompanyId();
+        var employeeId = GetCurrentEmployeeId();
+        await using var transaction = await _dbContext.BeginTransactionAsync(cancellationToken);
+        var exists = await _dbContext.NotificationUserStates.AnyAsync(state =>
+            state.NotificationId == id && state.UserId == employeeId && !state.IsArchived &&
+            state.Notification.CompanyId == companyId, cancellationToken);
+        if (!exists) return false;
+        await _inboxArchiver.ArchiveGroupAsync(companyId, employeeId, id, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return true;
     }
 
     public async Task<bool> ArchiveCurrentAsync(Guid id, CancellationToken cancellationToken = default)

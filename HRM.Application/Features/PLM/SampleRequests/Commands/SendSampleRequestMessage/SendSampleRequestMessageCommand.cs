@@ -19,6 +19,7 @@ namespace HRM.Application.Features.PLM.SampleRequests.Commands.SendSampleRequest
 public sealed class SendSampleRequestMessageCommand : IRequest<OperationResult<SendInternalMessageResultDto>>
 {
     public Guid SampleRequestId { get; set; }
+    public string? AreaCode { get; set; }
 
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public SampleRequestNotificationType Type { get; set; }

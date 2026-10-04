@@ -67,6 +67,7 @@ public sealed class QuotationPdfLineDto
 public sealed class QuotationPdfPriceTierDto
 {
     public string QuantityRangeLabel { get; init; } = string.Empty;
+    public decimal? MinQuantity { get; init; }
     public decimal UnitPrice { get; init; }
     public decimal CommissionAmount { get; init; }
     public decimal CustomerUnitPrice { get; init; }

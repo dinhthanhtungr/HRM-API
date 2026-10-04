@@ -64,6 +64,14 @@ internal static class ProductPricingReviewRules
             ? PricingReviewSourceType.VA
             : PricingReviewSourceType.VU;
 
+    public static string BuildSourceDisplayName(
+        PricingReviewSourceType sourceType,
+        string sourceCode,
+        string? sourceName)
+        => sourceType == PricingReviewSourceType.VA || string.IsNullOrWhiteSpace(sourceName)
+            ? sourceCode
+            : sourceCode + " · " + sourceName;
+
     /// <summary>
     /// Chọn công thức gợi ý theo mốc sự kiện nghiệp vụ do từng loại nguồn cung cấp,
     /// không theo ngày tạo chung của Formula/ManufacturingFormula.

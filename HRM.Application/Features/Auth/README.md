@@ -15,6 +15,10 @@ login/refresh để lấy token mới, hoặc token cũ hết hạn theo `Jwt:EX
 
 ## JWT permission claims
 
+Developer cấu hình permission qua `GET/PUT /api/v1/employees/roles/{roleId}/permissions`.
+Catalog chỉ nhận capability đã được backend hỗ trợ. Khi user có cả role đã cấu hình DB và role legacy,
+backend resolve từng role riêng rồi hợp nhất: marker rỗng của một role chỉ thu hồi quyền của chính role đó.
+
 Login/refresh đọc `AspNetRoleClaims` của các role assignment active. Claim `permission` được hợp nhất, loại trùng và
 đưa vào access token. Claim `permission-model = 1` đánh dấu role đã dùng permission DB; khi có marker, một tập
 permission rỗng là quyết định thu hồi toàn bộ chứ không fallback sang role hard-code.
@@ -27,6 +31,11 @@ Thay đổi role claim có hiệu lực sau lần login/refresh kế tiếp ho�
 nhạy cảm trong log và không dùng permission claim thay cho company/ownership/record-scope check.
 
 ## Session contract
+
+Khóa quản trị tài khoản dùng Identity `LockoutEnabled`/`LockoutEnd` hiện có, không cần cột `IsActive` mới.
+Login, refresh và mỗi request JWT từ chối tài khoản còn lockout. Nghỉ việc đặt `Employee.IsActive = false`,
+lưu ngày nghỉ, khóa account vô thời hạn và thu hồi refresh token. Mở lại nhân viên không tự mở account.
+Sau mở account, access token cũ chưa hết hạn có thể dùng lại; API status không phải cơ chế thu hồi vĩnh viễn từng access token.
 
 REST clients may authenticate with the HttpOnly `hrm_access_token` cookie. Login and refresh return the same
 identity snapshot used to issue the access token, including `userId`, `employeeId`, `companyId` and active role

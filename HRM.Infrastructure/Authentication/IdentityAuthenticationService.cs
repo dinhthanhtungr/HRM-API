@@ -32,7 +32,6 @@ public sealed class IdentityAuthenticationService(
             return null;
         }
 
-        // Temporary compatibility: AspNetUsers does not have an IsActive column yet.
         if (await userManager.IsLockedOutAsync(user))
         {
             return null;
@@ -77,7 +76,7 @@ public sealed class IdentityAuthenticationService(
         var user = await userManager.Users
             .FirstOrDefaultAsync(x => x.Id == userId, cancellationToken);
 
-        if (user is null)
+        if (user is null || await userManager.IsLockedOutAsync(user))
         {
             throw new InvalidOperationException("User not found or inactive.");
         }
@@ -116,7 +115,7 @@ public sealed class IdentityAuthenticationService(
                          x.RefreshTokenExpirationDateTime > DateTime.Now,
                     cancellationToken);
 
-            if (user is null)
+            if (user is null || await userManager.IsLockedOutAsync(user))
             {
                 return null;
             }
@@ -163,6 +162,7 @@ public sealed class IdentityAuthenticationService(
             var activeSession = await userManager.Users
                 .Where(user =>
                     user.Id == userId &&
+                    (!user.LockoutEnabled || user.LockoutEnd == null || user.LockoutEnd <= DateTimeOffset.UtcNow) &&
                     user.RefreshToken == expectedRefreshToken &&
                     user.RefreshTokenExpirationDateTime > now)
                 .Select(user => new RefreshTokenSessionDto(
@@ -176,6 +176,7 @@ public sealed class IdentityAuthenticationService(
         var updatedRows = await userManager.Users
             .Where(user =>
                 user.Id == userId &&
+                (!user.LockoutEnabled || user.LockoutEnd == null || user.LockoutEnd <= DateTimeOffset.UtcNow) &&
                 user.RefreshToken == expectedRefreshToken &&
                 user.RefreshTokenExpirationDateTime > now)
             .ExecuteUpdateAsync(
@@ -234,16 +235,21 @@ public sealed class IdentityAuthenticationService(
             .Where(claim => activeRoleIds.Contains(claim.RoleId) &&
                 (claim.ClaimType == ApplicationPermissionClaimTypes.Permission ||
                  claim.ClaimType == ApplicationPermissionClaimTypes.PermissionModelVersion))
-            .Select(claim => new { claim.ClaimType, claim.ClaimValue })
+            .Select(claim => new { claim.RoleId, claim.ClaimType, claim.ClaimValue })
             .ToListAsync(cancellationToken);
         var usesDatabasePermissions = roleClaims.Any(claim =>
             claim.ClaimType == ApplicationPermissionClaimTypes.PermissionModelVersion &&
             claim.ClaimValue == ApplicationPermissionClaimTypes.CurrentModelVersion);
-        var permissions = roleClaims
-            .Where(claim =>
-                claim.ClaimType == ApplicationPermissionClaimTypes.Permission &&
-                !string.IsNullOrWhiteSpace(claim.ClaimValue))
-            .Select(claim => claim.ClaimValue!)
+        // Resolve từng role trước khi hợp nhất: role chưa cấu hình vẫn giữ fallback khi
+        // cùng tài khoản có một role đã chuyển sang permission DB.
+        var permissions = roleAssignments.Where(role => !string.IsNullOrWhiteSpace(role.Name))
+            .SelectMany(role => ApplicationPermissionCatalog.ResolveRole(role.Name!,
+                roleClaims.Any(claim => claim.RoleId == role.Id &&
+                    claim.ClaimType == ApplicationPermissionClaimTypes.PermissionModelVersion &&
+                    claim.ClaimValue == ApplicationPermissionClaimTypes.CurrentModelVersion),
+                roleClaims.Where(claim => claim.RoleId == role.Id &&
+                    claim.ClaimType == ApplicationPermissionClaimTypes.Permission)
+                    .Select(claim => claim.ClaimValue ?? string.Empty)))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
 

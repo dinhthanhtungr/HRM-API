@@ -1,0 +1,1 @@
+DROP TABLE IF EXISTS bom.manufacturing_process_template_applicabilities;

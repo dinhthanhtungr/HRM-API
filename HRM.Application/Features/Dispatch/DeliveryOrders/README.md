@@ -1,5 +1,49 @@
 # Delivery Orders
 
+## Bắt đầu đọc module
+
+Module phục vụ điều vận: xem PO còn lượng cần lập phiếu, chọn lot thành phẩm, tạo phiếu,
+sửa phiếu Pending, theo dõi tiến trình và hủy phiếu. Dữ liệu được đọc từ database của HRM.api;
+đường dẫn source legacy không phải nguồn dữ liệu runtime. Chuyển code không tự chuyển dữ liệu cũ.
+
+- [Hướng dẫn luồng và contract cho FE](DISPATCH-FLOW.md).
+- [Đối chiếu module cũ, cấu trúc Clean Architecture và hướng nâng cấp](LEGACY-MAPPING.md).
+- [Lịch sử thay đổi](CHANGELOG.md).
+
+Điểm cần nhớ: `deliveredQuantity` ở selectable-lines là **lượng đã phân bổ vào phiếu còn hiệu lực**,
+gồm cả Pending, không phải xác nhận khách đã nhận hàng. Phiếu `Canceled`/`Cancelled` không chiếm
+lượng PO. Query chọn đơn và validation create/update cùng dùng `Queries/DeliveryOrderQuantityQuery.cs`.
+
+Module có luồng chọn đơn → tạo/sửa phiếu và tải PDF/Excel cho từng phiếu đã lưu.
+Xuất file chỉ đọc dữ liệu, không sao chép side effect của thao tác in legacy; các báo cáo Excel
+tổng hợp kế hoạch/hoàn tất/vận chuyển vẫn chưa chuyển, xem bảng đối chiếu.
+
+## In PDF và xuất Excel từng phiếu
+
+- `GET /api/v1/dispatch/delivery-orders/{id}/pdf`: file PDF A4, bảng hàng, tổng kg/bao và ô ký nhận.
+- `GET /api/v1/dispatch/delivery-orders/{id}/excel`: file XLSX một sheet `Phieu giao hang`, có filter,
+  cố định hàng tiêu đề, số lượng/ngày là dữ liệu typed, thiết lập in A4 ngang.
+- Trả binary với MIME `application/pdf` hoặc
+  `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`, filename
+  `delivery-order-{guid}.pdf/xlsx`; FE tải response dạng blob. Không bọc binary trong JSON.
+- Dùng quyền đọc hiện có (`DeliveryOrderAccessRules.ReadRoles`), không thêm capability mới.
+  Handler kiểm tra lại quyền và company; không tìm thấy, khác company hoặc phiếu inactive trả 404.
+  Phiếu đã hủy còn active vẫn xuất được để đối chiếu, luôn hiển thị status trên chứng từ.
+- Cả hai định dạng dùng cùng `DeliveryOrderDocumentQuery` và DTO riêng không chứa giá vốn/giá giao;
+  SQL không đọc `UnitCostSnapshot`, `TotalCostSnapshot`, `DeliveryPrice` ở bất kỳ role nào.
+- Thông tin phiếu, địa chỉ nhận, số điện thoại và product là dữ liệu/snapshot đã lưu trên phiếu/dòng;
+  tên khách hàng, đơn vị phát hành và người giao lấy từ danh mục hiện tại. Ngày in hiển thị là
+  **ngày tạo phiếu**, không phải ngày xuất file hay ngày thực giao. Không có ngày tạo thì để trống.
+- Mỗi dòng chứng từ là một delivery detail active; lot lấy consumption active, fallback `LotNoList`
+  khi chưa có consumption. Không nhân quantity theo số lot. Dòng hàng kèm có nhãn riêng và không
+  vào tổng kg/bao. Field tùy chọn null hiển thị trống; tổng 0 là số thực tính được, không phải che giá.
+- Tải/in nhiều lần không đổi `HasPrinted`, status, `RealQuantity`, timeline hay tồn kho. Không có
+  SaveChanges/transaction ghi trong use case. Muốn xác nhận giao phải dùng command nghiệp vụ.
+- Renderer PDF/Excel nằm ở Infrastructure, interface ở Application; DI đăng ký trong
+  `PersistenceDependencyInjection`. PDF dùng font Open Sans và cấu hình license QuestPDF sẵn có.
+- Đây là mẫu phiếu theo dữ liệu HRM.api, không cam kết giống pixel mẫu legacy. Báo cáo Excel nhiều
+  phiếu theo khoảng ngày và tác động “in là ghi nhận giao” chưa được triển khai.
+
 ## Quyền truy cập và phạm vi dữ liệu
 
 Các API dưới `/api/v1/dispatch` yêu cầu đăng nhập. Create, update, list, detail và selectable-lines luôn lấy `CompanyId` từ current user; backend không dùng `CompanyId`, `CreatedBy` hoặc `UpdatedBy` do FE gửi. Create/update yêu cầu tài khoản được liên kết với một employee để ghi audit. Query detail/update lọc đồng thời theo `Id` và company hiện tại để tránh IDOR.
@@ -24,7 +68,7 @@ Các API dưới `/api/v1/dispatch` yêu cầu đăng nhập. Create, update, li
 - `line.quantity` phải đúng bằng tổng `lots[].quantity`; request sai bị từ chối. Giá trị lưu tại `DeliveryOrderDetail.Quantity` luôn lấy từ danh sách lot đã chuẩn hóa.
 - Lot trùng nhau không phân biệt hoa/thường được gộp quantity. Nếu nhiều request line cùng `MerchandiseOrderDetailId`, backend gộp thành một delivery detail.
 - `LotNoList` là field legacy/display và luôn được backend sinh lại từ lots đã chuẩn hóa.
-- `UnitCostSnapshot` và `TotalCostSnapshot` không thuộc request DTO, FE không thể gán hai field này. Phase 1 để backend khởi tạo snapshot bằng `0` cho đến khi có rule tính cost riêng.
+- `UnitCostSnapshot` và `TotalCostSnapshot` không thuộc request DTO, FE không thể gán hai field này. Backend tính theo rule cost ở phần tồn kho bên dưới; dữ liệu không có nguồn cost phù hợp dùng fallback `0`.
 
 ### Tương thích FE cũ
 
@@ -84,13 +128,13 @@ List và detail trả `status`, `lineCount`, `totalQuantity`, `totalNumOfBags`, 
 }
 ```
 
-`lots` chỉ đọc các `DeliveryOrderDetailLotConsumption` active. Response không trả cost snapshot.
+`lots` chỉ đọc các `DeliveryOrderDetailLotConsumption` active. Ví dụ trên là response không có quyền xem cost; snapshot chỉ được trả khi có capability `dispatch.delivery-cost.view` như mô tả bên dưới.
 
 ## Backfill dữ liệu lot cũ
 
 `POST /api/v1/dispatch/delivery-orders/lot-consumptions/backfill` chuyển dữ liệu lịch sử từ `DeliveryOrderDetail.LotNoList` sang `DeliveryOrderDetailLotConsumption` trong company của current user.
 
-- Endpoint yêu cầu role admin/super-user theo policy hiện có.
+- Endpoint yêu cầu role `Admin` theo policy hiện có.
 - `dryRun` mặc định là `true`; gọi với `dryRun=false` để ghi dữ liệu.
 - Chỉ dòng có đúng một lot sau chuẩn hóa được chuyển; quantity lot bằng quantity của detail.
 - Dòng đã có lot consumption được bỏ qua để bảo đảm idempotent.
@@ -143,7 +187,7 @@ Phase 3 không tạo migration.
 - `LotNoList` chỉ được đọc khi delivery detail không có lot consumption active. API list/detail sinh `LotNoList` display từ consumption; dữ liệu lịch sử chưa backfill mới trả chuỗi legacy. Với dòng legacy, `lots` có thể rỗng vì không thể suy ra quantity chính xác cho từng lot từ chuỗi cũ.
 - Executive PnL dùng tổng `TotalCostSnapshot` của các lot active. Dòng lịch sử chưa backfill giữ fallback cũ: dashboard sales/product type và report tổng hợp resolve formula cost theo `LotNoList`; dashboard customer/trend dùng `BaseCostSnapshot`.
 - Timeline hiển thị lot sinh từ consumption, fallback legacy. Complaint source trả lot consumption; dòng lịch sử chưa chuyển trả một lot fallback với `lotConsumptionId = null` và toàn bộ quantity của delivery detail.
-- Repo hiện không có PDF/Excel exporter trực tiếp cho Delivery Order. Complaint PDF đọc snapshot lot đã lưu trong Complaint Report, nên không đọc trực tiếp `DeliveryOrderDetail.LotNoList`.
+- PDF/Excel Delivery Order đọc consumption active, fallback chuỗi legacy khi chưa có consumption. Complaint PDF đọc snapshot lot đã lưu trong Complaint Report.
 
 ### Backfill và reconciliation
 

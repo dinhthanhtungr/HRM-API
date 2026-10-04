@@ -62,9 +62,8 @@ public static class FormulaPriceCalculator
             _ when standardSellingPrice.HasValue => PricingRoundingRules.RoundStoredInput(standardSellingPrice.Value),
             _ => CalculateSellingPriceFromMargin(policy, costBase, marginToApply)
         };
-        var resolvedProfitMarginRate = CalculateProfitMarginRate(
-            resolvedStandardSellingPrice,
-            costBase);
+        var resolvedProfitMarginRate = StandardSellingPriceCalculator
+            .CalculateProfitMarginRateOnSellingPrice(resolvedStandardSellingPrice, costBase) ?? 0m;
         if (resolvedProfitMarginRate < 0m)
             throw new ArgumentOutOfRangeException(nameof(standardSellingPrice));
 
@@ -144,5 +143,9 @@ public static class FormulaPriceCalculator
         FormulaPricingPolicyDefinition policy,
         decimal costBase,
         decimal profitMarginRate)
-        => Round(policy, costBase / (1m - profitMarginRate / 100m));
+        => StandardSellingPriceCalculator.CalculateFromProfitMarginOnSellingPrice(
+            costBase,
+            profitMarginRate,
+            policy.RoundingRule,
+            policy.RoundingIncrement);
 }

@@ -6,6 +6,7 @@ using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Models;
 using HRM.Application.Features.Attachments.Dtos;
 using HRM.Application.Features.InternalMail.Dtos;
+using HRM.Application.Features.InternalMail.Services;
 using HRM.Application.Features.Notifications.Dtos;
 using HRM.Application.Features.Notifications.Services;
 using HRM.Domain.Entities.AttachmentSchema;
@@ -27,6 +28,7 @@ internal sealed class SendInternalMessageCommandHandler
     private const long MaxTotalAttachmentBytes = 50 * AttachmentRules.MB;
     private readonly IInternalMailDbContext _dbContext;
     private readonly ICurrentUser _currentUser;
+    private readonly InternalMailAreaAccessService _areas;
     private readonly IDateTimeProvider _dateTimeProvider;
     private readonly INotificationService _notificationService;
     private readonly IFileStorage _fileStorage;
@@ -38,10 +40,12 @@ internal sealed class SendInternalMessageCommandHandler
         IDateTimeProvider dateTimeProvider,
         INotificationService notificationService,
         IFileStorage fileStorage,
-        IImageThumbnailGenerator thumbnailGenerator)
+        IImageThumbnailGenerator thumbnailGenerator,
+        InternalMailAreaAccessService areas)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
+        _areas = areas;
         _dateTimeProvider = dateTimeProvider;
         _notificationService = notificationService;
         _fileStorage = fileStorage;
@@ -56,7 +60,7 @@ internal sealed class SendInternalMessageCommandHandler
         var attachments = request.Attachments ?? Array.Empty<AttachmentUploadFile>();
         if (request.ConversationId == Guid.Empty ||
             (string.IsNullOrWhiteSpace(body) && attachments.Count == 0) ||
-            body.Length > MaxBodyLength)
+            (!request.IsForwarded && body.Length > MaxBodyLength))
         {
             return OperationResult<SendInternalMessageResultDto>.Fail(
                 $"A message body or attachment is required. Body cannot exceed {MaxBodyLength} characters.");
@@ -75,7 +79,7 @@ internal sealed class SendInternalMessageCommandHandler
             return OperationResult<SendInternalMessageResultDto>.Fail("Current employee or company is invalid.");
         }
 
-        var conversation = await _dbContext.InternalConversations
+        var conversation = await _areas.Conversations()
             .FirstOrDefaultAsync(x =>
                 x.InternalConversationId == request.ConversationId &&
                 x.CompanyId == companyId.Value &&
@@ -86,10 +90,16 @@ internal sealed class SendInternalMessageCommandHandler
         {
             return OperationResult<SendInternalMessageResultDto>.Fail("Conversation was not found.");
         }
+        if (request.AreaCode is not null && request.AreaCode != InternalMailAreaAccessService.AreaOf(conversation.RelatedType))
+            return OperationResult<SendInternalMessageResultDto>.Fail("The selected area does not match this conversation.");
+        var businessContext = InternalMailAreaAccessService.IsPrivateArea(conversation.RelatedType)
+            ? await _dbContext.InternalConversations.AsNoTracking().FirstAsync(c => c.InternalConversationId == conversation.RelatedId &&
+                c.CompanyId == companyId.Value && c.IsActive, cancellationToken)
+            : conversation;
 
         if (request.ReplyToMessageId is { } replyId && replyId != Guid.Empty)
         {
-            var replyExists = await _dbContext.InternalMessages
+            var replyExists = await _areas.Messages(request.AreaCode)
                 .AsNoTracking()
                 .AnyAsync(x =>
                     x.InternalMessageId == replyId &&
@@ -102,8 +112,10 @@ internal sealed class SendInternalMessageCommandHandler
             }
         }
 
+        var allowedRecipients = _areas.Recipients(companyId.Value, request.AreaCode, conversation.InternalConversationId);
         var participants = await _dbContext.InternalConversationParticipants
             .AsNoTracking()
+            .Where(x => allowedRecipients.Contains(x.EmployeeId))
             .Where(x => x.InternalConversationId == conversation.InternalConversationId && x.IsActive)
             .Select(x => new { x.EmployeeId, x.IsMuted })
             .ToListAsync(cancellationToken);
@@ -114,10 +126,11 @@ internal sealed class SendInternalMessageCommandHandler
         {
             ConversationId = conversation.InternalConversationId,
             MessageId = messageId,
-            RelatedType = conversation.RelatedType?.ToString(),
-            RelatedId = conversation.RelatedId,
+            RelatedType = businessContext.RelatedType?.ToString(),
+            RelatedId = businessContext.RelatedId,
             IsUrgent = request.IsUrgent,
-            AttachmentCount = attachments.Count
+            AttachmentCount = attachments.Count,
+            IsForwarded = request.IsForwarded
         };
 
         var message = new InternalMessage
@@ -180,12 +193,12 @@ internal sealed class SendInternalMessageCommandHandler
                 CompanyId = companyId.Value,
                 CreatedBy = senderId.Value,
                 CreatedByNameSnapshot = senderName ?? _currentUser.UserName,
-                Topic = ResolveTopic(conversation.RelatedType),
+                Topic = ResolveTopic(businessContext.RelatedType),
                 Severity = request.IsUrgent ? NotificationSeverity.Warning : NotificationSeverity.Info,
                 Title = conversation.Subject,
                 Message = string.IsNullOrWhiteSpace(body) ? $"{attachments.Count} attachment(s)" : body,
                 Link = $"/internal-mail/conversations/{conversation.InternalConversationId}",
-                AggregateId = conversation.RelatedId,
+                AggregateId = businessContext.RelatedId,
                 AggregateCode = conversation.RelatedExternalId,
                 ConversationId = conversation.InternalConversationId,
                 MessageId = messageId,

@@ -127,9 +127,19 @@ Response rút gọn:
   },
   "materials": [],
   "editor": {},
-  "tabCounts": {}
+  "tabCounts": {
+    "pricingHistoryCount": 3,
+    "relatedQuotationCount": 2,
+    "vaLotCount": 1,
+    "merchandiseOrderCount": 8
+  }
 }
 ```
+
+`tabCounts.merchandiseOrderCount` là số Merchandise Order active cùng company có dòng active của Product,
+chỉ tính `OrderType` `Merchandise`/`SampleRequest`/`Complaint` và status hợp lệ (`Approved`, `Processing`,
+`Delivering`, `Delivered`, `Completed`). Count dùng cùng semantics với lịch sử giá bán, không tính đơn `Internal`,
+Draft/Pending/Paused/Cancelled. Đơn `Complaint` giá 0 vẫn được đếm vì là một bản ghi trong tab lịch sử.
 
 `realtimePriceComparison` ở cấp root luôn so sánh giá và `MaterialCostSnapshot` của version `Approved` mới nhất
 với chi phí NVL realtime của đúng Formula/VA đã lưu trên version đó. Nó không đổi theo `sourceType/sourceId` mà
@@ -149,12 +159,11 @@ không phải ID policy snapshot của `ProductPricingVersion` lịch sử.
 - VU active đã gửi mẫu: dùng `Formula.SentDate`.
 - VA trạng thái `Checking` đã được chọn trong `ProductionSelectVersion` của lệnh sản xuất active: dùng
   `MfgProductionOrder.CreatedDate`.
-- VA active có trạng thái `Checking` và được gắn với Product: dùng
-  `ManufacturingFormula.CreatedDate`.
 
-Khi trùng mốc, `SourceId` lớn hơn được dùng làm tie-breaker ổn định. `currentFormulaUse.createdAt` vẫn
+`ProductStandardFormula` không tham gia chọn `currentFormulaUse`; quan hệ này chỉ dùng để xác định source VA hợp lệ
+trong source switcher. Khi trùng mốc, `SourceId` lớn hơn được dùng làm tie-breaker ổn định. `currentFormulaUse.createdAt` vẫn
 là ngày tạo của chính Formula/VA; đây không phải mốc được dùng để xếp hạng. `currentFormulaUse=null`
-nghĩa là không có candidate nào trong ba nhóm trên.
+nghĩa là không có candidate VU hoặc VA sản xuất phù hợp.
 `selectedSource.sourceNote` và `currentFormulaUse.sourceNote` là `Formula.Note` đối với VU hoặc
 `ManufacturingFormula.Note` đối với VA; chuỗi rỗng chỉ được trả là `null`. Note chỉ có trong detail của
 nguồn đang xem/nguồn ưu tiên, không được trả hàng loạt từ source switcher.
@@ -303,7 +312,9 @@ response create/update/approve và `GET /versions` trả lại field này. `POST
 ghi chú trước để duyệt sau.
 
 `GET /products/{productId}/versions` còn trả `realtimePriceComparison` cho từng version `Approved` hoặc
-`Superseded`. Object này dùng chung `StandardPriceRealtimeComparisonQueryService` với Product Pricing Workbench
+`Superseded`. Object này dùng chung `StandardPriceRealtimeComparisonQueryService` với Product Pricing Workbench;
+giá realtime giữ chi phí sản xuất và margin trên giá bán của bản Approved, chỉ cập nhật NVL realtime theo
+`giá = (NVL realtime + chi phí sản xuất Approved) / (1 - margin Approved%)`.
 và Sample Request Pricing Overview: giá/snapshot của chính version lịch sử được so với chi phí NVL realtime của
 đúng Formula/VA đã gắn. Draft và Cancelled trả `null`; kết quả chỉ là read-model, không cập nhật version lịch sử.
 Các source trong một trang được resolve theo batch và các field chi phí tuyệt đối vẫn tuân theo pricing visibility.
@@ -429,7 +440,7 @@ ID còn lại là `null`; `itemType` chỉ trả `Material` hoặc `Product`.
     "sourceId": "manufacturing-formula-guid",
     "sourceCode": "VA260300387",
     "sourceName": "F003",
-    "displayName": "VA260300387 · F003",
+    "displayName": "VA260300387",
     "versionNumber": 3,
     "status": "Checking"
   },

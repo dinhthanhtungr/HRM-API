@@ -93,6 +93,12 @@ internal sealed class BomLifecycleService
             return "Every Manufacturing BOM item unit must be kg until unit conversion is supported.";
         }
 
+        var machineParameterError = ValidateMachineParametersForRelease(version);
+        if (machineParameterError is not null)
+        {
+            return machineParameterError;
+        }
+
         var stageIds = version.ManufacturingStages
             .Where(x => x.IsActive)
             .Select(x => x.ManufacturingBomStageId)
@@ -125,6 +131,40 @@ internal sealed class BomLifecycleService
             if (error is not null)
             {
                 return error;
+            }
+        }
+
+        return null;
+    }
+
+    private static string? ValidateMachineParametersForRelease(BomVersion version)
+    {
+        foreach (var parameter in version.ManufacturingStages
+                     .SelectMany(stage => stage.Machines)
+                     .SelectMany(machine => machine.Parameters))
+        {
+            var hasValue = parameter.TargetValueSnapshot.HasValue ||
+                           parameter.MinValueSnapshot.HasValue ||
+                           parameter.MaxValueSnapshot.HasValue;
+            if (parameter.IsRequiredSnapshot && !hasValue)
+            {
+                return $"Required machine parameter {parameter.ParameterCodeSnapshot} must have TargetValue, MinValue or MaxValue before release.";
+            }
+
+            if (parameter.MinValueSnapshot.HasValue && parameter.MaxValueSnapshot.HasValue &&
+                parameter.MinValueSnapshot > parameter.MaxValueSnapshot)
+            {
+                return $"Machine parameter {parameter.ParameterCodeSnapshot} has MinValue greater than MaxValue.";
+            }
+            if (parameter.TargetValueSnapshot.HasValue && parameter.MinValueSnapshot.HasValue &&
+                parameter.TargetValueSnapshot < parameter.MinValueSnapshot)
+            {
+                return $"Machine parameter {parameter.ParameterCodeSnapshot} has TargetValue below MinValue.";
+            }
+            if (parameter.TargetValueSnapshot.HasValue && parameter.MaxValueSnapshot.HasValue &&
+                parameter.TargetValueSnapshot > parameter.MaxValueSnapshot)
+            {
+                return $"Machine parameter {parameter.ParameterCodeSnapshot} has TargetValue above MaxValue.";
             }
         }
 

@@ -36,7 +36,10 @@ internal sealed class ReleaseBomVersionCommandHandler : IRequestHandler<ReleaseB
             .Include(x => x.BomDefinition)
             .Include(x => x.Items)
             .Include(x => x.ManufacturingStages)
+                .ThenInclude(x => x.Machines)
+                .ThenInclude(x => x.Parameters)
             .Include(x => x.LossRules)
+            .AsSplitQuery()
             .FirstOrDefaultAsync(
                 x => x.BomVersionId == command.BomVersionId && x.BomDefinition.CompanyId == companyId,
                 cancellationToken);

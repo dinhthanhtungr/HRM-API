@@ -166,6 +166,12 @@ internal sealed class GetSampleRequestDetailQueryHandler
                     BagWeight = x.BagWeight,
                     CustomerProductCode = x.CustomerProductCode,
                     RequestDeliveryDate = x.RequestDeliveryDate,
+                    LabReceivedDate = x.LabReceivedDate,
+                    IsDelayed = x.IsDelayed == true,
+                    LabReceivedByEmployeeId = x.LabReceivedByEmployeeId,
+                    LabReceivedByName = x.LabReceivedByNavigation != null
+                        ? x.LabReceivedByNavigation.FullName
+                        : null,
                     ExpectedDeliveryDate = x.ExpectedDeliveryDate,
                     RealDeliveryDate = x.RealDeliveryDate,
                     RequestTestSampleDate = x.RequestTestSampleDate,

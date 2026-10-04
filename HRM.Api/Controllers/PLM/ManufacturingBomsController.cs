@@ -5,11 +5,13 @@ using HRM.Application.Features.PLM.Boms.Commands.ApplyManufacturingLossProfile;
 using HRM.Application.Features.PLM.Boms.Commands.PreviewManufacturingLossProfile;
 using HRM.Application.Features.PLM.Boms.Commands.ReplaceManufacturingBom;
 using HRM.Application.Features.PLM.Boms.Commands.UpdateManufacturingBomProcessConfiguration;
+using HRM.Application.Features.PLM.Boms.Commands.UpdateManufacturingBomMachineParameters;
 using HRM.Application.Features.PLM.Boms.Commands.GenerateManufacturingFormulaFromBom;
 using HRM.Application.Features.PLM.Boms.Dtos;
 using HRM.Application.Features.PLM.Boms.Queries.GetBomVersion;
 using HRM.Application.Features.PLM.Boms.Queries.GetBomDefinition;
 using HRM.Application.Features.PLM.Boms.Queries.GetBoms;
+using HRM.Application.Features.PLM.Boms.Queries.GetManufacturingProcessTemplateSuggestions;
 using HRM.Domain.Enums.Boms;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -108,6 +110,19 @@ public sealed class ManufacturingBomsController : ControllerBase
         return result.Success ? Ok(result.Data) : BadRequest(result);
     }
 
+    [HttpPut("versions/{bomVersionId:guid}/machine-parameters")]
+    [Authorize(Policy = PlmPolicies.ManageBomDraft)]
+    public async Task<IActionResult> UpdateMachineParameters(
+        Guid bomVersionId,
+        [FromBody] UpdateManufacturingBomMachineParametersRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(
+            new UpdateManufacturingBomMachineParametersCommand(bomVersionId, request),
+            cancellationToken);
+        return result.Success ? Ok(result.Data) : BadRequest(result);
+    }
+
     [HttpPost("versions/{bomVersionId:guid}/loss-rules/preview-profile")]
     [Authorize(Policy = PlmPolicies.ManageBomDraft)]
     public async Task<IActionResult> PreviewLossProfile(
@@ -128,6 +143,16 @@ public sealed class ManufacturingBomsController : ControllerBase
         var result = await _sender.Send(new ApplyManufacturingProcessTemplateCommand(bomVersionId, request.ProcessTemplateId, true), cancellationToken);
         return result.Success ? Ok(result.Data) : BadRequest(result);
     }
+
+    [HttpGet("versions/{bomVersionId:guid}/process-template/suggestions")]
+    [Authorize(Policy = PlmPolicies.ViewBom)]
+    public async Task<IActionResult> GetProcessTemplateSuggestions(
+        Guid bomVersionId,
+        [FromQuery] DateTime? effectiveOn,
+        CancellationToken cancellationToken)
+        => Ok(await _sender.Send(
+            new GetManufacturingProcessTemplateSuggestionsQuery(null, bomVersionId, effectiveOn),
+            cancellationToken));
 
     [HttpPost("versions/{bomVersionId:guid}/process-template/apply")]
     [Authorize(Policy = PlmPolicies.ManageBomDraft)]

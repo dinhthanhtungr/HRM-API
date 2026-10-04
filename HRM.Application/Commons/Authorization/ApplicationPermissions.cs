@@ -6,6 +6,14 @@ namespace HRM.Application.Commons.Authorization;
 /// </summary>
 public static class ApplicationPermissions
 {
+    public static class Equipment
+    {
+        public const string View = "mro.equipment.view";
+        public const string Create = "mro.equipment.create";
+        public const string Update = "mro.equipment.update";
+        public const string Delete = "mro.equipment.delete";
+    }
+
     public static class Pricing
     {
         public const string ViewWorkbench = "pricing.workbench.view";

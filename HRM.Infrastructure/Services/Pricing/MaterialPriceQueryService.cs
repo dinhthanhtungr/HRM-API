@@ -1,23 +1,33 @@
 using HRM.Application.Abstractions.Commons.Pricing;
+using HRM.Application.Abstractions.Commons.Time;
 using HRM.Application.Abstractions.Persistence.Commons.Pricing;
 using HRM.Application.Commons.Pricing.Dtos;
 using HRM.Application.Commons.Pricing.Helpers;
 using HRM.Application.Commons.Pricing.Models;
 using HRM.Application.Commons.Pricing.Rules;
+using HRM.Application.Features.CRM.Quotations.Services;
 using HRM.Domain.Enums.CustomerEnum;
 using HRM.Domain.Enums.Formulas;
 using HRM.Domain.Enums.Products;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace HRM.Infrastructure.Services.Pricing
 {
     public class MaterialPriceQueryService : IMaterialPriceQueryService
     {
         private readonly IPriceReadDbContext _dbContext;
+        private readonly IDateTimeProvider _dateTimeProvider;
+        private readonly QuotationFeatureOptions _featureOptions;
 
-        public MaterialPriceQueryService(IPriceReadDbContext dbContext)
+        public MaterialPriceQueryService(
+            IPriceReadDbContext dbContext,
+            IDateTimeProvider dateTimeProvider,
+            IOptions<QuotationFeatureOptions> featureOptions)
         {
             _dbContext = dbContext;
+            _dateTimeProvider = dateTimeProvider;
+            _featureOptions = featureOptions.Value;
         }
 
         /// <summary>
@@ -387,8 +397,8 @@ namespace HRM.Infrastructure.Services.Pricing
 
             if (productIds.Count > 0)
             {
-                // Giá giao dịch legacy: luồng tính Formula sẽ ưu tiên ProductPricingVersion Approved
-                // qua LoadLatestPricingItemPriceInfoDictAsync, chỉ dùng giá này khi chưa có giá chuẩn.
+                // Giá giao dịch legacy: chỉ dùng khi chưa có giá Approved còn hạn rà soát
+                // hoặc không thể tính lại từ Formula theo luật nội bộ.
                 var latestProductRows = await _dbContext.MerchandiseOrderDetails
                     .AsNoTracking()
                     .Where(x => x.IsActive)
@@ -498,7 +508,6 @@ namespace HRM.Infrastructure.Services.Pricing
                         x.Status == ProductPricingStatus.Approved &&
                         x.Currency == normalizedCurrency &&
                         productIds.Contains(x.ProductId) &&
-                        !internalProductIds.Contains(x.ProductId) &&
                         x.StandardSellingPrice.HasValue)
                     .OrderByDescending(x => x.Version)
                     .ThenByDescending(x => x.ApprovedAt ?? x.UpdatedDate ?? x.CreatedDate)
@@ -512,7 +521,8 @@ namespace HRM.Infrastructure.Services.Pricing
 
                 foreach (var price in approvedPriceRows
                              .GroupBy(x => x.ProductId)
-                             .Select(x => x.First()))
+                             .Select(x => x.First())
+                             .Where(x => IsApprovedPriceCurrent(x.PriceDate)))
                 {
                     approvedProductIds.Add(price.ProductId);
                     result[new PriceItemKey(ItemType.Product, price.ProductId)] = new LatestItemPriceDto
@@ -696,7 +706,6 @@ namespace HRM.Infrastructure.Services.Pricing
 
             var internalProductAdjustments = await LoadInternalProductCostAdjustmentsAsync(
                 companyId, discoveredProductIds, cancellationToken);
-            var internalProductIds = internalProductAdjustments.Keys.ToHashSet();
             var standardSellingPriceRows = await _dbContext.ProductPricingVersions
                 .AsNoTracking()
                 .Where(x =>
@@ -705,15 +714,23 @@ namespace HRM.Infrastructure.Services.Pricing
                     x.Status == ProductPricingStatus.Approved &&
                     x.Currency == normalizedCurrency &&
                     discoveredProductIds.Contains(x.ProductId) &&
-                    !internalProductIds.Contains(x.ProductId) &&
                     x.StandardSellingPrice.HasValue)
                 .OrderByDescending(x => x.Version)
                 .ThenByDescending(x => x.ApprovedAt ?? x.UpdatedDate ?? x.CreatedDate)
-                .Select(x => new { x.ProductId, Price = x.StandardSellingPrice!.Value })
+                .Select(x => new
+                {
+                    x.ProductId,
+                    Price = x.StandardSellingPrice!.Value,
+                    x.ApprovedAt,
+                    x.UpdatedDate,
+                    x.CreatedDate
+                })
                 .ToListAsync(cancellationToken);
             var approvedPriceByProduct = standardSellingPriceRows
                 .GroupBy(x => x.ProductId)
-                .ToDictionary(x => x.Key, x => x.First().Price);
+                .Select(x => x.First())
+                .Where(x => IsApprovedPriceCurrent(x.ApprovedAt ?? x.UpdatedDate ?? x.CreatedDate))
+                .ToDictionary(x => x.ProductId, x => x.Price);
 
             var materialIds = materialLinesByFormula.Values
                 .SelectMany(x => x)
@@ -852,6 +869,12 @@ namespace HRM.Infrastructure.Services.Pricing
                 .Where(x => x.Adjustment.IsInternalCostRule)
                 .ToDictionary(x => x.ProductId, x => x.Adjustment);
         }
+
+        private bool IsApprovedPriceCurrent(DateTime approvedAt)
+            => ApprovedProductPricingReviewRules.IsCurrent(
+                approvedAt,
+                _dateTimeProvider.Now,
+                _featureOptions.ApprovedPricingReviewAfterDays);
 
         private readonly record struct FormulaMaterialCost(
             decimal Cost,

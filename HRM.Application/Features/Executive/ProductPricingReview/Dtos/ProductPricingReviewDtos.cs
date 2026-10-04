@@ -339,6 +339,8 @@ public sealed class PricingReviewTabCountsDto
     public int PricingHistoryCount { get; init; }
     public int RelatedQuotationCount { get; init; }
     public int VaLotCount { get; init; }
+    /// <summary>Eligible Sample Request and Merchandise orders containing this Product.</summary>
+    public int MerchandiseOrderCount { get; init; }
 }
 
 public sealed class PricingReviewSupplierPricesDto

@@ -12,6 +12,7 @@ public class ManufacturingBomStageTransitionConfiguration : IEntityTypeConfigura
         {
             table.HasCheckConstraint("ck_manufacturing_bom_stage_transitions_sequence_positive", "sequence_no > 0");
             table.HasCheckConstraint("ck_manufacturing_bom_stage_transitions_distinct_stages", "from_manufacturing_bom_stage_id <> to_manufacturing_bom_stage_id");
+            table.HasCheckConstraint("ck_manufacturing_bom_stage_transitions_type_valid", "transition_type BETWEEN 1 AND 5");
         });
         entity.HasKey(x => x.ManufacturingBomStageTransitionId).HasName("pk_manufacturing_bom_stage_transitions");
         entity.Property(x => x.ManufacturingBomStageTransitionId).HasColumnName("manufacturing_bom_stage_transition_id").HasDefaultValueSql("gen_random_uuid()");
@@ -19,7 +20,10 @@ public class ManufacturingBomStageTransitionConfiguration : IEntityTypeConfigura
         entity.Property(x => x.FromManufacturingBomStageId).HasColumnName("from_manufacturing_bom_stage_id").IsRequired();
         entity.Property(x => x.ToManufacturingBomStageId).HasColumnName("to_manufacturing_bom_stage_id").IsRequired();
         entity.Property(x => x.ExternalId).HasColumnName("external_id").HasColumnType("citext").HasMaxLength(64).IsRequired();
-        entity.Property(x => x.TransitionType).HasColumnName("transition_type").HasConversion<string>().HasColumnType("citext").HasMaxLength(32).IsRequired();
+        entity.Property(x => x.TransitionType)
+            .HasColumnName("transition_type")
+            .HasColumnType("integer")
+            .IsRequired();
         entity.Property(x => x.DefaultEventCount).HasColumnName("default_event_count");
         entity.Property(x => x.SequenceNo).HasColumnName("sequence_no").IsRequired();
         entity.Property(x => x.Note).HasColumnName("note").HasColumnType("text");

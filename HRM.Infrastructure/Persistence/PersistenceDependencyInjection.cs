@@ -7,6 +7,7 @@ using HRM.Application.Abstractions.Persistence.Employees;
 using HRM.Application.Abstractions.Persistence.Executive;
 using HRM.Application.Abstractions.Persistence.HRM;
 using HRM.Application.Abstractions.Persistence.InternalMail;
+using HRM.Application.Abstractions.Persistence.NotificationHub;
 using HRM.Application.Abstractions.Persistence.Notifications;
 using HRM.Application.Abstractions.Persistence.PLM;
 using HRM.Application.Abstractions.Persistence.Reports;
@@ -57,6 +58,8 @@ internal static class PersistenceDependencyInjection
         services.AddSingleton<IFormulaMaterialsExcelRenderer, FormulaMaterialsExcelRenderer>();
         services.AddSingleton<IPurchaseOrderPdfRenderer, PurchaseOrderPdfRenderer>();
         services.AddSingleton<IPurchaseOrderExcelRenderer, PurchaseOrderExcelRenderer>();
+        services.AddSingleton<IDeliveryOrderPdfRenderer, DeliveryOrderPdfRenderer>();
+        services.AddSingleton<IDeliveryOrderExcelRenderer, DeliveryOrderExcelRenderer>();
 
         services.AddDbContext<ApplicationDbContext>(options =>
         {
@@ -70,6 +73,8 @@ internal static class PersistenceDependencyInjection
         });
 
         services.AddScoped<IHrDbContext>(provider => provider.GetRequiredService<ApplicationDbContext>());
+        services.AddScoped<HRM.Application.Abstractions.Persistence.MRO.IEquipmentDbContext>(
+            provider => provider.GetRequiredService<ApplicationDbContext>());
 
         // Employee DbContexts
         services.AddScoped<IEmployeeReadDbContext>(provider => provider.GetRequiredService<ApplicationDbContext>());
@@ -100,6 +105,11 @@ internal static class PersistenceDependencyInjection
 
         // Notification DbContext
         services.AddScoped<INotificationDbContext>(provider => provider.GetRequiredService<ApplicationDbContext>());
+        services.AddScoped<HRM.Application.Abstractions.Notifications.INotificationInboxArchiver,
+            HRM.Infrastructure.Services.Notifications.NotificationInboxArchiver>();
+
+        // Notification Hub write DbContext
+        services.AddScoped<INotificationHubWriteDbContext>(provider => provider.GetRequiredService<ApplicationDbContext>());
 
         // Internal mail DbContext
         services.AddScoped<IInternalMailDbContext>(provider => provider.GetRequiredService<ApplicationDbContext>());

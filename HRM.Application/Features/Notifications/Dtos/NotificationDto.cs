@@ -9,6 +9,7 @@ namespace HRM.Application.Features.Notifications.Dtos;
 public sealed class NotificationDto
 {
     public Guid Id { get; set; }
+    public string? AreaCode { get; set; }
     public TopicNotifications Topic { get; set; }
     public string TopicCode => NotificationTopicCodes.GetCode(Topic);
     public string CategoryCode => NotificationTopicCategoryRules.GetCategoryCode(Topic, CreatedDate);

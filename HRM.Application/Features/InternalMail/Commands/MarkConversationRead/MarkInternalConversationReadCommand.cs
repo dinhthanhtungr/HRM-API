@@ -6,4 +6,6 @@ namespace HRM.Application.Features.InternalMail.Commands.MarkConversationRead;
 public sealed class MarkInternalConversationReadCommand : IRequest<OperationResult>
 {
     public Guid ConversationId { get; init; }
+    public string? AreaCode { get; init; }
+    public Guid? ThroughMessageId { get; init; }
 }

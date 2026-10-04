@@ -2,16 +2,126 @@ using HRM.Application.Abstractions.Security;
 using HRM.Application.Features.CRM.Quotations.Dtos;
 using HRM.Application.Features.CRM.Quotations.Services;
 using HRM.Application.Features.Executive.SampleRequestPricingOverview;
+using HRM.Application.Features.Executive.SampleRequestPricingOverview.Dtos;
 using HRM.Application.Features.Executive.SampleRequestPricingOverview.Models;
+using HRM.Application.Features.Executive.MerchandiseOrderPriceHistory;
+using HRM.Application.Features.Executive.MerchandiseOrderPriceHistory.Dtos;
+using HRM.Application.Features.Executive.ProductPricingReview.Dtos;
+using HRM.Application.Features.Executive.ProductPricingReview.Services;
 using HRM.Application.Features.InternalMail.Services;
+using HRM.Application.Features.Pricing.Authorization;
 using HRM.Infrastructure.DatabaseContext.ApplicationDbs;
 using HRM.Domain.Enums.CustomerEnum;
+using HRM.Domain.Enums.Merchadises;
 using Microsoft.EntityFrameworkCore;
 
 namespace HRM.Application.Tests.Features.Executive;
 
 public sealed class SampleRequestPricingOverviewTests
 {
+    [Fact]
+    public void MapRecommendedFormula_CalculatesRealtimeStandardPriceFromApprovedPricingInputs()
+    {
+        var productId = Guid.NewGuid();
+        var sourceId = Guid.NewGuid();
+        var result = GetSampleRequestPricingOverviewQueryHandler.MapRecommendedFormula(
+            new SuggestedPricingFormulaCandidate
+            {
+                ProductId = productId,
+                SourceType = PricingReviewSourceType.VA,
+                SourceId = sourceId,
+                SourceCode = "VA260900349",
+                SourceName = "F001",
+                Status = "Checking",
+                PriorityAt = new DateTime(2026, 9, 22)
+            },
+            new ProductPricingSourceOptionDto
+            {
+                SourceId = sourceId,
+                CurrentMaterialCost = 88_000m,
+                IsCurrentMaterialCostComplete = true
+            },
+            new PricingVersionRow
+            {
+                ProductId = productId,
+                MaterialCostSnapshot = 80_000m,
+                ManufacturingCost = 16_000m,
+                StandardSellingPrice = 120_000m,
+                ProfitMarginRate = 20m
+            },
+            FullPricingAccess(),
+            "VND",
+            new DateTime(2026, 9, 22, 20, 32, 0));
+
+        Assert.Equal(88_000m, result.RealtimeMaterialCost);
+        Assert.Equal(16_000m, result.ManufacturingCost);
+        Assert.Equal(20m, result.ProfitMarginRate);
+        Assert.Equal(130_000m, result.RealtimeStandardSellingPrice);
+        Assert.Equal("(88000 + 16000) / (1 - 0.2) = 130000 VND", result.PriceCalculationFormula);
+    }
+
+    [Fact]
+    public void MapRecommendedFormula_WithoutApprovedPricingKeepsCalculatedSellingPriceUnavailable()
+    {
+        var result = GetSampleRequestPricingOverviewQueryHandler.MapRecommendedFormula(
+            new SuggestedPricingFormulaCandidate
+            {
+                ProductId = Guid.NewGuid(),
+                SourceType = PricingReviewSourceType.VU,
+                SourceId = Guid.NewGuid(),
+                PriorityAt = new DateTime(2026, 9, 22)
+            },
+            new ProductPricingSourceOptionDto
+            {
+                CurrentMaterialCost = 88_000m,
+                IsCurrentMaterialCostComplete = true
+            },
+            null,
+            FullPricingAccess(),
+            "VND",
+            new DateTime(2026, 9, 22, 20, 32, 0));
+
+        Assert.Equal(88_000m, result.RealtimeMaterialCost);
+        Assert.Null(result.ManufacturingCost);
+        Assert.Null(result.ProfitMarginRate);
+        Assert.Null(result.RealtimeStandardSellingPrice);
+        Assert.Null(result.PriceCalculationFormula);
+    }
+
+    [Fact]
+    public void MapPricing_ExposesRecommendedFormulaIndependentlyFromDisplayedFormula()
+    {
+        var recommended = new SampleRequestRecommendedPricingFormulaDto
+        {
+            SourceType = PricingReviewSourceType.VA,
+            SourceId = Guid.NewGuid(),
+            SourceCode = "VA260900349",
+            SourceName = "F001",
+            RealtimeMaterialCost = 41_481m,
+            Currency = "VND",
+            IsRealtimeMaterialCostComplete = true
+        };
+
+        var pricing = GetSampleRequestPricingOverviewQueryHandler.MapPricing(
+            null,
+            recommendedFormula: recommended);
+
+        Assert.Same(recommended, pricing.RecommendedFormula);
+        Assert.Null(pricing.DisplayedFormula);
+        Assert.Equal(41_481m, pricing.RecommendedFormula!.RealtimeMaterialCost);
+    }
+
+    private static PricingAccessDecision FullPricingAccess() => new(
+        CanViewWorkbench: true,
+        CanViewApprovedSellingPrice: true,
+        CanViewSystemCalculatedPrice: true,
+        CanViewMaterialCost: true,
+        CanViewManufacturingCost: true,
+        CanViewMargin: true,
+        CanViewHistory: true,
+        CanManage: true,
+        CanApprove: true);
+
     [Fact]
     public void MapItem_PreservesOneCardPerSampleRequestForSharedProduct()
     {
@@ -77,6 +187,78 @@ public sealed class SampleRequestPricingOverviewTests
         Assert.Equal(0, item.Conversation.TotalMessageCount);
         Assert.Equal(0, item.Conversation.UnreadCount);
         Assert.False(item.Actions.CanOpenConversation);
+        Assert.Null(item.LatestMerchandiseOrder);
+    }
+
+    [Fact]
+    public void MapItem_UsesLatestMerchandiseOrderLineQuantityAndSellingPrice()
+    {
+        var latest = new LatestMerchandiseOrderDto
+        {
+            MerchandiseOrderId = Guid.NewGuid(),
+            MerchandiseOrderCode = "MO-2026-000123",
+            OrderType = "Merchandise",
+            ItemId = Guid.NewGuid(),
+            ItemCode = "TL3187",
+            ItemName = "Product",
+            Quantity = 1250m,
+            UnitPrice = 95000m,
+            Currency = "VND",
+            SaleEmployeeId = Guid.NewGuid(),
+            SaleName = "Nguyễn Sale",
+            OrderStatus = "Completed"
+        };
+
+        var item = GetSampleRequestPricingOverviewQueryHandler.MapItem(
+            Row(Guid.NewGuid(), latest.ItemId), null, null, latestMerchandiseOrder: latest);
+
+        Assert.Same(latest, item.LatestMerchandiseOrder);
+        Assert.Equal(1250m, item.LatestMerchandiseOrder!.Quantity);
+        Assert.Equal(95000m, item.LatestMerchandiseOrder.UnitPrice);
+        Assert.Equal("Nguyễn Sale", item.LatestMerchandiseOrder.SaleName);
+        Assert.Equal("Merchandise", item.LatestMerchandiseOrder.OrderType);
+    }
+
+    [Theory]
+    [InlineData("Approved", true)]
+    [InlineData("Processing", true)]
+    [InlineData("Delivering", true)]
+    [InlineData("Delivered", true)]
+    [InlineData("Completed", true)]
+    [InlineData("New", false)]
+    [InlineData("Pending", false)]
+    [InlineData("Paused", false)]
+    [InlineData("Cancelled", false)]
+    public void MerchandiseOrderHistory_UsesOnlyEligibleSaleStatuses(string status, bool expected)
+        => Assert.Equal(expected, GetMerchandiseOrderPriceHistoryQueryHandler.IsEligibleStatus(status));
+
+    [Theory]
+    [InlineData(OrderType.Merchandise, true)]
+    [InlineData(OrderType.SampleRequest, true)]
+    [InlineData(OrderType.Complaint, true)]
+    [InlineData(OrderType.Internal, false)]
+    public void MerchandiseOrderHistory_UsesConfiguredSaleOrderTypes(
+        OrderType orderType,
+        bool expected)
+        => Assert.Equal(expected, GetMerchandiseOrderPriceHistoryQueryHandler.IsEligibleOrderType(orderType));
+
+    [Fact]
+    public void MerchandiseOrderHistoryQuery_RequiresProductIdAndStrictPagination()
+    {
+        var query = new GetMerchandiseOrderPriceHistoryQuery
+        {
+            ItemId = Guid.NewGuid(),
+            PageNumber = 1,
+            PageSize = 100,
+            SortBy = "unitPrice",
+            SortDirection = "asc"
+        };
+
+        Assert.Equal("unitPrice", query.NormalizedSortBy);
+        Assert.False(query.SortDescending);
+        Assert.Equal(1, query.NormalizedPageNumber);
+        Assert.Equal(100, query.NormalizedPageSize);
+        Assert.Null(typeof(GetMerchandiseOrderPriceHistoryQuery).GetProperty("CompanyId"));
     }
 
     [Fact]
@@ -232,6 +414,25 @@ public sealed class SampleRequestPricingOverviewTests
         Assert.Same(current.Draft, current.Preferred);
     }
 
+    [Fact]
+    public void FormulaChangedView_RequiresApprovedStandardPriceSource()
+    {
+        var productId = Guid.NewGuid();
+        var withoutApprovedPrice = Version(productId, ProductPricingStatus.Draft, 1);
+        var approvedWithoutSource = Version(productId, ProductPricingStatus.Approved, 2);
+        var approvedWithSource = Version(
+            productId,
+            ProductPricingStatus.Approved,
+            3,
+            ProductPricingSourceType.Formula,
+            Guid.NewGuid());
+
+        Assert.False(GetSampleRequestPricingOverviewQueryHandler.HasApprovedFormulaBaseline(null));
+        Assert.False(GetSampleRequestPricingOverviewQueryHandler.HasApprovedFormulaBaseline(withoutApprovedPrice));
+        Assert.False(GetSampleRequestPricingOverviewQueryHandler.HasApprovedFormulaBaseline(approvedWithoutSource));
+        Assert.True(GetSampleRequestPricingOverviewQueryHandler.HasApprovedFormulaBaseline(approvedWithSource));
+    }
+
     [Theory]
     [InlineData("President", true)]
     [InlineData("Developer", true)]
@@ -269,7 +470,8 @@ public sealed class SampleRequestPricingOverviewTests
         Assert.Equal(100, query.NormalizedPageSize);
         Assert.Equal("VND", query.NormalizedCurrency);
         Assert.Equal("createdDate", query.NormalizedSortBy);
-        Assert.Equal(ProductPricingWorkbenchView.All, query.View);
+        Assert.Equal(SampleRequestPricingOverviewView.All, query.View);
+        Assert.True(Enum.IsDefined(SampleRequestPricingOverviewView.FormulaChanged));
         Assert.False(query.SortDescending);
         Assert.Null(typeof(GetSampleRequestPricingOverviewQuery).GetProperty("CompanyId"));
     }
@@ -336,11 +538,15 @@ public sealed class SampleRequestPricingOverviewTests
     private static PricingVersionRow Version(
         Guid productId,
         ProductPricingStatus status,
-        int version)
+        int version,
+        ProductPricingSourceType? sourceType = null,
+        Guid? sourceId = null)
         => new()
         {
             ProductPricingVersionId = Guid.NewGuid(),
             ProductId = productId,
+            SourceType = sourceType,
+            SourceId = sourceId,
             Status = status,
             Version = version,
             CreatedDate = new DateTime(2026, 9, version)

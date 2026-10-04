@@ -10,5 +10,8 @@ public sealed class SetEmployeeStatusCommand
     [JsonIgnore]
     public Guid EmployeeId { get; set; }
 
+    [JsonRequired]
     public bool IsActive { get; init; }
+
+    public DateOnly? EndDate { get; init; }
 }

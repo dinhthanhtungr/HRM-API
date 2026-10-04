@@ -12,11 +12,13 @@ using HRM.Application.Commons.Searching;
 using HRM.Application.Features.CRM.Quotations.Dtos;
 using HRM.Application.Features.CRM.Quotations.Services;
 using HRM.Application.Features.Executive.ProductPricingReview.Dtos;
+using HRM.Application.Features.Executive.MerchandiseOrderPriceHistory.Shared;
 using HRM.Application.Features.Pricing.Authorization;
 using HRM.Domain.Entities.CustomerSchema;
 using HRM.Domain.Enums.CustomerEnum;
 using HRM.Domain.Enums.Manufacturings;
 using HRM.Domain.Enums.Products;
+using HRM.Domain.Enums.Merchadises;
 using Microsoft.EntityFrameworkCore;
 
 namespace HRM.Application.Features.Executive.ProductPricingReview.Services;
@@ -37,6 +39,7 @@ internal sealed class ProductPricingReviewReader
     private readonly IPricingVisibilityService _pricingVisibilityService;
     private readonly StandardPriceRealtimeComparisonQueryService _comparisonQueryService;
     private readonly ProductPricingRequestQueryService _requestQueryService;
+    private readonly SuggestedPricingFormulaQueryService _suggestedFormulaQueryService;
 
     public ProductPricingReviewReader(
         ICRMReadDbContext crm,
@@ -49,7 +52,8 @@ internal sealed class ProductPricingReviewReader
         QuotationFeatureOptions featureOptions,
         IPricingVisibilityService pricingVisibilityService,
         StandardPriceRealtimeComparisonQueryService comparisonQueryService,
-        ProductPricingRequestQueryService requestQueryService)
+        ProductPricingRequestQueryService requestQueryService,
+        SuggestedPricingFormulaQueryService suggestedFormulaQueryService)
     {
         _crm = crm;
         _plm = plm;
@@ -62,6 +66,7 @@ internal sealed class ProductPricingReviewReader
         _pricingVisibilityService = pricingVisibilityService;
         _comparisonQueryService = comparisonQueryService;
         _requestQueryService = requestQueryService;
+        _suggestedFormulaQueryService = suggestedFormulaQueryService;
     }
 
     /// <summary>
@@ -459,7 +464,7 @@ internal sealed class ProductPricingReviewReader
                 SourceId = x.ManufacturingFormulaId,
                 SourceCode = x.ExternalId,
                 SourceName = x.Name,
-                DisplayName = x.ExternalId + " · " + x.Name,
+                DisplayName = x.ExternalId,
                 VersionNumber = x.ManufacturingFormulaVersions.Max(v => (int?)v.VersionNo),
                 Status = x.Status,
                 IsEligible = true,
@@ -702,7 +707,8 @@ internal sealed class ProductPricingReviewReader
                     SourceId = viewedSource.SourceId,
                     SourceCode = viewedSource.ExternalId,
                     SourceName = viewedSource.Name,
-                    DisplayName = viewedSource.ExternalId + " · " + viewedSource.Name,
+                    DisplayName = ProductPricingReviewRules.BuildSourceDisplayName(
+                        sourceType, viewedSource.ExternalId, viewedSource.Name),
                     VersionNumber = viewedVersionNumber,
                     Status = viewedSource.Status
                 },
@@ -714,7 +720,10 @@ internal sealed class ProductPricingReviewReader
                         SourceId = standardSource.SourceId,
                         SourceCode = standardSource.ExternalId,
                         SourceName = standardSource.Name,
-                        DisplayName = standardSource.ExternalId + " · " + standardSource.Name,
+                        DisplayName = ProductPricingReviewRules.BuildSourceDisplayName(
+                            ProductPricingReviewRules.ToPublic(standardSource.SourceType),
+                            standardSource.ExternalId,
+                            standardSource.Name),
                         VersionNumber = standardVersionNumber,
                         Status = standardSource.Status,
                         IsSameAsViewedSource = standardSelection == viewedSelection
@@ -746,99 +755,30 @@ internal sealed class ProductPricingReviewReader
         ProductPricingVersion? approvedStandardPricing,
         CancellationToken cancellationToken)
     {
-        var latestSampleSentVu = await _plm.Formulas.AsNoTracking()
-            .Where(x =>
-                x.ProductId == productId &&
-                x.CompanyId == companyId &&
-                x.IsActive &&
-                x.SentDate.HasValue &&
-                x.Status != FormulaStatus.Cancelled.ToString() &&
-                x.Status != FormulaStatus.Rejected.ToString())
-            .OrderByDescending(x => x.SentDate)
-            .ThenByDescending(x => x.FormulaId)
-            .Select(x => new PricingReviewFormulaUseCandidate(
-                new PricingReviewCurrentFormulaUseDto
-            {
-                SourceType = PricingReviewSourceType.VU,
-                SourceId = x.FormulaId,
-                SourceCode = x.ExternalId,
-                SourceName = x.Name,
-                DisplayName = x.ExternalId + " · " + x.Name,
-                SourceNote = NormalizeSourceNote(x.Note),
-                Status = x.Status,
-                IsEligible = ProductPricingReviewRules.EligibleVuFormulaStatuses.Contains(x.Status),
-                IsCurrentlyApplied = approvedStandardPricing != null &&
-                    approvedStandardPricing.SourceFormulaId == x.FormulaId,
-                CreatedAt = x.CreatedDate
-            },
-                x.SentDate!.Value))
-            .FirstOrDefaultAsync(cancellationToken);
+        var candidates = await _suggestedFormulaQueryService.LoadAsync(
+            [productId], companyId, cancellationToken);
+        if (!candidates.TryGetValue(productId, out var candidate))
+        {
+            return null;
+        }
 
-        var latestProducedVa = await _plm.ProductionSelectVersions.AsNoTracking()
-            .Where(x =>
-                x.CompanyId == companyId &&
-                x.ManufacturingFormulaId.HasValue &&
-                x.ManufacturingFormula != null &&
-                x.ManufacturingFormula.CompanyId == companyId &&
-                x.ManufacturingFormula.IsActive &&
-                x.ManufacturingFormula.Status == ManufacturingProductOrderFormula.Checking.ToString() &&
-                x.MfgProductionOrder.CompanyId == companyId &&
-                x.MfgProductionOrder.ProductId == productId &&
-                x.MfgProductionOrder.IsActive &&
-                x.MfgProductionOrder.Product.IsActive)
-            .OrderByDescending(x => x.MfgProductionOrder.CreatedDate)
-            .ThenByDescending(x => x.ProductionSelectVersionId)
-            .Select(x => new PricingReviewFormulaUseCandidate(
-                new PricingReviewCurrentFormulaUseDto
-            {
-                SourceType = PricingReviewSourceType.VA,
-                SourceId = x.ManufacturingFormulaId!.Value,
-                SourceCode = x.ManufacturingFormula!.ExternalId,
-                SourceName = x.ManufacturingFormula.Name,
-                DisplayName = x.ManufacturingFormula.ExternalId + " · " + x.ManufacturingFormula.Name,
-                SourceNote = NormalizeSourceNote(x.ManufacturingFormula.Note),
-                Status = x.ManufacturingFormula.Status,
-                IsEligible = true,
-                IsCurrentlyApplied = approvedStandardPricing != null &&
-                    approvedStandardPricing.SourceManufacturingFormulaId == x.ManufacturingFormulaId,
-                CreatedAt = x.ManufacturingFormula.CreatedDate
-            },
-                x.MfgProductionOrder.CreatedDate))
-            .FirstOrDefaultAsync(cancellationToken);
-
-        var latestCheckingVa = await _plm.ProductStandardFormulas.AsNoTracking()
-            .Where(x =>
-                x.CompanyId == companyId &&
-                x.ProductId == productId &&
-                x.ManufacturingFormulaId.HasValue &&
-                x.ManufacturingFormula != null &&
-                x.ManufacturingFormula.CompanyId == companyId &&
-                x.ManufacturingFormula.IsActive &&
-                x.ManufacturingFormula.Status == ManufacturingProductOrderFormula.Checking.ToString())
-            .OrderByDescending(x => x.ManufacturingFormula!.CreatedDate)
-            .ThenByDescending(x => x.ManufacturingFormulaId)
-            .Select(x => new PricingReviewFormulaUseCandidate(
-                new PricingReviewCurrentFormulaUseDto
-                {
-                    SourceType = PricingReviewSourceType.VA,
-                    SourceId = x.ManufacturingFormulaId!.Value,
-                    SourceCode = x.ManufacturingFormula!.ExternalId,
-                    SourceName = x.ManufacturingFormula.Name,
-                    DisplayName = x.ManufacturingFormula.ExternalId + " · " + x.ManufacturingFormula.Name,
-                    SourceNote = NormalizeSourceNote(x.ManufacturingFormula.Note),
-                    Status = x.ManufacturingFormula.Status,
-                    IsEligible = false,
-                    IsCurrentlyApplied = approvedStandardPricing != null &&
-                        approvedStandardPricing.SourceManufacturingFormulaId == x.ManufacturingFormulaId,
-                    CreatedAt = x.ManufacturingFormula.CreatedDate
-                },
-                x.ManufacturingFormula.CreatedDate))
-            .FirstOrDefaultAsync(cancellationToken);
-
-        return ProductPricingReviewRules.SelectLatestSuggestedFormulaUse(
-            latestSampleSentVu,
-            latestProducedVa,
-            latestCheckingVa);
+        return new PricingReviewCurrentFormulaUseDto
+        {
+            SourceType = candidate.SourceType,
+            SourceId = candidate.SourceId,
+            SourceCode = candidate.SourceCode,
+            SourceName = candidate.SourceName,
+            DisplayName = ProductPricingReviewRules.BuildSourceDisplayName(
+                candidate.SourceType, candidate.SourceCode, candidate.SourceName),
+            SourceNote = NormalizeSourceNote(candidate.SourceNote),
+            Status = candidate.Status,
+            IsEligible = candidate.IsEligible,
+            IsCurrentlyApplied = approvedStandardPricing != null &&
+                (candidate.SourceType == PricingReviewSourceType.VU
+                    ? approvedStandardPricing.SourceFormulaId == candidate.SourceId
+                    : approvedStandardPricing.SourceManufacturingFormulaId == candidate.SourceId),
+            CreatedAt = candidate.CreatedAt
+        };
     }
 
     public async Task<OperationResult<PagedResult<PricingReviewVersionDto>>> GetVersionsAsync(
@@ -984,7 +924,7 @@ internal sealed class ProductPricingReviewReader
                 ManufacturingFormulaId = x.ManufacturingFormulaId!.Value,
                 ExternalId = x.ManufacturingFormula!.ExternalId,
                 Name = x.ManufacturingFormula.Name,
-                DisplayName = x.ManufacturingFormula.ExternalId + " · " + x.ManufacturingFormula.Name,
+                DisplayName = x.ManufacturingFormula.ExternalId,
                 VersionNumber = x.ManufacturingFormula.ManufacturingFormulaVersions.Max(v => (int?)v.VersionNo),
                 Status = x.ManufacturingFormula.Status,
                 IsCurrentlyApplied = x.ValidFrom <= now && (!x.ValidTo.HasValue || x.ValidTo >= now),
@@ -1049,7 +989,9 @@ internal sealed class ProductPricingReviewReader
                 version.SourceManufacturingFormulaId.HasValue
                     ? ProductPricingSourceType.ManufacturingFormula
                     : version.SourceFormulaId.HasValue ? ProductPricingSourceType.Formula : null,
-                version.SourceManufacturingFormulaId ?? version.SourceFormulaId)],
+                version.SourceManufacturingFormulaId ?? version.SourceFormulaId,
+                version.ManufacturingCost,
+                version.ProfitMarginRate)],
             sources,
             pricingAccess);
 
@@ -1335,7 +1277,8 @@ internal sealed class ProductPricingReviewReader
         SourceId = x.SourceId,
         SourceCode = x.ExternalId,
         SourceName = x.Name,
-        DisplayName = x.ExternalId + " · " + x.Name,
+        DisplayName = ProductPricingReviewRules.BuildSourceDisplayName(
+            ProductPricingReviewRules.ToPublic(x.SourceType), x.ExternalId, x.Name),
         SourceNote = sourceNote,
         VersionNumber = versionNumber,
         Status = x.Status,
@@ -1482,6 +1425,15 @@ internal sealed class ProductPricingReviewReader
                 .CountAsync(x => x.CompanyId == companyId && x.ProductId == productId &&
                                  x.ManufacturingFormulaId.HasValue && x.ManufacturingFormula != null &&
                                  x.ManufacturingFormula.IsActive,
+                    cancellationToken),
+            MerchandiseOrderCount = await _crm.MerchandiseOrders.AsNoTracking()
+                .CountAsync(order =>
+                    order.CompanyId == companyId &&
+                    order.IsActive &&
+                    MerchandiseOrderPriceHistoryRules.EligibleOrderTypes.Contains(order.OrderType) &&
+                    MerchandiseOrderPriceHistoryRules.EligibleStatuses.Contains(order.Status) &&
+                    order.MerchandiseOrderDetails.Any(detail =>
+                        detail.IsActive && detail.ProductId == productId),
                     cancellationToken)
         };
 

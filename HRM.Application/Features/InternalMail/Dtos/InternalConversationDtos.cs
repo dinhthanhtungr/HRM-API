@@ -8,6 +8,8 @@ namespace HRM.Application.Features.InternalMail.Dtos;
 /// </summary>
 public sealed class InternalConversationListItemDto
 {
+    public Guid GroupConversationId { get; set; }
+    public string AreaCode { get; set; } = "general";
     public Guid ConversationId { get; set; }
     public string Subject { get; set; } = string.Empty;
 
@@ -46,6 +48,10 @@ public sealed class InternalConversationListItemDto
 
 public sealed class InternalConversationDetailDto
 {
+    public Guid GroupConversationId { get; set; }
+    public string AreaCode { get; set; } = "general";
+    public bool? CanManageParticipants { get; set; }
+    public IReadOnlyList<InternalMailAreaDto> Areas { get; set; } = Array.Empty<InternalMailAreaDto>();
     public Guid ConversationId { get; set; }
     public string Subject { get; set; } = string.Empty;
 
@@ -71,6 +77,7 @@ public sealed class InternalConversationDetailDto
     public DateTime CreatedAt { get; set; }
     public DateTime LastMessageAt { get; set; }
     public Guid? LastMessageId { get; set; }
+    public int UnreadCount { get; set; }
     public bool IsArchived { get; set; }
     public bool IsMuted { get; set; }
     public DateTime? LastReadAt { get; set; }
@@ -97,11 +104,22 @@ public sealed class SampleRequestConversationInfoDto
     public Guid SampleRequestId { get; set; }
     public string RequestCode { get; set; } = string.Empty;
     public string? ColourCode { get; set; }
+    /// <summary>
+    /// Loại sản phẩm hiện tại; null khi sản phẩm/danh mục không còn active hoặc không cùng company.
+    /// </summary>
+    public ConversationProductCategoryDto? ProductCategory { get; set; }
     public Guid CustomerId { get; set; }
     public string CustomerCode { get; set; } = string.Empty;
     public string CustomerName { get; set; } = string.Empty;
     public Guid SaleEmployeeId { get; set; }
     public string SaleName { get; set; } = string.Empty;
+}
+
+public sealed class ConversationProductCategoryDto
+{
+    public Guid CategoryId { get; set; }
+    public string? Code { get; set; }
+    public string? Name { get; set; }
 }
 
 /// <summary>

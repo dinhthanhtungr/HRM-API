@@ -21,6 +21,7 @@ namespace HRM.Domain.Enums.Category
         WI,     // Hướng dẫn công việc sản xuất
         MPT,    // Quy trình sản xuất mẫu
         MPS,    // Công đoạn của quy trình sản xuất mẫu
+        MPTT,   // Đường chuyển công đoạn của quy trình sản xuất mẫu
         WIC,    // Mục checklist của hướng dẫn công việc
         VA,     // Công thức sản xuất (VA - formula)
         VU,     // Công thức phối màu (Vụ / Masterbatch color formula)

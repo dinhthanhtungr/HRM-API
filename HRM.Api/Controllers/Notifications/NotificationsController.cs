@@ -132,6 +132,14 @@ public sealed class NotificationsController : ControllerBase
             : NotFound();
     }
 
+    [HttpPost("{id:guid}/archive-group")]
+    public async Task<IActionResult> ArchiveGroup(Guid id, CancellationToken cancellationToken)
+    {
+        return await _notificationService.ArchiveCurrentGroupAsync(id, cancellationToken)
+            ? NoContent()
+            : NotFound();
+    }
+
     [HttpPost("{id:guid}/recipients/{employeeId:guid}/remove")]
     public async Task<IActionResult> RemoveRecipient(
         Guid id,

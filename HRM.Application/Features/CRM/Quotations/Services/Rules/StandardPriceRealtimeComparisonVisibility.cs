@@ -21,6 +21,11 @@ internal static class StandardPriceRealtimeComparisonVisibility
             RealtimeAdjustedStandardPrice = source.RealtimeAdjustedStandardPrice,
             StandardPriceDifference = source.StandardPriceDifference,
             StandardPriceDifferencePercent = source.StandardPriceDifferencePercent,
+            RealtimeAdjustedPriceFormula = access.CanViewMaterialCost &&
+                access.CanViewManufacturingCost &&
+                access.CanViewMargin
+                ? source.RealtimeAdjustedPriceFormula
+                : null,
             ApprovedMaterialCostSnapshot = access.CanViewMaterialCost
                 ? source.ApprovedMaterialCostSnapshot
                 : null,

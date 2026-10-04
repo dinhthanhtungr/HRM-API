@@ -49,6 +49,24 @@ public sealed class ManufacturingBomItemStageAssignmentDto
     public string ManufacturingStageCode { get; init; } = string.Empty;
 }
 
+/// <summary>
+/// Replaces the operating values of every machine parameter in one Manufacturing BOM Draft.
+/// Parameter identity and definition come from the applied process-template snapshot.
+/// </summary>
+public sealed class UpdateManufacturingBomMachineParametersRequest
+{
+    public IReadOnlyList<ManufacturingBomMachineParameterValueWriteDto> Parameters { get; init; } = [];
+}
+
+public sealed class ManufacturingBomMachineParameterValueWriteDto
+{
+    public Guid ManufacturingBomStageMachineParameterId { get; init; }
+    public decimal? TargetValue { get; init; }
+    public decimal? MinValue { get; init; }
+    public decimal? MaxValue { get; init; }
+    public string? Note { get; init; }
+}
+
 public sealed class ManufacturingBomStageWriteDto
 {
     public string Code { get; init; } = string.Empty;

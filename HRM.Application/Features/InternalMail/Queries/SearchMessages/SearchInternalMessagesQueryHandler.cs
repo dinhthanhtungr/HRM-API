@@ -13,15 +13,18 @@ internal sealed class SearchInternalMessagesQueryHandler
 {
     private readonly IInternalMailDbContext _dbContext;
     private readonly ICurrentUser _currentUser;
+    private readonly InternalMailAreaAccessService _areas;
     private readonly IInternalConversationAccessService _conversationAccessService;
 
     public SearchInternalMessagesQueryHandler(
         IInternalMailDbContext dbContext,
         ICurrentUser currentUser,
-        IInternalConversationAccessService conversationAccessService)
+        IInternalConversationAccessService conversationAccessService,
+        InternalMailAreaAccessService areas)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
+        _areas = areas;
         _conversationAccessService = conversationAccessService;
     }
 
@@ -56,7 +59,7 @@ internal sealed class SearchInternalMessagesQueryHandler
         }
 
         var normalizedSearchText = searchText.ToLower();
-        var messageQuery = _dbContext.InternalMessages
+        var messageQuery = _areas.Messages(request.AreaCode)
             .AsNoTracking()
             .Where(x =>
                 x.InternalConversationId == request.ConversationId &&

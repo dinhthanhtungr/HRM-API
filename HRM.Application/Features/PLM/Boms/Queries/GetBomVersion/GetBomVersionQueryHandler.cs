@@ -49,6 +49,7 @@ internal sealed class GetBomVersionQueryHandler
                 BomType = x.BomDefinition.BomType,
                 VersionNo = x.VersionNo,
                 Status = x.Status,
+                SourceFormulaId = x.SourceFormulaId,
                 SourceEngineeringBomVersionId = x.SourceEngineeringBomVersionId,
                 BaseOutputQuantity = x.BaseOutputQuantity,
                 OutputUnit = x.OutputUnit,
@@ -91,7 +92,20 @@ internal sealed class GetBomVersionQueryHandler
                             EquipmentName = machine.EquipmentNameSnapshot,
                             IsDefault = machine.IsDefault,
                             SequenceNo = machine.SequenceNo,
-                            Note = machine.Note
+                            Note = machine.Note,
+                            Parameters = machine.Parameters.OrderBy(parameter => parameter.SequenceNo).Select(parameter => new ManufacturingBomStageMachineParameterDto
+                            {
+                                ManufacturingBomStageMachineParameterId = parameter.ManufacturingBomStageMachineParameterId,
+                                ParameterCode = parameter.ParameterCodeSnapshot,
+                                ParameterName = parameter.ParameterNameSnapshot,
+                                TargetValue = parameter.TargetValueSnapshot,
+                                MinValue = parameter.MinValueSnapshot,
+                                MaxValue = parameter.MaxValueSnapshot,
+                                Unit = parameter.UnitSnapshot,
+                                IsRequired = parameter.IsRequiredSnapshot,
+                                SequenceNo = parameter.SequenceNo,
+                                Note = parameter.NoteSnapshot
+                            }).ToList()
                         }).ToList(),
                         WorkInstruction = stage.WorkInstruction == null ? null : new ManufacturingBomStageWorkInstructionDto
                         {

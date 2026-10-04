@@ -11,7 +11,7 @@ public sealed class PLMFieldVisibilityServiceTests
     [InlineData(ApplicationRoles.Sales.PriceView, true, false, false)]
     [InlineData(ApplicationRoles.Accounting.ACCUser, true, true, false)]
     [InlineData(ApplicationRoles.Production.PLPUUser, false, true, true)]
-    [InlineData(ApplicationRoles.Lab.LabUser, false, false, true)]
+    [InlineData(ApplicationRoles.Lab.LabUser, false, true, true)]
     [InlineData(ApplicationRoles.SeePrice.SeePriceUser, true, true, false)]
     [InlineData(ApplicationRoles.President, true, true, true)]
     public void Capabilities_PreserveExistingPlmRoleMatrix(

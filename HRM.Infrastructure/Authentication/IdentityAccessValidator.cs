@@ -1,4 +1,5 @@
 using HRM.Application.Abstractions.Identity;
+using HRM.Domain.Identity;
 using HRM.Infrastructure.DatabaseContext.ApplicationDbs;
 using Microsoft.EntityFrameworkCore;
 
@@ -16,11 +17,11 @@ public sealed class IdentityAccessValidator(ApplicationDbContext dbContext)
         var account = await dbContext.Users
             .AsNoTracking()
             .Where(user => user.Id == userId)
-            .Select(user => new { user.EmployeeId })
+            .Select(user => new { user.EmployeeId, user.LockoutEnabled, user.LockoutEnd })
             .FirstOrDefaultAsync(cancellationToken);
 
-        // Account IsActive is temporarily unavailable until AspNetUsers is updated.
-        if (account is null || account.EmployeeId != employeeId)
+        if (account is null || account.EmployeeId != employeeId ||
+            IdentityAccountAccessRules.IsLocked(account.LockoutEnabled, account.LockoutEnd, DateTimeOffset.UtcNow))
         {
             return false;
         }

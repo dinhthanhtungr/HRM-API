@@ -24,7 +24,7 @@ public sealed class ManufacturingProcessTemplateConfiguration : IEntityTypeConfi
         entity.Property(x => x.IsActive).HasColumnName("is_active").HasDefaultValue(true).IsRequired();
         entity.Property(x => x.CreatedDate).HasColumnName("created_date").IsRequired();
         entity.Property(x => x.CreatedBy).HasColumnName("created_by").IsRequired();
-        entity.Property(x => x.UpdatedDate).HasColumnName("updated_date");
+        entity.Property(x => x.UpdatedDate).HasColumnName("updated_date").IsConcurrencyToken();
         entity.Property(x => x.UpdatedBy).HasColumnName("updated_by");
         entity.Property(x => x.ReleasedDate).HasColumnName("released_date");
         entity.Property(x => x.ReleasedBy).HasColumnName("released_by");

@@ -9,7 +9,7 @@ using HRM.Application.Features.PLM.SampleRequests.Commands.SendSampleRequestMess
 using HRM.Application.Features.PLM.SampleRequests.Rules;
 using HRM.Application.Features.PLM.SampleRequests.DataChangeRequests;
 using HRM.Application.Features.PLM.SampleRequests.SampleTrials;
-using HRM.Application.Features.PLM.Boms.Commands.CreateManufacturingBomFromSelectedFormula;
+using HRM.Application.Features.PLM.Boms.Commands.CreateBomFromSelectedFormula;
 using HRM.Domain.Enums.Notifications;
 using HRM.Domain.Enums.SampleRequests;
 using MediatR;
@@ -189,13 +189,13 @@ internal sealed class RecordSampleRequestSampleTrialCustomerFeedbackCommandHandl
         if (request.Status == SampleTrialStatus.Approved)
         {
             var bomResult = await _sender.Send(
-                new CreateManufacturingBomFromSelectedFormulaCommand(sampleRequest.ProductId),
+                new CreateBomFromSelectedFormulaCommand(sampleRequest.ProductId),
                 cancellationToken);
             if (!bomResult.Success)
             {
                 return OperationResult<Guid>.Ok(
                     trial.SampleRequestSampleTrialId,
-                    $"Recorded customer feedback successfully, but could not initialize the Manufacturing BOM: {bomResult.Message}");
+                    $"Recorded customer feedback successfully, but could not initialize the Engineering BOM: {bomResult.Message}");
             }
         }
 

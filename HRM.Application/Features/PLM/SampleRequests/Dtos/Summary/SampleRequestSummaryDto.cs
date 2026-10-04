@@ -39,6 +39,10 @@ namespace HRM.Application.Features.PLM.SampleRequests.Dtos.Summary
 
         public DateTime? ExpectedDeliveryDate { get; set; }
         public DateTime? RequestDeliveryDate { get; set; }
+        public DateTime? LabReceivedDate { get; set; }
+        public bool IsDelayed { get; set; }
+        public Guid? LabReceivedByEmployeeId { get; set; }
+        public string? LabReceivedByName { get; set; }
         public DateTime? RealDeliveryDate { get; set; }
         public DateTime? RealPriceQuoteDate { get; set; }
         public DateTime? ExpectedPriceQuoteDate { get; set; }

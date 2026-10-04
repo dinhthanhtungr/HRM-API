@@ -107,6 +107,7 @@ internal sealed class ExportQuotationPdfQueryHandler
                             .Select(tier => new QuotationPdfPriceTierDto
                             {
                                 QuantityRangeLabel = tier.QuantityRangeLabel,
+                                MinQuantity = tier.MinQuantity,
                                 UnitPrice = tier.UnitPrice,
                                 CommissionAmount = tier.CommissionAmount,
                                 CustomerUnitPrice = tier.CustomerUnitPrice,

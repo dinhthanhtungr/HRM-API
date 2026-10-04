@@ -7,6 +7,24 @@ namespace HRM.Application.Tests.Features.Executive;
 
 public sealed class ProductPricingReviewMaterialComparisonRulesTests
 {
+    [Fact]
+    public void FormulaStructureDifference_IgnoresPriceButDetectsQuantityChanges()
+    {
+        var itemId = Guid.NewGuid();
+        var standard = Source(10m, true, ComparisonMaterial(itemId, "SAME", 1m, 10m));
+        var sameStructureWithNewPrice = Source(
+            20m, true, ComparisonMaterial(itemId, "SAME", 1m, 20m));
+        var changedQuantity = Source(
+            20m, true, ComparisonMaterial(itemId, "SAME", 2m, 10m));
+
+        Assert.False(ProductPricingReviewMaterialComparisonRules.HasFormulaStructureDifference(
+            standard,
+            sameStructureWithNewPrice));
+        Assert.True(ProductPricingReviewMaterialComparisonRules.HasFormulaStructureDifference(
+            standard,
+            changedQuantity));
+    }
+
     [Theory]
     [InlineData(120, 100, PricingReviewCostComparisonStatus.Increased)]
     [InlineData(80, 100, PricingReviewCostComparisonStatus.Decreased)]

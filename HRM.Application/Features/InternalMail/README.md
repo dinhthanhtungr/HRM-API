@@ -1,5 +1,28 @@
 # InternalMail API và luồng Notification
 
+## Phân quyền khu vực (2026-10-04)
+
+[AREAS.md](AREAS.md) mô tả Chung, Kỹ thuật và Báo giá. Mỗi khu vực dùng một conversation với participant riêng; không gán quyền khu vực theo role. Tái sử dụng bảng/cột hiện có, giữ lịch sử ở Chung, không migration/backfill. Chủ cuộc trao đổi tạo khu vực; chủ khu vực mời/gỡ người và thành viên có thể chuyển tiếp từng tin giữa các khu vực họ được phép sử dụng.
+
+## Đồng bộ unread, lưu trữ và xóa tin
+
+`GET /api/v1/internal-mail/conversations/{id}` trả `unreadCount` của employee hiện tại, cùng quy tắc với list:
+lấy giá trị lớn hơn giữa số message chưa xóa, không phải do chính employee gửi và có read-state chưa đọc,
+và số inbox notification chưa đọc/chưa archive liên kết conversation của employee trong cùng company.
+Không cộng hai số vì cùng sự kiện có thể tồn tại ở cả hai nguồn. Notification được đếm trên toàn bộ dữ liệu,
+không phụ thuộc trang feed FE đã tải; conversation và participant phải active. Vì vậy notification cũ thiếu
+message read-state hoặc chỉ liên kết thread vẫn hiện badge trên thẻ. Đây là query đọc, không tự đánh dấu đã đọc/backfill.
+Ví dụ sau khi đọc: `{ "conversationId": "...", "unreadCount": 0, "lastMessageId": "..." }`.
+Số 0 là không còn tin chưa đọc tại thời điểm query; tin đến sau request có thể làm số này tăng lại.
+FE dùng detail sau mutation để cập nhật cả conversation đang nằm ở trang cũ.
+
+PATCH preferences với `isArchived: true` đồng thời archive notification hiện có của thread cho chính employee,
+trong cùng transaction; mute không thay đổi nếu bỏ field. Khôi phục conversation không tự khôi phục notification
+đã archive. Hoạt động mới sau mốc lưu trữ có thể tạo notification mới.
+DELETE message giữ quyền sender/owner và company/participant scope hiện hành, đồng thời archive notification
+liên kết đúng conversationId/messageId cho mọi người nhận trong company. Message và inbox state cập nhật nguyên tử;
+không xóa cứng audit. Hành vi này áp dụng khi thao tác chạy; không tự backfill dữ liệu production đã xóa từ trước.
+
 ## Quyền đọc conversation từ Executive Sample Request Overview
 
 Mặc định mọi API đọc conversation/message/attachment yêu cầu current employee là participant active của
@@ -57,7 +80,7 @@ Base route: `/api/v1/internal-mail`
 Các filter chính của `GET /conversations`:
 
 - `relatedType`: enum `InternalMailRelatedType`; bỏ trống để lấy tất cả.
-- `unreadOnly`: chỉ lấy conversation có message chưa đọc.
+- `unreadOnly`: chỉ lấy conversation có message hoặc inbox notification chưa đọc; lọc trước phân trang.
 - `archived`: lấy inbox thường hoặc archive cá nhân.
 - `keyword` hoặc `search`, `pageNumber`, `pageSize`: search và phân trang. Search không phân biệt hoa/thường theo subject, mã liên kết, nội dung tin nhắn; với conversation `SampleRequest` còn tìm theo mã/tên khách hàng và tên Sale phụ trách (`SampleRequest.ManagerBy`). Metadata nguồn luôn bị giới hạn cùng company và Sample Request active.
 
@@ -73,6 +96,16 @@ nhất quán: `requestCode`, `colourCode`, `customerId`, `customerCode`, `custom
 Sample Request/Customer/Employee hiện tại, luôn lọc cùng company và Sample Request active. Với conversation
 không phải Sample Request, record nguồn inactive hoặc quan hệ nguồn không cùng company, `sampleRequestInfo = null`;
 FE vẫn dùng `displayTitle`/`subject` như trước.
+
+`sampleRequestInfo.productCategory` trả loại sản phẩm hiện tại dưới dạng
+`{ "categoryId": "<uuid>", "code": "PIG", "name": "Bột màu" }`. Mã/tên lấy trực tiếp từ
+`SampleRequest.Product.Category`, không suy đoán từ tiêu đề tin nhắn và không phải snapshot lúc gửi.
+Trường này là `null` khi sản phẩm/danh mục inactive, khác company, thiếu danh mục hoặc danh mục không thuộc
+loại `Product`; `code`/`name` có thể null nếu dữ liệu nguồn chưa có. Áp dụng cho
+`GET /api/v1/internal-mail/conversations`, `GET /api/v1/internal-mail/conversations/{conversationId}` và
+metadata conversation trong `GET /api/v1/notification-hub/items`. FE có thể dùng `code` để phân loại,
+`name` để hiển thị. Đây là metadata, không thay thế kiểm tra quyền truy cập ở backend.
+`notifications/feed` và `notifications/unread-summary` không có trường này.
 
 Khi `relatedType = Quotation`, cả list và detail trả thêm `quotationInfo`: `quotationCode`, `customerId`,
 `customerCode`, `customerName`, `saleEmployeeId` và `saleName`. `sale*` lấy từ `Quotation.SaleEmployee`, không phải
@@ -94,6 +127,36 @@ Ví dụ response rút gọn:
   }
 }
 ```
+
+## Đồng bộ trạng thái đã đọc
+
+`POST /api/v1/internal-mail/conversations/{conversationId}/read?throughMessageId={messageId}` giữ response
+`204 No Content`. `throughMessageId` là query tùy chọn: FE gửi ID tin mới nhất trong trang messages vừa tải,
+backend xác minh tin thuộc đúng conversation/company rồi đánh dấu đến tin đó (thứ tự `SentAt`, message ID).
+Mốc ID hợp lệ không bị loại vì `SentAt` lớn hơn đồng hồ API: thời gian đã lưu dùng để xác định thứ tự,
+giờ xử lý chỉ dùng cho audit. Tin đã xóa còn xuất hiện dưới dạng tombstone vẫn có thể làm mốc;
+read-state của chính tin đã xóa không được cập nhật.
+Tin đến sau lúc tải trang không bị đánh dấu nhầm. Client cũ không gửi query vẫn đọc đến mốc bắt đầu request.
+
+Trong cùng transaction, backend cập nhật message read-state, notification liên kết qua cả `conversationId` và
+`messageId`, và `LastReadAt` không lùi khi hai request chạy đồng thời. Chỉ áp dụng cho employee hiện tại còn là
+participant active trong conversation active cùng company. Notification phải chưa archive và liên kết đúng
+tập message được chụp trước cập nhật. Khi có `throughMessageId`, không lọc thêm CreatedDate theo giờ API để
+tránh sót thông báo vì lệch đồng hồ. Client cũ không gửi mốc ID vẫn giới hạn notification theo giờ bắt đầu request.
+Notification độc lập, JSON hỏng liên kết hoặc trỏ tới message đã xóa được giữ nguyên.
+
+Snapshot lấy trực tiếp từ message, không yêu cầu có sẵn read-state. Backend upsert read-state cho employee
+đang đọc để sửa dữ liệu lịch sử bị thiếu; cập nhật đồng thời không tạo trùng khóa và không ghi đè thời điểm đã đọc.
+SQL upsert truyền `ReadAt` bằng tham số PostgreSQL `timestamp without time zone`, đúng convention hiện có.
+Giữ nguyên giờ địa phương; không để raw SQL suy kiểu `timestamptz` rồi từ chối `DateTimeKind.Local`.
+Riêng `QuotationPricingApproved = 48` là sự kiện cấp conversation, publisher không tạo message tương ứng.
+Khi đọc thread, notification này được xác nhận nếu đúng conversation và được tạo không muộn hơn lúc request
+bắt đầu. Payload phải thiếu `messageId` hoặc có giá trị null; ID hỏng hoặc ID ngoài snapshot không được bỏ qua.
+Các topic khác vẫn yêu cầu liên kết message hợp lệ. Không thêm recipient hoặc phát lại notification.
+
+Mở lại thread vẫn đối chiếu các message đã đọc trước đó để sửa notification còn sót, kể cả notification không
+nằm trong trang feed FE đang tải. Không cần migration, không phát lại SignalR/Web Push. Sau thành công, FE tải lại
+unread-summary và inbox; không suy số tổng từ feed phân trang. Đây không phải thao tác đọc tất cả các conversation.
 
 ## Reply Và Attachment
 

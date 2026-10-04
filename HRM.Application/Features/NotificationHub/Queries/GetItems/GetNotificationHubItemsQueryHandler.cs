@@ -15,6 +15,7 @@ internal sealed class GetNotificationHubItemsQueryHandler
     private readonly INotificationService _notificationService;
     private readonly IInternalMailDbContext _internalMailDbContext;
     private readonly ICurrentUser _currentUser;
+    private readonly InternalMailAreaAccessService _areas;
     private readonly InternalConversationSampleRequestInfoResolver _sampleRequestInfoResolver;
     private readonly InternalConversationQuotationInfoResolver _quotationInfoResolver;
 
@@ -23,11 +24,13 @@ internal sealed class GetNotificationHubItemsQueryHandler
         IInternalMailDbContext internalMailDbContext,
         ICurrentUser currentUser,
         InternalConversationSampleRequestInfoResolver sampleRequestInfoResolver,
-        InternalConversationQuotationInfoResolver quotationInfoResolver)
+        InternalConversationQuotationInfoResolver quotationInfoResolver,
+        InternalMailAreaAccessService areas)
     {
         _notificationService = notificationService;
         _internalMailDbContext = internalMailDbContext;
         _currentUser = currentUser;
+        _areas = areas;
         _sampleRequestInfoResolver = sampleRequestInfoResolver;
         _quotationInfoResolver = quotationInfoResolver;
     }
@@ -139,8 +142,10 @@ internal sealed class GetNotificationHubItemsQueryHandler
         }
 
         // Một query batch cho toàn bộ thread của trang feed. Participant là security boundary.
+        var visibleConversations = _areas.Conversations().Select(c => c.InternalConversationId);
         var conversations = await _internalMailDbContext.InternalConversationParticipants
             .AsNoTracking()
+            .Where(p => visibleConversations.Contains(p.InternalConversationId))
             .Where(participant =>
                 participant.EmployeeId == employeeId &&
                 participant.IsActive &&
@@ -153,23 +158,31 @@ internal sealed class GetNotificationHubItemsQueryHandler
                 participant.Conversation.RelatedType,
                 participant.Conversation.RelatedId,
                 participant.Conversation.RelatedExternalId,
-                participant.Conversation.LastMessage != null
-                    ? participant.Conversation.LastMessage.SenderEmployee.FullName
-                    : null,
-                participant.Conversation.LastMessage != null && !participant.Conversation.LastMessage.IsDeleted
-                    ? participant.Conversation.LastMessage.Body
-                    : null,
-                participant.Conversation.LastMessageAt,
-                participant.Conversation.Messages.Count(message =>
+                participant.Conversation.Messages.Where(m => m.InternalConversationId == participant.InternalConversationId && !m.IsDeleted).OrderByDescending(m => m.SentAt).ThenByDescending(m => m.InternalMessageId).Select(m => m.SenderEmployee.FullName).FirstOrDefault(),
+                participant.Conversation.Messages.Where(m => m.InternalConversationId == participant.InternalConversationId && !m.IsDeleted).OrderByDescending(m => m.SentAt).ThenByDescending(m => m.InternalMessageId).Select(m => m.Body).FirstOrDefault(),
+                participant.Conversation.Messages.Where(m => m.InternalConversationId == participant.InternalConversationId).Max(m => (DateTime?)m.SentAt) ?? participant.Conversation.CreatedAt,
+                participant.Conversation.Messages.Count(message => message.InternalConversationId == participant.InternalConversationId &&
                     !message.IsDeleted &&
                     message.SenderEmployeeId != employeeId &&
                     message.ReadStates.Any(state => state.EmployeeId == employeeId && !state.IsRead)),
-                participant.Conversation.Messages.Any(message =>
+                participant.Conversation.Messages.Any(message => message.InternalConversationId == participant.InternalConversationId &&
                     !message.IsDeleted &&
                     message.IsUrgent &&
                     message.SenderEmployeeId != employeeId)))
             .ToListAsync(cancellationToken);
 
+        var notificationCounts = await _areas.NotificationUnreadCounts()
+            .Where(item => conversationIds.Contains(item.ConversationId))
+            .ToDictionaryAsync(item => item.ConversationId, item => item.UnreadCount, cancellationToken);
+
+        var areaMetadata = conversations.ToDictionary(c => c.ConversationId, c => new {
+            Area = InternalMailAreaAccessService.AreaOf(c.RelatedType),
+            Group = InternalMailAreaAccessService.IsPrivateArea(c.RelatedType) ? c.RelatedId!.Value : c.ConversationId });
+        var parentIds = conversations.Where(c => InternalMailAreaAccessService.IsPrivateArea(c.RelatedType)).Select(c => c.RelatedId!.Value).ToArray();
+        var parents = await _internalMailDbContext.InternalConversations.AsNoTracking().Where(c => c.CompanyId == companyId && parentIds.Contains(c.InternalConversationId))
+            .ToDictionaryAsync(c => c.InternalConversationId, cancellationToken);
+        conversations = conversations.Select(c => InternalMailAreaAccessService.IsPrivateArea(c.RelatedType) && parents.TryGetValue(c.RelatedId!.Value, out var parent)
+            ? c with { RelatedType = parent.RelatedType, RelatedId = parent.RelatedId, RelatedExternalId = parent.RelatedExternalId } : c).ToList();
         var sampleRequestInfoById = await _sampleRequestInfoResolver.ResolveAsync(
             conversations
                 .Where(item => item.RelatedType == InternalMailRelatedType.SampleRequest)
@@ -183,11 +196,18 @@ internal sealed class GetNotificationHubItemsQueryHandler
             companyId,
             cancellationToken);
 
-        return conversations.ToDictionary(
+        var result = conversations.ToDictionary(
             conversation => conversation.ConversationId,
             conversation => NotificationHubConversationInfoMapper.Map(
-                conversation,
+                conversation with { UnreadCount = Math.Max(conversation.UnreadCount,
+                    notificationCounts.GetValueOrDefault(conversation.ConversationId)) },
                 sampleRequestInfoById,
                 quotationInfoById));
+        foreach (var pair in result)
+        {
+            pair.Value.GroupConversationId = areaMetadata[pair.Key].Group;
+            pair.Value.AreaCode = areaMetadata[pair.Key].Area;
+        }
+        return result;
     }
 }

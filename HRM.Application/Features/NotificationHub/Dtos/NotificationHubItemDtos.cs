@@ -29,6 +29,8 @@ public sealed class NotificationHubItemDto
 /// </summary>
 public sealed class NotificationHubConversationInfoDto
 {
+    public Guid GroupConversationId { get; set; }
+    public string AreaCode { get; set; } = "general";
     public string? DisplayTitle { get; set; }
     public string? LastSenderName { get; set; }
     public string? LastMessageBody { get; set; }

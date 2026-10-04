@@ -50,6 +50,8 @@ internal sealed class GetBomDefinitionQueryHandler
                         BomVersionId = v.BomVersionId,
                         VersionNo = v.VersionNo,
                         Status = v.Status,
+                        SourceFormulaId = v.SourceFormulaId,
+                        SourceEngineeringBomVersionId = v.SourceEngineeringBomVersionId,
                         EffectiveFrom = v.EffectiveFrom,
                         EffectiveTo = v.EffectiveTo,
                         CreatedDate = v.CreatedDate,

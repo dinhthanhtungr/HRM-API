@@ -1,5 +1,22 @@
 # Notification
 
+## Khu vực trao đổi (2026-10-04)
+
+Xem [InternalMail/AREAS.md](../InternalMail/AREAS.md). Khu vực riêng dùng conversation con và participant hiện có. NotificationService giới hạn người nhận trong danh sách thành viên được chọn, cùng company và luật RD/color; không tự thêm Developer vào khu vực riêng. Feed/detail/unread kiểm tra membership hiện tại. Topic, numeric value, topicCode, category và publisher nghiệp vụ giữ nguyên. SignalR/Web Push giao audience đã enqueue với thành viên active/không mute lúc dispatch; silent watcher không được bổ sung. Không cần migration; triển khai BE trước FE.
+
+## Lưu trữ nhóm trong Notification Hub
+
+`POST /api/v1/notifications/{id}/archive-group` trả 204 khi notification mốc thuộc inbox hiện tại,
+404 nếu không tồn tại/đã archive/khác employee hoặc company. Server resolve group từ payload canonical giống feed:
+notification độc lập có cùng context.aggregateType/aggregateId, không có conversationId. Mọi trang của nhóm
+được archive cho employee hiện tại, trong một transaction; không chỉ notification mới nhất. Notification không
+có aggregateId chỉ archive chính nó. Endpoint `/{id}/archive` vẫn giữ hành vi một notification.
+
+Archive conversation và delete message đồng bộ inbox states qua `INotificationInboxArchiver`:
+archive thread chỉ ảnh hưởng employee đang thao tác; delete message archive thông báo của đúng message cho mọi
+người nhận trong company sau khi kiểm tra quyền xóa. Không đổi topic/catalog, recipient lúc publish, payload,
+outbox, SignalR hoặc Web Push. Không tự sửa dữ liệu production đã tồn đọng trước triển khai.
+
 ## 1. Mục đích
 
 Module Notification cung cấp hộp thư thông báo theo từng nhân viên và hai kênh chuyển phát:
@@ -366,6 +383,16 @@ kể cả nhóm có `unreadCount=0`. Service chỉ tính UserState chưa đọc,
 tại; dữ liệu được group theo `Topic` trong database rồi ánh xạ qua `NotificationTopicCatalog`.
 Thống kê `legacy_data` cũng dùng cùng mốc `CreatedDate` như feed/detail.
 API `/unread-count` cũ vẫn được giữ nguyên để không breaking change.
+
+Khi đọc một conversation qua `POST /api/v1/internal-mail/conversations/{conversationId}/read`, backend đồng bộ
+notification chưa đọc/chưa archive của current employee liên kết với các message đã đọc trong cùng transaction.
+Không giới hạn theo trang notification FE đang hiển thị; mở lại thread sửa được notification cũ còn sót. Query
+tùy chọn `throughMessageId` giới hạn đến tin FE vừa tải để không đọc nhầm tin đến sau. Notification thiếu liên kết
+conversation/message hợp lệ không được tự đánh dấu, ngoại trừ `QuotationPricingApproved = 48`: publisher cố ý
+chỉ gắn conversation, nên mở thread sẽ xác nhận các sự kiện này đã tồn tại lúc request bắt đầu. `messageId`
+hỏng hoặc trỏ ngoài snapshot vẫn bị loại. Message thiếu read-state được upsert cho chính employee đang đọc,
+trong cùng transaction và giữ company/participant scope. FE tải lại unread summary sau thành công; topic, recipient,
+payload và SignalR/Web Push không thay đổi. Xem contract chi tiết tại `../InternalMail/README.md`.
 
 `CustomerAiSummaryAutomationStatus` được publish bởi
 `CustomerInteractionAiSummaryAutomationProcessor` sau lượt tự động có gọi AI hoặc chạm rate limit. Processor

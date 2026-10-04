@@ -1,4 +1,5 @@
 using HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestSampleTrials;
+using HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestDailyWork;
 using HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestSampleTrials.Models;
 using HRM.Domain.Entities.SampleRequestSchema;
 using HRM.Domain.Enums.SampleRequests;
@@ -49,6 +50,98 @@ public sealed class SampleRequestSampleTrialReportQueryRulesTests
         var result = ApplyReportType(rows, SampleTrialReportType.All);
 
         Assert.Equal(4, result.Count);
+    }
+
+    [Fact]
+    public void DailyWorkToday_IncludesOnlyWorkDueOnSelectedDay()
+    {
+        var dueToday = CreateRow(SampleRequestStatus.InProgress, SampleTrialStatus.Draft);
+        dueToday.SampleRequest.ExpectedDeliveryDate = new DateTime(2026, 9, 23);
+        var overdue = CreateRow(SampleRequestStatus.InProgress, SampleTrialStatus.Draft);
+        overdue.SampleRequest.ExpectedDeliveryDate = new DateTime(2023, 10, 14);
+        overdue.SampleRequest.IsDelayed = true;
+        var closed = CreateRow(SampleRequestStatus.Completed, SampleTrialStatus.Approved);
+        closed.SampleRequest.ExpectedDeliveryDate = new DateTime(2026, 9, 23);
+        var request = new GetSampleRequestSampleTrialsQuery
+        {
+            DailyWorkDate = new DateOnly(2026, 9, 23)
+        };
+
+        var result = SampleRequestSampleTrialReportQueryRules.ApplyReportType(
+            new[] { dueToday, overdue, closed }.AsQueryable(), request).ToList();
+
+        Assert.Same(dueToday, Assert.Single(result));
+    }
+
+    [Fact]
+    public void DailyWorkAll_IncludesAllVisibleWorkflowStatuses()
+    {
+        var rows = new[]
+        {
+            CreateRow(SampleRequestStatus.New, SampleTrialStatus.Draft),
+            CreateRow(SampleRequestStatus.Completed, SampleTrialStatus.Approved),
+            CreateRow(SampleRequestStatus.Cancelled, SampleTrialStatus.Cancelled)
+        };
+
+        var result = SampleRequestSampleTrialReportQueryRules.ApplyReportType(
+            rows.AsQueryable(), new GetSampleRequestSampleTrialsQuery
+            {
+                DailyWorkDate = new DateOnly(2026, 9, 23),
+                DailyWorkView = SampleRequestDailyView.All
+            }).ToList();
+
+        Assert.Equal(rows, result);
+    }
+
+    [Fact]
+    public void DailyWork_DueQuotationStopsAfterActualQuoteDate()
+    {
+        var due = CreateRow(SampleRequestStatus.InProgress, SampleTrialStatus.Draft);
+        due.SampleRequest.InfoType = "Báo giá";
+        due.SampleRequest.ExpectedPriceQuoteDate = new DateTime(2026, 9, 23);
+        var quoted = CreateRow(SampleRequestStatus.InProgress, SampleTrialStatus.Draft);
+        quoted.SampleRequest.InfoType = "Báo giá";
+        quoted.SampleRequest.ExpectedPriceQuoteDate = new DateTime(2026, 9, 23);
+        quoted.SampleRequest.RealPriceQuoteDate = new DateTime(2026, 9, 22);
+
+        var result = SampleRequestSampleTrialReportQueryRules.ApplyReportType(
+            new[] { due, quoted }.AsQueryable(),
+            new GetSampleRequestSampleTrialsQuery { DailyWorkDate = new DateOnly(2026, 9, 23) })
+            .ToList();
+
+        Assert.Same(due, Assert.Single(result));
+    }
+
+    [Fact]
+    public void DailyWorkToday_IncludesFailedTrialWithFeedbackOnSelectedDay()
+    {
+        var failedToday = CreateRow(SampleRequestStatus.InProgress, SampleTrialStatus.Failed,
+            customerReplyDate: new DateTime(2026, 9, 23, 14, 0, 0));
+        var failedEarlier = CreateRow(SampleRequestStatus.InProgress, SampleTrialStatus.Failed,
+            customerReplyDate: new DateTime(2026, 9, 22, 14, 0, 0));
+
+        var result = SampleRequestSampleTrialReportQueryRules.ApplyReportType(
+            new[] { failedToday, failedEarlier }.AsQueryable(),
+            new GetSampleRequestSampleTrialsQuery { DailyWorkDate = new DateOnly(2026, 9, 23) })
+            .ToList();
+
+        Assert.Same(failedToday, Assert.Single(result));
+    }
+
+    [Fact]
+    public void DailyWork_SortsNewestSampleRequestFirst()
+    {
+        var older = CreateRow(SampleRequestStatus.InProgress, SampleTrialStatus.Draft,
+            sampleRequestCreatedDate: new DateTime(2026, 9, 1));
+        var newer = CreateRow(SampleRequestStatus.InProgress, SampleTrialStatus.Draft,
+            sampleRequestCreatedDate: new DateTime(2026, 9, 20));
+
+        var result = SampleRequestSampleTrialReportQueryRules.ApplySorting(
+            new[] { older, newer }.AsQueryable(),
+            new GetSampleRequestSampleTrialsQuery { DailyWorkDate = new DateOnly(2026, 9, 23) })
+            .ToList();
+
+        Assert.Equal(new[] { newer, older }, result);
     }
 
     [Fact]

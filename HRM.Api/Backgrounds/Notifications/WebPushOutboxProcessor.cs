@@ -119,12 +119,6 @@ public sealed class WebPushOutboxProcessor : BackgroundService
         var notification = await dbContext.Notifications
             .AsNoTracking()
             .Where(x => x.Id == notificationId)
-            .Select(x => new
-            {
-                x.Id,
-                x.CompanyId,
-                x.Link
-            })
             .FirstOrDefaultAsync(cancellationToken);
 
         if (notification is null)
@@ -132,11 +126,16 @@ public sealed class WebPushOutboxProcessor : BackgroundService
             return new WebPushDeliverySummary(0, 0);
         }
 
+        using var audienceScope = _serviceProvider.CreateScope();
+        var areaAccess = audienceScope.ServiceProvider.GetRequiredService<HRM.Application.Features.InternalMail.Services.InternalMailAreaAccessService>();
+        var eligibleIds = await areaAccess.DeliveryRecipients(notification).ToArrayAsync(cancellationToken);
+
         var normalizedTargetEmployeeIds = targetEmployeeIds?
             .Where(x => x != Guid.Empty)
             .Distinct()
             .ToArray();
         var subscriptionsQuery = dbContext.WebPushSubscriptions
+            .Where(x => eligibleIds.Contains(x.EmployeeId))
             .Where(x =>
                 x.CompanyId == notification.CompanyId &&
                 x.IsActive &&

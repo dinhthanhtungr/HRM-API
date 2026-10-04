@@ -205,26 +205,15 @@ internal sealed class QuotationPdfRenderer : IQuotationPdfRenderer
         IReadOnlyList<QuotationPdfLineDto> lines,
         string currency)
     {
-        var tierLabels = lines
-            .SelectMany(line => line.PriceTiers)
-            .Select(tier => new
-            {
-                QuantityRangeLabel = FormatTierLabel(tier.QuantityRangeLabel),
-                tier.SortOrder
-            })
-            .Where(tier => !string.IsNullOrWhiteSpace(tier.QuantityRangeLabel))
-            .GroupBy(tier => tier.QuantityRangeLabel, StringComparer.OrdinalIgnoreCase)
-            .Select(group => group.OrderBy(tier => tier.SortOrder).First())
-            .OrderBy(tier => tier.SortOrder)
-            .ThenBy(tier => tier.QuantityRangeLabel)
-            .Select(tier => tier.QuantityRangeLabel)
-            .ToList();
+        var tierLabels = ResolveTierLabels(lines);
         var units = lines
             .Select(line => line.Unit)
             .Where(unit => !string.IsNullOrWhiteSpace(unit))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
-        var quantityUnit = units.Count == 1 ? $" ({units[0]})" : string.Empty;
+        var unitAndCurrency = units.Count == 1
+            ? $" ({units[0].Trim().ToUpperInvariant()}/{currency.Trim().ToUpperInvariant()})"
+            : string.Empty;
 
         container.Table(table =>
         {
@@ -244,7 +233,7 @@ internal sealed class QuotationPdfRenderer : IQuotationPdfRenderer
                 HeaderCell(header.Cell().RowSpan(2), "Mã số/Code");
                 HeaderCell(header.Cell().RowSpan(2), "Tên hàng/Name");
                 HeaderCell(header.Cell().ColumnSpan((uint)tierLabels.Count),
-                    $"Số lượng/Quantity{quantityUnit}");
+                    $"Đơn giá/Unit price{unitAndCurrency}");
                 HeaderCell(header.Cell().RowSpan(2), "Ghi chú\nNote");
 
                 foreach (var label in tierLabels)
@@ -391,6 +380,32 @@ internal sealed class QuotationPdfRenderer : IQuotationPdfRenderer
 
     private static string FormatNumber(decimal value)
         => value.ToString("#,##0.##");
+
+    // Sort shared PDF columns by the actual quantity boundary. A tier's SortOrder
+    // is only meaningful within its own product line and can conflict across lines.
+    internal static IReadOnlyList<string> ResolveTierLabels(
+        IReadOnlyList<QuotationPdfLineDto> lines)
+        => lines
+            .SelectMany(line => line.PriceTiers)
+            .Select(tier => new
+            {
+                QuantityRangeLabel = FormatTierLabel(tier.QuantityRangeLabel),
+                tier.MinQuantity,
+                tier.SortOrder
+            })
+            .Where(tier => !string.IsNullOrWhiteSpace(tier.QuantityRangeLabel))
+            .GroupBy(tier => tier.QuantityRangeLabel, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group
+                .OrderBy(tier => tier.MinQuantity.HasValue ? 1 : 0)
+                .ThenBy(tier => tier.MinQuantity)
+                .ThenBy(tier => tier.SortOrder)
+                .First())
+            .OrderBy(tier => tier.MinQuantity.HasValue ? 1 : 0)
+            .ThenBy(tier => tier.MinQuantity)
+            .ThenBy(tier => tier.SortOrder)
+            .ThenBy(tier => tier.QuantityRangeLabel)
+            .Select(tier => tier.QuantityRangeLabel)
+            .ToArray();
 
     private static string FormatTierLabel(string value)
     {

@@ -10,5 +10,6 @@ public sealed class SetEmployeeAccountStatusCommand
     [JsonIgnore]
     public Guid EmployeeId { get; set; }
 
+    [JsonRequired]
     public bool IsActive { get; init; }
 }

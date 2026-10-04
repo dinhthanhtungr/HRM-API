@@ -64,6 +64,7 @@ internal sealed class GetSaleOrderByIdQueryHandler
                 CustomerId = x.CustomerId,
                 CustomerNameSnapshot = x.CustomerNameSnapshot,
                 CustomerExternalIdSnapshot = x.CustomerExternalIdSnapshot,
+                OrderType = x.OrderType,
                 PhoneSnapshot = x.PhoneSnapshot,
                 ManagerById = x.ManagerById,
                 ManagerByNameSnapshot = x.ManagerByNameSnapshot,

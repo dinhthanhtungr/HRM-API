@@ -15,15 +15,18 @@ internal sealed class GetInternalMessageContextQueryHandler
 
     private readonly IInternalMailDbContext _dbContext;
     private readonly ICurrentUser _currentUser;
+    private readonly InternalMailAreaAccessService _areas;
     private readonly IInternalConversationAccessService _conversationAccessService;
 
     public GetInternalMessageContextQueryHandler(
         IInternalMailDbContext dbContext,
         ICurrentUser currentUser,
-        IInternalConversationAccessService conversationAccessService)
+        IInternalConversationAccessService conversationAccessService,
+        InternalMailAreaAccessService areas)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
+        _areas = areas;
         _conversationAccessService = conversationAccessService;
     }
 
@@ -48,7 +51,7 @@ internal sealed class GetInternalMessageContextQueryHandler
             return null;
         }
 
-        var target = await _dbContext.InternalMessages
+        var target = await _areas.Messages(request.AreaCode)
             .AsNoTracking()
             .Where(x =>
                 x.InternalConversationId == request.ConversationId &&
@@ -69,7 +72,7 @@ internal sealed class GetInternalMessageContextQueryHandler
         var before = Math.Clamp(request.Before, 0, MaxContextSize);
         var after = Math.Clamp(request.After, 0, MaxContextSize);
 
-        var olderIds = await _dbContext.InternalMessages
+        var olderIds = await _areas.Messages(request.AreaCode)
             .AsNoTracking()
             .Where(x =>
                 x.InternalConversationId == request.ConversationId &&
@@ -81,7 +84,7 @@ internal sealed class GetInternalMessageContextQueryHandler
             .Select(x => x.InternalMessageId)
             .ToListAsync(cancellationToken);
 
-        var newerIds = await _dbContext.InternalMessages
+        var newerIds = await _areas.Messages(request.AreaCode)
             .AsNoTracking()
             .Where(x =>
                 x.InternalConversationId == request.ConversationId &&
@@ -98,7 +101,8 @@ internal sealed class GetInternalMessageContextQueryHandler
             .Concat(newerIds)
             .ToArray();
 
-        var messages = await _dbContext.InternalMessages
+        var visibleIds = _areas.Messages().Select(m => m.InternalMessageId);
+        var messages = await _areas.Messages(request.AreaCode)
             .AsNoTracking()
             .Where(x => messageIds.Contains(x.InternalMessageId))
             .OrderBy(x => x.SentAt)
@@ -106,14 +110,15 @@ internal sealed class GetInternalMessageContextQueryHandler
             .Select(x => new InternalMessageDto
             {
                 MessageId = x.InternalMessageId,
+                AreaCode = x.Conversation.RelatedType == HRM.Domain.Enums.InternalMailEnums.InternalMailRelatedType.ConversationTechnical ? "technical" : x.Conversation.RelatedType == HRM.Domain.Enums.InternalMailEnums.InternalMailRelatedType.ConversationPricing ? "pricing" : "general",
                 ConversationId = x.InternalConversationId,
                 SenderEmployeeId = x.SenderEmployeeId,
                 SenderName = x.SenderEmployee.FullName,
                 MessageType = x.MessageType,
                 Body = x.Body,
                 PayloadJson = x.PayloadJson,
-                ReplyToMessageId = x.ReplyToMessageId,
-                ReplyTo = x.ReplyToMessageId == null ? null : new InternalMessageReplyDto
+                ReplyToMessageId = x.ReplyToMessageId != null && visibleIds.Contains(x.ReplyToMessageId.Value) ? x.ReplyToMessageId : null,
+                ReplyTo = x.ReplyToMessageId == null || !visibleIds.Contains(x.ReplyToMessageId.Value) ? null : new InternalMessageReplyDto
                 {
                     MessageId = x.ReplyToMessage!.InternalMessageId,
                     SenderEmployeeId = x.ReplyToMessage.SenderEmployeeId,
@@ -146,14 +151,14 @@ internal sealed class GetInternalMessageContextQueryHandler
 
         var firstSentAt = messages.FirstOrDefault()?.SentAt ?? target.SentAt;
         var lastSentAt = messages.LastOrDefault()?.SentAt ?? target.SentAt;
-        var hasOlder = await _dbContext.InternalMessages
+        var hasOlder = await _areas.Messages(request.AreaCode)
             .AsNoTracking()
             .AnyAsync(x =>
                 x.InternalConversationId == request.ConversationId &&
                 !x.IsDeleted &&
                 x.SentAt < firstSentAt,
                 cancellationToken);
-        var hasNewer = await _dbContext.InternalMessages
+        var hasNewer = await _areas.Messages(request.AreaCode)
             .AsNoTracking()
             .AnyAsync(x =>
                 x.InternalConversationId == request.ConversationId &&

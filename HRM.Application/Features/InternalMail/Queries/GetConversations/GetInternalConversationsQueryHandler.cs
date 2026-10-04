@@ -15,6 +15,7 @@ internal sealed class GetInternalConversationsQueryHandler
 {
     private readonly IInternalMailDbContext _dbContext;
     private readonly ICurrentUser _currentUser;
+    private readonly InternalMailAreaAccessService _areas;
     private readonly InternalConversationSampleRequestInfoResolver _sampleRequestInfoResolver;
     private readonly InternalConversationQuotationInfoResolver _quotationInfoResolver;
 
@@ -22,10 +23,12 @@ internal sealed class GetInternalConversationsQueryHandler
         IInternalMailDbContext dbContext,
         ICurrentUser currentUser,
         InternalConversationSampleRequestInfoResolver sampleRequestInfoResolver,
-        InternalConversationQuotationInfoResolver quotationInfoResolver)
+        InternalConversationQuotationInfoResolver quotationInfoResolver,
+        InternalMailAreaAccessService areas)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
+        _areas = areas;
         _sampleRequestInfoResolver = sampleRequestInfoResolver;
         _quotationInfoResolver = quotationInfoResolver;
     }
@@ -36,10 +39,14 @@ internal sealed class GetInternalConversationsQueryHandler
     {
         var companyId = GetCompanyId();
         var employeeId = GetEmployeeId();
+        var unreadNotifications = _areas.NotificationUnreadCounts();
+        // Message metadata belongs to the outer authorized conversation; do not repeat its access query per field.
+        var visibleConversationIds = _areas.Conversations().Select(c => c.InternalConversationId);
 
         // Participant la bien bao mat cua inbox: biet conversationId khong co nghia la duoc quyen doc.
         var query = _dbContext.InternalConversationParticipants
             .AsNoTracking()
+            .Where(x => visibleConversationIds.Contains(x.InternalConversationId))
             .Where(x =>
                 x.EmployeeId == employeeId &&
                 x.IsActive &&
@@ -49,7 +56,10 @@ internal sealed class GetInternalConversationsQueryHandler
 
         if (request.RelatedType.HasValue)
         {
-            query = query.Where(x => x.Conversation.RelatedType == request.RelatedType.Value);
+            query = query.Where(x => x.Conversation.RelatedType == request.RelatedType.Value ||
+                ((x.Conversation.RelatedType == InternalMailRelatedType.ConversationTechnical || x.Conversation.RelatedType == InternalMailRelatedType.ConversationPricing) &&
+                 _dbContext.InternalConversations.Any(parent => parent.InternalConversationId == x.Conversation.RelatedId &&
+                    parent.CompanyId == companyId && parent.RelatedType == request.RelatedType.Value)));
         }
 
         if (request.NormalizedEventGroupCode is { } eventGroupCode)
@@ -61,7 +71,7 @@ internal sealed class GetInternalConversationsQueryHandler
             }
 
             var payloadMarker = $$"""{"contentType":"{{SampleRequestPriceQuotePayloadTypes.Request}}"}""";
-            query = query.Where(x => x.Conversation.Messages.Any(message =>
+            query = query.Where(x => x.Conversation.Messages.Any(message => message.InternalConversationId == x.InternalConversationId &&
                 !message.IsDeleted &&
                 message.PayloadJson != null &&
                 EF.Functions.JsonContains(message.PayloadJson, payloadMarker)));
@@ -69,10 +79,9 @@ internal sealed class GetInternalConversationsQueryHandler
 
         if (request.UnreadOnly)
         {
-            query = query.Where(x => x.Conversation.Messages.Any(message =>
-                !message.IsDeleted &&
-                message.SenderEmployeeId != employeeId &&
-                message.ReadStates.Any(state => state.EmployeeId == employeeId && !state.IsRead)));
+            query = query.Where(x => x.Conversation.Messages.Any(m => m.InternalConversationId == x.InternalConversationId &&
+                !m.IsDeleted && m.SenderEmployeeId != employeeId && m.ReadStates.Any(s => s.EmployeeId == employeeId && !s.IsRead)) ||
+                unreadNotifications.Any(n => n.ConversationId == x.InternalConversationId && n.UnreadCount > 0));
         }
 
         if (request.NormalizedSearchKeyword is { } keyword)
@@ -81,7 +90,7 @@ internal sealed class GetInternalConversationsQueryHandler
             query = query.Where(x =>
                 EF.Functions.ILike(x.Conversation.Subject, searchPattern, PostgresSearchPattern.EscapeCharacter) ||
                 (x.Conversation.RelatedExternalId != null && EF.Functions.ILike(x.Conversation.RelatedExternalId, searchPattern, PostgresSearchPattern.EscapeCharacter)) ||
-                x.Conversation.Messages.Any(message => !message.IsDeleted && EF.Functions.ILike(message.Body, searchPattern, PostgresSearchPattern.EscapeCharacter)) ||
+                x.Conversation.Messages.Any(message => message.InternalConversationId == x.InternalConversationId && !message.IsDeleted && EF.Functions.ILike(message.Body, searchPattern, PostgresSearchPattern.EscapeCharacter)) ||
                 (x.Conversation.RelatedType == InternalMailRelatedType.SampleRequest &&
                  x.Conversation.RelatedId.HasValue &&
                  _dbContext.SampleRequests.Any(sampleRequest =>
@@ -111,50 +120,74 @@ internal sealed class GetInternalConversationsQueryHandler
         var pageSize = request.NormalizedPageSize;
 
         var items = await query
-            .OrderByDescending(x => x.Conversation.LastMessageAt)
+            .OrderByDescending(x => x.Conversation.Messages.Where(m => m.InternalConversationId == x.InternalConversationId).Max(m => (DateTime?)m.SentAt))
             .ThenByDescending(x => x.InternalConversationId)
             .Skip((pageNumber - 1) * pageSize)
             .Take(pageSize)
-            .Select(x => new InternalConversationListItemDto
+            .Select(x => new
             {
-                ConversationId = x.InternalConversationId,
-                Subject = x.Conversation.Subject,
-                RelatedType = x.Conversation.RelatedType,
-                RelatedId = x.Conversation.RelatedId,
-                RelatedExternalId = x.Conversation.RelatedExternalId,
-                LastMessageId = x.Conversation.LastMessageId,
-                LastMessageBody = x.Conversation.LastMessage != null && !x.Conversation.LastMessage.IsDeleted
-                    ? x.Conversation.LastMessage.Body
-                    : null,
-                LastSenderEmployeeId = x.Conversation.LastMessage != null
-                    ? x.Conversation.LastMessage.SenderEmployeeId
-                    : null,
-                LastSenderName = x.Conversation.LastMessage != null
-                    ? x.Conversation.LastMessage.SenderEmployee.FullName
-                    : null,
-                LastMessageAt = x.Conversation.LastMessageAt,
-                UnreadCount = x.Conversation.Messages.Count(message =>
+                Participant = x,
+                LastMessage = x.Conversation.Messages.Where(m => !m.IsDeleted)
+                    .OrderByDescending(m => m.SentAt).ThenByDescending(m => m.InternalMessageId)
+                    .Select(m => new { m.InternalMessageId, m.Body, m.SenderEmployeeId, SenderName = m.SenderEmployee.FullName })
+                    .FirstOrDefault()
+            })
+            .Select(row => new InternalConversationListItemDto
+            {
+                ConversationId = row.Participant.InternalConversationId,
+                Subject = row.Participant.Conversation.Subject,
+                RelatedType = row.Participant.Conversation.RelatedType,
+                RelatedId = row.Participant.Conversation.RelatedId,
+                RelatedExternalId = row.Participant.Conversation.RelatedExternalId,
+                LastMessageId = row.LastMessage == null ? null : (Guid?)row.LastMessage.InternalMessageId,
+                LastMessageBody = row.LastMessage == null ? null : row.LastMessage.Body,
+                LastSenderEmployeeId = row.LastMessage == null ? null : (Guid?)row.LastMessage.SenderEmployeeId,
+                LastSenderName = row.LastMessage == null ? null : row.LastMessage.SenderName,
+                LastMessageAt = row.Participant.Conversation.Messages.Where(m => m.InternalConversationId == row.Participant.InternalConversationId).Max(m => (DateTime?)m.SentAt) ?? row.Participant.Conversation.CreatedAt,
+                UnreadCount = row.Participant.Conversation.Messages.Count(message => message.InternalConversationId == row.Participant.InternalConversationId &&
                     !message.IsDeleted &&
                     message.SenderEmployeeId != employeeId &&
                     message.ReadStates.Any(state => state.EmployeeId == employeeId && !state.IsRead)),
-                IsUrgent = x.Conversation.Messages.Any(message =>
+                IsUrgent = row.Participant.Conversation.Messages.Any(message => message.InternalConversationId == row.Participant.InternalConversationId &&
                     !message.IsDeleted &&
                     message.IsUrgent &&
                     message.SenderEmployeeId != employeeId &&
                     message.ReadStates.Any(state => state.EmployeeId == employeeId && !state.IsRead)),
-                IsArchived = x.IsArchived,
-                IsMuted = x.IsMuted
+                IsArchived = row.Participant.IsArchived,
+                IsMuted = row.Participant.IsMuted
             })
             .ToListAsync(cancellationToken);
 
+        var conversationIds = items.Select(item => item.ConversationId).ToArray();
+        var notificationCounts = await unreadNotifications
+            .Where(item => conversationIds.Contains(item.ConversationId))
+            .ToDictionaryAsync(item => item.ConversationId, item => item.UnreadCount, cancellationToken);
+
         foreach (var item in items)
         {
+            // The same event can have both a message read state and an inbox notification.
+            item.UnreadCount = Math.Max(item.UnreadCount, notificationCounts.GetValueOrDefault(item.ConversationId));
             item.DisplayTitle = InternalConversationPresentation.BuildDisplayTitle(
                 item.RelatedType,
                 item.Subject,
                 item.RelatedExternalId);
         }
 
+        var parentIds = items.Where(x => InternalMailAreaAccessService.IsPrivateArea(x.RelatedType)).Select(x => x.RelatedId!.Value).ToArray();
+        var parents = await _dbContext.InternalConversations.AsNoTracking().Where(c => c.CompanyId == companyId && parentIds.Contains(c.InternalConversationId))
+            .ToDictionaryAsync(c => c.InternalConversationId, cancellationToken);
+        foreach (var item in items)
+        {
+            item.AreaCode = InternalMailAreaAccessService.AreaOf(item.RelatedType);
+            item.GroupConversationId = InternalMailAreaAccessService.IsPrivateArea(item.RelatedType) ? item.RelatedId!.Value : item.ConversationId;
+            if (parents.TryGetValue(item.GroupConversationId, out var parent) && item.ConversationId != item.GroupConversationId)
+            {
+                item.RelatedType = parent.RelatedType;
+                item.RelatedId = parent.RelatedId;
+                item.RelatedExternalId = parent.RelatedExternalId;
+                item.DisplayTitle = InternalConversationPresentation.BuildDisplayTitle(parent.RelatedType, parent.Subject, parent.RelatedExternalId);
+            }
+        }
         var sampleRequestInfoById = await _sampleRequestInfoResolver.ResolveAsync(
             items.Where(item => item.RelatedType == InternalMailRelatedType.SampleRequest)
                 .Select(item => item.RelatedId ?? Guid.Empty),

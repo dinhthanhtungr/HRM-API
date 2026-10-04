@@ -2,6 +2,19 @@ namespace HRM.Application.Commons.Authorization;
 
 public static class ApplicationRoleSets
 {
+    public static class Equipment
+    {
+        public static readonly string[] Viewers =
+        [ApplicationRoles.Admin, ApplicationRoles.Developer, ApplicationRoles.President,
+            ApplicationRoles.Maintenance.MaintenanceUser,
+            ApplicationRoles.Production.ManufactureUser, ApplicationRoles.Production.QLSXUser];
+        public static readonly string[] Editors =
+        [ApplicationRoles.Admin, ApplicationRoles.Developer, ApplicationRoles.President,
+            ApplicationRoles.Maintenance.MaintenanceUser];
+        public static readonly string[] Deleters =
+        [ApplicationRoles.Admin, ApplicationRoles.Developer, ApplicationRoles.President];
+    }
+
     public static readonly string[] SuperUsers =
     [
         ApplicationRoles.Admin,
@@ -140,7 +153,8 @@ public static class ApplicationRoleSets
         [
             ApplicationRoles.Developer,
             ApplicationRoles.President,
-            ApplicationRoles.Sales.SaleUser
+            ApplicationRoles.Sales.SaleUser,
+            ApplicationRoles.Accounting.ACCUser
         ];
 
         public static readonly string[] ApprovedSellingPriceViewers =
@@ -169,6 +183,7 @@ public static class ApplicationRoleSets
             ApplicationRoles.Admin,
             ApplicationRoles.Developer,
             ApplicationRoles.President,
+            ApplicationRoles.Accounting.ACCUser,
             ApplicationRoles.SeePrice.SeePriceUser
         ];
 
@@ -176,7 +191,8 @@ public static class ApplicationRoleSets
         [
             ApplicationRoles.Admin,
             ApplicationRoles.Developer,
-            ApplicationRoles.President
+            ApplicationRoles.President,
+            ApplicationRoles.Accounting.ACCUser
         ];
 
         public static readonly string[] MarginViewers = ManufacturingCostViewers;
@@ -186,7 +202,8 @@ public static class ApplicationRoleSets
         public static readonly string[] Managers =
         [
             ApplicationRoles.Developer,
-            ApplicationRoles.President
+            ApplicationRoles.President,
+            ApplicationRoles.Accounting.ACCUser
         ];
 
         public static readonly string[] Approvers = Managers;
@@ -295,6 +312,7 @@ public static class ApplicationRoleSets
             ApplicationRoles.Admin,
             ApplicationRoles.Developer,
             ApplicationRoles.President,
+            ApplicationRoles.Lab.LabUser,
             ApplicationRoles.SeePrice.SeePriceUser
         ];
 
@@ -419,5 +437,14 @@ public static class ApplicationRoleSets
             ApplicationRoles.President,
             ApplicationRoles.Lab.LabUser
         ];
+
+        public static readonly string[] SampleRequestLabProgressEditors =
+        [
+            ApplicationRoles.Lab.LabUser,
+            ApplicationRoles.Lab.LabAdmin,
+            ApplicationRoles.Developer,
+            ApplicationRoles.President
+        ];
+
     }
 }

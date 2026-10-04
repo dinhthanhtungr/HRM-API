@@ -4,6 +4,12 @@ namespace HRM.Application.Features.CRM.Quotations.Services;
 
 internal static class ProductPricingAttentionRules
 {
+    public static IReadOnlyList<ProductPricingAttentionSource> ForNeedsPricingQueue(
+        IReadOnlyList<ProductPricingAttentionSource> sources)
+        => sources
+            .Where(source => source != ProductPricingAttentionSource.LabFormulaConfirmed)
+            .ToArray();
+
     public static IReadOnlyList<ProductPricingRequestRow> GetPendingQuotationRequests(
         PricingVersionRow? approved,
         IReadOnlyList<ProductPricingRequestRow> requests)

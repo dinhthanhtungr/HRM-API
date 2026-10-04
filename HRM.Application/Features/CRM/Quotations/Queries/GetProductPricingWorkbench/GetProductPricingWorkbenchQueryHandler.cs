@@ -240,15 +240,16 @@ internal sealed class GetProductPricingWorkbenchQueryHandler
         var attentionSourcesByProduct = request.View == ProductPricingWorkbenchView.NeedsPricing
             ? productIds.ToDictionary(
                 productId => productId,
-                productId => ProductPricingAttentionRules.Resolve(
-                    Latest(
-                        versionsByProduct.GetValueOrDefault(productId) ?? [],
-                        ProductPricingStatus.Approved),
-                    requestsByProduct.GetValueOrDefault(productId) ?? [],
-                    latestFormulaConfirmations.GetValueOrDefault(productId),
-                    now,
-                    _featureOptions,
-                    materialCostChangedProductIds.Contains(productId)))
+                productId => ProductPricingAttentionRules.ForNeedsPricingQueue(
+                    ProductPricingAttentionRules.Resolve(
+                        Latest(
+                            versionsByProduct.GetValueOrDefault(productId) ?? [],
+                            ProductPricingStatus.Approved),
+                        requestsByProduct.GetValueOrDefault(productId) ?? [],
+                        latestFormulaConfirmations.GetValueOrDefault(productId),
+                        now,
+                        _featureOptions,
+                        materialCostChangedProductIds.Contains(productId))))
             : new Dictionary<Guid, IReadOnlyList<ProductPricingAttentionSource>>();
 
         var filtered = products
@@ -355,7 +356,9 @@ internal sealed class GetProductPricingWorkbenchQueryHandler
                         approved.StandardSellingPrice,
                         approved.MaterialCostSnapshot,
                         approved.SourceType,
-                        approved.SourceId);
+                        approved.SourceId,
+                        approved.ManufacturingCost,
+                        approved.ProfitMarginRate);
                 })
                 .ToArray();
         var comparisonsByProduct = _comparisonQueryService.BuildVisible(

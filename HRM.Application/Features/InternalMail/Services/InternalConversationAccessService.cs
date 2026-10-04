@@ -10,13 +10,16 @@ internal sealed class InternalConversationAccessService : IInternalConversationA
 {
     private readonly IInternalMailDbContext _dbContext;
     private readonly ICurrentUser _currentUser;
+    private readonly InternalMailAreaAccessService _areas;
 
     public InternalConversationAccessService(
         IInternalMailDbContext dbContext,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        InternalMailAreaAccessService areas)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
+        _areas = areas;
     }
 
     public bool CanReadExecutiveSampleRequestConversations =>
@@ -32,7 +35,7 @@ internal sealed class InternalConversationAccessService : IInternalConversationA
         }
 
         var canReadExecutiveSampleRequest = CanReadExecutiveSampleRequestConversations;
-        return _dbContext.InternalConversations
+        return _areas.Conversations()
             .AsNoTracking()
             .AnyAsync(conversation =>
                 conversation.InternalConversationId == conversationId &&

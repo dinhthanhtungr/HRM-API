@@ -8,6 +8,7 @@ namespace HRM.Application.Features.InternalMail.Dtos;
 /// </summary>
 public sealed class InternalMessageDto
 {
+    public string? AreaCode { get; set; }
     public Guid MessageId { get; set; }
     public Guid ConversationId { get; set; }
     public Guid SenderEmployeeId { get; set; }

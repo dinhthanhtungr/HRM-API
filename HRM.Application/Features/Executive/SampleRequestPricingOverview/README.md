@@ -35,15 +35,18 @@ mới fallback sang tìm `ILIKE` đầy đủ để giữ nguyên khả năng t�
 Không truyền `searchType` vẫn tương thích FE cũ. Backend tự suy ra `BBG`, `KH_`, `TP_`, `TL`, `VU`; các keyword
 khác dùng `all`. FE nên gửi `searchType` rõ ràng để không phụ thuộc quy ước prefix.
 
-Filter nâng cao `view` dùng enum canonical của Product Pricing Workbench:
+Filter nâng cao `view` dùng enum riêng `SampleRequestPricingOverviewView`; các giá trị cũ giữ nguyên tên và numeric
+value để tương thích client hiện tại:
 
 - `All`: không lọc pricing; giữ toàn bộ danh sách Sample Request mà user được phép xem.
 - `NeedsPricing`: Product cần BGD xử lý giá: đã có quotation request định giá nhưng chưa có Approved pricing
   version, Sale gửi request mới hơn lần Approved gần nhất, hoặc đã có giá chuẩn nhưng đang `PendingReapproval`.
   `PendingReapproval` còn xảy ra khi lần duyệt giá gần nhất đã quá `ApprovedPricingReviewAfterDays`, hoặc Lab xác
   nhận Formula active mới sau mốc `ApprovedAt ?? UpdatedDate ?? CreatedDate` của bản giá chuẩn mới nhất, hoặc chi
-  phí NVL realtime của source Approved tăng ít nhất `MaterialCostChangeThresholdPercent`. Request đã thu hồi hoặc
-  cũ hơn version Approved mới nhất không còn được tính. `pricingAttentionSources` chỉ rõ một hay nhiều nguyên nhân:
+  phí NVL realtime của source Approved tăng ít nhất `MaterialCostChangeThresholdPercent`. Có
+  `recommendedFormula` hoặc thay đổi cấu thành công thức không tự làm Product khớp `NeedsPricing`; FE dùng riêng
+  `view=FormulaChanged` cho trường hợp đó. Request đã thu hồi hoặc cũ hơn version Approved mới nhất không còn được
+  tính. `pricingAttentionSources` chỉ rõ một hay nhiều nguyên nhân hiện có:
   `SaleQuotationRequested`, `LabFormulaConfirmed`, `ReviewExpired`, `MaterialCostIncreased`. BGD chỉ cần duyệt lại
   giá đang chọn hoặc tạo/duyệt giá theo nguồn khác; không bắt buộc phải dùng Formula Lab vừa xác nhận.
 - `Draft`: Product có Draft pricing version active bằng currency đang chọn.
@@ -55,6 +58,10 @@ Filter nâng cao `view` dùng enum canonical của Product Pricing Workbench:
 - `ProductionMaterialCostChanged`: VA `Checking` được chọn ở lệnh sản xuất mới nhất của Product có chi phí NVL
   realtime tăng ít nhất ngưỡng trên so với `MaterialCostSnapshot` của bản Approved mới nhất. Không có VA sản xuất
   `Checking`, snapshot bằng 0, thiếu giá realtime, hoặc chi phí không tăng thì không khớp.
+- `FormulaChanged`: Product có `pricing.recommendedFormula` khác cấu thành source của giá Approved hiện hành:
+  thêm/bớt item, đổi quantity hoặc đổi unit. Chỉ thay giá realtime trên cùng cấu thành không khớp filter này.
+  Product bắt buộc phải có `ProductPricingVersion` active, `Approved`, đúng company/currency và có Formula/VA source
+  làm baseline; Product chưa có giá chuẩn không khớp filter này và được xử lý ở luồng định giá lần đầu.
 
 `Draft` và `Approved` có thể cùng khớp nếu Product đồng thời có cả hai version hiện hành. Vì entity gốc là
 Sample Request, mọi Sample Request dùng chung Product khớp filter vẫn được trả thành item riêng.
@@ -150,6 +157,28 @@ Ví dụ rút gọn:
         "requiresPricingAction": false,
         "draftPricingVersionId": null,
         "approvedPricingVersionId": "a05acfff-b8d4-4863-8c9c-7721338ca7bf",
+        "recommendedFormula": {
+          "sourceType": "VA",
+          "sourceId": "01a0c741-e6db-7b5a-829b-bc37a6de8084",
+          "sourceCode": "VA260900349",
+          "sourceName": "F001",
+          "displayName": "VA260900349",
+          "status": "Checking",
+          "isEligible": true,
+          "isCurrentlyApplied": false,
+          "createdAt": "2026-09-10T08:30:00+07:00",
+          "candidateAt": "2026-09-18T09:00:00+07:00",
+          "candidateDateSource": "ProductionOrderCreatedDate",
+          "currency": "VND",
+          "realtimeMaterialCost": 41481,
+          "manufacturingCost": 3000,
+          "profitMarginRate": 1.2838,
+          "realtimeStandardSellingPrice": 45059,
+          "priceCalculationFormula": "(41481 + 3000) / (1 - 0.012838) = 45059 VND",
+          "isRealtimeMaterialCostComplete": true,
+          "missingMaterialPriceCount": 0,
+          "calculatedAt": "2026-09-22T20:32:00+07:00"
+        },
         "displayedFormula": {
           "sourceType": "Formula",
           "sourceId": "d006bb1e-7b39-43d8-9d79-9e129a0d39ae",
@@ -184,6 +213,28 @@ Ví dụ rút gọn:
 
 ## Nguồn dữ liệu và semantics
 
+### Lịch sử giá bán Merchandise Order
+
+Mỗi card có thêm `latestMerchandiseOrder`, là `null` khi Product chưa có dòng bán hợp lệ trong
+phạm vi customer/company của người gọi. Object này lấy từ một `MerchandiseOrderDetail`: `quantity`
+là `ExpectedQuantity` của đúng dòng, `unitPrice` là `UnitPriceAgreed` (giá bán), còn `currency` lấy
+từ Merchandise Order. `orderedAt` hiện map từ `MerchandiseOrder.CreateDate` vì schema chưa có
+`confirmedAt`/`orderedAt`; không có dữ liệu Purchase Order, Goods Receipt hay giá mua trong contract này.
+Mã/tên item và unit ưu tiên Product hiện tại, snapshot của line chỉ là fallback cho mã/tên legacy.
+`saleEmployeeId` và `saleName` là Sale phụ trách đã được snapshot trên chính Merchandise Order
+(`ManagerById`/`ManagerByNameSnapshot`), không phải assignment hiện tại của Customer.
+`orderType` của `latestMerchandiseOrder` luôn là `Merchandise`; card giá bán gần nhất cố ý không dùng đơn
+`SampleRequest`, `Complaint` hoặc `Internal` để đơn mẫu/khiếu nại giá 0 không ghi đè giá bán hàng hóa gần nhất.
+
+`GET /api/v1/executive/merchandise-order-price-history` dùng cùng policy Executive Overview và cùng
+customer/company visibility. `itemId` (`ProductId`) là bắt buộc; API không nhận `itemCode` làm filter.
+Filter hỗ trợ `customerId`, `currency`, `fromDate`, `toDate`, phân trang 1..100 và sort `orderedAt`,
+`unitPrice`, `quantity`. Lịch sử nhận `OrderType` là `Merchandise`, `SampleRequest` hoặc `Complaint` và status
+`Approved`, `Processing`, `Delivering`, `Delivered`, `Completed` được coi là sale history. `Internal`,
+`New`, `Pending`, `Paused`, `Cancelled` bị loại. Dòng `Complaint` có thể có `unitPrice = 0` và được giữ nguyên để
+FE thể hiện đúng lịch sử xử lý khiếu nại. Với hai endpoint, bản ghi
+gần nhất là `CreateDate desc`, sau đó order id và line id desc để có thứ tự ổn định.
+
 - `requestCode`, ngày tạo, status, Product, Customer, Category, additive và delivery project trực tiếp từ
   cùng entity/navigation và cùng date/status semantics của Sample Request Summary. `product.colorValue` và
   `product.colorDisplayName` đều lấy từ `Product.ColourName`, giữ `null` khi tên màu chưa có; `product.colourCode`
@@ -207,8 +258,10 @@ Ví dụ rút gọn:
   nó đi cùng `standardSellingPrice` và `approvedPricingVersionId`. Field là `null` khi chưa có bản Approved
   hoặc người duyệt không ghi chú; Draft và giá system-calculated không được dùng làm nguồn ghi chú public.
 - `pricing.realtimePriceComparison` dùng chung `StandardPriceRealtimeComparisonQueryService` với Product Pricing
-  Workbench. Read-model luôn lấy bản `Approved` mới nhất làm mốc, rồi tính lại giá chuẩn tham chiếu từ chi phí NVL
-  realtime của đúng Formula/VA đã duyệt; nó không ghi đè giá chuẩn và không tạo pricing version. Field là `null`
+  Workbench. Read-model luôn lấy bản `Approved` mới nhất làm mốc, rồi tính lại giá chuẩn từ NVL realtime,
+  chi phí sản xuất đã duyệt và biên lợi nhuận trên giá bán đã lưu ở bản Approved:
+  `giá = (NVL realtime + chi phí sản xuất Approved) / (1 - margin Approved%)`.
+  Nó không ghi đè giá chuẩn và không tạo pricing version. Field là `null`
   khi không có giá Approved dương hoặc current user không được xem giá Approved. Các field chi phí tuyệt đối trong
   object tiếp tục được che theo pricing capability; `calculatedAt` là thời điểm batch comparison được tính.
 - `pricing.materials` là danh sách dòng phẳng của đúng Formula/VA trong `displayedFormula`; API không bung cây
@@ -224,6 +277,30 @@ Ví dụ rút gọn:
   `priceKind = SystemCalculated`; các pricing version id vẫn là `null`. `sourceType` phân biệt `Formula` và
   `ManufacturingFormula`, vì vậy FE không được giả định mọi `sourceId` đều là `FormulaId`. Không có source hợp
   lệ thì `displayedFormula = null`.
+- `pricing.recommendedFormula` là công thức hệ thống đề xuất sử dụng và độc lập với `displayedFormula`.
+  Backend dùng cùng `SuggestedPricingFormulaQueryService` với `currentFormulaUse` của Pricing Review drawer,
+  xếp tất cả candidate theo `candidateAt desc`, rồi `sourceId desc` khi trùng mốc; không ưu tiên VU hay VA theo loại:
+  VU active đã gửi mẫu dùng `Formula.SentDate` (`candidateDateSource=SentDate`); VA `Checking` được chọn trong
+  lệnh sản xuất active dùng `MfgProductionOrder.CreatedDate` (`ProductionOrderCreatedDate`).
+  `ProductStandardFormula` không tham gia chọn recommendation; không có candidate VU hoặc VA sản xuất thì field là `null`.
+- Khi đã có Formula/VA gắn với giá chuẩn Approved, candidate chỉ được trả thành `recommendedFormula` nếu cấu thành
+  khác công thức chuẩn: thêm/bớt item, thay quantity hoặc thay unit. Nếu cùng source hoặc cấu thành giống nhau thì
+  `recommendedFormula=null`; biến động giá realtime của cùng NVL không được xem là thay đổi công thức. Khi chưa có
+  source Approved để làm baseline, candidate mới nhất vẫn được trả để hỗ trợ thiết lập giá lần đầu. Nếu bản Approved
+  có source nhưng một trong hai source không còn resolve được thì backend không suy đoán recommendation.
+- `displayName` của source `VA` chỉ dùng `sourceCode`; `sourceName` vẫn được trả ở field riêng. Source `VU`
+  tiếp tục dùng dạng `sourceCode · sourceName`.
+- `recommendedFormula.realtimeMaterialCost` là tổng chi phí NVL realtime của chính candidate, không phải giá bán
+  đề xuất và không phụ thuộc pricing policy. `isRealtimeMaterialCostComplete=false` hoặc
+  `missingMaterialPriceCount>0` nghĩa là ít nhất một dòng NVL/Product con chưa resolve đủ giá. Giá trị cost là
+  `null` khi dữ liệu chưa đầy đủ hoặc current user không có quyền xem material cost.
+- `recommendedFormula.realtimeStandardSellingPrice` dùng chung `StandardSellingPriceCalculator` với phần so sánh
+  giá realtime: `(realtimeMaterialCost + manufacturingCost Approved) / (1 - profitMarginRate Approved / 100)`.
+  `manufacturingCost` và `profitMarginRate` lấy từ bản Approved hiện hành, không lấy từ candidate. Nếu Approved
+  chưa lưu margin thì backend suy ra margin từ giá chuẩn và cost snapshot Approved bằng cùng helper. Khi chưa có
+  Approved, NVL candidate chưa đầy đủ, chi phí sản xuất thiếu hoặc margin không hợp lệ, giá và
+  `priceCalculationFormula` là `null`. Các thành phần và chuỗi công thức được che độc lập theo pricing capability;
+  FE không tự tính lại giá.
 - Conversation chỉ match `RelatedType = SampleRequest` và `RelatedId = sampleRequestId` trong cùng company.
   Chỉ đếm message chưa soft-delete; không load body, payload, attachment hoặc participant graph.
   `unreadCount` dùng cùng rule inbox: message không do employee hiện tại gửi và có read-state `IsRead=false`
@@ -249,8 +326,9 @@ NVL và giá realtime của nguồn đó. API không còn tải NVL/giá của m
 `MaterialCostChangeThresholdPercent` so với `storedMaterialCostSnapshot`; ngưỡng mặc định là `5%`.
 Giá NVL giảm hoặc tăng dưới ngưỡng không trả status này. Khi cần lọc toàn bộ dữ liệu, FE dùng
 `view=MaterialCostChanged` hoặc `view=ProductionMaterialCostChanged`, không tự lọc item của một trang.
-Hai view này có batch realtime-cost riêng, vì thế chi phí chỉ phát sinh khi người dùng chủ động chọn chúng;
-`All`, `NeedsPricing`, `Draft` và `Approved` giữ SQL paging fast path hiện có.
+Hai view cost-change và view `FormulaChanged` có batch resolver riêng để lọc chính xác trước pagination.
+`NeedsPricing` chỉ chạy batch cost-change theo ngưỡng và không chạy so sánh cấu thành công thức. `All`, `Draft`
+và `Approved` giữ SQL paging fast path; FE dùng `FormulaChanged` khi cần danh sách đổi cấu thành.
 
 Trong Executive Pricing Review, thiếu giá realtime của NVL không chặn Preview, tạo Draft hoặc Duyệt và áp dụng.
 Backend dùng `SourceUnitPrice` snapshot của Formula/VA khi có; nếu snapshot cũng không có thì item đó đóng góp `0`

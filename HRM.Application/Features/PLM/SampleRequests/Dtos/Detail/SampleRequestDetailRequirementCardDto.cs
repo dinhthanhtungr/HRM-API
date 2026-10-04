@@ -11,6 +11,10 @@ namespace HRM.Application.Features.PLM.SampleRequests.Dtos.Detail
         public int BagWeight { get; set; }
         public string? CustomerProductCode { get; set; }
         public DateTime? RequestDeliveryDate { get; set; }
+        public DateTime? LabReceivedDate { get; set; }
+        public bool IsDelayed { get; set; }
+        public Guid? LabReceivedByEmployeeId { get; set; }
+        public string? LabReceivedByName { get; set; }
         public DateTime? ExpectedDeliveryDate { get; set; }
         public DateTime? RealDeliveryDate { get; set; }
         public DateTime? RequestTestSampleDate { get; set; }

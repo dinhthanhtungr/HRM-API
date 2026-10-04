@@ -1,7 +1,6 @@
 using HRM.Application.Abstractions.Identity;
 using HRM.Application.Abstractions.Persistence.Employees;
 using HRM.Application.Abstractions.Security;
-using HRM.Application.Features.Employees.Administration.GetEmployeeAccountPermissions;
 using HRM.Application.Features.Employees.Dtos;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -37,7 +36,7 @@ internal sealed class SetEmployeeAccountStatusCommandHandler
 
         var employee = await BuildEmployeeScope()
             .Where(item => item.EmployeeId == request.EmployeeId)
-            .Select(item => new { item.EmployeeId, item.IsActive })
+            .Select(item => new { item.EmployeeId, item.IsActive, item.EndDate })
             .FirstOrDefaultAsync(cancellationToken);
         if (employee is null)
         {
@@ -69,23 +68,14 @@ internal sealed class SetEmployeeAccountStatusCommandHandler
         }
 
         return EmployeeAdministrationResult<EmployeeAccountPermissionsDto>.Ok(
-            GetEmployeeAccountPermissionsQueryHandler.MapAccount(
+            EmployeeAccountPermissionsMapper.Map(
                 employee.EmployeeId,
                 employee.IsActive,
-                result.Data));
+                result.Data, employee.EndDate));
     }
 
     private IQueryable<HRM.Domain.Entities.HrSchema.Employee> BuildEmployeeScope()
-    {
-        var query = _dbContext.Employees.AsNoTracking();
-        if (!EmployeeAdministrationRules.CanManageAllCompanies(_currentUser))
-        {
-            var companyId = _currentUser.CompanyId ?? Guid.Empty;
-            query = query.Where(employee => employee.CompanyId == companyId);
-        }
-
-        return query;
-    }
+        => EmployeeAdministrationRules.ScopeEmployees(_dbContext.Employees.AsNoTracking(), _currentUser);
 
     private static EmployeeAdministrationResult<EmployeeAccountPermissionsDto> Fail(
         EmployeeAdministrationError error,

@@ -64,8 +64,6 @@ public sealed class FormulasController : ControllerBase
     /// </summary>
     [HttpPost("compare")]
     [Authorize(Policy = PlmPolicies.ViewFormulaDetail)]
-    [Authorize(Policy = PlmPolicies.ViewFormulaMaterials)]
-    [Authorize(Policy = PlmPolicies.ViewFormulaPrices)]
     public async Task<IActionResult> Compare(
         [FromBody] CompareFormulasRequest request,
         CancellationToken cancellationToken)
@@ -202,7 +200,7 @@ public sealed class FormulasController : ControllerBase
     }
 
     [HttpGet("{formulaId:guid}/related-attachments")]
-    [Authorize(Policy = PlmPolicies.ViewFormulaMaterials)]
+    [Authorize(Policy = PlmPolicies.ViewFormulaDetail)]
     public async Task<IActionResult> GetRelatedAttachments(
         Guid formulaId,
         CancellationToken cancellationToken)

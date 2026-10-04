@@ -9,13 +9,13 @@ namespace HRM.Application.Tests.Features.Executive;
 public sealed class ProductPricingReviewRulesTests
 {
     [Fact]
-    public void SelectLatestCreatedFormulaUse_DoesNotPreferVuOrVa()
+    public void SelectLatestSuggestedFormulaUse_DoesNotPreferVuOrVa()
     {
         var olderVu = FormulaUse(PricingReviewSourceType.VU, new DateTime(2026, 9, 10));
         var newerVa = FormulaUse(PricingReviewSourceType.VA, new DateTime(2026, 9, 11));
 
-        var vaResult = ProductPricingReviewRules.SelectLatestCreatedFormulaUse(olderVu, newerVa);
-        var vuResult = ProductPricingReviewRules.SelectLatestCreatedFormulaUse(
+        var vaResult = ProductPricingReviewRules.SelectLatestSuggestedFormulaUse(olderVu, newerVa);
+        var vuResult = ProductPricingReviewRules.SelectLatestSuggestedFormulaUse(
             FormulaUse(PricingReviewSourceType.VU, new DateTime(2026, 9, 12)),
             newerVa);
 
@@ -23,15 +23,17 @@ public sealed class ProductPricingReviewRulesTests
         Assert.Equal(PricingReviewSourceType.VU, vuResult!.SourceType);
     }
 
-    private static PricingReviewCurrentFormulaUseDto FormulaUse(
+    private static PricingReviewFormulaUseCandidate FormulaUse(
         PricingReviewSourceType sourceType,
         DateTime createdAt)
-        => new()
-        {
-            SourceType = sourceType,
-            SourceId = Guid.NewGuid(),
-            CreatedAt = createdAt
-        };
+        => new(
+            new PricingReviewCurrentFormulaUseDto
+            {
+                SourceType = sourceType,
+                SourceId = Guid.NewGuid(),
+                CreatedAt = createdAt
+            },
+            createdAt);
 
     [Fact]
     public void PublicProfitMarginPercent_IsCalculatedOnSellingPrice()
@@ -61,6 +63,19 @@ public sealed class ProductPricingReviewRulesTests
         Assert.Equal(
             ProductPricingSourceType.ManufacturingFormula,
             ProductPricingReviewRules.ToLegacy(PricingReviewSourceType.VA));
+    }
+
+    [Fact]
+    public void BuildSourceDisplayName_VaUsesOnlyCode_WhileVuIncludesName()
+    {
+        Assert.Equal(
+            "VA260900349",
+            ProductPricingReviewRules.BuildSourceDisplayName(
+                PricingReviewSourceType.VA, "VA260900349", "F001"));
+        Assert.Equal(
+            "VU260900066 · F001",
+            ProductPricingReviewRules.BuildSourceDisplayName(
+                PricingReviewSourceType.VU, "VU260900066", "F001"));
     }
 
     [Theory]

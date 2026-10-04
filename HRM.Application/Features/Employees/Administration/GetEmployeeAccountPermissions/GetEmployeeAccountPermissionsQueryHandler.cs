@@ -39,7 +39,7 @@ internal sealed class GetEmployeeAccountPermissionsQueryHandler
 
         var employee = await BuildEmployeeScope()
             .Where(item => item.EmployeeId == request.EmployeeId)
-            .Select(item => new { item.EmployeeId, item.IsActive })
+            .Select(item => new { item.EmployeeId, item.IsActive, item.EndDate })
             .FirstOrDefaultAsync(cancellationToken);
         if (employee is null)
         {
@@ -53,7 +53,7 @@ internal sealed class GetEmployeeAccountPermissionsQueryHandler
             cancellationToken);
 
         return EmployeeAdministrationResult<EmployeeAccountPermissionsDto>.Ok(
-            MapAccount(request.EmployeeId, employee.IsActive, account));
+            EmployeeAccountPermissionsMapper.Map(request.EmployeeId, employee.IsActive, account, employee.EndDate));
     }
 
     private IQueryable<HRM.Domain.Entities.HrSchema.Employee> BuildEmployeeScope()
@@ -68,19 +68,4 @@ internal sealed class GetEmployeeAccountPermissionsQueryHandler
         return query;
     }
 
-    internal static EmployeeAccountPermissionsDto MapAccount(
-        Guid employeeId,
-        bool employeeIsActive,
-        EmployeeIdentityAccount? account)
-        => new()
-        {
-            EmployeeId = employeeId,
-            EmployeeIsActive = employeeIsActive,
-            HasAccount = account is not null,
-            UserId = account?.UserId,
-            UserName = account?.UserName,
-            Email = account?.Email,
-            AccountIsActive = account?.IsActive,
-            Roles = account?.ActiveRoles ?? []
-        };
 }

@@ -9,21 +9,24 @@ public sealed class StandardPriceRealtimeComparisonCalculatorTests
     private static readonly DateTime CalculatedAt = new(2026, 9, 16, 10, 30, 0);
 
     [Fact]
-    public void Calculate_MaterialCostIncreaseAdjustsApprovedPriceProportionally()
+    public void Calculate_MaterialCostIncreaseRecalculatesPriceWithApprovedMargin()
     {
         var result = StandardPriceRealtimeComparisonCalculator.Calculate(
             "VND",
             approvedStandardPrice: 120_000m,
             approvedMaterialCostSnapshot: 80_000m,
+            approvedManufacturingCost: 16_000m,
+            approvedProfitMarginRate: 20m,
             realtimeMaterialCost: 88_000m,
             isMaterialCostComplete: true,
             warningThresholdPercent: 5m,
             calculatedAt: CalculatedAt);
 
         Assert.NotNull(result);
-        Assert.Equal(132_000m, result.RealtimeAdjustedStandardPrice);
-        Assert.Equal(12_000m, result.StandardPriceDifference);
-        Assert.Equal(10m, result.StandardPriceDifferencePercent);
+        Assert.Equal(130_000m, result.RealtimeAdjustedStandardPrice);
+        Assert.Equal(10_000m, result.StandardPriceDifference);
+        Assert.Equal(8.3333m, result.StandardPriceDifferencePercent);
+        Assert.Equal("(88000 + 16000) / (1 - 0.2) = 130000 VND", result.RealtimeAdjustedPriceFormula);
         Assert.Equal(8_000m, result.MaterialCostDifference);
         Assert.Equal(10m, result.MaterialCostDifferencePercent);
         Assert.Equal(MaterialCostMovementStatus.Increased, result.MovementStatus);
@@ -37,14 +40,16 @@ public sealed class StandardPriceRealtimeComparisonCalculatorTests
             "VND",
             approvedStandardPrice: 120_000m,
             approvedMaterialCostSnapshot: 80_000m,
+            approvedManufacturingCost: 16_000m,
+            approvedProfitMarginRate: 20m,
             realtimeMaterialCost: 76_000m,
             isMaterialCostComplete: true,
             warningThresholdPercent: 5m,
             calculatedAt: CalculatedAt);
 
         Assert.NotNull(result);
-        Assert.Equal(114_000m, result.RealtimeAdjustedStandardPrice);
-        Assert.Equal(-6_000m, result.StandardPriceDifference);
+        Assert.Equal(115_000m, result.RealtimeAdjustedStandardPrice);
+        Assert.Equal(-5_000m, result.StandardPriceDifference);
         Assert.Equal(-5m, result.MaterialCostDifferencePercent);
         Assert.Equal(MaterialCostMovementStatus.Decreased, result.MovementStatus);
         Assert.False(result.IsIncreaseWarning);
@@ -57,6 +62,8 @@ public sealed class StandardPriceRealtimeComparisonCalculatorTests
             "VND",
             approvedStandardPrice: 120_000m,
             approvedMaterialCostSnapshot: 80_000m,
+            approvedManufacturingCost: 16_000m,
+            approvedProfitMarginRate: 20m,
             realtimeMaterialCost: null,
             isMaterialCostComplete: false,
             warningThresholdPercent: 5m,
@@ -77,6 +84,8 @@ public sealed class StandardPriceRealtimeComparisonCalculatorTests
             "VND",
             approvedStandardPrice: 120_000m,
             approvedMaterialCostSnapshot: 80_000m,
+            approvedManufacturingCost: 16_000m,
+            approvedProfitMarginRate: 20m,
             realtimeMaterialCost: 88_000m,
             isMaterialCostComplete: true,
             warningThresholdPercent: 5m,
@@ -95,10 +104,11 @@ public sealed class StandardPriceRealtimeComparisonCalculatorTests
         var result = StandardPriceRealtimeComparisonVisibility.Apply(comparison, saleAccess);
 
         Assert.NotNull(result);
-        Assert.Equal(132_000m, result.RealtimeAdjustedStandardPrice);
+        Assert.Equal(130_000m, result.RealtimeAdjustedStandardPrice);
         Assert.Equal(10m, result.MaterialCostDifferencePercent);
         Assert.Null(result.ApprovedMaterialCostSnapshot);
         Assert.Null(result.RealtimeMaterialCost);
         Assert.Null(result.MaterialCostDifference);
+        Assert.Null(result.RealtimeAdjustedPriceFormula);
     }
 }

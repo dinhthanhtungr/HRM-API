@@ -46,7 +46,31 @@ Ngày Sale nhận mẫu được lưu vào `Trial.RequestReceivedDate` đã có 
 
 Các field giá trên card Trial dùng pricing capability chung: Sale chỉ nhận giá chuẩn đã duyệt (cùng ghi chú/thời điểm duyệt), còn `systemCalculatedStandardSellingPrice` luôn `null`; backend cũng không tải nguồn giá realtime cho Sale.
 
-Mỗi dòng luôn trả `requestDeliveryDate` (ngày Sale yêu cầu có mẫu) và `expectedDeliveryDate` (ngày dự kiến có mẫu) từ Sample Request, kể cả khi `hasTrial = false`. Hai field này khác `requestReceivedDate`, là ngày Lab/Sale ghi nhận nhận mẫu của một Trial và chỉ có khi Trial tồn tại. FE tạo mới qua `POST /api/v1/plm/sample-requests` hoặc chỉnh qua `PATCH /api/v1/plm/sample-requests/{sampleRequestId}` bằng cùng hai field camelCase; PATCH có thể xóa từng ngày qua `clearFields` với mã `sample_request.request_delivery_date` hoặc `sample_request.expected_delivery_date`.
+Mỗi dòng luôn trả `requestDeliveryDate` (ngày Sale yêu cầu có mẫu), `labReceivedDate` (ngày Lab thực tế nhận mẫu đầu vào từ Sale), `labReceivedByEmployeeId`/`labReceivedByName` (người Lab nhận mẫu), `isDelayed` (cờ delay hiện tại) và `expectedDeliveryDate` (ngày dự kiến có mẫu) từ Sample Request, kể cả khi `hasTrial = false`. Các field Lab nhận mẫu thuộc toàn bộ Sample Request và không phải `requestReceivedDate` của Trial, vốn là ngày Sale xác nhận nhận mẫu đã hoàn thành từ Lab. FE tạo hoặc chỉnh hai ngày yêu cầu/dự kiến qua contract hiện hành; PATCH có thể xóa chúng qua `clearFields` với mã `sample_request.request_delivery_date` hoặc `sample_request.expected_delivery_date`.
+
+## Bảng công việc ngày và báo cáo kỳ
+
+`PATCH /api/v1/plm/sample-requests/{sampleRequestId}` nhận thêm `labReceivedDate` và `isDelayed`. Chỉ LabUser, LabAdmin, Developer, President được sửa hai field này; Sale không được sửa dù có quyền PATCH các field khác trên cùng Sample Request. `labReceivedByEmployeeId` không nhận từ payload: backend gán nhân viên đang đăng nhập, kiểm tra active/cùng company. `labReceivedDate` không được ở tương lai quá 5 phút. Xóa ngày bằng `clearFields: ["sample_request.lab_received_date"]` sẽ xóa cả ngày và người nhận; gửi field và clear cùng lúc bị từ chối. `isDelayed: true|false` bật/tắt cờ, không dùng `clearFields` và không nhận `null` để xóa. Các thay đổi được ghi vào audit trực tiếp của Sample Request; `updatedDate` tiếp tục dùng cho optimistic concurrency. Detail, summary và danh sách Trial đều trả `isDelayed` dạng boolean, `null` trong DB được xem là `false`.
+
+`GET /api/v1/plm/sample-requests/reports/daily?date=2026-09-23&view=today&pageNumber=1&pageSize=15` trả **cùng `PagedResult<SampleRequestSampleTrialReportDto>`** như `GET /api/v1/plm/sample-requests/sample-trials`, có thêm các field công việc ngày. FE có thể dùng một response để dựng toàn bộ card Trial: mã TP, TrialNo/TrialCount, FormulaExternalId, loại sản phẩm, khối lượng, tất cả mốc thời gian, tỷ lệ sử dụng, ghi chú Lab và các field giá. Hai route dùng chung projection, customer/company visibility và masking giá/field kỹ thuật; route `sample-trials` cũ giữ nguyên filter, sorting và các field `workStatus`/`nextAction*` không xuất hiện ở route cũ. Ngày mặc định là hôm nay theo đồng hồ server; `view=today` là mặc định và chỉ lấy yêu cầu còn mở có hạn báo giá/gửi mẫu **đúng ngày xem** hoặc Trial mới nhất `Failed` có phản hồi đúng ngày xem. Hồ sơ quá hạn cũ không tự xuất hiện ở chế độ này. `view=all` lấy tất cả Sample Request active thuộc phạm vi người xem, kể cả đã hoàn thành/hủy và không phụ thuộc ngày hạn; ngày chọn chỉ dùng để tính field gợi ý công việc. Cả hai view sắp xếp theo `sampleRequestCreatedDate` mới nhất trước, sau đó theo mã yêu cầu; không áp dụng `sortBy`/`sortDirection`. Có thể lọc thêm `customerId`, `keyword`, `currency` và phân trang. Mỗi dòng là **một Sample Request** với Trial active mới nhất. `workStatus`/`nextActionCode` là gợi ý UI tính từ trạng thái hiện tại, không ghi DB; `responsibleRole` là vai trò phụ trách, `responsibleEmployeeId` chỉ có cho việc Sale (lấy từ `ManagerBy`), `isActionForCurrentUser` cho FE tách "Cần tôi xử lý" khỏi "Chờ người khác". Đây là gợi ý màn hình, không thay thế kiểm tra quyền của API thực hiện action. `feedbackRecordedOnDate` là sự kiện độc lập: Trial `Failed` trong ngày vẫn có `workStatus=ReworkRequired`. `dueDate` là `expectedPriceQuoteDate` cho `InfoType=Quotation|Báo giá`, còn lại là `expectedDeliveryDate`. `isOverdue` chỉ so ngày hạn với ngày đang xem và chỉ true khi vẫn có action. `sentDate`/`deliveredSampleQuantityKg` là Lab gửi cho Sale, `requestReceivedDate` là Sale nhận từ Lab; API không tuyên bố ngày/khối lượng Sale thực gửi khách. Khi Trial `SampleSent`, next action là Sale xử lý/xác nhận nhận mẫu; việc xuất hiện trong báo cáo **không chờ** API xác nhận nhận mẫu. Dữ liệu hiển thị theo company/customer visibility hiện hành và loại khách nội bộ `KH_VIETAUS` như danh sách Trial. Nếu chọn một ngày trong quá khứ, các trạng thái/giá vẫn là dữ liệu hiện tại, không phải snapshot tại ngày đó.
+
+Tìm kiếm BE cho báo cáo ngày: `keyword` (tối đa 80 ký tự) tìm cả tên Sale và tách các từ theo dấu cách, mỗi từ có thể khớp một field khác nhau nên `Ung Ký`/`Ký Ung` đều tìm được nếu giữ nguyên dấu. `saleEmployeeId` lọc đúng `SampleRequest.ManagerBy`, `sampleRequestId` lọc đúng hồ sơ; các ID này có thể kết hợp với `customerId`, `date`, `view`, `keyword`. ID ngoài phạm vi company/customer visibility trả danh sách rỗng. `GET /api/v1/plm/sample-requests/reports/daily/suggestions?q=Ký%20Ung&date=2026-09-23&view=all&customerId=...` trả tối đa 8 gợi ý trong cùng phạm vi dữ liệu của báo cáo ngày: 3 Sale, 3 khách hàng, 2 mã TP. `q` bắt buộc dài 2–80 ký tự; mọi từ trong `q` phải khớp trong cùng tên/mã, không phụ thuộc thứ tự. Response rút gọn:
+
+```json
+{"items":[{"type":"sale","id":"<employee-guid>","label":"Ung Ký","description":"Sale phụ trách"},{"type":"customer","id":"<customer-guid>","label":"Công ty A","description":"Khách hàng"},{"type":"sampleRequest","id":"<sample-request-guid>","label":"TP_30518","description":"Mã yêu cầu"}]}
+```
+
+FE chọn `sale` gửi `saleEmployeeId`, chọn `customer` gửi `customerId`, chọn `sampleRequest` gửi `sampleRequestId` tới route daily và xóa `keyword` cũ để không lọc kép ngoài ý muốn. `items=[]` nghĩa là không có gợi ý trong phạm vi đang xem. `id` là ID bản ghi đã lưu, không phải text để tự tìm lại; `description` chỉ là nhãn hiển thị. API suggestions không query/trả giá, công thức hay ghi chú kỹ thuật và không thay đổi quyền của API hành động. Chưa hỗ trợ bỏ dấu hoặc sửa lỗi chính tả gần đúng; các phần đó cần đánh giá extension/index PostgreSQL riêng, không thêm migration ở đây.
+
+Ví dụ rút gọn:
+
+```json
+{"items":[{"sampleRequestId":"...","sampleRequestExternalId":"TP_30518","trialNo":1,"trialCount":1,"formulaExternalId":"VU_001","categoryName":"Hạt màu","deliveredSampleQuantityKg":2.5,"sentDate":"2026-09-22T10:00:00","requestReceivedDate":null,"approvedStandardSellingPrice":null,"systemCalculatedStandardSellingPrice":null,"infoType":"Thẻ màu","workStatus":"AwaitingSaleReceipt","nextActionCode":"HandleLabSample","responsibleRole":"Sale","isDelayed":false}],"totalCount":1,"pageNumber":1,"pageSize":15}
+```
+
+Nhánh Báo giá chỉ xác định `workStatus=AwaitingStandardPrice`/`AwaitingQuotation` khi có `FormulaId` liên kết trực tiếp với Sample Request hoặc Trial. Quyết định hành động dùng version `ProductPricingVersion` mới nhất đang `Approved`, active, cùng currency/Product/company và `SourceFormulaId` khớp; không lấy một Formula/giá của Product rồi gán tùy tiện cho một yêu cầu. Request cũ chưa lưu liên kết Formula có thể còn hiện `AwaitingFormulaApproval` dù Formula đã được duyệt ở Product. Các **giá tiền hiển thị** vẫn lấy từ logic giá của route `sample-trials` và được mask theo pricing capability; quyết định có giá chuẩn cho bước công việc không tiết lộ số tiền nếu user không có quyền.
+
+`GET /api/v1/plm/sample-requests/reports/period?fromDate=2026-09-01&toDate=2026-09-30` dùng chung cho tuần/tháng, giới hạn 367 ngày tính cả hai đầu. `approvedTrialCount`, `failedTrialCount`, `cancelledTrialCount` đếm **từng Trial active** theo `CustomerReplyDate` trong kỳ và trạng thái cuối hiện tại; một Sample Request có nhiều Trial có thể góp nhiều lần. `currentlyDelayedSampleRequestCount` đếm Sample Request **đang** có `isDelayed=true` và ngày hạn tương ứng `InfoType` nằm trong kỳ. Đây không phải số lần từng bị delay trong lịch sử: `hasHistoricalDelayData=false`, `hasStructuredDelayReasons=false` vì schema hiện chưa lưu thời điểm bật/tắt hay lý do riêng. Không suy diễn lý do từ ghi chú chung. Nếu cần số lịch sử/lý do, phải chốt thêm cấu trúc lưu trước khi triển khai chỉ số đó.
 
 Các query keyword Sample Request hỗ trợ mã TP của chính yêu cầu, tên/mã màu Product và mã VU Formula liên quan.
 Riêng danh sách trial còn tìm theo VU gắn trên Trial.
@@ -388,6 +412,41 @@ bản ghi chuẩn hiện hành (`ValidTo IS NULL`), sau đó sắp công thức 
 Nếu không có dữ liệu, collection tương ứng trả `[]`, không trả `null`. Mỗi item gồm `id`, `externalId`, `name`,
 `status`, `note`, `createdByName`, `price`, `itemCount`, `lastDateUse`; các field không áp dụng với nguồn dữ liệu
 tương ứng giữ giá trị mặc định giống contract `GetFormulas`.
+
+### Header yêu cầu phối mẫu và công thức gần nhất
+
+```http
+GET /api/v1/plm/sample-requests/{sampleRequestId}/formula-options
+```
+
+Endpoint trả header rút gọn của yêu cầu phối mẫu cùng ba collection `formulaSelects`, `formulaDevs` và
+`formulaStandard`. Mỗi collection dùng đúng contract và thứ tự của `GET /api/v1/plm/formulas`, nhưng chỉ trả tối đa
+5 công thức sau khi loại trùng. Collection không có dữ liệu trả `[]`.
+
+```json
+{
+  "header": {
+    "sampleRequestId": "00000000-0000-0000-0000-000000000000",
+    "sampleRequestExternalId": "SR-001",
+    "productId": "00000000-0000-0000-0000-000000000000",
+    "colourCode": "VA-001",
+    "saleNote": "Ghi chú Sale",
+    "labNote": "Ghi chú Lab",
+    "specialRequirement": "Yêu cầu đặc biệt",
+    "requirement": "Yêu cầu sản xuất/QC"
+  },
+  "formulaSelects": [],
+  "formulaDevs": [],
+  "formulaStandard": []
+}
+```
+
+`colourCode` và `requirement` lấy từ Product hiện tại; `saleNote` và `specialRequirement` lấy từ Sample Request;
+`labNote` lấy từ Product và trả `null` khi current user không có quyền xem thông tin kỹ thuật PLM. Các chuỗi nguồn
+không có dữ liệu giữ `null`. Giá trong từng công thức tiếp tục trả `null` nếu current user không có quyền xem giá
+công thức. Endpoint bắt buộc đăng nhập, khóa theo company hiện tại và áp dụng cùng customer visibility/ownership
+scope với API detail Sample Request, gồm quyền Sale đọc yêu cầu khách nội bộ trong cùng công ty; record không thuộc
+scope không được trả dữ liệu.
 
 Khi `PATCH /api/v1/plm/formulas/{formulaId}/status` chuyển Formula sang `SampleSent`, backend đồng thời chuyển các
 Sample Request active đang trỏ tới `FormulaId` đó sang `SampleRequestStatus.SampleSent`.

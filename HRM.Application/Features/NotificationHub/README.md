@@ -1,4 +1,4 @@
-# Notification Hub read API
+# Notification Hub API
 
 ## Mục đích
 
@@ -59,8 +59,44 @@ còn là participant active thì `conversationInfo = null`; notification vẫn �
 `Quotation`. Hai block dùng cùng DTO và resolver theo batch với Internal Mail nên không suy Customer/Sale từ title,
 body hoặc người gửi cuối. `lastMessage*`, `unreadCount` và `isUrgent` là trạng thái hiện tại của toàn conversation,
 không phải riêng event group đang lọc. `isUrgent` không phụ thuộc read-state để tab Gấp không biến mất khi người nhận
-đã mở tin.
+đã mở tin. `unreadCount` lấy giá trị lớn hơn giữa message unread và toàn bộ inbox notification unread của
+employee/company liên kết thread, kể cả notification nằm ngoài trang feed đang tải. Cùng quy tắc với
+Internal Mail list/detail; không cộng hai nguồn để tránh đếm đôi cùng sự kiện.
 
 Khi không dùng `urgentOnly`, endpoint chạy số query cố định theo trang: feed hiện hành, một batch conversation,
-rồi tối đa một batch Sample Request và một batch Quotation. Tab Gấp có thể quét thêm batch feed khi các tin Gấp thưa;
+rồi một batch đếm notification unread cho các conversation, tối đa một batch Sample Request và một batch Quotation.
+Tab Gấp có thể quét thêm batch feed khi các tin Gấp thưa;
 mỗi batch vẫn resolve conversation và dữ liệu liên quan theo tập hợp, không query theo từng notification.
+
+## Đánh dấu tất cả đã đọc
+
+```http
+POST /api/v1/notification-hub/read-all
+```
+
+Endpoint dành cho nút **Đánh dấu tất cả đã đọc** của Notification Hub. Trong một transaction Repeatable Read, backend dùng bulk
+update để đồng bộ cả hai lớp trạng thái đọc của current employee:
+
+- `NotificationUserState`: notification chưa archive thuộc company hiện tại.
+- `InternalMessageReadState`: message chưa đọc, chưa xóa trong conversation active cùng company mà employee vẫn là
+  participant active.
+- `InternalConversationParticipant.LastReadAt`: mốc đọc của những conversation đang có message chưa đọc.
+
+Endpoint không lặp một request cho từng message và không thay đổi contract của
+`POST /api/v1/notifications/read-all`, vốn chỉ xử lý notification. Response:
+
+```json
+{
+  "notificationsUpdated": 150,
+  "messagesUpdated": 1000,
+  "conversationsUpdated": 55
+}
+```
+
+Các giá trị là số row thực tế được cập nhật trong snapshot; `0` nghĩa là không có row phù hợp được cập nhật,
+không khẳng định inbox hiện tại không còn unread. Cả ba cập nhật dùng cùng snapshot dữ liệu đã commit tại câu
+SQL đầu tiên trong transaction. Tin/notification commit sau snapshot vẫn chưa đọc; không dùng bộ lọc timestamp
+riêng cho message và notification vì hai thời điểm tạo có thể khác nhau trong cùng transaction gửi tin.
+LastReadAt không bị lùi. Nếu transaction xung đột, toàn bộ thao tác rollback và client giữ trạng thái cũ để thử lại.
+FE chỉ cập nhật lạc quan những item đã có trước request, giữ thread có tin mới đến giữa chừng, rồi reload unread
+summary. Không ép badge tổng về 0 từ response này.

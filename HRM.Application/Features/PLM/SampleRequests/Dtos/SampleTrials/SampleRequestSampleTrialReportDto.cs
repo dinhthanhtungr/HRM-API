@@ -8,6 +8,13 @@ namespace HRM.Application.Features.PLM.SampleRequests.Dtos.SampleTrials;
 /// </summary>
 public sealed class SampleRequestSampleTrialReportDto
 {
+    [JsonIgnore]
+    public Guid ProductId { get; set; }
+    [JsonIgnore]
+    public Guid ManagerSalesEmployeeId { get; set; }
+    public string? InfoType { get; set; }
+    public string? FormulaStatus { get; set; }
+    public DateTime? RealPriceQuoteDate { get; set; }
     public Guid? SampleRequestSampleTrialId { get; set; }
     public Guid SampleRequestId { get; set; }
     public Guid? FormulaId { get; set; }
@@ -49,6 +56,11 @@ public sealed class SampleRequestSampleTrialReportDto
 
     /// <summary>Ngày Sale yêu cầu có mẫu, lấy từ Sample Request.</summary>
     public DateTime? RequestDeliveryDate { get; set; }
+    /// <summary>Ngày Lab thực tế nhận mẫu đầu vào từ Sale, lấy từ Sample Request.</summary>
+    public DateTime? LabReceivedDate { get; set; }
+    public bool IsDelayed { get; set; }
+    public Guid? LabReceivedByEmployeeId { get; set; }
+    public string? LabReceivedByName { get; set; }
     /// <summary>Ngày dự kiến có mẫu, lấy từ Sample Request.</summary>
     public DateTime? ExpectedDeliveryDate { get; set; }
     public DateTime? ExpectedPriceQuoteDate { get; set; }
@@ -74,4 +86,23 @@ public sealed class SampleRequestSampleTrialReportDto
     public DateTime SampleRequestCreatedDate { get; set; }
     public DateTime CreatedDate { get; set; }
     public DateTime? UpdatedDate { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? WorkStatus { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? NextActionCode { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? NextActionLabel { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ResponsibleRole { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Guid? ResponsibleEmployeeId { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? IsActionForCurrentUser { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateTime? DueDate { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? IsOverdue { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? FeedbackRecordedOnDate { get; set; }
 }

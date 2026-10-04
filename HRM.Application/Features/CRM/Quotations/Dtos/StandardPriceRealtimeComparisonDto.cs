@@ -16,6 +16,12 @@ public sealed class StandardPriceRealtimeComparisonDto
     public decimal? StandardPriceDifferencePercent { get; init; }
 
     /// <summary>
+    /// Công thức display-only giải thích giá bán realtime. Field chỉ được trả khi user có quyền xem
+    /// chi phí NVL, chi phí sản xuất và margin vì công thức chứa các giá trị nhạy cảm đó.
+    /// </summary>
+    public string? RealtimeAdjustedPriceFormula { get; init; }
+
+    /// <summary>
     /// Chi phí NVL snapshot lúc duyệt. Field bị che khi current user không có quyền xem material cost.
     /// </summary>
     public decimal? ApprovedMaterialCostSnapshot { get; init; }

@@ -23,6 +23,8 @@ public sealed class PatchSampleRequestCommand : IRequest<OperationResult<Guid>>
     public int? BagWeight { get; set; }
     public string? CustomerProductCode { get; set; }
     public DateTime? RequestDeliveryDate { get; set; }
+    public DateTime? LabReceivedDate { get; set; }
+    public bool? IsDelayed { get; set; }
     public DateTime? ExpectedDeliveryDate { get; set; }
     public DateTime? RealDeliveryDate { get; set; }
     public DateTime? RequestTestSampleDate { get; set; }

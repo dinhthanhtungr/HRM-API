@@ -18,4 +18,7 @@
     <ProjectReference Include="..\HRM.Application\HRM.Application.csproj" />
     <ProjectReference Include="..\HRM.Infrastructure\HRM.Infrastructure.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="..\HRM.Api\Assets\Fonts\OpenSans-Regular.ttf" Link="Assets\Fonts\OpenSans-Regular.ttf" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

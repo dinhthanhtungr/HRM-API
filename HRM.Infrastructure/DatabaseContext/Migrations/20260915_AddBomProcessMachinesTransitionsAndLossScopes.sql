@@ -17,12 +17,13 @@ CREATE TABLE IF NOT EXISTS bom.manufacturing_bom_stage_transitions (
     from_manufacturing_bom_stage_id uuid NOT NULL REFERENCES bom.manufacturing_bom_stages(manufacturing_bom_stage_id) ON DELETE RESTRICT,
     to_manufacturing_bom_stage_id uuid NOT NULL REFERENCES bom.manufacturing_bom_stages(manufacturing_bom_stage_id) ON DELETE RESTRICT,
     code citext NOT NULL,
-    transition_type citext NOT NULL,
+    transition_type integer NOT NULL,
     default_event_count integer NULL,
     sequence_no integer NOT NULL,
     note text NULL,
     CONSTRAINT ck_manufacturing_bom_stage_transitions_sequence_positive CHECK (sequence_no > 0),
     CONSTRAINT ck_manufacturing_bom_stage_transitions_distinct_stages CHECK (from_manufacturing_bom_stage_id <> to_manufacturing_bom_stage_id),
+    CONSTRAINT ck_manufacturing_bom_stage_transitions_type_valid CHECK (transition_type BETWEEN 1 AND 5),
     CONSTRAINT ux_manufacturing_bom_stage_transitions_version_code UNIQUE (bom_version_id, code),
     CONSTRAINT ux_manufacturing_bom_stage_transitions_version_sequence UNIQUE (bom_version_id, sequence_no)
 );

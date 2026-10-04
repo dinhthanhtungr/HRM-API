@@ -1,4 +1,5 @@
 using HRM.Application.Abstractions.Identity;
+using HRM.Application.Commons.Authorization;
 using HRM.Domain.Identity;
 using HRM.Infrastructure.DatabaseContext.ApplicationDbs;
 using Microsoft.AspNetCore.Identity;
@@ -23,7 +24,9 @@ public sealed class EmployeeIdentityAdministrationService(
             {
                 item.Id,
                 item.UserName,
-                item.Email
+                item.Email,
+                item.LockoutEnabled,
+                item.LockoutEnd
             })
             .FirstOrDefaultAsync(cancellationToken);
 
@@ -40,15 +43,29 @@ public sealed class EmployeeIdentityAdministrationService(
                       assignment.IsActive &&
                       role.Name != null
                 orderby role.Name
-                select role.Name!)
+                select new { role.Id, Name = role.Name! })
             .ToListAsync(cancellationToken);
+
+        var roleIds = roles.Select(role => role.Id).ToArray();
+        var claims = await dbContext.RoleClaims.AsNoTracking()
+            .Where(claim => roleIds.Contains(claim.RoleId) &&
+                (claim.ClaimType == ApplicationPermissionClaimTypes.Permission ||
+                 claim.ClaimType == ApplicationPermissionClaimTypes.PermissionModelVersion))
+            .ToListAsync(cancellationToken);
+        var permissions = roles.SelectMany(role => ApplicationPermissionCatalog.ResolveRole(role.Name,
+            claims.Any(claim => claim.RoleId == role.Id &&
+                claim.ClaimType == ApplicationPermissionClaimTypes.PermissionModelVersion &&
+                claim.ClaimValue == ApplicationPermissionClaimTypes.CurrentModelVersion),
+            claims.Where(claim => claim.RoleId == role.Id && claim.ClaimType == ApplicationPermissionClaimTypes.Permission)
+                .Select(claim => claim.ClaimValue ?? string.Empty)))
+            .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
 
         return new EmployeeIdentityAccount(
             user.Id,
             user.UserName,
             user.Email,
-            true,
-            roles);
+            !IdentityAccountAccessRules.IsLocked(user.LockoutEnabled, user.LockoutEnd, DateTimeOffset.UtcNow),
+            roles.Select(role => role.Name).ToArray()) { Permissions = permissions };
     }
 
     public async Task<IReadOnlyList<EmployeeIdentityRole>> GetRolesAsync(
@@ -124,8 +141,10 @@ public sealed class EmployeeIdentityAdministrationService(
                 "Nhân viên chưa có tài khoản.");
         }
 
-        // Temporary compatibility: AspNetUsers does not have an IsActive column yet.
-        // Restore account status persistence after the database schema is updated.
+        // Dùng lockout có sẵn của Identity để lưu khóa quản trị mà không cần thêm cột.
+        user.LockoutEnabled = true;
+        user.LockoutEnd = isActive ? null : DateTimeOffset.MaxValue;
+        user.AccessFailedCount = 0;
         if (!isActive)
         {
             user.RefreshToken = null;

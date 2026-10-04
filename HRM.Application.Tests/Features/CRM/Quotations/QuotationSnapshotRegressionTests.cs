@@ -77,6 +77,52 @@ public sealed class QuotationSnapshotRegressionTests
         Assert.False(draft.Success);
     }
 
+    [Fact]
+    public void PdfTierColumns_AreOrderedByMinimumQuantityAcrossProductLines()
+    {
+        var labels = QuotationPdfRenderer.ResolveTierLabels(
+        [
+            new QuotationPdfLineDto
+            {
+                PriceTiers =
+                [
+                    new QuotationPdfPriceTierDto
+                    {
+                        QuantityRangeLabel = "< 50 Kg",
+                        MinQuantity = null,
+                        SortOrder = 5
+                    },
+                    new QuotationPdfPriceTierDto
+                    {
+                        QuantityRangeLabel = "500 Kg",
+                        MinQuantity = 500m,
+                        SortOrder = 0
+                    },
+                    new QuotationPdfPriceTierDto
+                    {
+                        QuantityRangeLabel = "1000 - 5000 Kg",
+                        MinQuantity = 1000m,
+                        SortOrder = 1
+                    }
+                ]
+            },
+            new QuotationPdfLineDto
+            {
+                PriceTiers =
+                [
+                    new QuotationPdfPriceTierDto
+                    {
+                        QuantityRangeLabel = "1000 - 5000 Kg",
+                        MinQuantity = 1000m,
+                        SortOrder = 0
+                    }
+                ]
+            }
+        ]);
+
+        Assert.Equal(["< 50 Kg", "500 Kg", "1000 - 5000 Kg"], labels);
+    }
+
     private static ProductPricingVersion ApprovedVersion(Guid companyId, Guid productId)
         => new()
         {
@@ -156,6 +202,7 @@ public sealed class QuotationSnapshotRegressionTests
                     PriceTiers = snapshot.PriceTiers.Select(x => new QuotationPdfPriceTierDto
                     {
                         QuantityRangeLabel = x.QuantityRangeLabel,
+                        MinQuantity = x.MinQuantity,
                         UnitPrice = x.UnitPrice,
                         SortOrder = x.SortOrder
                     }).ToArray()

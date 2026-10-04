@@ -19,5 +19,8 @@ public enum InternalMailRelatedType
     Product = 14,
     Supplier = 15,
     Internal = 16,
+    // Child threads: RelatedId points to the existing parent conversation, not a business record.
+    ConversationTechnical = 17,
+    ConversationPricing = 18,
     Other = 9999
 }

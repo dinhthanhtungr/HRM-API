@@ -4,8 +4,8 @@ using HRM.Application.Features.CRM.Quotations.Dtos;
 namespace HRM.Application.Features.CRM.Quotations.Services;
 
 /// <summary>
-/// Giữ nguyên tỷ lệ giữa giá chuẩn Approved và chi phí NVL snapshot khi quy đổi
-/// giá chuẩn theo chi phí NVL realtime.
+/// Tính lại giá chuẩn tham chiếu từ NVL realtime, giữ nguyên chi phí sản xuất và
+/// biên lợi nhuận trên giá bán đã được lưu tại thời điểm Approved.
 /// </summary>
 internal static class StandardPriceRealtimeComparisonCalculator
 {
@@ -13,6 +13,8 @@ internal static class StandardPriceRealtimeComparisonCalculator
         string currency,
         decimal? approvedStandardPrice,
         decimal? approvedMaterialCostSnapshot,
+        decimal? approvedManufacturingCost,
+        decimal? approvedProfitMarginRate,
         decimal? realtimeMaterialCost,
         bool isMaterialCostComplete,
         decimal warningThresholdPercent,
@@ -25,6 +27,7 @@ internal static class StandardPriceRealtimeComparisonCalculator
 
         var normalizedThreshold = Math.Max(0m, warningThresholdPercent);
         if (approvedMaterialCostSnapshot is not > 0m ||
+            approvedManufacturingCost is null or < 0m ||
             !isMaterialCostComplete ||
             !realtimeMaterialCost.HasValue)
         {
@@ -47,10 +50,32 @@ internal static class StandardPriceRealtimeComparisonCalculator
             materialDifference / approvedMaterialCostSnapshot.Value * 100m,
             4,
             MidpointRounding.AwayFromZero);
-        var adjustedStandardPrice = PricingRoundingRules.RoundCalculatedPrice(
-            approvedStandardPrice.Value *
-            realtimeMaterialCost.Value /
-            approvedMaterialCostSnapshot.Value);
+        var resolvedProfitMarginRate = StandardSellingPriceCalculator.ResolveProfitMarginRateOnSellingPrice(
+            approvedProfitMarginRate,
+            approvedStandardPrice,
+            approvedMaterialCostSnapshot,
+            approvedManufacturingCost);
+        var realtimeCalculation = StandardSellingPriceCalculator.TryCalculateFromCostComponents(
+            realtimeMaterialCost,
+            approvedManufacturingCost,
+            resolvedProfitMarginRate,
+            currency);
+        if (realtimeCalculation is null)
+        {
+            return new StandardPriceRealtimeComparisonDto
+            {
+                Currency = currency,
+                ApprovedStandardPrice = approvedStandardPrice.Value,
+                ApprovedMaterialCostSnapshot = approvedMaterialCostSnapshot,
+                RealtimeMaterialCost = realtimeMaterialCost,
+                MovementStatus = MaterialCostMovementStatus.Unknown,
+                IsMaterialCostComplete = false,
+                WarningThresholdPercent = normalizedThreshold,
+                CalculatedAt = calculatedAt
+            };
+        }
+
+        var adjustedStandardPrice = realtimeCalculation.StandardSellingPrice;
         var standardPriceDifference = PricingRoundingRules.RoundStoredInput(
             adjustedStandardPrice - approvedStandardPrice.Value);
         var standardPriceDifferencePercent = decimal.Round(
@@ -71,6 +96,7 @@ internal static class StandardPriceRealtimeComparisonCalculator
             RealtimeAdjustedStandardPrice = adjustedStandardPrice,
             StandardPriceDifference = standardPriceDifference,
             StandardPriceDifferencePercent = standardPriceDifferencePercent,
+            RealtimeAdjustedPriceFormula = realtimeCalculation.DisplayFormula,
             ApprovedMaterialCostSnapshot = approvedMaterialCostSnapshot,
             RealtimeMaterialCost = realtimeMaterialCost,
             MaterialCostDifference = materialDifference,
@@ -84,4 +110,5 @@ internal static class StandardPriceRealtimeComparisonCalculator
             CalculatedAt = calculatedAt
         };
     }
+
 }

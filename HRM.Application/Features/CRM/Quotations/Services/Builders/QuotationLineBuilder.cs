@@ -1,9 +1,9 @@
 using HRM.Application.Abstractions.Persistence.CRM.CustomerCare;
 using HRM.Application.Commons.Models;
-using HRM.Application.Commons.Pricing.Helpers;
-using HRM.Application.Commons.Pricing.Models;
+using HRM.Application.Commons.Rules;
 using HRM.Application.Features.CRM.Quotations.Dtos;
 using HRM.Domain.Entities.CustomerSchema;
+using HRM.Domain.Entities.SampleRequestSchema;
 using HRM.Domain.Enums.CustomerEnum;
 using Microsoft.EntityFrameworkCore;
 
@@ -15,14 +15,11 @@ namespace HRM.Application.Features.CRM.Quotations.Services;
 internal sealed class QuotationLineBuilder
 {
     private readonly ICRMReadDbContext _dbContext;
-    private readonly FormulaPricingPolicyProvider _pricingPolicyProvider;
 
     public QuotationLineBuilder(
-        ICRMReadDbContext dbContext,
-        FormulaPricingPolicyProvider pricingPolicyProvider)
+        ICRMReadDbContext dbContext)
     {
         _dbContext = dbContext;
-        _pricingPolicyProvider = pricingPolicyProvider;
     }
 
     public async Task<OperationResult<IReadOnlyList<QuotationLine>>> BuildAsync(
@@ -99,45 +96,6 @@ internal sealed class QuotationLineBuilder
                 return OperationResult<IReadOnlyList<QuotationLine>>.Fail(
                     "Manual authorized pricing cannot reference a standard pricing version.");
             }
-
-            var policyKeysByProduct = manualRequests
-                .Select(x => x.ProductId)
-                .Distinct()
-                .ToDictionary(
-                    productId => productId,
-                    productId =>
-                    {
-                        var product = products[productId];
-                        return new FormulaPricingPolicyLookupKey(
-                            companyId,
-                            product.CategoryId,
-                            FormulaPricingProfileResolver.Resolve(
-                                product.ColourCode,
-                                product.Code,
-                                product.Additive),
-                            currency);
-                    });
-            var policies = await _pricingPolicyProvider.GetPublishedBatchAsync(
-                policyKeysByProduct.Values,
-                cancellationToken);
-
-            foreach (var request in manualRequests)
-            {
-                var key = policyKeysByProduct[request.ProductId];
-                if (!policies.TryGetValue(key, out var policy))
-                {
-                    return OperationResult<IReadOnlyList<QuotationLine>>.Fail(
-                        "A published pricing policy is required before manual customer pricing can be saved.");
-                }
-
-                //var tierError = QuotationManualPriceTierRules.Validate(
-                //    request.PriceTiers,
-                //    policy.Definition);
-                //if (tierError is not null)
-                //{
-                //    return OperationResult<IReadOnlyList<QuotationLine>>.Fail(tierError);
-                //}
-            }
         }
 
         var pricingVersionIds = requests
@@ -180,13 +138,9 @@ internal sealed class QuotationLineBuilder
             .Select(x => x.SampleRequestId!.Value)
             .Distinct()
             .ToArray();
-        var sampleRequests = await _dbContext.SampleRequests
-            .AsNoTracking()
-            .Where(x =>
-                sampleRequestIds.Contains(x.SampleRequestId) &&
-                x.CompanyId == companyId &&
-                x.CustomerId == customerId &&
-                x.IsActive)
+        var sampleRequests = await ScopeSampleRequests(
+                _dbContext.SampleRequests.AsNoTracking(), companyId, customerId)
+            .Where(x => sampleRequestIds.Contains(x.SampleRequestId))
             .Select(x => new
             {
                 x.SampleRequestId,
@@ -266,5 +220,17 @@ internal sealed class QuotationLineBuilder
         }
 
         return OperationResult<IReadOnlyList<QuotationLine>>.Ok(lines);
+    }
+
+    internal static IQueryable<SampleRequest> ScopeSampleRequests(
+        IQueryable<SampleRequest> source, Guid companyId, Guid customerId)
+    {
+        // Mẫu nội bộ VietAus được dùng chung cho khách hàng trong cùng công ty.
+        return source.Where(x =>
+            x.CompanyId == companyId &&
+            x.IsActive &&
+            (x.CustomerId == customerId ||
+             (x.Customer.CompanyId == companyId &&
+              x.Customer.ExternalId == InternalCustomerRules.InternalCustomerExternalId)));
     }
 }

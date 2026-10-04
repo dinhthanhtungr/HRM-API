@@ -13,15 +13,18 @@ internal sealed class UpdateInternalConversationPreferenceCommandHandler
     private readonly IInternalMailDbContext _dbContext;
     private readonly ICurrentUser _currentUser;
     private readonly IDateTimeProvider _dateTimeProvider;
+    private readonly HRM.Application.Abstractions.Notifications.INotificationInboxArchiver _inboxArchiver;
 
     public UpdateInternalConversationPreferenceCommandHandler(
         IInternalMailDbContext dbContext,
         ICurrentUser currentUser,
-        IDateTimeProvider dateTimeProvider)
+        IDateTimeProvider dateTimeProvider,
+        HRM.Application.Abstractions.Notifications.INotificationInboxArchiver inboxArchiver)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
         _dateTimeProvider = dateTimeProvider;
+        _inboxArchiver = inboxArchiver;
     }
 
     public async Task<OperationResult> Handle(
@@ -40,6 +43,7 @@ internal sealed class UpdateInternalConversationPreferenceCommandHandler
             return OperationResult.Fail("Current employee or company is invalid.");
         }
 
+        await using var transaction = await _dbContext.BeginTransactionAsync(cancellationToken);
         var participant = await _dbContext.InternalConversationParticipants
             .FirstOrDefaultAsync(x =>
                 x.InternalConversationId == request.ConversationId &&
@@ -64,7 +68,13 @@ internal sealed class UpdateInternalConversationPreferenceCommandHandler
             participant.IsMuted = request.IsMuted.Value;
         }
 
+        if (request.IsArchived == true)
+        {
+            await _inboxArchiver.ArchiveConversationAsync(companyId.Value, employeeId.Value,
+                request.ConversationId, cancellationToken);
+        }
         await _dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return OperationResult.Ok();
     }
 }

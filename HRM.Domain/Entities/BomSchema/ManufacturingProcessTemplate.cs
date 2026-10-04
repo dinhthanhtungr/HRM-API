@@ -22,4 +22,6 @@ public class ManufacturingProcessTemplate
     public Guid? ReleasedBy { get; set; }
 
     public virtual ICollection<ManufacturingProcessTemplateStage> Stages { get; set; } = [];
+    public virtual ICollection<ManufacturingProcessTemplateStageTransition> StageTransitions { get; set; } = [];
+    public virtual ICollection<ManufacturingProcessTemplateApplicability> ApplicabilityRules { get; set; } = [];
 }

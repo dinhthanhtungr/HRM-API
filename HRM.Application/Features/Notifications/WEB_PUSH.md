@@ -1,5 +1,9 @@
 # Web Push cho Notification
 
+## Quyền khu vực (2026-10-04)
+
+Worker giao audience đã enqueue với `InternalMailAreaAccessService.DeliveryRecipients`: employee active cùng company, conversation và parent còn active, membership active/không mute và luật RD/color. Khu vực riêng không có quyền đọc mặc định theo role. Thu hồi membership trước khi dispatch loại người đó khỏi push. Payload vẫn chỉ có ID, tiêu đề chung và link; không có body/giá/công thức. [AREAS.md](../InternalMail/AREAS.md) mô tả contract dùng bảng hiện có, không migration.
+
 ## Mục đích
 
 Web Push là kênh chuyển phát bổ sung cho Notification hiện tại. Notification và

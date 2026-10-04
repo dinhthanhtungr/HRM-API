@@ -1,7 +1,6 @@
 using HRM.Application.Abstractions.Identity;
 using HRM.Application.Abstractions.Persistence.Employees;
 using HRM.Application.Abstractions.Security;
-using HRM.Application.Features.Employees.Administration.GetEmployeeAccountPermissions;
 using HRM.Application.Features.Employees.Dtos;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -40,7 +39,7 @@ internal sealed class RevokeEmployeeRoleCommandHandler
 
         var target = await BuildEmployeeScope()
             .Where(employee => employee.EmployeeId == request.EmployeeId)
-            .Select(employee => new { employee.IsActive })
+            .Select(employee => new { employee.IsActive, employee.EndDate })
             .FirstOrDefaultAsync(cancellationToken);
         if (target is null)
         {
@@ -109,10 +108,10 @@ internal sealed class RevokeEmployeeRoleCommandHandler
             request.EmployeeId,
             cancellationToken);
         return EmployeeAdministrationResult<EmployeeAccountPermissionsDto>.Ok(
-            GetEmployeeAccountPermissionsQueryHandler.MapAccount(
+            EmployeeAccountPermissionsMapper.Map(
                 request.EmployeeId,
                 target.IsActive,
-                updatedAccount));
+                updatedAccount, target.EndDate));
     }
 
     private IQueryable<HRM.Domain.Entities.HrSchema.Employee> BuildEmployeeScope()

@@ -55,4 +55,6 @@ public interface ICRMWriteDbContext
     DbSet<MemberInGroup> MemberInGroups { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
+    Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginQuotationTransactionAsync(
+        CancellationToken cancellationToken = default);
 }

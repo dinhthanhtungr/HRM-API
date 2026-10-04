@@ -1,6 +1,8 @@
 using System.Text.Json.Serialization;
 using HRM.Application.Features.CRM.Quotations.Dtos;
 using HRM.Domain.Enums.CustomerEnum;
+using HRM.Application.Features.Executive.MerchandiseOrderPriceHistory.Dtos;
+using HRM.Application.Features.Executive.ProductPricingReview.Dtos;
 
 namespace HRM.Application.Features.Executive.SampleRequestPricingOverview.Dtos;
 
@@ -17,6 +19,7 @@ public sealed class SampleRequestPricingOverviewItemDto
     public SampleRequestPricingDto Pricing { get; init; } = new();
     public SampleRequestConversationOverviewDto Conversation { get; init; } = new();
     public SampleRequestPricingActionsDto Actions { get; init; } = new();
+    public LatestMerchandiseOrderDto? LatestMerchandiseOrder { get; init; }
 }
 
 public sealed class SampleRequestPricingProductDto
@@ -84,6 +87,7 @@ public sealed class SampleRequestPricingDto
     public Guid? DraftPricingVersionId { get; init; }
     public Guid? ApprovedPricingVersionId { get; init; }
     public SampleRequestDisplayedPricingFormulaDto? DisplayedFormula { get; init; }
+    public SampleRequestRecommendedPricingFormulaDto? RecommendedFormula { get; init; }
 }
 
 /// <summary>
@@ -100,6 +104,35 @@ public sealed class SampleRequestDisplayedPricingFormulaDto
     public string Name { get; init; } = string.Empty;
     public string? Status { get; init; }
     public string PriceKind { get; init; } = string.Empty;
+}
+
+/// <summary>
+/// Công thức hệ thống đề xuất sử dụng theo mốc nghiệp vụ mới nhất. Đây có thể khác
+/// DisplayedFormula, là source đang gắn với giá chuẩn/Draft hiện hành.
+/// </summary>
+public sealed class SampleRequestRecommendedPricingFormulaDto
+{
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public PricingReviewSourceType SourceType { get; init; }
+    public Guid SourceId { get; init; }
+    public string SourceCode { get; init; } = string.Empty;
+    public string SourceName { get; init; } = string.Empty;
+    public string DisplayName { get; init; } = string.Empty;
+    public string Status { get; init; } = string.Empty;
+    public bool IsEligible { get; init; }
+    public bool IsCurrentlyApplied { get; init; }
+    public DateTime? CreatedAt { get; init; }
+    public DateTime CandidateAt { get; init; }
+    public string CandidateDateSource { get; init; } = string.Empty;
+    public string Currency { get; init; } = "VND";
+    public decimal? RealtimeMaterialCost { get; init; }
+    public decimal? ManufacturingCost { get; init; }
+    public decimal? ProfitMarginRate { get; init; }
+    public decimal? RealtimeStandardSellingPrice { get; init; }
+    public string? PriceCalculationFormula { get; init; }
+    public bool IsRealtimeMaterialCostComplete { get; init; }
+    public int MissingMaterialPriceCount { get; init; }
+    public DateTime CalculatedAt { get; init; }
 }
 
 public sealed class SampleRequestConversationOverviewDto

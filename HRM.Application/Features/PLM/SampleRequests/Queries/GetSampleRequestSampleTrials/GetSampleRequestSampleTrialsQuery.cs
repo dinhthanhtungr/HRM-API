@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using HRM.Application.Commons.Pagination;
 using HRM.Application.Features.PLM.SampleRequests.Dtos.SampleTrials;
+using HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestDailyWork;
 using HRM.Domain.Enums.SampleRequests;
 using MediatR;
 
@@ -24,6 +25,7 @@ public sealed class GetSampleRequestSampleTrialsQuery
 
     public Guid? SampleRequestId { get; set; }
     public Guid? CustomerId { get; init; }
+    public Guid? SaleEmployeeId { get; init; }
     /// <summary>
     /// Inclusive report-date lower bound. CompletedSamples uses CustomerReplyDate,
     /// WaitingCustomerFeedback uses SentDate while awaiting Sale receipt and RequestReceivedDate
@@ -59,4 +61,11 @@ public sealed class GetSampleRequestSampleTrialsQuery
     /// Chỉ dùng cho route lịch sử của một Sample Request. Danh sách chính luôn trả Trial mới nhất.
     /// </summary>
     public bool IncludeTrialHistory { get; set; }
+
+    /// <summary>Chỉ handler báo cáo ngày được đặt; route sample-trials không nhận filter nội bộ này từ client.</summary>
+    [JsonIgnore]
+    public DateOnly? DailyWorkDate { get; set; }
+
+    [JsonIgnore]
+    public SampleRequestDailyView DailyWorkView { get; set; } = SampleRequestDailyView.Today;
 }

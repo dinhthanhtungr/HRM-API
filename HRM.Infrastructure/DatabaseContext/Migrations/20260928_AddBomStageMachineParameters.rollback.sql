@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS bom.manufacturing_bom_stage_machine_parameters;
+DROP TABLE IF EXISTS bom.manufacturing_process_template_stage_machine_parameters;

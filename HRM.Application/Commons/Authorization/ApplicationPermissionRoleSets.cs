@@ -9,6 +9,10 @@ public static class ApplicationPermissionRoleSets
     public static IReadOnlyCollection<string> GetRoles(string permission)
         => permission switch
         {
+            ApplicationPermissions.Equipment.View => ApplicationRoleSets.Equipment.Viewers,
+            ApplicationPermissions.Equipment.Create => ApplicationRoleSets.Equipment.Editors,
+            ApplicationPermissions.Equipment.Update => ApplicationRoleSets.Equipment.Editors,
+            ApplicationPermissions.Equipment.Delete => ApplicationRoleSets.Equipment.Deleters,
             ApplicationPermissions.Pricing.ViewWorkbench =>
                 ApplicationRoleSets.Pricing.WorkbenchViewers,
             ApplicationPermissions.Pricing.ViewApprovedSellingPrice =>

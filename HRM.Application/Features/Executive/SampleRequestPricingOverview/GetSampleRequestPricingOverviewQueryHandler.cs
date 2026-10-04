@@ -11,6 +11,10 @@ using HRM.Application.Features.CRM.Quotations.Dtos;
 using HRM.Application.Features.CRM.Quotations.Services;
 using HRM.Application.Features.Executive.SampleRequestPricingOverview.Dtos;
 using HRM.Application.Features.Executive.SampleRequestPricingOverview.Models;
+using HRM.Application.Features.Executive.MerchandiseOrderPriceHistory.Dtos;
+using HRM.Application.Features.Executive.MerchandiseOrderPriceHistory.Shared;
+using HRM.Application.Features.Executive.ProductPricingReview.Dtos;
+using HRM.Application.Features.Executive.ProductPricingReview.Services;
 using HRM.Application.Features.InternalMail.Services;
 using HRM.Application.Features.Pricing.Authorization;
 using HRM.Domain.Entities.CustomerSchema;
@@ -18,6 +22,7 @@ using HRM.Domain.Entities.SampleRequestSchema;
 using HRM.Domain.Enums.CustomerEnum;
 using HRM.Domain.Enums.InternalMailEnums;
 using HRM.Domain.Enums.Products;
+using HRM.Domain.Enums.Merchadises;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -52,6 +57,7 @@ internal sealed class GetSampleRequestPricingOverviewQueryHandler
     private readonly IInternalConversationAccessService _conversationAccessService;
     private readonly IPricingVisibilityService _pricingVisibilityService;
     private readonly StandardPriceRealtimeComparisonQueryService _comparisonQueryService;
+    private readonly SuggestedPricingFormulaQueryService _suggestedFormulaQueryService;
 
     public GetSampleRequestPricingOverviewQueryHandler(
         IExecutiveReadDbContext dbContext,
@@ -63,7 +69,8 @@ internal sealed class GetSampleRequestPricingOverviewQueryHandler
         QuotationFeatureOptions featureOptions,
         IInternalConversationAccessService conversationAccessService,
         IPricingVisibilityService pricingVisibilityService,
-        StandardPriceRealtimeComparisonQueryService comparisonQueryService)
+        StandardPriceRealtimeComparisonQueryService comparisonQueryService,
+        SuggestedPricingFormulaQueryService suggestedFormulaQueryService)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
@@ -75,6 +82,7 @@ internal sealed class GetSampleRequestPricingOverviewQueryHandler
         _conversationAccessService = conversationAccessService;
         _pricingVisibilityService = pricingVisibilityService;
         _comparisonQueryService = comparisonQueryService;
+        _suggestedFormulaQueryService = suggestedFormulaQueryService;
     }
 
     public async Task<OperationResult<PagedResult<SampleRequestPricingOverviewItemDto>>> Handle(
@@ -155,12 +163,16 @@ internal sealed class GetSampleRequestPricingOverviewQueryHandler
             employeeId,
             _conversationAccessService.CanReadExecutiveSampleRequestConversations,
             cancellationToken);
+        var latestMerchandiseOrders = await LoadLatestMerchandiseOrdersAsync(
+            productIds, scope, cancellationToken);
 
         var items = pageRows.Select(row => MapItem(
             row,
             pricing.ByProduct.GetValueOrDefault(row.ProductId),
             conversations.GetValueOrDefault(row.SampleRequestId),
-            pricing.MaterialsByProduct.GetValueOrDefault(row.ProductId)))
+            pricing.MaterialsByProduct.GetValueOrDefault(row.ProductId),
+            pricing.RecommendedFormulaByProduct.GetValueOrDefault(row.ProductId),
+            latestMerchandiseOrders.GetValueOrDefault(row.ProductId)))
             .ToArray();
 
         return Ok(items, totalCount, request);
@@ -494,12 +506,12 @@ internal sealed class GetSampleRequestPricingOverviewQueryHandler
 
     private async Task<IQueryable<SampleRequest>> ApplyPricingViewAsync(
         IQueryable<SampleRequest> query,
-        ProductPricingWorkbenchView view,
+        SampleRequestPricingOverviewView view,
         Guid companyId,
         string currency,
         CancellationToken cancellationToken)
     {
-        if (view == ProductPricingWorkbenchView.All)
+        if (view == SampleRequestPricingOverviewView.All)
         {
             // Unlike the product-centric Workbench, All must preserve the complete
             // Sample Request list because Sample Request is this endpoint's root.
@@ -511,37 +523,46 @@ internal sealed class GetSampleRequestPricingOverviewQueryHandler
             version.Currency == currency &&
             version.IsActive);
 
+        if (view == SampleRequestPricingOverviewView.NeedsPricing)
+        {
+            var materialCostChanged = await ApplyMaterialCostViewAsync(
+                query,
+                SampleRequestPricingOverviewView.MaterialCostChanged,
+                companyId,
+                currency,
+                _featureOptions.MaterialCostChangeThresholdPercent,
+                cancellationToken);
+            return ApplyNeedsPricingFilter(query, currentVersions, companyId)
+                .Union(materialCostChanged);
+        }
+
         return view switch
         {
-            ProductPricingWorkbenchView.Draft => query.Where(sampleRequest =>
+            SampleRequestPricingOverviewView.Draft => query.Where(sampleRequest =>
                 currentVersions.Any(version =>
                     version.ProductId == sampleRequest.ProductId &&
                     version.Status == ProductPricingStatus.Draft)),
 
-            ProductPricingWorkbenchView.Approved => query.Where(sampleRequest =>
+            SampleRequestPricingOverviewView.Approved => query.Where(sampleRequest =>
                 currentVersions.Any(version =>
                     version.ProductId == sampleRequest.ProductId &&
                     version.Status == ProductPricingStatus.Approved)),
 
-            ProductPricingWorkbenchView.NeedsPricing =>
-                ApplyNeedsPricingFilter(query, currentVersions, companyId)
-                    .Union(await ApplyMaterialCostViewAsync(
-                        query,
-                        ProductPricingWorkbenchView.MaterialCostChanged,
-                        companyId,
-                        currency,
-                        _featureOptions.MaterialCostChangeThresholdPercent,
-                        cancellationToken)),
-
-            ProductPricingWorkbenchView.MaterialCostChanged or
-                ProductPricingWorkbenchView.ProductionMaterialCostChanged => await ApplyMaterialCostViewAsync(
+            SampleRequestPricingOverviewView.MaterialCostChanged or
+                SampleRequestPricingOverviewView.ProductionMaterialCostChanged => await ApplyMaterialCostViewAsync(
                 query,
                 view,
                 companyId,
                 currency,
-                view == ProductPricingWorkbenchView.MaterialCostChanged
+                view == SampleRequestPricingOverviewView.MaterialCostChanged
                     ? 0m
                     : _featureOptions.MaterialCostChangeThresholdPercent,
+                cancellationToken),
+
+            SampleRequestPricingOverviewView.FormulaChanged => await ApplyFormulaChangedViewAsync(
+                query,
+                companyId,
+                currency,
                 cancellationToken),
 
             _ => query.Where(_ => false)
@@ -550,7 +571,7 @@ internal sealed class GetSampleRequestPricingOverviewQueryHandler
 
     private async Task<IQueryable<SampleRequest>> ApplyMaterialCostViewAsync(
         IQueryable<SampleRequest> query,
-        ProductPricingWorkbenchView view,
+        SampleRequestPricingOverviewView view,
         Guid companyId,
         string currency,
         decimal thresholdPercent,
@@ -605,8 +626,106 @@ internal sealed class GetSampleRequestPricingOverviewQueryHandler
             companyId,
             currency,
             thresholdPercent,
-            view == ProductPricingWorkbenchView.ProductionMaterialCostChanged,
+            view == SampleRequestPricingOverviewView.ProductionMaterialCostChanged,
             cancellationToken);
+        return changedProductIds.Count == 0
+            ? query.Where(_ => false)
+            : query.Where(x => changedProductIds.Contains(x.ProductId));
+    }
+
+    private async Task<IQueryable<SampleRequest>> ApplyFormulaChangedViewAsync(
+        IQueryable<SampleRequest> query,
+        Guid companyId,
+        string currency,
+        CancellationToken cancellationToken)
+    {
+        var scopedProductIds = await query
+            .Select(x => x.ProductId)
+            .Distinct()
+            .ToArrayAsync(cancellationToken);
+        if (scopedProductIds.Length == 0)
+        {
+            return query.Where(_ => false);
+        }
+
+        var candidates = await _suggestedFormulaQueryService.LoadAsync(
+            scopedProductIds,
+            companyId,
+            cancellationToken);
+        if (candidates.Count == 0)
+        {
+            return query.Where(_ => false);
+        }
+
+        var candidateProductIds = candidates.Keys.ToArray();
+        var approvedRows = await _dbContext.ProductPricingVersions
+            .AsNoTracking()
+            .Where(x =>
+                x.CompanyId == companyId &&
+                x.IsActive &&
+                x.Currency == currency &&
+                x.Status == ProductPricingStatus.Approved &&
+                candidateProductIds.Contains(x.ProductId))
+            .Select(x => new PricingVersionRow
+            {
+                ProductPricingVersionId = x.ProductPricingVersionId,
+                ProductId = x.ProductId,
+                SourceType = x.SourceManufacturingFormulaId.HasValue
+                    ? ProductPricingSourceType.ManufacturingFormula
+                    : x.SourceFormulaId.HasValue
+                        ? ProductPricingSourceType.Formula
+                        : null,
+                SourceId = x.SourceManufacturingFormulaId ?? x.SourceFormulaId,
+                Status = x.Status,
+                Version = x.Version,
+                CreatedDate = x.CreatedDate,
+                UpdatedDate = x.UpdatedDate
+            })
+            .ToListAsync(cancellationToken);
+        var approvedByProduct = approvedRows
+            .GroupBy(x => x.ProductId)
+            .ToDictionary(x => x.Key, x => ResolveCurrentVersions(x).Approved);
+        var comparableCandidates = candidates.Values
+            .Where(candidate =>
+            {
+                var approved = approvedByProduct.GetValueOrDefault(candidate.ProductId);
+                return HasApprovedFormulaBaseline(approved) &&
+                    approved!.SourceType is { } approvedSourceType &&
+                    approved.SourceId is { } approvedSourceId &&
+                    (ProductPricingReviewRules.ToLegacy(candidate.SourceType) != approvedSourceType ||
+                     candidate.SourceId != approvedSourceId);
+            })
+            .ToArray();
+        var selections = comparableCandidates
+            .Select(candidate => new ProductPricingSourceSelection(
+                candidate.ProductId,
+                ProductPricingReviewRules.ToLegacy(candidate.SourceType),
+                candidate.SourceId))
+            .Concat(comparableCandidates.Select(candidate =>
+            {
+                var approved = approvedByProduct[candidate.ProductId]!;
+                return new ProductPricingSourceSelection(
+                    candidate.ProductId,
+                    approved.SourceType!.Value,
+                    approved.SourceId!.Value);
+            }))
+            .Distinct()
+            .ToArray();
+        var sources = await _sourceQueryService.LoadSelectedForExecutiveAsync(
+            selections,
+            companyId,
+            currency,
+            cancellationToken);
+        // FormulaChanged is a comparison against the currently approved standard-price
+        // source. Products without that baseline belong to first-time pricing, not this view.
+        var changedProductIds = comparableCandidates
+            .Where(candidate => ShouldRecommendFormula(
+                candidate,
+                approvedByProduct.GetValueOrDefault(candidate.ProductId),
+                sources))
+            .Select(candidate => candidate.ProductId)
+            .ToHashSet();
+
         return changedProductIds.Count == 0
             ? query.Where(_ => false)
             : query.Where(x => changedProductIds.Contains(x.ProductId));
@@ -773,6 +892,8 @@ internal sealed class GetSampleRequestPricingOverviewQueryHandler
         var currentByProduct = productIds.ToDictionary(
             productId => productId,
             productId => ResolveCurrentVersions(versions.Where(x => x.ProductId == productId)));
+        var recommendedFormulaCandidates = await _suggestedFormulaQueryService.LoadAsync(
+            productIds, companyId, cancellationToken);
         var selections = currentByProduct.Values
             .Select(x => x.Preferred)
             .Where(x => x?.SourceType is not null && x.SourceId.HasValue)
@@ -784,6 +905,10 @@ internal sealed class GetSampleRequestPricingOverviewQueryHandler
                     x!.ProductId,
                     x.SourceType!.Value,
                     x.SourceId!.Value)))
+            .Concat(recommendedFormulaCandidates.Values.Select(x => new ProductPricingSourceSelection(
+                x.ProductId,
+                ProductPricingReviewRules.ToLegacy(x.SourceType),
+                x.SourceId)))
             .Distinct()
             .ToArray();
         // Executive pricing can use a VA selected from ManufacturingFormula/ProductionSelectVersion.
@@ -837,7 +962,9 @@ internal sealed class GetSampleRequestPricingOverviewQueryHandler
                     approved.StandardSellingPrice,
                     approved.MaterialCostSnapshot,
                     approved.SourceType,
-                    approved.SourceId);
+                    approved.SourceId,
+                    approved.ManufacturingCost,
+                    approved.ProfitMarginRate);
             })
             .ToArray();
         var comparisonsByProduct = _comparisonQueryService.BuildVisible(
@@ -892,7 +1019,24 @@ internal sealed class GetSampleRequestPricingOverviewQueryHandler
             pair => pricingAccess.CanViewMaterialCost
                 ? pair.Value?.Materials ?? []
                 : (IReadOnlyList<QuotationProductPricingMaterialDto>)[]);
-        return new PricingLoadResult(byProduct, materialsByProduct);
+        var recommendedFormulaByProduct = recommendedFormulaCandidates
+            .Where(pair => ShouldRecommendFormula(
+                pair.Value,
+                currentByProduct[pair.Key].Approved,
+                selectedSources))
+            .ToDictionary(
+            pair => pair.Key,
+            pair => MapRecommendedFormula(
+                pair.Value,
+                selectedSources.GetValueOrDefault(new ProductPricingSourceSelection(
+                    pair.Key,
+                    ProductPricingReviewRules.ToLegacy(pair.Value.SourceType),
+                    pair.Value.SourceId)),
+                currentByProduct[pair.Key].Approved,
+                pricingAccess,
+                currency,
+                now));
+        return new PricingLoadResult(byProduct, materialsByProduct, recommendedFormulaByProduct);
     }
 
     private async Task<IReadOnlyDictionary<Guid, ConversationOverviewRow>> LoadConversationsAsync(
@@ -930,6 +1074,55 @@ internal sealed class GetSampleRequestPricingOverviewQueryHandler
             .ToDictionary(x => x.Key, x => x.OrderByDescending(y => y.LastMessageAt).First());
     }
 
+    private async Task<IReadOnlyDictionary<Guid, LatestMerchandiseOrderDto>> LoadLatestMerchandiseOrdersAsync(
+        IReadOnlyCollection<Guid> productIds,
+        ViewerScope scope,
+        CancellationToken cancellationToken)
+    {
+        var orders = _visibilityService.ApplyMerchandiseOrderVisibility(
+            _dbContext.MerchandiseOrders.AsNoTracking(),
+            _dbContext.Customers.AsNoTracking(),
+            scope);
+        var rows = await orders
+            .Where(order =>
+                (order.OrderType == OrderType.Merchandise) &&
+                MerchandiseOrderPriceHistoryRules.EligibleStatuses.Contains(order.Status))
+            .SelectMany(order => order.MerchandiseOrderDetails, (order, detail) => new { order, detail })
+            .Where(x => x.detail.IsActive && productIds.Contains(x.detail.ProductId))
+            .Select(x => new LatestMerchandiseOrderRow
+            {
+                ProductId = x.detail.ProductId,
+                MerchandiseOrderId = x.order.MerchandiseOrderId,
+                MerchandiseOrderCode = x.order.ExternalId,
+                OrderedAt = x.order.CreateDate,
+                OrderType = x.order.OrderType == OrderType.Merchandise
+                    ? nameof(OrderType.Merchandise)
+                    : nameof(OrderType.SampleRequest),
+                ItemCode = x.detail.Product.Code ?? x.detail.ProductExternalIdSnapshot,
+                ItemName = x.detail.Product.Name ?? x.detail.ProductNameSnapshot,
+                Quantity = x.detail.ExpectedQuantity,
+                Unit = x.detail.Product.Unit,
+                UnitPrice = x.detail.UnitPriceAgreed,
+                Currency = x.order.Currency,
+                CustomerId = x.order.CustomerId,
+                CustomerCode = x.order.CustomerExternalIdSnapshot,
+                CustomerName = x.order.CustomerNameSnapshot,
+                SaleEmployeeId = x.order.ManagerById,
+                SaleName = x.order.ManagerByNameSnapshot,
+                OrderStatus = x.order.Status,
+                DetailId = x.detail.MerchandiseOrderDetailId
+            })
+            .ToListAsync(cancellationToken);
+
+        return rows.GroupBy(x => x.ProductId).ToDictionary(
+            group => group.Key,
+            group => MapLatestMerchandiseOrder(group
+                .OrderByDescending(x => x.OrderedAt)
+                .ThenByDescending(x => x.MerchandiseOrderId)
+                .ThenByDescending(x => x.DetailId)
+                .First()));
+    }
+
     internal static CurrentPricingRows ResolveCurrentVersions(IEnumerable<PricingVersionRow> versions)
     {
         PricingVersionRow? Latest(ProductPricingStatus status) => versions
@@ -943,11 +1136,21 @@ internal sealed class GetSampleRequestPricingOverviewQueryHandler
             Latest(ProductPricingStatus.Approved));
     }
 
+    internal static bool HasApprovedFormulaBaseline(PricingVersionRow? approved)
+        => approved is
+        {
+            Status: ProductPricingStatus.Approved,
+            SourceType: not null,
+            SourceId: not null
+        };
+
     internal static SampleRequestPricingOverviewItemDto MapItem(
         SampleRequestOverviewRow row,
         ProductPricingWorkbenchItemDto? pricing,
         ConversationOverviewRow? conversation,
-        IReadOnlyList<QuotationProductPricingMaterialDto>? materials = null)
+        IReadOnlyList<QuotationProductPricingMaterialDto>? materials = null,
+        SampleRequestRecommendedPricingFormulaDto? recommendedFormula = null,
+        LatestMerchandiseOrderDto? latestMerchandiseOrder = null)
         => new()
         {
             SampleRequestId = row.SampleRequestId,
@@ -989,7 +1192,7 @@ internal sealed class GetSampleRequestPricingOverviewQueryHandler
                 RequestedDate = row.RequestedDeliveryDate,
                 ExpectedDate = row.ExpectedDeliveryDate
             },
-            Pricing = MapPricing(pricing, materials),
+            Pricing = MapPricing(pricing, materials, recommendedFormula),
             Conversation = conversation is null
                 ? new SampleRequestConversationOverviewDto()
                 : new SampleRequestConversationOverviewDto
@@ -1005,12 +1208,24 @@ internal sealed class GetSampleRequestPricingOverviewQueryHandler
                 CanOpenPricingDetail = pricing?.CanOpenPricingDetail == true,
                 CanManagePricing = pricing?.CanManagePricing == true,
                 CanOpenConversation = conversation?.CanOpen == true
-            }
+            },
+            LatestMerchandiseOrder = latestMerchandiseOrder
         };
+
+    private static LatestMerchandiseOrderDto MapLatestMerchandiseOrder(LatestMerchandiseOrderRow row) => new()
+    {
+        MerchandiseOrderId = row.MerchandiseOrderId, MerchandiseOrderCode = row.MerchandiseOrderCode,
+        OrderedAt = row.OrderedAt, OrderType = row.OrderType, ItemId = row.ProductId, ItemCode = row.ItemCode, ItemName = row.ItemName,
+        Quantity = row.Quantity, Unit = row.Unit, UnitPrice = row.UnitPrice, Currency = row.Currency,
+        CustomerId = row.CustomerId, CustomerCode = row.CustomerCode, CustomerName = row.CustomerName,
+        SaleEmployeeId = row.SaleEmployeeId, SaleName = row.SaleName,
+        OrderStatus = row.OrderStatus
+    };
 
     internal static SampleRequestPricingDto MapPricing(
         ProductPricingWorkbenchItemDto? pricing,
-        IReadOnlyList<QuotationProductPricingMaterialDto>? materials = null)
+        IReadOnlyList<QuotationProductPricingMaterialDto>? materials = null,
+        SampleRequestRecommendedPricingFormulaDto? recommendedFormula = null)
     {
         if (pricing is null)
         {
@@ -1021,7 +1236,8 @@ internal sealed class GetSampleRequestPricingOverviewQueryHandler
                 PricingHealthStatus = ProductPricingHealthStatus.NoEligibleSource,
                 RequiresPricingAction = true,
                 StandardPriceState = ProductStandardPriceState.Missing,
-                Materials = materials ?? []
+                Materials = materials ?? [],
+                RecommendedFormula = recommendedFormula
             };
         }
 
@@ -1056,6 +1272,7 @@ internal sealed class GetSampleRequestPricingOverviewQueryHandler
             WaitingQuotationCount = pricing.WaitingQuotationCount,
             DraftPricingVersionId = pricing.DraftPricingVersionId,
             ApprovedPricingVersionId = pricing.ApprovedPricingVersionId,
+            RecommendedFormula = recommendedFormula,
             DisplayedFormula = pricing.SourceType.HasValue && pricing.SourceId.HasValue
                 ? new SampleRequestDisplayedPricingFormulaDto
                 {
@@ -1070,6 +1287,96 @@ internal sealed class GetSampleRequestPricingOverviewQueryHandler
                 }
                 : null
         };
+    }
+
+    internal static SampleRequestRecommendedPricingFormulaDto MapRecommendedFormula(
+        SuggestedPricingFormulaCandidate candidate,
+        ProductPricingSourceOptionDto? realtimeSource,
+        PricingVersionRow? approved,
+        PricingAccessDecision pricingAccess,
+        string currency,
+        DateTime calculatedAt)
+    {
+        var canonicalSourceType = ProductPricingReviewRules.ToLegacy(candidate.SourceType);
+        var canReturnMaterialCost = pricingAccess.CanViewMaterialCost;
+        var resolvedProfitMarginRate = StandardSellingPriceCalculator.ResolveProfitMarginRateOnSellingPrice(
+            approved?.ProfitMarginRate,
+            approved?.StandardSellingPrice,
+            approved?.MaterialCostSnapshot,
+            approved?.ManufacturingCost);
+        var calculation = realtimeSource?.IsCurrentMaterialCostComplete == true
+            ? StandardSellingPriceCalculator.TryCalculateFromCostComponents(
+                realtimeSource.CurrentMaterialCost,
+                approved?.ManufacturingCost,
+                resolvedProfitMarginRate,
+                currency)
+            : null;
+        var canReturnCalculationFormula = pricingAccess.CanViewSystemCalculatedPrice &&
+            pricingAccess.CanViewMaterialCost &&
+            pricingAccess.CanViewManufacturingCost &&
+            pricingAccess.CanViewMargin;
+        return new SampleRequestRecommendedPricingFormulaDto
+        {
+            SourceType = candidate.SourceType,
+            SourceId = candidate.SourceId,
+            SourceCode = candidate.SourceCode,
+            SourceName = candidate.SourceName,
+            DisplayName = ProductPricingReviewRules.BuildSourceDisplayName(
+                candidate.SourceType, candidate.SourceCode, candidate.SourceName),
+            Status = candidate.Status,
+            IsEligible = candidate.IsEligible,
+            IsCurrentlyApplied = approved?.SourceType == canonicalSourceType &&
+                approved.SourceId == candidate.SourceId,
+            CreatedAt = candidate.CreatedAt,
+            CandidateAt = candidate.PriorityAt,
+            CandidateDateSource = candidate.PriorityDateSource.ToString(),
+            Currency = currency,
+            RealtimeMaterialCost = canReturnMaterialCost ? realtimeSource?.CurrentMaterialCost : null,
+            ManufacturingCost = pricingAccess.CanViewManufacturingCost
+                ? approved?.ManufacturingCost
+                : null,
+            ProfitMarginRate = pricingAccess.CanViewMargin ? resolvedProfitMarginRate : null,
+            RealtimeStandardSellingPrice = pricingAccess.CanViewSystemCalculatedPrice
+                ? calculation?.StandardSellingPrice
+                : null,
+            PriceCalculationFormula = canReturnCalculationFormula
+                ? calculation?.DisplayFormula
+                : null,
+            IsRealtimeMaterialCostComplete = canReturnMaterialCost &&
+                realtimeSource?.IsCurrentMaterialCostComplete == true,
+            MissingMaterialPriceCount = canReturnMaterialCost
+                ? realtimeSource?.MissingMaterialPriceCount ?? 0
+                : 0,
+            CalculatedAt = calculatedAt
+        };
+    }
+
+    private static bool ShouldRecommendFormula(
+        SuggestedPricingFormulaCandidate candidate,
+        PricingVersionRow? approved,
+        IReadOnlyDictionary<ProductPricingSourceSelection, ProductPricingSourceOptionDto> sources)
+    {
+        if (approved?.SourceType is not { } approvedSourceType ||
+            approved.SourceId is not { } approvedSourceId)
+        {
+            return true;
+        }
+
+        var candidateSourceType = ProductPricingReviewRules.ToLegacy(candidate.SourceType);
+        if (candidateSourceType == approvedSourceType && candidate.SourceId == approvedSourceId)
+        {
+            return false;
+        }
+
+        var standardSource = sources.GetValueOrDefault(new ProductPricingSourceSelection(
+            candidate.ProductId, approvedSourceType, approvedSourceId));
+        var candidateSource = sources.GetValueOrDefault(new ProductPricingSourceSelection(
+            candidate.ProductId, candidateSourceType, candidate.SourceId));
+        return standardSource is not null &&
+            candidateSource is not null &&
+            ProductPricingReviewMaterialComparisonRules.HasFormulaStructureDifference(
+                standardSource,
+                candidateSource);
     }
 
     private string? Validate(GetSampleRequestPricingOverviewQuery request)
@@ -1100,7 +1407,18 @@ internal sealed class GetSampleRequestPricingOverviewQueryHandler
 
     private sealed record PricingLoadResult(
         IReadOnlyDictionary<Guid, ProductPricingWorkbenchItemDto> ByProduct,
-        IReadOnlyDictionary<Guid, IReadOnlyList<QuotationProductPricingMaterialDto>> MaterialsByProduct);
+        IReadOnlyDictionary<Guid, IReadOnlyList<QuotationProductPricingMaterialDto>> MaterialsByProduct,
+        IReadOnlyDictionary<Guid, SampleRequestRecommendedPricingFormulaDto> RecommendedFormulaByProduct);
+
+    private sealed class LatestMerchandiseOrderRow
+    {
+        public Guid ProductId { get; init; } public Guid MerchandiseOrderId { get; init; } public string MerchandiseOrderCode { get; init; } = string.Empty;
+        public DateTime OrderedAt { get; init; } public string OrderType { get; init; } = string.Empty; public string ItemCode { get; init; } = string.Empty; public string ItemName { get; init; } = string.Empty;
+        public decimal Quantity { get; init; } public string? Unit { get; init; } public decimal UnitPrice { get; init; } public string? Currency { get; init; }
+        public Guid CustomerId { get; init; } public string CustomerCode { get; init; } = string.Empty; public string CustomerName { get; init; } = string.Empty;
+        public Guid SaleEmployeeId { get; init; } public string SaleName { get; init; } = string.Empty;
+        public string OrderStatus { get; init; } = string.Empty; public Guid DetailId { get; init; }
+    }
 
     private static OperationResult<PagedResult<SampleRequestPricingOverviewItemDto>> Ok(
         IReadOnlyList<SampleRequestPricingOverviewItemDto> items,

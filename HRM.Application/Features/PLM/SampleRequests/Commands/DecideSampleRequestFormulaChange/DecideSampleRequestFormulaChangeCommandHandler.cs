@@ -8,7 +8,7 @@ using HRM.Application.Features.PLM.SampleRequests.Dtos.InternalMail;
 using HRM.Application.Features.PLM.SampleRequests.FormulaChangeRequests;
 using HRM.Application.Features.PLM.SampleRequests.Rules;
 using HRM.Application.Features.PLM.SampleRequests.DataChangeRequests;
-using HRM.Application.Features.PLM.Boms.Commands.CreateManufacturingBomFromSelectedFormula;
+using HRM.Application.Features.PLM.Boms.Commands.CreateBomFromSelectedFormula;
 using HRM.Domain.Enums.InternalMailEnums;
 using HRM.Domain.Enums.Notifications;
 using HRM.Domain.Enums.Products;
@@ -212,12 +212,12 @@ internal sealed class DecideSampleRequestFormulaChangeCommandHandler
         if (approved)
         {
             var bomResult = await _sender.Send(
-                new CreateManufacturingBomFromSelectedFormulaCommand(sampleRequest.ProductId),
+                new CreateBomFromSelectedFormulaCommand(sampleRequest.ProductId),
                 cancellationToken);
             if (!bomResult.Success)
             {
                 bomInitializationWarning =
-                    $" Formula update was approved, but could not initialize the Manufacturing BOM: {bomResult.Message}";
+                    $" Formula update was approved, but could not initialize the Engineering BOM: {bomResult.Message}";
             }
         }
 

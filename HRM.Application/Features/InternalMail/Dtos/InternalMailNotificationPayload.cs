@@ -27,4 +27,8 @@ public sealed class InternalMailNotificationPayload
 
     [JsonPropertyName("attachmentCount")]
     public int AttachmentCount { get; set; }
+
+    [JsonPropertyName("isForwarded")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool IsForwarded { get; set; }
 }

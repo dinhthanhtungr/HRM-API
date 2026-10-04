@@ -16,4 +16,5 @@ public class ManufacturingBomStageMachine
 
     public virtual ManufacturingBomStage ManufacturingStage { get; set; } = null!;
     public virtual EquipmentMRO Equipment { get; set; } = null!;
+    public virtual ICollection<ManufacturingBomStageMachineParameter> Parameters { get; set; } = [];
 }

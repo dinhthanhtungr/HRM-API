@@ -12,9 +12,14 @@ namespace HRM.Application.Features.InternalMail.Commands.SendMessage;
 public sealed class SendInternalMessageCommand : IRequest<OperationResult<SendInternalMessageResultDto>>
 {
     public Guid ConversationId { get; set; }
+    public string? AreaCode { get; set; }
     public string Body { get; set; } = string.Empty;
     public Guid? ReplyToMessageId { get; set; }
     public bool IsUrgent { get; set; }
+
+    // Set only by the authorized forward handler; HTTP clients cannot bypass the normal body limit.
+    [JsonIgnore]
+    internal bool IsForwarded { get; init; }
 
     [JsonIgnore]
     public IReadOnlyList<AttachmentUploadFile> Attachments { get; set; } = Array.Empty<AttachmentUploadFile>();

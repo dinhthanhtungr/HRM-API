@@ -1,6 +1,7 @@
 using HRM.Application.Abstractions.Persistence.Dispatch;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Models;
+using HRM.Application.Features.Dispatch.DeliveryOrders.Queries;
 using HRM.Domain.Entities.DeliverySchema;
 using HRM.Domain.Enums.Deliveries;
 using MediatR;
@@ -93,13 +94,8 @@ internal sealed class CreateDeliveryOrderCommandHandler
 
         var deliveredQuantities = await _dbContext.DeliveryOrderDetails
             .AsNoTracking()
-            .Where(x =>
-                x.IsActive &&
-                !x.IsAttach &&
-                x.DeliveryOrder.IsActive &&
-                x.DeliveryOrder.CompanyId == companyId &&
-                x.MerchandiseOrderDetailId.HasValue &&
-                detailIds.Contains(x.MerchandiseOrderDetailId.Value))
+            .CountedForAllocation(companyId)
+            .Where(x => detailIds.Contains(x.MerchandiseOrderDetailId!.Value))
             .GroupBy(x => x.MerchandiseOrderDetailId!.Value)
             .Select(group => new
             {

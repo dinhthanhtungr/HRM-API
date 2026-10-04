@@ -26,6 +26,8 @@ namespace HRM.Application.Abstractions.Persistence.Employees
         DbSet<MemberInGroup> MemberInGroups { get; }
 
         Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
+        Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginTransactionAsync(
+            CancellationToken cancellationToken = default);
     }
 
 }

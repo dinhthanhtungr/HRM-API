@@ -19,6 +19,8 @@ public sealed class BomVersionSummaryDto
     public Guid BomVersionId { get; init; }
     public int VersionNo { get; init; }
     public BomVersionStatus Status { get; init; }
+    public Guid? SourceFormulaId { get; init; }
+    public Guid? SourceEngineeringBomVersionId { get; init; }
     public DateTime? EffectiveFrom { get; init; }
     public DateTime? EffectiveTo { get; init; }
     public DateTime CreatedDate { get; init; }

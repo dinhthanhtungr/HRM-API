@@ -67,6 +67,37 @@ internal static class ProductPricingReviewMaterialComparisonRules
             .ToArray();
     }
 
+    /// <summary>
+    /// Chỉ so sánh cấu thành công thức: item, tổng quantity và unit. Biến động giá
+    /// realtime của cùng một cấu thành không được xem là thay đổi công thức.
+    /// </summary>
+    public static bool HasFormulaStructureDifference(
+        ProductPricingSourceOptionDto standardSource,
+        ProductPricingSourceOptionDto candidateSource)
+    {
+        var standardByItem = AggregateMaterials(standardSource.Materials);
+        var candidateByItem = AggregateMaterials(candidateSource.Materials);
+        if (standardByItem.Count != candidateByItem.Count ||
+            standardByItem.Keys.Any(key => !candidateByItem.ContainsKey(key)))
+        {
+            return true;
+        }
+
+        foreach (var pair in standardByItem)
+        {
+            var candidate = candidateByItem[pair.Key];
+            if (PricingRoundingRules.RoundStoredInput(
+                    candidate.Quantity - pair.Value.Quantity) != 0m ||
+                !string.Equals(candidate.Unit, pair.Value.Unit, StringComparison.OrdinalIgnoreCase) ||
+                candidate.HasInternalUnitMismatch != pair.Value.HasInternalUnitMismatch)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public static IReadOnlyList<PricingReviewFormulaMaterialComparisonDto> SortFormulaComparisonItems(
         IEnumerable<PricingReviewFormulaMaterialComparisonDto> items,
         int limit,
