@@ -6,6 +6,11 @@ namespace HRM.Application.Commons.Authorization;
 /// </summary>
 public static class ApplicationPermissions
 {
+    public static class InternalMail
+    {
+        public const string DeleteMessage = "internal-mail.message.delete";
+    }
+
     public static class Equipment
     {
         public const string View = "mro.equipment.view";

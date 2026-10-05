@@ -5,6 +5,7 @@ public static class ApplicationPermissionCatalog
 {
     public static IReadOnlyList<string> Codes { get; } = Array.AsReadOnly(new[]
     {
+        ApplicationPermissions.InternalMail.DeleteMessage,
         ApplicationPermissions.Equipment.View,
         ApplicationPermissions.Equipment.Create,
         ApplicationPermissions.Equipment.Update,

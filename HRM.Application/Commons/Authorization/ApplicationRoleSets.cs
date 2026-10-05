@@ -2,6 +2,11 @@ namespace HRM.Application.Commons.Authorization;
 
 public static class ApplicationRoleSets
 {
+    public static class InternalMail
+    {
+        public static readonly string[] MessageDeleters = [ApplicationRoles.Developer];
+    }
+
     public static class Equipment
     {
         public static readonly string[] Viewers =

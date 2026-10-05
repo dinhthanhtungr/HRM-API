@@ -6,6 +6,12 @@
 
 ## Đồng bộ unread, lưu trữ và xóa tin
 
+Quyền xóa: mapping fallback tại `ApplicationPermissionRoleSets` chỉ gồm Developer; mapping DB ở
+`AspNetRoleClaims`. Khi triển khai với token dùng permission DB, chạy script idempotent
+`seed-message-delete-permission.sql` trên bảng Identity hiện có rồi login/refresh token.
+Token có tập permission tường minh nhưng thiếu capability bị từ chối; role khác vẫn bị từ chối dù được gán claim.
+API thành công trả `204` không body; thất bại giữ contract `400` với OperationResult như trước.
+
 `GET /api/v1/internal-mail/conversations/{id}` trả `unreadCount` của employee hiện tại, cùng quy tắc với list:
 lấy giá trị lớn hơn giữa số message chưa xóa, không phải do chính employee gửi và có read-state chưa đọc,
 và số inbox notification chưa đọc/chưa archive liên kết conversation của employee trong cùng company.
@@ -19,7 +25,9 @@ FE dùng detail sau mutation để cập nhật cả conversation đang nằm �
 PATCH preferences với `isArchived: true` đồng thời archive notification hiện có của thread cho chính employee,
 trong cùng transaction; mute không thay đổi nếu bỏ field. Khôi phục conversation không tự khôi phục notification
 đã archive. Hoạt động mới sau mốc lưu trữ có thể tạo notification mới.
-DELETE message giữ quyền sender/owner và company/participant scope hiện hành, đồng thời archive notification
+DELETE message chỉ dành cho Developer có capability `internal-mail.message.delete`, trong company hiện tại,
+không yêu cầu là sender/owner/participant. Áp dụng cho mọi loại tin và khu vực trong conversation còn active;
+không mở rộng quyền đọc/gửi/sửa hoặc quyền truy cập attachment. Đồng thời archive notification
 liên kết đúng conversationId/messageId cho mọi người nhận trong company. Message và inbox state cập nhật nguyên tử;
 không xóa cứng audit. Hành vi này áp dụng khi thao tác chạy; không tự backfill dữ liệu production đã xóa từ trước.
 
@@ -30,7 +38,7 @@ conversation cùng company. Riêng President và Developer đã có quyền mở
 được đọc conversation có `RelatedType = SampleRequest` trong cùng company, kể cả khi không là participant. Rule
 này chỉ dành cho read API (detail, messages, search/context và attachment) để action **Mở trao đổi** của Overview
 không trả cờ cho phép sai với quyền backend. Nó không áp dụng cho conversation `Internal` hoặc `Quotation`, không
-cho phép gửi/sửa/xóa message, và không mở quyền cho role khác.
+cho phép gửi/sửa message, và không mở quyền cho role khác. Quyền xóa của Developer là quyền moderation riêng.
 
 ## Mục tiêu
 
@@ -70,7 +78,7 @@ Base route: `/api/v1/internal-mail`
 | `GET` | `/attachments/{attachmentId}` | Mở/tải attachment của thread sau khi kiểm tra participant và company |
 | `GET` | `/attachments/{attachmentId}/thumbnail` | Trả thumbnail WebP tối đa 480x480 cho ảnh, dùng cùng quyền truy cập attachment gốc |
 | `PATCH` | `/messages/{messageId}` | Người gửi sửa body/isUrgent; message System không được sửa |
-| `DELETE` | `/messages/{messageId}` | Soft delete, giữ audit |
+| `DELETE` | `/messages/{messageId}` | Chỉ Developer có quyền moderation, cùng company; soft delete, giữ audit |
 | `POST` | `/conversations/{conversationId}/read` | Đánh dấu thread đã đọc cho current employee |
 | `PATCH` | `/conversations/{conversationId}/preferences` | Archive/restore hoặc mute/unmute cá nhân |
 | `GET` | `/conversations/{conversationId}/participants` | Danh sách người tham gia |
@@ -303,7 +311,7 @@ Topic enum được xem là append-only vì có thể đang lưu dạng số tro
 - Query luôn lọc `CompanyId` của current user.
 - Chỉ participant active mới đọc conversation/message, tránh IDOR qua GUID. Gỡ participant đặt `IsActive = false`, lưu `DeletedAt` và `DeletedByEmployeeId`; message/read-state vẫn giữ audit. Thêm lại cùng employee sẽ kích hoạt lại row cũ và xóa dấu gỡ/archive/mute.
 - FE không được truyền `CompanyId`, sender hoặc owner tùy ý.
-- Chỉ sender sửa message; sender hoặc owner mới được soft delete.
+- Chỉ sender sửa message; chỉ Developer có capability `internal-mail.message.delete` được soft delete mọi tin trong company, không cần tham gia hội thoại.
 - Bất kỳ participant active nào cũng có thể thêm participant cùng company; owner, President hoặc Developer có thể gỡ participant. Endpoint thêm không cho tự gán role `Owner`.
 - Message đã xóa không trả lại body/payload cho FE.
 - Notification không có API public để FE tự tạo; notification được publish như side effect của nghiệp vụ.

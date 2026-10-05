@@ -9,6 +9,7 @@ public static class ApplicationPermissionRoleSets
     public static IReadOnlyCollection<string> GetRoles(string permission)
         => permission switch
         {
+            ApplicationPermissions.InternalMail.DeleteMessage => ApplicationRoleSets.InternalMail.MessageDeleters,
             ApplicationPermissions.Equipment.View => ApplicationRoleSets.Equipment.Viewers,
             ApplicationPermissions.Equipment.Create => ApplicationRoleSets.Equipment.Editors,
             ApplicationPermissions.Equipment.Update => ApplicationRoleSets.Equipment.Editors,

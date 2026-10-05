@@ -5,6 +5,7 @@ BEGIN;
 
 WITH permission_rows(role_name, permission) AS (
     VALUES
+        ('Developer', 'internal-mail.message.delete'),
         ('Admin', 'mro.equipment.view'),
         ('Developer', 'mro.equipment.view'),
         ('President', 'mro.equipment.view'),
