@@ -32,6 +32,7 @@ public static class ApplicationPermissionRoleSets
                 ApplicationRoleSets.Pricing.Managers,
             ApplicationPermissions.Pricing.Approve =>
                 ApplicationRoleSets.Pricing.Approvers,
+            ApplicationPermissions.PLM.CreateProductionOrders => ApplicationRoleSets.PLM.ProductionOrderCreators,
             ApplicationPermissions.PLM.ViewFormulaPrices =>
                 ApplicationRoleSets.PLM.FormulaPriceViewers,
             ApplicationPermissions.PLM.ViewFormulaMaterials =>

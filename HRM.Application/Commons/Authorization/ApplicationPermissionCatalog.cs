@@ -19,6 +19,7 @@ public static class ApplicationPermissionCatalog
         ApplicationPermissions.Pricing.ViewHistory,
         ApplicationPermissions.Pricing.Manage,
         ApplicationPermissions.Pricing.Approve,
+        ApplicationPermissions.PLM.CreateProductionOrders,
         ApplicationPermissions.PLM.ViewFormulaPrices,
         ApplicationPermissions.PLM.ViewFormulaMaterials,
         ApplicationPermissions.PLM.ViewProductTechnicalInfo,

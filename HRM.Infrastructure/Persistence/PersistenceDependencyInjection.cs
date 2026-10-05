@@ -94,6 +94,8 @@ internal static class PersistenceDependencyInjection
         // PLM DbContexts
         services.AddScoped<IPLMReadDbContext>(provider => provider.GetRequiredService<ApplicationDbContext>());
         services.AddScoped<IPLMWriteDbContext>(provider => provider.GetRequiredService<ApplicationDbContext>());
+        services.AddScoped<HRM.Application.Abstractions.Persistence.PLM.ProductionOrders.IProductionOrderDbContext>(
+            provider => provider.GetRequiredService<ApplicationDbContext>());
 
         // PLM Sale Order DbContext
         services.AddScoped<ISaleOrderDbContext>(provider => provider.GetRequiredService<ApplicationDbContext>());

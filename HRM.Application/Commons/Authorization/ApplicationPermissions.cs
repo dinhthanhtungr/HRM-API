@@ -34,6 +34,7 @@ public static class ApplicationPermissions
 
     public static class PLM
     {
+        public const string CreateProductionOrders = "plm.production-order.create";
         public const string ViewFormulaPrices = "plm.formula-price.view";
         public const string ViewFormulaMaterials = "plm.formula-material.view";
         public const string ViewProductTechnicalInfo = "plm.product-technical-info.view";

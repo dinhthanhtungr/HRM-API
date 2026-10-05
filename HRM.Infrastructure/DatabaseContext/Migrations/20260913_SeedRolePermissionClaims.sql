@@ -6,6 +6,12 @@ BEGIN;
 WITH permission_rows(role_name, permission) AS (
     VALUES
         ('Developer', 'internal-mail.message.delete'),
+        ('Admin', 'plm.production-order.create'),
+        ('Developer', 'plm.production-order.create'),
+        ('President', 'plm.production-order.create'),
+        ('PLPUUser', 'plm.production-order.create'),
+        ('QLSXUser', 'plm.production-order.create'),
+        ('ManufactureUser', 'plm.production-order.create'),
         ('Admin', 'mro.equipment.view'),
         ('Developer', 'mro.equipment.view'),
         ('President', 'mro.equipment.view'),

@@ -6,6 +6,13 @@ BEGIN;
 DELETE FROM "AspNetRoleClaims" claim
 USING "AspNetRoles" role
 WHERE claim."RoleId" = role."Id"
+  AND lower(role."Name") IN ('admin', 'developer', 'president', 'plpuuser', 'qlsxuser', 'manufactureuser')
+  AND claim."ClaimType" = 'permission'
+  AND claim."ClaimValue" = 'plm.production-order.create';
+
+DELETE FROM "AspNetRoleClaims" claim
+USING "AspNetRoles" role
+WHERE claim."RoleId" = role."Id"
   AND lower(role."Name") IN (
       'admin', 'developer', 'president', 'saleuser', 'priceview',
       'accuser', 'seepriceuser', 'plpuuser', 'labuser')

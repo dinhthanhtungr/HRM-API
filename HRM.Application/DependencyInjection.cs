@@ -113,6 +113,8 @@ public static class DependencyInjection
         services.AddScoped<SaleOrderLeadConversionService>();
         services.AddScoped<SaleOrderCreationService>();
         services.AddScoped<SaleOrderManufacturingService>();
+        services.AddScoped<HRM.Application.Features.PLM.ProductionOrders.Services.ProductionOrderReferenceValidator>();
+        services.AddScoped<HRM.Application.Features.PLM.ProductionOrders.Services.ProductionOrderReservationService>();
         services.AddScoped<SaleOrderApprovalService>();
         services.AddScoped<ComplaintInteractionWriter>();
         services.AddScoped<ComplaintReceptionResolver>();

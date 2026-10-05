@@ -8,6 +8,11 @@ Feature Warehouse phục vụ màn hình xem tồn kho khả dụng và kiểm t
 
 Feature này chỉ đọc dữ liệu tồn kho, không ghi nhận nhập/xuất kho, không tạo reserve và không thay đổi trạng thái kệ. Dữ liệu tồn được lấy từ `WarehouseShelfStock`; dữ liệu giữ chỗ được lấy từ `WarehouseTempStock`.
 
+Luồng [tạo MFG kèm công thức](../PLM/ProductionOrders/README.md) ghi `WarehouseTempStock`
+qua `ProductionOrderReservationService` trong transaction của MFG. Đây là giữ chỗ tổng theo
+mã MFG/vật tư, không kiểm tra đủ tồn, không thay đổi stock/ledger/kệ hoặc xuất kho.
+Các API Warehouse ở tài liệu này vẫn chỉ đọc; công thức tính tồn khả dụng không thay đổi.
+
 Lịch sử voucher cũng là read-only, không thay đổi phiếu, ledger hoặc request và không cần migration. List chỉ lấy voucher có `RequestId` để giữ nghiệp vụ legacy; API detail vẫn cho phép xem voucher không có request nếu phiếu thuộc company hiện tại.
 
 ## Luồng nghiệp vụ

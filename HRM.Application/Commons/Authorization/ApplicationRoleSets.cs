@@ -250,6 +250,10 @@ public static class ApplicationRoleSets
 
     public static class PLM
     {
+        public static readonly string[] ProductionOrderCreators =
+        [ApplicationRoles.Admin, ApplicationRoles.Developer, ApplicationRoles.President,
+            ApplicationRoles.Production.PLPUUser, ApplicationRoles.Production.QLSXUser,
+            ApplicationRoles.Production.ManufactureUser];
         public static readonly string[] SampleRequestPriceQuoteRequesters =
         [
             ApplicationRoles.Sales.SaleUser,

@@ -75,6 +75,13 @@ Permission changes affect newly issued access tokens after login/refresh; they d
 
 ## PLM Current Defaults
 
+- Production order creators (`plm.production-order.create`):
+  - `Admin`, `Developer`, `President`, `PLPUUser`, `QLSXUser`, `ManufactureUser`.
+  - Cho phép thiết lập snapshot kỹ thuật, giá thỏa thuận và đơn giá công thức khi tạo MFG;
+    không cấp quyền xem giá/cost trên GET khác. Handler kiểm tra company/active của reference.
+  - Baseline seed/rollback hiện có được bổ sung claim; không tự chạy SQL.
+    Với role đã dùng permission DB, cấp claim và login/refresh trước khi sử dụng endpoint mới.
+
 - Formula materials/NVL viewers:
   - `Admin`, `Developer`, `President`, `SeePriceUser`
 - Formula price viewers:
