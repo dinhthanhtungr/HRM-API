@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore;
 namespace HRM.Application.Features.Timeline.Queries.GetSaleOrderTimelineDetail;
 
 /// <summary>
-/// Kiểm tra visibility của SaleOrder rồi tổng hợp MFG, delivery, số lượng giao và EventLog theo từng
+/// Kiểm tra visibility của SaleOrder rồi tổng hợp MFG, delivery, nhập kho và EventLog theo từng
 /// MerchandiseOrderDetailId để tránh trộn các dòng có cùng ProductId.
 /// </summary>
 internal sealed class GetSaleOrderTimelineDetailQueryHandler
@@ -176,6 +176,9 @@ internal sealed class GetSaleOrderTimelineDetailQueryHandler
                 CompanyName = x.Company!.Name
             })
             .ToListAsync(cancellationToken);
+
+        logs.AddRange(await SaleOrderWarehouseReceiptTimelineQuery.LoadAsync(
+            _dbContext, scope.CompanyId, mfgIds, request.Status, cancellationToken));
 
         var mfgByDetail = mfgLinks
             .GroupBy(x => x.MerchandiseOrderDetailId)

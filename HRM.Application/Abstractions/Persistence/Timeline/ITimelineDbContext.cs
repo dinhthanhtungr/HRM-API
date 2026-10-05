@@ -5,6 +5,7 @@ using HRM.Domain.Entities.DeliverySchema;
 using HRM.Domain.Entities.HrSchema;
 using HRM.Domain.Entities.ManufacturingSchema;
 using HRM.Domain.Entities.OrderSchema;
+using HRM.Domain.Entities.WarehouseSchema;
 using Microsoft.EntityFrameworkCore;
 
 namespace HRM.Application.Abstractions.Persistence.Timeline;
@@ -25,6 +26,8 @@ public interface ITimelineDbContext
     DbSet<MerchandiseOrderDetail> MerchandiseOrderDetails { get; }
     DbSet<MfgOrderPO> MfgOrderPOs { get; }
     DbSet<MfgProductionOrder> MfgProductionOrders { get; }
+    DbSet<WarehouseShelfLedger> WarehouseShelfLedgers { get; }
+    DbSet<WarehouseVoucherDetail> WarehouseVoucherDetails { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

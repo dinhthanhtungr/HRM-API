@@ -49,6 +49,18 @@ Trong card của timeline tổng quan, `totalPrice` là tổng thanh toán **đ�
 
 Timeline detail page theo `MerchandiseOrderDetailId`. Delivery được group theo `MerchandiseOrderDetailId`, không group theo `ProductId`, để tránh trộn dữ liệu khi một đơn có nhiều dòng cùng sản phẩm. Mã/tên Product lấy từ `Product.ColourCode` (fallback `Product.Code`) và `Product.Name` hiện tại; snapshot trên detail chỉ fallback khi không còn Product. `ExpectedDate` của mỗi dòng chỉ lấy trực tiếp từ `ExpectedDate` của MFG active mới nhất; không fallback hoặc tính từ `MerchandiseOrderDetail.ExpectedDeliveryDate`. Khi chưa có MFG hoặc MFG chưa được lập lịch, field này là `null`.
 
+## Sự kiện nhập kho trong Sale Order detail
+
+`GET api/v1/timeline/plm/sale-orders/{merchandiseOrderId}/details` bổ sung sự kiện nhập kho trong `details` của từng dòng hàng. Sau khi kiểm tra visibility Sale Order, hệ thống nối MFG active của trang qua `ProductionSelectVersion` có `ValidFrom` tới `ManufacturingFormula.ExternalId`, rồi khớp lot trong `WarehouseShelfLedger`. Kiểm tra company ở MFG, version, công thức, ledger và phiếu. Chỉ quy thuộc lot xác định duy nhất một MFG trong toàn company (kể cả MFG inactive); lot dùng chung nhiều MFG được bỏ qua để tránh gắn nhầm VA. Tải theo batch, tối đa ba truy vấn bổ sung mỗi trang, không truy vấn từng VA.
+
+Mỗi ledger thành phẩm có `DeltaKg > 0`, liên kết đúng phiếu/dòng phiếu cùng company, dòng `VoucherType=Import`, `IsIncrease=true`, `IsApplied=true` tạo một phần tử với `eventType = 13` (`WarehouseReceipt`), `status = "WarehouseImported"`, `sourceType = "WarehouseShelfLedger"`. `sourceId` vẫn là MFG để ghép về dòng đơn; `sourceCode` là mã MFG được quy thuộc. `createdDate` là thời điểm ledger nhập được tạo. Sự kiện được dựng khi đọc, không ghi thêm EventLog. Nó thể hiện một lần nhập, không khẳng định VA đã nhập đủ hay còn tồn kho hiện tại. Nhiều lần nhập tạo nhiều sự kiện, sắp xếp chung với EventLog theo thời gian.
+
+Ví dụ phần tử rút gọn: `{ "eventType": 13, "status": "WarehouseImported", "sourceType": "WarehouseShelfLedger", "note": "Nhập kho: 125 kg", "payloadJson": "{\"ledgerId\":42,\"voucherId\":10,\"voucherDetailId\":11,\"requestCode\":null,\"lotNumber\":\"LOT-01\",\"quantity\":125,\"unitName\":\"kg\"}" }`.
+
+`payloadJson` chứa ID ledger/phiếu/dòng phiếu, mã request, lot, số lượng và đơn vị đã lưu; ID/mã/lot nullable nghĩa là nguồn chưa có thông tin liên kết đó. Đơn vị trả nguyên giá trị đã lưu; chuỗi rỗng nghĩa là chưa có đơn vị. Lot và ID phiếu/dòng phiếu phải tồn tại để sự kiện được quy thuộc. `createdBy` thiếu được trả `Guid.Empty`; `createdByName` và `companyName` không resolve cho sự kiện này nên là `null`. Không có ledger phù hợp thì không thêm sự kiện. Bộ lọc `status` áp dụng cho cả EventLog và nhập kho; `status=WarehouseImported` chỉ trả sự kiện nhập kho trong collection timeline, vẫn giữ các dòng đơn của trang.
+
+Nguồn là lịch sử phát sinh đã lưu, không phụ thuộc lot còn trong tồn kho hiện tại. Chuyển kệ, điều chỉnh, trả hàng và dòng xuất không tạo sự kiện nhập kho này. Không đổi endpoint tổng quan hoặc timeline generic, không thay đổi quantity giao hàng và không có side effect/migration.
+
 ## Side effect
 
 Sale Order create/approve/cancel và tạo/cancel MFG đã dùng `IEventLogWriter`. FE không có API ghi EventLog trực tiếp; log phải được tạo bởi handler/service nghiệp vụ sau khi action hợp lệ.

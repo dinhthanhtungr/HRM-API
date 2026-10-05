@@ -20,5 +20,6 @@ namespace HRM.Domain.Enums.Logs
         PurchaseOrderStatus = 10,
         CustomerCrm = 11,
         ComplaintReport = 12,
+        WarehouseReceipt = 13,
     }
 }
