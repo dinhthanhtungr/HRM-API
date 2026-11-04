@@ -41,6 +41,7 @@ public partial class MerchandiseOrderDetail
 
     public bool IsActive { get; set; } = true;
 
+    public virtual ICollection<MerchandiseOrderDeliverySchedule> DeliverySchedules { get; set; } = new List<MerchandiseOrderDeliverySchedule>();
     public virtual ICollection<DeliveryOrderDetail> DeliveryOrderDetails { get; set; } = new List<DeliveryOrderDetail>();
     public virtual ICollection<ComplaintReportLine> ComplaintReportLines { get; set; } = new List<ComplaintReportLine>();
     public virtual ComplaintReportLine? ComplaintReportLine { get; set; }

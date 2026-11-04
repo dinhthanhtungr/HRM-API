@@ -92,6 +92,9 @@ internal sealed class UpdateFormulaInformationCommandHandler
                 formula.CheckDate = now;
             }
 
+            var reviewQueued = !materialsChanged || await _pricingReview.QueueMaterialChangeAsync(
+                formula, companyId, employeeId, now, sampleRequestId: null, cancellationToken);
+
             await _formulaVersionService.SaveSnapshotAsync(
                 formula,
                 employeeId,
@@ -100,16 +103,11 @@ internal sealed class UpdateFormulaInformationCommandHandler
                 force: false,
                 cancellationToken);
 
-            if (materialsChanged)
+            if (!reviewQueued)
             {
-                var sendResult = await _pricingReview.SendMaterialChangeAsync(
-                    formula, companyId, sampleRequestId: null, cancellationToken);
-                if (!sendResult.Success)
-                {
-                    return OperationResult<FormulaWriteResultDto>.Ok(
-                        FormulaWriteService.ToResult(formula),
-                        $"Updated formula successfully, but could not send material-change notification: {sendResult.Message}");
-                }
+                return OperationResult<FormulaWriteResultDto>.Ok(
+                    FormulaWriteService.ToResult(formula),
+                    "Updated formula successfully, but no active sample request was found for the pricing-review notification.");
             }
 
             return OperationResult<FormulaWriteResultDto>.Ok(

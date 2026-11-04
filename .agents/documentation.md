@@ -24,6 +24,10 @@ Features/CRM/CustomerCare/README.md
 
 README mô tả trạng thái đang đúng của feature, không phải nhật ký sửa code.
 
+Đọc README theo chính sách context ở root `AGENTS.md`: mục use case đang sửa cùng scope/quyền/invariant chung và dependency liên quan. Không cần nạp mọi API hoặc payload mẫu của feature cho một thay đổi cục bộ.
+
+README lớn nên có mục lục tới contract theo use case. Khi tách tài liệu, root README giữ scope/quyền/invariant chung và link tới phần chi tiết; di chuyển nguyên contract, không tạo bản tóm tắt thứ hai phải đồng bộ. Không bắt buộc tái cấu trúc README trong task nhỏ.
+
 Cập nhật README khi:
 
 - Thêm/sửa/xóa API, DTO hoặc ý nghĩa field public.

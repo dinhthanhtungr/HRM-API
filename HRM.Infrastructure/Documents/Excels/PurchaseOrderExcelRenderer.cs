@@ -37,9 +37,12 @@ internal sealed class PurchaseOrderExcelRenderer : IPurchaseOrderExcelRenderer
             row++;
         }
 
+        sheet.Cell(row, 7).Value = "Tổng trước VAT"; sheet.Cell(row++, 8).Value = purchaseOrder.Subtotal;
+        sheet.Cell(row, 7).Value = $"VAT ({purchaseOrder.Vat ?? 0}%)"; sheet.Cell(row++, 8).Value = purchaseOrder.VatAmount;
+        sheet.Cell(row, 7).Value = "Tổng có VAT"; sheet.Cell(row, 8).Value = purchaseOrder.TotalPrice;
         sheet.Range(5, 1, 5, headers.Length).Style.Font.SetBold().Fill.SetBackgroundColor(XLColor.LightGray);
         sheet.Columns(4, 5).Style.NumberFormat.Format = "#,##0.00";
-        sheet.Columns(7, 8).Style.NumberFormat.Format = "#,##0";
+        sheet.Columns(7, 8).Style.NumberFormat.Format = "#,##0.00";
         sheet.Column(9).Style.DateFormat.Format = "dd/MM/yyyy";
         sheet.Columns().AdjustToContents(8, 45);
         sheet.SheetView.FreezeRows(5);
@@ -48,4 +51,103 @@ internal sealed class PurchaseOrderExcelRenderer : IPurchaseOrderExcelRenderer
         workbook.SaveAs(stream);
         return stream.ToArray();
     }
+    public byte[] RenderList(IReadOnlyList<PurchaseOrderExcelRow> rows)
+    {
+        using var wb = new XLWorkbook();
+        var ws = wb.Worksheets.Add("Purchase Orders");
+
+        var headers = new[]
+        {
+                "Ngày đặt hàng",
+                "Số đơn hàng",
+                "Trạng thái",
+                "Phân loại",
+                "Ngày giao hàng",
+                "Ngày Y/c giao hàng",
+                "Số ngày giao muộn",
+                "Đạt/Không đạt",
+                "Mã NCC",
+                "Tên NCC",
+                "Mã hàng",
+                "Tên hàng",
+                "ĐVT",
+                "Số lượng đặt",
+                "Số lượng nhập kho",
+                "Số lượng QC đạt",
+                "Số lượng chờ QC",
+                "Số lượng QC fail",
+                "Đơn giá",
+                "Thành tiền thực nhận"
+            };
+
+        for (var c = 1; c <= headers.Length; c++)
+            ws.Cell(1, c).Value = headers[c - 1];
+
+        var header = ws.Range(1, 1, 1, headers.Length);
+        header.Style.Font.Bold = true;
+        header.Style.Fill.BackgroundColor = XLColor.Yellow;
+        header.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+        header.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
+        header.Style.Alignment.WrapText = true;
+        header.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+        header.Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+
+        for (var i = 0; i < rows.Count; i++)
+        {
+            var r = i + 2;
+            var item = rows[i];
+
+            SetDateCell(ws.Cell(r, 1), item.OrderDate);
+            ws.Cell(r, 2).Value = item.PurchaseOrderCode;
+            ws.Cell(r, 3).Value = item.Status;
+            ws.Cell(r, 4).Value = item.OrderType;
+            SetDateCell(ws.Cell(r, 5), item.ActualDeliveryDate);
+            SetDateCell(ws.Cell(r, 6), item.RequestDeliveryDate);
+            ws.Cell(r, 7).Value = item.LateDays;
+            ws.Cell(r, 8).Value = item.DeliveryResult;
+            ws.Cell(r, 9).Value = item.SupplierExternalId;
+            ws.Cell(r, 10).Value = item.SupplierName;
+            ws.Cell(r, 11).Value = item.MaterialCode;
+            ws.Cell(r, 12).Value = item.MaterialName;
+            ws.Cell(r, 13).Value = item.Unit;
+            ws.Cell(r, 14).Value = item.OrderedQuantity;
+            ws.Cell(r, 15).Value = item.ReceivedQuantity;
+            ws.Cell(r, 16).Value = item.AcceptedQuantity;
+            ws.Cell(r, 17).Value = item.PendingQcQuantity;
+            ws.Cell(r, 18).Value = item.RejectedQuantity;
+            ws.Cell(r, 19).Value = item.UnitPrice;
+            ws.Cell(r, 20).Value = item.RealTotalAmount;
+        }
+
+        var lastRow = Math.Max(1, rows.Count + 1);
+        var table = ws.Range(1, 1, lastRow, headers.Length);
+        table.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+        table.Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+        table.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
+
+        ws.Columns(14, 20).Style.NumberFormat.Format = "#,##0.##";
+        ws.Columns(1, 8).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+        ws.Columns(9, 13).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+        ws.Column(10).Style.Alignment.WrapText = true;
+        ws.Column(12).Style.Alignment.WrapText = true;
+
+        ws.Columns(1, 11).AdjustToContents();
+        ws.Columns(13, 20).AdjustToContents();
+        ws.Column(12).Width = 36;
+        ws.SheetView.FreezeRows(1);
+
+        using var ms = new MemoryStream();
+        wb.SaveAs(ms);
+        return ms.ToArray();
+    }
+
+    private static void SetDateCell(IXLCell cell, DateTime? value)
+    {
+        if (!value.HasValue)
+            return;
+
+        cell.Value = value.Value;
+        cell.Style.DateFormat.Format = "dd/MM/yyyy";
+    }
+
 }

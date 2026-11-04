@@ -35,6 +35,7 @@ internal sealed class GetSaleOrderByIdQueryHandler
         CancellationToken cancellationToken)
     {
         var companyId = SaleOrderCurrentUserGuard.RequireCompanyId(_currentUser);
+        var canConfirmOtherOwners = StandardSampleConfirmationRules.CanConfirmOtherOwners(_currentUser);
         var delivered = _dbContext.DeliveryOrders
             .AsNoTracking()
             .Where(order =>
@@ -59,6 +60,8 @@ internal sealed class GetSaleOrderByIdQueryHandler
                 x.IsActive)
             .Select(x => new SaleOrderDetailDto
             {
+                WaitingForStandardSampleCount = x.MerchandiseOrderDetails.Count(d => d.IsActive
+                    && d.Status == nameof(HRM.Domain.Enums.Merchadises.MerchadiseStatus.WaitingForStandardSample)),
                 MerchandiseOrderId = x.MerchandiseOrderId,
                 ExternalId = x.ExternalId,
                 CustomerId = x.CustomerId,
@@ -93,6 +96,11 @@ internal sealed class GetSaleOrderByIdQueryHandler
                     .OrderBy(detail => detail.ExpectedDeliveryDate)
                     .Select(detail => new SaleOrderLineDto
                     {
+                        CanConfirmStandardSample = _currentUser.IsAuthenticated
+                            && _currentUser.EmployeeId.HasValue && _currentUser.EmployeeId != Guid.Empty
+                            && (x.ManagerById == _currentUser.EmployeeId || canConfirmOtherOwners)
+                            && x.Status != "Cancelled" && x.Status != "Delivered" && x.Status != "Completed"
+                            && detail.Status == nameof(HRM.Domain.Enums.Merchadises.MerchadiseStatus.WaitingForStandardSample),
                         MerchandiseOrderDetailId = detail.MerchandiseOrderDetailId,
                         ProductId = detail.ProductId,
                         ProductExternalIdSnapshot = detail.Product.ColourCode ??

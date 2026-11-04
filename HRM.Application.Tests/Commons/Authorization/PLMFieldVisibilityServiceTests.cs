@@ -9,7 +9,7 @@ public sealed class PLMFieldVisibilityServiceTests
     [Theory]
     [InlineData(ApplicationRoles.Sales.SaleUser, false, false, false)]
     [InlineData(ApplicationRoles.Sales.PriceView, true, false, false)]
-    [InlineData(ApplicationRoles.Accounting.ACCUser, true, true, false)]
+    [InlineData(ApplicationRoles.Accounting.ACCUser, true, true, true)]
     [InlineData(ApplicationRoles.Production.PLPUUser, false, true, true)]
     [InlineData(ApplicationRoles.Lab.LabUser, false, true, true)]
     [InlineData(ApplicationRoles.SeePrice.SeePriceUser, true, true, false)]
@@ -26,6 +26,16 @@ public sealed class PLMFieldVisibilityServiceTests
         Assert.Equal(canViewPrices, service.CanViewFormulaPrices());
         Assert.Equal(canViewMaterials, service.CanViewFormulaMaterials());
         Assert.Equal(canViewTechnicalInfo, service.CanViewProductTechnicalInfo());
+    }
+
+    [Fact]
+    public void Plpu_ExplicitMaterialClaimGrantsMaterialsWithoutGrantingPrices()
+    {
+        var user = new TestCurrentUser(true, ApplicationRoles.Production.PLPUUser) {
+            HasExplicitPermissionSet = true, Permissions = [ApplicationPermissions.PLM.ViewFormulaMaterials] };
+        var service = new PLMFieldVisibilityService(new CurrentUserPermissionService(user));
+        Assert.True(service.CanViewFormulaMaterials());
+        Assert.False(service.CanViewFormulaPrices());
     }
 
     [Fact]
@@ -49,6 +59,8 @@ public sealed class PLMFieldVisibilityServiceTests
         public string? UserName => "plm-visibility-test";
         public string? Email => "plm-visibility-test@example.com";
         public IReadOnlyCollection<string> Roles { get; } = roles;
+        public IReadOnlyCollection<string> Permissions { get; init; } = [];
+        public bool HasExplicitPermissionSet { get; init; }
 
         public bool IsInRole(string role)
             => Roles.Contains(role, StringComparer.OrdinalIgnoreCase);

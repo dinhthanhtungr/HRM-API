@@ -53,6 +53,11 @@ public sealed class QuotationProductPricingLinePreviewDto
 
 public sealed class QuotationApprovedTierPricingDto
 {
+    public DateTime? ValidFrom { get; init; }
+    public DateTime? ValidUntil { get; init; }
+    public DateTime? EvaluatedAt { get; init; }
+    /// <summary>Approved, active, effective at EvaluatedAt and contains active tiers. Send still validates tier data.</summary>
+    public bool IsEffectiveForSending { get; init; }
     public string Currency { get; init; } = string.Empty;
     public Guid ProductPricingVersionId { get; init; }
     public int Version { get; init; }

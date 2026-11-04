@@ -1,4 +1,11 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Tạm dừng LabTest API: giữ source, không compile handlers/services phụ thuộc schema mở rộng. -->
+  <ItemGroup>
+    <Compile Remove="Features\DevAndQA\LabTests\Commands\**\*.cs" />
+    <Compile Remove="Features\DevAndQA\LabTests\Queries\**\*.cs" />
+    <Compile Remove="Features\DevAndQA\LabTests\Services\**\*.cs" />
+  </ItemGroup>
 
   <ItemGroup>
     <Compile Remove="Features\CRM\CustomerInteractions\**" />
@@ -47,10 +54,6 @@
     <Folder Include="Features\PLM\Formulas\Queries\ExportFormulaPdf\" />
     <Folder Include="Features\PLM\Formulas\Queries\ExportFormulaXml\" />
     <Folder Include="Features\PLM\Formulas\Validators\" />
-    <Folder Include="Features\PLM\Manufacturings\Commands\" />
-    <Folder Include="Features\PLM\Manufacturings\Dtos\" />
-    <Folder Include="Features\PLM\Manufacturings\Queries\" />
-    <Folder Include="Features\PLM\Manufacturings\Validators\" />
     <Folder Include="Features\PLM\Materials\Commands\" />
     <Folder Include="Features\PLM\Materials\Validators\" />
     <Folder Include="Features\PLM\Products\Commands\" />

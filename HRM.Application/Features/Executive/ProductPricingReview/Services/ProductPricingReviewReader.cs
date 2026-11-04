@@ -90,7 +90,7 @@ internal sealed class ProductPricingReviewReader
         Guid? sourceId,
         CancellationToken cancellationToken)
     {
-        var context = ProductPricingReviewRules.GetContext(_currentUser);
+        var context = ProductPricingReviewRules.GetReadContext(_currentUser);
         if (!context.Success)
             return OperationResult<ProductPricingReviewDto>.Fail(context.Message!);
         if (productId == Guid.Empty)
@@ -377,7 +377,7 @@ internal sealed class ProductPricingReviewReader
         int pageSize,
         CancellationToken cancellationToken)
     {
-        var context = ProductPricingReviewRules.GetContext(_currentUser);
+        var context = ProductPricingReviewRules.GetReadContext(_currentUser);
         if (!context.Success)
             return OperationResult<PagedResult<PricingReviewSourceOptionDto>>.Fail(context.Message!);
         if (!sourceType.HasValue)
@@ -436,10 +436,14 @@ internal sealed class ProductPricingReviewReader
                 UpdatedAt = x.UpdatedDate ?? x.CreatedDate
             }).ToListAsync(cancellationToken);
 
+        var excludedSources = PricingSourceColourCodeFilter.SelectExcludedSources(
+            _plm.ManufacturingFormulaMaterials,
+            _plm.Products.Where(x => x.ProductId == productId), companyId);
         var vaQuery = _plm.ManufacturingFormulas.AsNoTracking()
             .Where(x =>
                 x.CompanyId == companyId &&
                 x.IsActive &&
+                !excludedSources.Any(excluded => excluded.ManufacturingFormulaId == x.ManufacturingFormulaId) &&
                 (x.ProductStandardFormulas.Any(link =>
                      link.ProductId == productId &&
                      link.CompanyId == companyId &&
@@ -585,7 +589,7 @@ internal sealed class ProductPricingReviewReader
         string? sortDirection,
         CancellationToken cancellationToken)
     {
-        var context = ProductPricingReviewRules.GetContext(_currentUser);
+        var context = ProductPricingReviewRules.GetReadContext(_currentUser);
         if (!context.Success)
             return OperationResult<PricingReviewMaterialPricePreviewDto>.Fail(context.Message!);
         if (productId == Guid.Empty || sourceId == Guid.Empty || !Enum.IsDefined(sourceType))
@@ -785,7 +789,7 @@ internal sealed class ProductPricingReviewReader
         Guid productId, string? currency, int pageNumber, int pageSize,
         string? sortBy, string? sortDirection, CancellationToken cancellationToken)
     {
-        var context = ProductPricingReviewRules.GetContext(_currentUser);
+        var context = ProductPricingReviewRules.GetReadContext(_currentUser);
         if (!context.Success)
             return OperationResult<PagedResult<PricingReviewVersionDto>>.Fail(context.Message!);
         var normalizedCurrency = ProductPricingReviewRules.NormalizeCurrency(currency);
@@ -849,7 +853,7 @@ internal sealed class ProductPricingReviewReader
         Guid productId, int pageNumber, int pageSize, string? sortBy, string? sortDirection,
         CancellationToken cancellationToken)
     {
-        var context = ProductPricingReviewRules.GetContext(_currentUser);
+        var context = ProductPricingReviewRules.GetReadContext(_currentUser);
         if (!context.Success)
             return OperationResult<PagedResult<PricingReviewRelatedQuotationDto>>.Fail(context.Message!);
         var companyId = context.Data.CompanyId;
@@ -894,7 +898,7 @@ internal sealed class ProductPricingReviewReader
         Guid productId, int pageNumber, int pageSize, string? sortBy, string? sortDirection,
         CancellationToken cancellationToken)
     {
-        var context = ProductPricingReviewRules.GetContext(_currentUser);
+        var context = ProductPricingReviewRules.GetReadContext(_currentUser);
         if (!context.Success)
             return OperationResult<PagedResult<PricingReviewVaLotDto>>.Fail(context.Message!);
         var companyId = context.Data.CompanyId;

@@ -5,6 +5,31 @@ public static class ApplicationPermissionCatalog
 {
     public static IReadOnlyList<string> Codes { get; } = Array.AsReadOnly(new[]
     {
+        ApplicationPermissions.PLM.ManageSampleWorkSchedule,
+        ApplicationPermissions.DevAndQA.ViewWorkflowNotificationJobs,
+        ApplicationPermissions.DevAndQA.RetryWorkflowNotificationJobs,
+        ApplicationPermissions.PLM.ManageLegacySampleWork,
+        ApplicationPermissions.PLM.ViewAllLabTeamWork,
+        ApplicationPermissions.PLM.CorrectSampleTrialFeedback,
+        ApplicationPermissions.PLM.ManageSampleLabWorkflow,
+        ApplicationPermissions.PLM.ManageSampleSaleWorkflow,
+        ApplicationPermissions.PLM.ManageManagedSampleSaleWorkflow,
+        ApplicationPermissions.PLM.DeactivateSampleRequests,
+        ApplicationPermissions.PLM.ConfirmCustomerPrice,
+        ApplicationPermissions.PLM.ReceiveLabStandard,
+        ApplicationPermissions.Warehouse.ViewMixingStock,
+        ApplicationPermissions.Reports.ViewSalesProfit,
+        ApplicationPermissions.Reports.ViewPlpu,
+        ApplicationPermissions.DevAndQA.ViewIqc,
+        ApplicationPermissions.DevAndQA.ManageIqc,
+        ApplicationPermissions.DevAndQA.ViewCoa,
+        ApplicationPermissions.DevAndQA.ManageCoa,
+        ApplicationPermissions.InternalMail.DeleteMessage,
+        ApplicationPermissions.InternalMail.ObserveCompanyConversations,
+        ApplicationPermissions.InternalMail.SendCompanyMessages,
+        ApplicationPermissions.InternalMail.ManageDefaultMembershipPolicies,
+        // GROUP-STORAGE-TRANSITION: synchronization-api — temporary catalog entry for the maintenance endpoint.
+        ApplicationPermissions.InternalMail.SynchronizeGroupStorage,
         ApplicationPermissions.Equipment.View,
         ApplicationPermissions.Equipment.Create,
         ApplicationPermissions.Equipment.Update,
@@ -18,12 +43,20 @@ public static class ApplicationPermissionCatalog
         ApplicationPermissions.Pricing.ViewHistory,
         ApplicationPermissions.Pricing.Manage,
         ApplicationPermissions.Pricing.Approve,
+        ApplicationPermissions.PLM.CreateProductionOrders,
+        ApplicationPermissions.PLM.ExtractMaterialDocuments,
+        ApplicationPermissions.PLM.ViewProductionOrders,
+        ApplicationPermissions.PLM.CheckProductionOrders,
+        ApplicationPermissions.PLM.ManageProductionOrders,
+        ApplicationPermissions.PLM.EditProductionOrderRequirement,
         ApplicationPermissions.PLM.ViewFormulaPrices,
         ApplicationPermissions.PLM.ViewFormulaMaterials,
+        ApplicationPermissions.PLM.ViewManufacturingDefectiveLots,
         ApplicationPermissions.PLM.ViewProductTechnicalInfo,
         ApplicationPermissions.PLM.ViewMaterialPriceReviewDetails,
         ApplicationPermissions.Dispatch.ViewDeliveryCost,
-        ApplicationPermissions.Purchasing.ManagePurchaseOrders
+        ApplicationPermissions.Purchasing.ManagePurchaseOrders,
+        ApplicationPermissions.Purchasing.ManageCatalog
     });
 
     public static IReadOnlyList<string> ResolveRole(

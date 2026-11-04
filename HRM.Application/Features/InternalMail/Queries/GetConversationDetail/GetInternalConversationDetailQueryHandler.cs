@@ -14,14 +14,12 @@ internal sealed class GetInternalConversationDetailQueryHandler
     private readonly IInternalMailDbContext _dbContext;
     private readonly ICurrentUser _currentUser;
     private readonly InternalMailAreaAccessService _areas;
-    private readonly IInternalConversationAccessService _conversationAccessService;
     private readonly InternalConversationSampleRequestInfoResolver _sampleRequestInfoResolver;
     private readonly InternalConversationQuotationInfoResolver _quotationInfoResolver;
 
     public GetInternalConversationDetailQueryHandler(
         IInternalMailDbContext dbContext,
         ICurrentUser currentUser,
-        IInternalConversationAccessService conversationAccessService,
         InternalConversationSampleRequestInfoResolver sampleRequestInfoResolver,
         InternalConversationQuotationInfoResolver quotationInfoResolver,
         InternalMailAreaAccessService areas)
@@ -29,7 +27,6 @@ internal sealed class GetInternalConversationDetailQueryHandler
         _dbContext = dbContext;
         _currentUser = currentUser;
         _areas = areas;
-        _conversationAccessService = conversationAccessService;
         _sampleRequestInfoResolver = sampleRequestInfoResolver;
         _quotationInfoResolver = quotationInfoResolver;
     }
@@ -45,18 +42,14 @@ internal sealed class GetInternalConversationDetailQueryHandler
             return null;
         }
 
-        if (!await _conversationAccessService.CanReadAsync(request.ConversationId, cancellationToken))
-        {
-            return null;
-        }
-
+        // The authorized query both checks access and loads the result in one round trip.
         var conversation = await _areas.Conversations()
             .AsNoTracking()
             .Where(x =>
                 x.InternalConversationId == request.ConversationId &&
                 x.CompanyId == companyId.Value &&
                 x.IsActive)
-            .Select(InternalConversationDetailProjection.ForEmployee(employeeId.Value, _dbContext.InternalMessages))
+            .Select(InternalConversationDetailProjection.ForEmployee(employeeId.Value, _dbContext.InternalMessages, _dbContext.InternalConversations))
             .FirstOrDefaultAsync(cancellationToken);
 
         if (conversation is null)
@@ -64,29 +57,45 @@ internal sealed class GetInternalConversationDetailQueryHandler
             return null;
         }
 
-        conversation.Areas = await _areas.DescribeAsync(request.ConversationId, cancellationToken);
-        conversation.AreaCode = InternalMailAreaAccessService.AreaOf(conversation.RelatedType);
-        conversation.GroupConversationId = InternalMailAreaAccessService.IsPrivateArea(conversation.RelatedType)
-            ? conversation.RelatedId!.Value : conversation.ConversationId;
+        var group = (await _areas.GroupInfoAsync([conversation.ConversationId], cancellationToken))[conversation.ConversationId];
+        if (request.AreaCode != null && request.AreaCode != InternalMailAreaAccessService.AreaOf(group.GroupType)) return null;
+        var parent = group.RootConversationId != conversation.ConversationId
+            ? await _dbContext.InternalConversations.AsNoTracking().FirstAsync(c =>
+                c.InternalConversationId == group.RootConversationId && c.CompanyId == companyId.Value && c.IsActive, cancellationToken)
+            : null;
+        conversation.Areas = await _areas.DescribeAsync(conversation, cancellationToken, parent, group);
+        conversation.AreaCode = InternalMailAreaAccessService.AreaOf(group.GroupType);
+        conversation.GroupConversationId = group.RootConversationId;
         if (InternalMailAreaAccessService.IsPrivateArea(conversation.RelatedType))
-            conversation.CanManageParticipants = conversation.Participants.Any(p => p.EmployeeId == employeeId.Value &&
-                p.Role == InternalConversationParticipantRole.Owner);
+        {
+            conversation.CanManageParticipants = conversation.Participants.Any(p => p.EmployeeId == employeeId.Value && p.Role == InternalConversationParticipantRole.Owner);
+            conversation.CanInviteParticipants = conversation.Participants.Any(p => p.EmployeeId == employeeId.Value);
+        }
+        if (_areas.CanObserveCompanyConversations && !conversation.Participants.Any(p => p.EmployeeId == employeeId.Value))
+        {
+            conversation.CanManageParticipants = false;
+            conversation.CanInviteParticipants = false;
+        }
+        var roleSnapshot = await _areas.ParticipantRolesAsync(conversation.Participants.Select(p => p.EmployeeId).Append(conversation.CreatedBy), cancellationToken);
+        conversation.Participants = await _areas.VisibleParticipantsAsync(conversation.RelatedType, conversation.Participants, cancellationToken, roleSnapshot);
+        if (!_areas.CanObserveCompanyConversations &&
+            roleSnapshot.Developers.Contains(conversation.CreatedBy))
+        {
+            conversation.CreatedBy = Guid.Empty;
+            conversation.CreatedByName = null;
+        }
         if (request.AreaCode != null)
         {
-            if (request.AreaCode != InternalMailAreaAccessService.AreaOf(conversation.RelatedType)) return null;
-            var eligible = await _areas.Recipients(companyId.Value, request.AreaCode, request.ConversationId).ToHashSetAsync(cancellationToken);
+            var memberIds = conversation.Participants.Select(p => p.EmployeeId).ToArray();
+            var eligible = await _areas.EligibleParticipantsAsync(companyId.Value, request.ConversationId,
+                memberIds, cancellationToken);
             conversation.Participants = conversation.Participants.Where(p => eligible.Contains(p.EmployeeId)).ToArray();
         }
-        var notificationCount = await _areas.NotificationUnreadCounts()
-            .Where(item => item.ConversationId == request.ConversationId)
-            .Select(item => item.UnreadCount)
-            .FirstOrDefaultAsync(cancellationToken);
-        conversation.UnreadCount = Math.Max(conversation.UnreadCount, notificationCount);
+        conversation.Participants = await _areas.WithReaderGroupsAsync(conversation.Participants, cancellationToken, roleSnapshot);
+        conversation.UnreadCount = conversation.Areas.Single(area => area.ConversationId == conversation.ConversationId).UnreadCount;
 
-        if (InternalMailAreaAccessService.IsPrivateArea(conversation.RelatedType))
+        if (parent is not null)
         {
-            var parent = await _dbContext.InternalConversations.AsNoTracking().FirstAsync(c =>
-                c.InternalConversationId == conversation.GroupConversationId && c.CompanyId == companyId.Value, cancellationToken);
             conversation.RelatedType = parent.RelatedType;
             conversation.RelatedId = parent.RelatedId;
             conversation.RelatedExternalId = parent.RelatedExternalId;

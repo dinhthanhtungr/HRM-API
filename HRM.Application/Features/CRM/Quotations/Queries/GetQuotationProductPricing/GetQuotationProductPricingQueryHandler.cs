@@ -63,7 +63,7 @@ internal sealed class GetQuotationProductPricingQueryHandler
                 "CustomerId is invalid.");
         }
 
-        var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+        var scope = await _visibilityService.BuildReadScopeAsync(cancellationToken);
         var product = await _dbContext.Products
             .AsNoTracking()
             .Where(x =>
@@ -128,7 +128,7 @@ internal sealed class GetQuotationProductPricingQueryHandler
                 product.ColourCode,
                 product.Code,
                 product.Additive,
-                currency,
+                ProductPricingSourceRules.StandardPricingCurrency,
                 cancellationToken);
         var availability = hasApprovedPricing
             ? HRM.Domain.Enums.CustomerEnum.QuotationPricingAvailability.ApprovedPricingAvailable
@@ -154,7 +154,7 @@ internal sealed class GetQuotationProductPricingQueryHandler
                 product.ProductCode,
                 product.ProductName,
                 product.Unit,
-                currency,
+                ProductPricingSourceRules.StandardPricingCurrency,
                 references,
                 availability,
                 manualPricing?.CanUseManualCustomerPrice ?? true,

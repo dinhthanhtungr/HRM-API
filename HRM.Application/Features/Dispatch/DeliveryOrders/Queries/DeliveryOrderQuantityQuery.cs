@@ -1,4 +1,5 @@
 using HRM.Domain.Entities.DeliverySchema;
+using HRM.Application.Commons.Deliveries;
 
 namespace HRM.Application.Features.Dispatch.DeliveryOrders.Queries;
 
@@ -14,17 +15,7 @@ internal static class DeliveryOrderQuantityQuery
         Guid companyId,
         Guid? excludingDeliveryOrderId = null)
     {
-        var query = details.Where(x =>
-            companyId != Guid.Empty &&
-            x.IsActive &&
-            !x.IsAttach &&
-            x.MerchandiseOrderDetailId.HasValue &&
-            x.DeliveryOrder.IsActive &&
-            x.DeliveryOrder.CompanyId == companyId &&
-            // Giữ lượng của trạng thái legacy chưa biết; chỉ giải phóng phiếu xác định đã hủy.
-            (x.DeliveryOrder.Status == null ||
-             (x.DeliveryOrder.Status.Trim().ToLower() != "canceled" &&
-              x.DeliveryOrder.Status.Trim().ToLower() != "cancelled")));
+        var query = details.EffectiveDeliveryLines(companyId);
 
         if (excludingDeliveryOrderId.HasValue)
         {

@@ -26,7 +26,7 @@ internal sealed class GetComplaintReportsBySourceOrderQueryHandler
         GetComplaintReportsBySourceOrderQuery request,
         CancellationToken cancellationToken)
     {
-        var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+        var scope = await _visibilityService.BuildReadScopeAsync(cancellationToken);
         var canAccess = await _visibilityService.ApplyMerchandiseOrderVisibility(
                 _dbContext.MerchandiseOrders.AsNoTracking(),
                 _dbContext.Customers.AsNoTracking(),

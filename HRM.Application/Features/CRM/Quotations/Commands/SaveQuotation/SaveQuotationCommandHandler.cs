@@ -18,8 +18,10 @@ internal sealed class SaveQuotationCommandHandler(
     QuotationLinesReplaceService linesService,
     QuotationCustomerPriceUpdateService customerPriceService,
     QuotationAtomicSaveService atomicSaveService,
+    QuotationSendService sendService,
     KeyedMutationLock<Guid> mutationLock,
-    IDateTimeProvider dateTimeProvider)
+    IDateTimeProvider dateTimeProvider,
+    QuotationStandardReferenceSaveService standardReferences)
     : IRequestHandler<SaveQuotationCommand, OperationResult<QuotationTotalsDto>>
 {
     public async Task<OperationResult<QuotationTotalsDto>> Handle(
@@ -35,6 +37,7 @@ internal sealed class SaveQuotationCommandHandler(
         {
             var scope = await visibilityService.BuildScopeAsync(cancellationToken);
             var quotation = await writeDbContext.Quotations.AsTracking()
+                .Include(x => x.Lines).ThenInclude(x => x.PriceTiers).Include(x => x.Terms)
                 .FirstOrDefaultAsync(x => x.QuotationId == command.QuotationId &&
                     x.CompanyId == scope.CompanyId && x.IsActive, cancellationToken);
             if (quotation is null || !await visibilityService
@@ -49,6 +52,16 @@ internal sealed class SaveQuotationCommandHandler(
             if (statusError is not null || conflict is not null)
                 return OperationResult<QuotationTotalsDto>.Fail(statusError ?? conflict!);
 
+            var referenceChanges = await standardReferences.PrepareAsync(quotation, request, cancellationToken);
+            if (referenceChanges.Any(x => x.RequiresAcceptance))
+                return new QuotationStandardReferenceFailure(referenceChanges)
+                {
+                    Success = false, Message = "Standard prices changed. Review the differences before saving."
+                };
+
+            var commercialBefore = quotation.Status == HRM.Domain.Enums.CustomerEnum.QuotationStatus.PendingSendConfirmation
+                ? QuotationConfirmationCommercialRules.Fingerprint(quotation) : null;
+
             // Clear before validating the resulting dates and again after contact defaults are resolved.
             QuotationSaveRules.Clear(quotation, request.ClearFields);
             // Shared services stage tracked changes only; no section can independently persist.
@@ -62,7 +75,8 @@ internal sealed class SaveQuotationCommandHandler(
             {
                 var result = await linesService.ApplyAsync(command.QuotationId,
                     new ReplaceQuotationLinesRequest { Lines = request.Lines },
-                    quotation.UpdatedDate, persist: false, cancellationToken);
+                    quotation.UpdatedDate, persist: false, cancellationToken,
+                    referenceChanges.Where(x => x.IsUnavailable).Select(x => x.PreviousVersionId).ToHashSet());
                 if (!result.Success) return result;
             }
             if (request.CustomerPriceLines is not null)
@@ -73,12 +87,29 @@ internal sealed class SaveQuotationCommandHandler(
                 if (!result.Success) return result;
             }
 
+            if (quotation.Status == HRM.Domain.Enums.CustomerEnum.QuotationStatus.PendingSendConfirmation)
+            {
+                if (commercialBefore == QuotationConfirmationCommercialRules.Fingerprint(quotation))
+                {
+                    // An unchanged save must not revoke the offer because its reference price changed.
+                    quotation.UpdatedDate = request.ExpectedUpdatedDate;
+                    return OperationResult<QuotationTotalsDto>.Ok(new QuotationTotalsDto
+                    {
+                        Status = quotation.Status, UpdatedDate = quotation.UpdatedDate,
+                        SubTotal = quotation.SubTotal, DiscountAmount = quotation.DiscountAmount,
+                        TaxPercent = quotation.TaxPercent, TaxAmount = quotation.TaxAmount, TotalAmount = quotation.TotalAmount
+                    }, "Commercial terms are unchanged; the existing confirmation remains pending.");
+                }
+                return await sendService.ReevaluatePendingAsync(command.QuotationId, request.SendConfirmationNote, request.ExpectedUpdatedDate, cancellationToken);
+            }
+
             quotation.UpdatedBy = scope.EmployeeId;
             var now = dateTimeProvider.Now;
             // Match PostgreSQL microsecond precision so the returned token round-trips unchanged.
-            quotation.UpdatedDate = new DateTime(now.Ticks - now.Ticks % TimeSpan.TicksPerMicrosecond, now.Kind);
+            quotation.UpdatedDate = QuotationWorkflowRules.NextUpdatedDate(now, request.ExpectedUpdatedDate);
             return OperationResult<QuotationTotalsDto>.Ok(new QuotationTotalsDto
             {
+                Status = quotation.Status,
                 SubTotal = quotation.SubTotal,
                 DiscountAmount = quotation.DiscountAmount,
                 TaxPercent = quotation.TaxPercent,

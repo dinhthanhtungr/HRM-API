@@ -29,7 +29,8 @@ public sealed class QuotationSnapshotRegressionTests
             companyId,
             productId,
             "USD",
-            quantity: 75m,
+            1m,
+            75m,
             source,
             "lines[0]");
 
@@ -59,21 +60,21 @@ public sealed class QuotationSnapshotRegressionTests
     }
 
     [Fact]
-    public void Snapshot_RejectsWrongCurrencyOrNonApprovedVersion()
+    public void Snapshot_RejectsInvalidExchangeRateOrNonApprovedVersion()
     {
         var companyId = Guid.NewGuid();
         var productId = Guid.NewGuid();
         var source = ApprovedVersion(companyId, productId);
 
-        var wrongCurrency = QuotationPricingSnapshotFactory.Create(
-            Guid.NewGuid(), companyId, productId, "EUR", 75m,
+        var invalidExchangeRate = QuotationPricingSnapshotFactory.Create(
+            Guid.NewGuid(), companyId, productId, "EUR", 0m, 75m,
             source, "lines[0]");
         source.Status = ProductPricingStatus.Draft;
         var draft = QuotationPricingSnapshotFactory.Create(
-            Guid.NewGuid(), companyId, productId, "USD", 75m,
+            Guid.NewGuid(), companyId, productId, "USD", 1m, 75m,
             source, "lines[0]");
 
-        Assert.False(wrongCurrency.Success);
+        Assert.False(invalidExchangeRate.Success);
         Assert.False(draft.Success);
     }
 
@@ -129,7 +130,7 @@ public sealed class QuotationSnapshotRegressionTests
             ProductPricingVersionId = Guid.NewGuid(),
             CompanyId = companyId,
             ProductId = productId,
-            Currency = "USD",
+            Currency = "VND",
             Status = ProductPricingStatus.Approved,
             IsActive = true,
             Version = 1,

@@ -20,11 +20,12 @@ internal sealed class PurchaseOrderWorkflowService(
 {
     public async Task<OperationResult> SubmitAsync(Guid purchaseOrderId, CancellationToken cancellationToken)
     {
-        var actor = GetActor();
+        var actor = await GetActorAsync(cancellationToken);
         if (actor is null)
             return OperationResult.Fail("Không xác định được công ty hoặc nhân viên hiện tại.");
 
         await using var transaction = await dbContext.BeginTransactionAsync(cancellationToken);
+        await dbContext.LockPurchaseOrderAsync(purchaseOrderId, actor.Value.CompanyId, cancellationToken);
         var purchaseOrder = await dbContext.PurchaseOrders
             .Include(item => item.PurchaseOrderDetails.Where(detail => detail.IsActive))
                 .ThenInclude(detail => detail.Material)
@@ -74,9 +75,7 @@ internal sealed class PurchaseOrderWorkflowService(
                         ProductName = detail.MaterialNameSnapshot ?? detail.Material.Name ?? string.Empty,
                         WeightKg = detail.RequestQuantity ?? 0,
                         BagNumber = ParseBagNumber(detail.Package),
-                        StockStatus = ResolveStockType(detail) == WarehouseStockType.RawMaterial
-                            ? "RawMaterial"
-                            : "Other",
+                        StockStatus = ResolveStockType(detail).ToString(),
                         ItemStockType = ResolveStockType(detail),
                         UnitName = string.IsNullOrWhiteSpace(detail.Material.Unit) ? "Kg" : detail.Material.Unit,
                         IsActive = true
@@ -101,11 +100,12 @@ internal sealed class PurchaseOrderWorkflowService(
         string? reason,
         CancellationToken cancellationToken)
     {
-        var actor = GetActor();
+        var actor = await GetActorAsync(cancellationToken);
         if (actor is null)
             return OperationResult.Fail("Không xác định được công ty hoặc nhân viên hiện tại.");
 
         await using var transaction = await dbContext.BeginTransactionAsync(cancellationToken);
+        await dbContext.LockPurchaseOrderAsync(purchaseOrderId, actor.Value.CompanyId, cancellationToken);
         var purchaseOrder = await dbContext.PurchaseOrders.FirstOrDefaultAsync(item =>
             item.PurchaseOrderId == purchaseOrderId &&
             item.CompanyId == actor.Value.CompanyId &&
@@ -150,11 +150,12 @@ internal sealed class PurchaseOrderWorkflowService(
 
     public async Task<OperationResult> CompleteAsync(Guid purchaseOrderId, CancellationToken cancellationToken)
     {
-        var actor = GetActor();
+        var actor = await GetActorAsync(cancellationToken);
         if (actor is null)
             return OperationResult.Fail("Không xác định được công ty hoặc nhân viên hiện tại.");
 
         await using var transaction = await dbContext.BeginTransactionAsync(cancellationToken);
+        await dbContext.LockPurchaseOrderAsync(purchaseOrderId, actor.Value.CompanyId, cancellationToken);
         var purchaseOrder = await dbContext.PurchaseOrders.FirstOrDefaultAsync(item =>
             item.PurchaseOrderId == purchaseOrderId &&
             item.CompanyId == actor.Value.CompanyId &&
@@ -163,34 +164,22 @@ internal sealed class PurchaseOrderWorkflowService(
 
         if (purchaseOrder is null)
             return OperationResult.Fail("Không tìm thấy đơn mua hàng.");
-        if (string.Equals(purchaseOrder.Status, PurchaseOrderStatus.Canceled, StringComparison.OrdinalIgnoreCase))
-            return OperationResult.Fail("Không thể hoàn tất đơn mua hàng đã hủy.");
-        if (string.Equals(purchaseOrder.Status, PurchaseOrderStatus.Completed, StringComparison.OrdinalIgnoreCase))
-            return OperationResult.Ok("Đơn mua hàng đã hoàn tất trước đó.");
+        if (string.IsNullOrWhiteSpace(purchaseOrder.ExternalId))
+            return OperationResult.Fail("Đơn mua hàng chưa có mã để liên kết với lệnh kho.");
 
-        var warehouseRequest = await dbContext.WarehouseRequests.FirstOrDefaultAsync(item =>
-            item.CompanyId == actor.Value.CompanyId &&
-            item.codeFromRequest == purchaseOrder.ExternalId &&
-            item.IsActive,
-            cancellationToken);
-
-        if (warehouseRequest is null)
-            return OperationResult.Fail("Đơn mua hàng chưa có yêu cầu nhập kho.");
-        if (warehouseRequest.ReqStatus != WarehouseRequestStatus.Completed)
-            return OperationResult.Fail("Chỉ được hoàn tất PO khi yêu cầu nhập kho đã hoàn tất.");
-
-        var latestReceiptDate = await (
-                from voucher in dbContext.WarehouseVouchers
-                join ledger in dbContext.WarehouseShelfLedgers on voucher.VoucherId equals ledger.VoucherId
-                where voucher.CompanyId == actor.Value.CompanyId &&
-                      voucher.RequestId == warehouseRequest.RequestId &&
-                      ledger.CompanyId == actor.Value.CompanyId &&
-                      ledger.DeltaKg > 0
-                select (DateTime?)ledger.CreatedAt)
-            .MaxAsync(cancellationToken);
-
+        var warehouseRequests = await dbContext.WarehouseRequests.Where(item =>
+            item.CompanyId == actor.Value.CompanyId && item.codeFromRequest != null &&
+            item.codeFromRequest.Trim() == purchaseOrder.ExternalId!.Trim() && item.IsActive)
+            .ToListAsync(cancellationToken);
+        if (warehouseRequests.Count == 0)
+            return OperationResult.Fail("Không tìm thấy lệnh kho liên kết với đơn mua hàng.");
+        foreach (var request in warehouseRequests)
+        {
+            request.ReqStatus = WarehouseRequestStatus.Completed;
+            request.UpdatedBy = actor.Value.EmployeeId;
+            request.UpdatedDate = dateTimeProvider.Now;
+        }
         purchaseOrder.Status = PurchaseOrderStatus.Completed;
-        purchaseOrder.RealDeliveryDate = latestReceiptDate ?? dateTimeProvider.Now;
         purchaseOrder.UpdatedBy = actor.Value.EmployeeId;
         purchaseOrder.UpdatedDate = dateTimeProvider.Now;
 
@@ -199,29 +188,23 @@ internal sealed class PurchaseOrderWorkflowService(
         return OperationResult.Ok("Đã hoàn tất đơn mua hàng.");
     }
 
-    private (Guid CompanyId, Guid EmployeeId)? GetActor() =>
-        currentUser.CompanyId.HasValue && currentUser.EmployeeId.HasValue
-            ? (currentUser.CompanyId.Value, currentUser.EmployeeId.Value)
-            : null;
-
+    private async Task<(Guid CompanyId, Guid EmployeeId)?> GetActorAsync(CancellationToken ct)
+    {
+        if (!currentUser.IsAuthenticated || currentUser.CompanyId is not { } company || company == Guid.Empty ||
+            currentUser.EmployeeId is not { } employee || employee == Guid.Empty) return null;
+        return await dbContext.Employees.AnyAsync(x => x.EmployeeId == employee && x.CompanyId == company && x.IsActive, ct)
+            ? (company, employee) : null;
+    }
     private static WareHouseRequestType ResolveRequestType(IEnumerable<HRM.Domain.Entities.OrderSchema.PurchaseOrderDetail> details)
     {
-        var rawMaterialFlags = details
-            .Select(detail => string.Equals(detail.Material.Category.Types, "NVL", StringComparison.OrdinalIgnoreCase))
-            .Distinct()
-            .ToArray();
-
-        return rawMaterialFlags.Length == 1
-            ? rawMaterialFlags[0]
-                ? WareHouseRequestType.ImportRawMaterial
-                : WareHouseRequestType.ImportMaterial
-            : WareHouseRequestType.ImportOther;
+        return details.Any(detail => ResolveStockType(detail) == WarehouseStockType.Material)
+            ? WareHouseRequestType.ImportMaterial : WareHouseRequestType.ImportOther;
     }
 
     private static WarehouseStockType ResolveStockType(HRM.Domain.Entities.OrderSchema.PurchaseOrderDetail detail) =>
-        string.Equals(detail.Material.Category.Types, "NVL", StringComparison.OrdinalIgnoreCase)
-            ? WarehouseStockType.RawMaterial
-            : WarehouseStockType.Other;
+        !string.IsNullOrWhiteSpace(detail.Material?.Category?.Types) &&
+        !string.Equals(detail.Material.Category.Types, "NVL", StringComparison.OrdinalIgnoreCase)
+            ? WarehouseStockType.Material : WarehouseStockType.Waiter;
 
     private static int ParseBagNumber(string? package)
     {

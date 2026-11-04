@@ -10,6 +10,7 @@ namespace HRM.Application.Commons.Reporting;
 internal sealed class DeliveryRevenueLine
 {
     public Guid CustomerId { get; init; }
+    public Guid MerchandiseOrderId { get; init; }
     public string CustomerName { get; init; } = string.Empty;
     public DateTime RevenueDate { get; init; }
     public string ProductKey { get; init; } = string.Empty;
@@ -37,7 +38,9 @@ internal static class DeliveryRevenueQuery
         IQueryable<DeliveryOrderDetail> source,
         DateTime from,
         DateTime toExclusive,
-        Guid? companyId = null)
+        Guid? companyId = null,
+        bool includeCosts = true,
+        bool includeDisplayFields = true)
     {
         var reportableLines = source.Where(x => x.IsActive
             && x.DeliveryOrder.IsActive
@@ -57,28 +60,29 @@ internal static class DeliveryRevenueQuery
         return reportableLines.Select(x => new DeliveryRevenueLine
         {
             CustomerId = x.MerchandiseOrderDetail!.MerchandiseOrder.CustomerId,
-            CustomerName = x.MerchandiseOrderDetail.MerchandiseOrder.CustomerNameSnapshot,
+            MerchandiseOrderId = x.MerchandiseOrderDetail.MerchandiseOrderId,
+            CustomerName = !includeDisplayFields ? string.Empty : x.MerchandiseOrderDetail.MerchandiseOrder.CustomerNameSnapshot,
             RevenueDate = x.DeliveryOrder.CreatedDate!.Value,
-            ProductKey = x.Product != null
+            ProductKey = !includeDisplayFields ? string.Empty : x.Product != null
                 ? x.Product.ColourCode ?? x.ProductExternalIdSnapShot ?? string.Empty
                 : x.ProductExternalIdSnapShot ?? string.Empty,
-            ProductName = x.Product != null
+            ProductName = !includeDisplayFields ? string.Empty : x.Product != null
                 ? x.Product.Name ?? x.ProductNameSnapShot ?? string.Empty
                 : x.ProductNameSnapShot ?? string.Empty,
-            ProductTypeKey = x.Product != null && x.Product.Category != null
+            ProductTypeKey = includeDisplayFields && x.Product != null && x.Product.Category != null
                 ? x.Product.Category.ExternalId
                 : null,
-            ProductTypeName = x.Product != null && x.Product.Category != null
+            ProductTypeName = includeDisplayFields && x.Product != null && x.Product.Category != null
                 ? x.Product.Category.Name
                 : null,
-            LotNoList = x.LotConsumptions.Any(lot => lot.IsActive)
+            LotNoList = !includeCosts || !includeDisplayFields ? null : x.LotConsumptions.Any(lot => lot.IsActive)
                 ? string.Join(", ", x.LotConsumptions
                     .Where(lot => lot.IsActive)
                     .OrderBy(lot => lot.LotNo)
                     .Select(lot => lot.LotNo))
                 : x.LotNoList,
-            HasNormalizedLots = x.LotConsumptions.Any(lot => lot.IsActive),
-            LotCostSnapshotAmount = x.LotConsumptions
+            HasNormalizedLots = includeCosts && x.LotConsumptions.Any(lot => lot.IsActive),
+            LotCostSnapshotAmount = !includeCosts ? 0m : x.LotConsumptions
                 .Where(lot => lot.IsActive)
                 .Sum(lot => (decimal?)lot.TotalCostSnapshot) ?? 0m,
             Quantity = x.Quantity,
@@ -92,7 +96,7 @@ internal static class DeliveryRevenueQuery
                     ? x.Quantity * x.MerchandiseOrderDetail.UnitPriceAgreed
                     : x.Quantity * x.MerchandiseOrderDetail.UnitPriceAgreed
                         * x.MerchandiseOrderDetail.MerchandiseOrder.ExchangeRate.Value,
-            BaseCostAmount = x.Quantity * x.MerchandiseOrderDetail.BaseCostSnapshot
+            BaseCostAmount = includeCosts ? x.Quantity * x.MerchandiseOrderDetail.BaseCostSnapshot : 0m
         });
     }
 }

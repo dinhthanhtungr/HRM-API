@@ -1,5 +1,7 @@
 using HRM.Application.Abstractions.Identity;
 using HRM.Application.Commons.Authorization;
+using HRM.Application.Commons.Pagination;
+using HRM.Application.Features.Employees.Dtos;
 using HRM.Domain.Identity;
 using HRM.Infrastructure.DatabaseContext.ApplicationDbs;
 using Microsoft.AspNetCore.Identity;
@@ -13,6 +15,42 @@ public sealed class EmployeeIdentityAdministrationService(
     RoleManager<ApplicationRole> roleManager)
     : IEmployeeIdentityAdministrationService
 {
+    public async Task<PagedResult<EmployeeRoleAccountDto>?> GetRoleAccountsAsync(
+        Guid roleId, int pageNumber, int pageSize, string? keyword,
+        CancellationToken cancellationToken = default, Guid? companyId = null)
+    {
+        if (!await dbContext.Roles.AsNoTracking().AnyAsync(role => role.Id == roleId, cancellationToken))
+            return null;
+
+        var query = dbContext.UserRoles.AsNoTracking()
+            .Where(assignment => assignment.RoleId == roleId && assignment.IsActive)
+            .Where(assignment => !companyId.HasValue ||
+                (assignment.User.Employee != null && assignment.User.Employee.CompanyId == companyId))
+            .Select(assignment => new
+            {
+                assignment.User.EmployeeId,
+                assignment.UserId,
+                FullName = assignment.User.Employee == null ? null : assignment.User.Employee.FullName,
+                assignment.User.UserName,
+                assignment.User.Email
+            });
+        if (keyword is not null)
+        {
+            var lowered = keyword.ToLowerInvariant();
+            query = query.Where(account =>
+                (account.FullName != null && account.FullName.ToLower().Contains(lowered)) ||
+                (account.UserName != null && account.UserName.ToLower().Contains(lowered)) ||
+                (account.Email != null && account.Email.ToLower().Contains(lowered)));
+        }
+
+        var total = await query.CountAsync(cancellationToken);
+        var items = await query.OrderBy(account => account.FullName)
+            .ThenBy(account => account.UserName).ThenBy(account => account.UserId)
+            .Skip((pageNumber - 1) * pageSize).Take(pageSize).ToListAsync(cancellationToken);
+        return new(items.Select(account => new EmployeeRoleAccountDto(account.EmployeeId, account.UserId,
+            account.FullName, account.UserName, account.Email)).ToArray(), total, pageNumber, pageSize);
+    }
+
     public async Task<EmployeeIdentityAccount?> GetAccountAsync(
         Guid employeeId,
         CancellationToken cancellationToken = default)
@@ -69,7 +107,7 @@ public sealed class EmployeeIdentityAdministrationService(
     }
 
     public async Task<IReadOnlyList<EmployeeIdentityRole>> GetRolesAsync(
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default, Guid? companyId = null)
     {
         return await roleManager.Roles
             .AsNoTracking()
@@ -80,7 +118,8 @@ public sealed class EmployeeIdentityAdministrationService(
                 role.Name!,
                 dbContext.UserRoles.Count(assignment =>
                     assignment.RoleId == role.Id &&
-                    assignment.IsActive)))
+                    assignment.IsActive && (!companyId.HasValue ||
+                        (assignment.User.Employee != null && assignment.User.Employee.CompanyId == companyId)))))
             .ToListAsync(cancellationToken);
     }
 

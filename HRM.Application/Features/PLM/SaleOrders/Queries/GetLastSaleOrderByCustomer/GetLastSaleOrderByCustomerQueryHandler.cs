@@ -51,7 +51,7 @@ internal sealed class GetLastSaleOrderByCustomerQueryHandler
             return null;
         }
 
-        var scope = await _customerVisibilityService.BuildScopeAsync(cancellationToken);
+        var scope = await _customerVisibilityService.BuildReadScopeAsync(cancellationToken);
         var customerIsVisible = await _customerVisibilityService.ApplyCustomerVisibility(
                 _dbContext.Customers.AsNoTracking(),
                 scope)

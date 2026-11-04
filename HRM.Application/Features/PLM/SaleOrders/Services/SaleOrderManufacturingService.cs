@@ -100,7 +100,8 @@ internal sealed class SaleOrderManufacturingService
                 TotalQuantity = null,
                 NumOfBatches = null,
                 UnitPriceAgreed = detail.UnitPriceAgreed,
-                Status = ManufacturingProductOrder.New.ToString(),
+                Status = detail.Status == nameof(HRM.Domain.Enums.Merchadises.MerchadiseStatus.WaitingForStandardSample)
+                    ? nameof(ManufacturingProductOrder.WaitingForStandardSample) : nameof(ManufacturingProductOrder.New),
                 LabNote = null,
                 Requirement = detail.Comment,
                 PlpuNote = null,

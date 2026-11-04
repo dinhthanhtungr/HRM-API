@@ -29,7 +29,7 @@ internal sealed class GetCustomerLookupQueryHandler
         GetCustomerLookupQuery request,
         CancellationToken cancellationToken)
     {
-        var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+        var scope = await _visibilityService.BuildReadScopeAsync(cancellationToken);
         var now = scope.Now;
 
         var query = _dbContext.Customers

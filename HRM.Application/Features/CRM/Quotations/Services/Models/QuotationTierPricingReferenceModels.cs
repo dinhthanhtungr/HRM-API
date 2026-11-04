@@ -19,7 +19,13 @@ internal sealed record ApprovedProductTierPricingReference(
     string? PublisherNote = null,
     decimal? MaterialCostSnapshot = null,
     decimal? ManufacturingCost = null,
-    decimal? ProfitMarginRate = null);
+    decimal? ProfitMarginRate = null)
+{
+    public DateTime? ValidFrom { get; init; }
+    public DateTime? ValidUntil { get; init; }
+    public DateTime? EvaluatedAt { get; init; }
+    public bool IsEffectiveForSending { get; init; }
+}
 
 internal sealed record SystemCalculatedTierPricingReference(
     Guid ProductId,

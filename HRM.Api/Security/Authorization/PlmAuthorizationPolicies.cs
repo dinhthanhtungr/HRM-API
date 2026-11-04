@@ -35,7 +35,7 @@ internal static class PlmAuthorizationPolicies
 
         options.AddPolicy(PlmPolicies.ViewFormulaDetail, policy =>
         {
-            policy.RequireRole(ApplicationRoleSets.PLM.ProductTechnicalEditors);
+            policy.RequireRole(ApplicationRoleSets.PLM.ProductTechnicalViewers);
         });
 
         options.AddPolicy(PlmPolicies.ViewFormulaMaterials, policy =>

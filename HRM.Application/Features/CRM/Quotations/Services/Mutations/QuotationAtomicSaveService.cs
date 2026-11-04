@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace HRM.Application.Features.CRM.Quotations.Services;
 
-/// <summary>Persist staged quotation changes exactly once; failures discard all tracked changes.</summary>
+/// <summary>Commit quotation changes in one transaction, including pending-send messages/outbox; failures discard tracking.</summary>
 internal sealed class QuotationAtomicSaveService(ICRMWriteDbContext dbContext)
 {
     public async Task<OperationResult<QuotationTotalsDto>> ExecuteAsync(
@@ -28,6 +28,10 @@ internal sealed class QuotationAtomicSaveService(ICRMWriteDbContext dbContext)
         {
             return OperationResult<QuotationTotalsDto>.Fail(
                 OptimisticConcurrencyHelper.CreateConflictMessage("Quotation", exception));
+        }
+        catch (QuotationSendComparisonException exception)
+        {
+            return OperationResult<QuotationTotalsDto>.Fail(exception.Message);
         }
         finally
         {

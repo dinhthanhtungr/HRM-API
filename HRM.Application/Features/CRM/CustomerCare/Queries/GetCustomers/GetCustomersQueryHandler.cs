@@ -1,4 +1,4 @@
-﻿using HRM.Application.Abstractions.Persistence.CRM.CustomerCare;
+using HRM.Application.Abstractions.Persistence.CRM.CustomerCare;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Authorization;
 using HRM.Application.Commons.Pagination;
@@ -33,7 +33,7 @@ internal sealed class GetCustomersQueryHandler
         GetCustomersQuery request,
         CancellationToken cancellationToken)
     {
-        var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+        var scope = await _visibilityService.BuildReadScopeAsync(cancellationToken);
         var now = scope.Now;
         var leaderGroupIds = scope.LeaderGroupIds.ToArray();
         var restrictAssignmentsToLeaderGroups = !scope.HasFullCustomerView && leaderGroupIds.Length > 0;

@@ -8,12 +8,12 @@ namespace HRM.Application.Features.Warehouse.Queries.GetStockAvailable;
 
 /// <summary>
 /// Lấy danh sách tồn kho khả dụng cho màn hình Warehouse.
-/// Query luôn loại kệ inactive trước khi group để tổng tồn, detail và available không bị sai.
+/// Hiển thị cả kệ inactive; chỉ tồn trên kệ active được tính vào tổng cũ và available.
 /// </summary>
 public sealed class GetStockAvailableQuery
     : PaginationQuery, IRequest<OperationResult<PagedResult<StockAvailableDto>>>
 {
-    public StockType? StockTypes { get; init; }
+    public StockType[] StockTypes { get; init; } = [];
 
     public bool OnlyAvailableLeZero { get; init; }
 

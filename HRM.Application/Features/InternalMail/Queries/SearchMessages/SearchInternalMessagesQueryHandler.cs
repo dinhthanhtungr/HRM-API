@@ -59,7 +59,7 @@ internal sealed class SearchInternalMessagesQueryHandler
         }
 
         var normalizedSearchText = searchText.ToLower();
-        var messageQuery = _areas.Messages(request.AreaCode)
+        var messageQuery = _areas.SearchableMessageBodies(_areas.Messages(request.AreaCode))
             .AsNoTracking()
             .Where(x =>
                 x.InternalConversationId == request.ConversationId &&

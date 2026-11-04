@@ -1,3 +1,4 @@
+using HRM.Application.Abstractions.Security;
 using HRM.Application.Features.Reports.ExecutivePnL.Queries.GetExecutivePnLReport;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -11,10 +12,12 @@ namespace HRM.Domain.Entities.Controllers.Reports
     public sealed class ExecutivePnLReportController : ControllerBase
     {
         private readonly ISender _sender;
+        private readonly ICurrentUser _currentUser;
 
-        public ExecutivePnLReportController(ISender sender)
+        public ExecutivePnLReportController(ISender sender, ICurrentUser currentUser)
         {
             _sender = sender;
+            _currentUser = currentUser;
         }
 
         [HttpGet]
@@ -22,6 +25,9 @@ namespace HRM.Domain.Entities.Controllers.Reports
             [FromQuery] GetExecutivePnLReportQuery query,
             CancellationToken cancellationToken)
         {
+            if (!_currentUser.CompanyId.HasValue || _currentUser.CompanyId == Guid.Empty
+                || (query.CompanyId.HasValue && query.CompanyId != _currentUser.CompanyId))
+                return Forbid();
             var result = await _sender.Send(query, cancellationToken);
 
             return Ok(result);

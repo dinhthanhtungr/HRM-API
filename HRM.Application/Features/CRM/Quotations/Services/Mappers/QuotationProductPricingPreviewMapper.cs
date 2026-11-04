@@ -130,6 +130,8 @@ internal static class QuotationProductPricingPreviewMapper
                 Version = pricing.Version,
                 Status = pricing.Status,
                 ApprovedAt = pricing.ApprovedAt,
+                ValidFrom = pricing.ValidFrom, ValidUntil = pricing.ValidUntil,
+                EvaluatedAt = pricing.EvaluatedAt, IsEffectiveForSending = pricing.IsEffectiveForSending,
                 StandardSellingPrice = pricing.StandardSellingPrice,
                 PublisherNote = pricing.PublisherNote,
                 Currency = pricing.Currency,

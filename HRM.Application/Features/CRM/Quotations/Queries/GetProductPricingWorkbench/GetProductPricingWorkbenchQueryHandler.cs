@@ -91,7 +91,7 @@ internal sealed class GetProductPricingWorkbenchQueryHandler
 
         if (!canManagePricing)
         {
-            var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+            var scope = await _visibilityService.BuildReadScopeAsync(cancellationToken);
             var visibleCustomerIds = _visibilityService
                 .ApplyCustomerVisibility(_dbContext.Customers.AsNoTracking(), scope)
                 .Select(customer => customer.CustomerId);
@@ -588,7 +588,7 @@ internal sealed class GetProductPricingWorkbenchQueryHandler
             return new HashSet<Guid>();
         }
 
-        var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+        var scope = await _visibilityService.BuildReadScopeAsync(cancellationToken);
         var productIds = await _visibilityService
             .ApplyQuotationVisibility(
                 _dbContext.Quotations.AsNoTracking(),

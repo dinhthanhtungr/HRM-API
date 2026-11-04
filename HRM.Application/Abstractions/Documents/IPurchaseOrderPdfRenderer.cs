@@ -4,5 +4,6 @@ namespace HRM.Application.Abstractions.Documents;
 
 public interface IPurchaseOrderPdfRenderer
 {
-    byte[] Render(PurchaseOrderDetailDto purchaseOrder);
+    byte[] Render(PurchaseOrderPdfDocument purchaseOrder, bool templateOnly = false);
+    byte[] RenderTemplate();
 }

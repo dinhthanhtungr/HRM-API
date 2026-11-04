@@ -6,17 +6,22 @@ namespace HRM.Application.Features.Dispatch.DeliveryOrders;
 public static class DeliveryOrderAccessRules
 {
     public const string ReadRoles =
-        "DispatchUser,SaleUser,KHOUser,ACCUser,Leader,Edit,Delete,Admin,Developer,President";
+        "DispatchUser,PLPUUser,SaleUser,KHOUser,ACCUser,Leader,Edit,Delete,Admin,Developer,President";
 
     public const string ManageRoles =
-        "DispatchUser,Edit,Admin,Developer,President";
+        "DispatchUser,PLPUUser,Edit,Admin,Developer,President";
+    public const string FinishRoles = ManageRoles + ",SaleUser";
+
+    public static bool CanFinish(ICurrentUser currentUser)
+        => CanManage(currentUser) || currentUser.IsAuthenticated && currentUser.IsInRole(ApplicationRoles.Sales.SaleUser);
 
     public const string CancelRoles =
-        "DispatchUser,Delete,Admin,Developer,President";
+        "DispatchUser,PLPUUser,Delete,Admin,Developer,President";
 
     private static readonly string[] Readers =
     [
         ApplicationRoles.Dispatch.DispatchUser,
+        ApplicationRoles.Production.PLPUUser,
         ApplicationRoles.Sales.SaleUser,
         ApplicationRoles.Warehouse.KHOUser,
         ApplicationRoles.Accounting.ACCUser,
@@ -31,6 +36,7 @@ public static class DeliveryOrderAccessRules
     private static readonly string[] Managers =
     [
         ApplicationRoles.Dispatch.DispatchUser,
+        ApplicationRoles.Production.PLPUUser,
         ApplicationRoles.Actions.Edit,
         ApplicationRoles.Admin,
         ApplicationRoles.Developer,
@@ -40,6 +46,7 @@ public static class DeliveryOrderAccessRules
     private static readonly string[] Cancellers =
     [
         ApplicationRoles.Dispatch.DispatchUser,
+        ApplicationRoles.Production.PLPUUser,
         ApplicationRoles.Actions.Delete,
         ApplicationRoles.Admin,
         ApplicationRoles.Developer,
@@ -48,6 +55,13 @@ public static class DeliveryOrderAccessRules
 
     public static bool CanRead(ICurrentUser currentUser)
         => currentUser.IsAuthenticated && currentUser.IsInAnyRole(Readers);
+
+    // Sale/Leader đọc kế hoạch theo khách hàng được phân công; role điều vận giữ phạm vi công ty.
+    private static readonly string[] CompanyPlanReaders = Readers
+        .Except([ApplicationRoles.Sales.SaleUser, ApplicationRoles.Leader]).ToArray();
+
+    public static bool RequiresCustomerScopeForPlan(ICurrentUser currentUser)
+        => CanRead(currentUser) && !currentUser.IsInAnyRole(CompanyPlanReaders);
 
     public static bool CanManage(ICurrentUser currentUser)
         => currentUser.IsAuthenticated && currentUser.IsInAnyRole(Managers);

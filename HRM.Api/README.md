@@ -1,5 +1,7 @@
 # HRM.Api local Swagger auto-login
 
+Swagger UI (`/swagger`) và tài liệu OpenAPI (`/swagger/v1/swagger.json`) được bật ở mọi môi trường, bao gồm `Production` khi deploy bản Release. Các API có yêu cầu xác thực vẫn cần đăng nhập theo cấu hình hiện hành.
+
 Swagger tự tạo phiên đăng nhập chỉ khi chạy môi trường `Development`; endpoint này không xuất hiện trong OpenAPI và trả `404` ở môi trường khác.
 
 Không lưu tài khoản hoặc mật khẩu trong `appsettings*.json`. Trên máy local, chạy một lần tại thư mục repo:
@@ -32,6 +34,7 @@ Backgrounds/
   PLM/
     Materials/
       MaterialDocumentImportWorker.cs
+      MaterialTdsExtractionWorker.cs
 ```
 
 Worker trong API chỉ chịu trách nhiệm vòng đời host, lịch chạy, tạo DI scope, retry và log. Rule nghiệp vụ,

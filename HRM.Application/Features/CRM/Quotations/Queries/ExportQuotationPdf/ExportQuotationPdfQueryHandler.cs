@@ -34,7 +34,7 @@ internal sealed class ExportQuotationPdfQueryHandler
             return OperationResult<QuotationPdfFileDto>.Fail("QuotationId is invalid.");
         }
 
-        var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+        var scope = await _visibilityService.BuildReadScopeAsync(cancellationToken);
         var quotation = await _visibilityService
             .ApplyQuotationVisibility(
                 _dbContext.Quotations.AsNoTracking(),

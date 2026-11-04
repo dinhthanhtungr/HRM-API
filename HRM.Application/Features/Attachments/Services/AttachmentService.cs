@@ -34,6 +34,9 @@ internal sealed class AttachmentService : IAttachmentService
             return Array.Empty<AttachmentDto>();
         }
 
+        if (slot == AttachmentSlot.EvaluationAttachment || await _dbContext.AttachmentModels.AnyAsync(a =>
+            a.AttachmentCollectionId == collectionId && a.Slot == AttachmentSlot.EvaluationAttachment, cancellationToken))
+            throw new InvalidOperationException("Upload evaluation files through the owning evaluation save endpoint.");
         if (slot == AttachmentSlot.InternalMail || await _dbContext.AttachmentModels.AnyAsync(a =>
             a.AttachmentCollectionId == collectionId && (a.Slot == AttachmentSlot.InternalMail || a.InternalMessageAttachments.Any()), cancellationToken))
             throw new InvalidOperationException("Upload chat files through the conversation message endpoint.");
@@ -110,6 +113,7 @@ internal sealed class AttachmentService : IAttachmentService
     {
         var query = _areas.Attachments(_dbContext.AttachmentModels)
             .AsNoTracking()
+            .Where(x => x.Slot != AttachmentSlot.EvaluationAttachment)
             .Where(x => x.AttachmentCollectionId == collectionId && x.IsActive);
 
         if (slot.HasValue)
@@ -128,6 +132,7 @@ internal sealed class AttachmentService : IAttachmentService
     {
         var attachment = await _areas.Attachments(_dbContext.AttachmentModels)
             .AsNoTracking()
+            .Where(x => x.Slot != AttachmentSlot.EvaluationAttachment)
             .FirstOrDefaultAsync(x => x.AttachmentId == attachmentId && x.IsActive, cancellationToken);
 
         if (attachment is null)
@@ -147,7 +152,7 @@ internal sealed class AttachmentService : IAttachmentService
     public async Task DeleteAsync(Guid attachmentId, CancellationToken cancellationToken = default)
     {
         var attachment = await _dbContext.AttachmentModels
-            .Where(x => x.Slot != AttachmentSlot.InternalMail && !x.InternalMessageAttachments.Any())
+            .Where(x => x.Slot != AttachmentSlot.InternalMail && x.Slot != AttachmentSlot.EvaluationAttachment && !x.InternalMessageAttachments.Any())
             .FirstOrDefaultAsync(x => x.AttachmentId == attachmentId && x.IsActive, cancellationToken);
 
         if (attachment is null)
@@ -162,7 +167,7 @@ internal sealed class AttachmentService : IAttachmentService
     public async Task HardDeleteAsync(Guid attachmentId, CancellationToken cancellationToken = default)
     {
         var attachment = await _dbContext.AttachmentModels
-            .Where(x => x.Slot != AttachmentSlot.InternalMail && !x.InternalMessageAttachments.Any())
+            .Where(x => x.Slot != AttachmentSlot.InternalMail && x.Slot != AttachmentSlot.EvaluationAttachment && !x.InternalMessageAttachments.Any())
             .FirstOrDefaultAsync(x => x.AttachmentId == attachmentId, cancellationToken);
 
         if (attachment is null)

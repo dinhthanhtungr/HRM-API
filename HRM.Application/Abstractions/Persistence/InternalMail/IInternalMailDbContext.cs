@@ -17,8 +17,14 @@ namespace HRM.Application.Abstractions.Persistence.InternalMail;
 public interface IInternalMailDbContext
 {
     DbSet<InternalConversation> InternalConversations { get; }
+    DbSet<InternalConversationGroup> InternalConversationGroups { get; }
+    DbSet<DefaultMembershipPolicy> DefaultMembershipPolicies { get; }
+    DbSet<DefaultMembershipRevision> DefaultMembershipRevisions { get; }
+    DbSet<DefaultMembershipRule> DefaultMembershipRules { get; }
+    DbSet<global::HRM.Domain.Entities.MaterialSchema.Category> Categories { get; }
     DbSet<InternalConversationParticipant> InternalConversationParticipants { get; }
     DbSet<InternalMessage> InternalMessages { get; }
+    DbSet<InternalMessageReaction> InternalMessageReactions { get; }
     DbSet<InternalMessageAttachment> InternalMessageAttachments { get; }
     DbSet<InternalMessageReference> InternalMessageReferences { get; }
     DbSet<InternalMessageReadState> InternalMessageReadStates { get; }
@@ -26,6 +32,7 @@ public interface IInternalMailDbContext
     DbSet<AttachmentCollection> AttachmentCollections { get; }
     DbSet<AttachmentModel> AttachmentModels { get; }
     DbSet<SampleRequest> SampleRequests { get; }
+    DbSet<SampleRequestWorkflowEvent> SampleRequestWorkflowEvents { get; }
     DbSet<Quotation> Quotations { get; }
     DbSet<Employee> Employees { get; }
     DbSet<Group> Groups { get; }
@@ -33,13 +40,17 @@ public interface IInternalMailDbContext
     DbSet<ApplicationUser> Users { get; }
     DbSet<ApplicationRole> Roles { get; }
     DbSet<ApplicationUserRole> UserRoles { get; }
+    DbSet<Microsoft.AspNetCore.Identity.IdentityRoleClaim<Guid>> RoleClaims { get; }
     IQueryable<InternalMailNotificationLink> QueryInternalMailNotificationLinks(Guid companyId);
     Task LockInternalConversationAsync(Guid companyId, Guid conversationId, CancellationToken cancellationToken);
+    Task<int> InsertMissingSilentWatchersAsync(Guid companyId, Guid conversationId, Guid[] employeeIds,
+        DateTime joinedAt, CancellationToken cancellationToken);
+    Task LockDefaultMembershipPolicyAsync(Guid companyId, global::HRM.Domain.Enums.InternalMailEnums.InternalConversationGroupType groupType, CancellationToken ct);
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
     Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default);
     IQueryable<InternalConversationNotificationUnreadCount> QueryInternalConversationNotificationUnreadCounts(
-        Guid companyId, Guid employeeId);
+        Guid companyId, Guid employeeId, Guid[]? conversationIds = null, bool allowCompanyObserver = false);
     Task<int> UpsertInternalMessageReadStatesAsync(
         Guid companyId, Guid employeeId, Guid conversationId, Guid[] messageIds,
         DateTime readAt, CancellationToken cancellationToken = default);

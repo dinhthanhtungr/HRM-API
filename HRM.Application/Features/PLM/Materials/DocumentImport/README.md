@@ -10,7 +10,8 @@ source files.
 The preview endpoint only reads metadata; it does not copy, hash, or persist
 source files.
 
-The endpoint is limited to the existing administrator role set:
+The read endpoints (preview, job status and job exceptions) allow the existing administrator roles and ACCUser.
+Starting an import job retains the existing administrator gate. Every job remains scoped to CurrentUser.CompanyId.
 
 ```http
 GET /api/v1/plm/materials/document-import/preview

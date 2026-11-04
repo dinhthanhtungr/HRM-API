@@ -29,7 +29,7 @@ internal sealed class GetCustomerTransfersQueryHandler
         GetCustomerTransfersQuery request,
         CancellationToken cancellationToken)
     {
-        var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+        var scope = await _visibilityService.BuildReadScopeAsync(cancellationToken);
         var visibleCustomerIds = _visibilityService
             .ApplyCustomerVisibility(_dbContext.Customers.AsNoTracking(), scope)
             .Where(customer => customer.CustomerId != CustomerVisibilityConstants.RestrictedCustomerId)

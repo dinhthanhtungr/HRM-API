@@ -115,7 +115,7 @@ namespace HRM.Application.Features.CRM.Quotations.Services
             if (quotation.Status is not (
                 QuotationStatus.Draft or
                 QuotationStatus.PendingApproval or
-                QuotationStatus.Approved))
+                QuotationStatus.Approved) && !(quotation.Status == QuotationStatus.PendingSendConfirmation && !persist))
             {
                 return OperationResult<QuotationTotalsDto>.Fail(
                     "Only a draft, pending or approved quotation can be updated.");
@@ -322,7 +322,11 @@ namespace HRM.Application.Features.CRM.Quotations.Services
                 () => quotation.ContactPhone,
                 value => quotation.ContactPhone = value);
 
-            if (replacementTerms is not null)
+            var sameTerms = replacementTerms is not null && replacementTerms.All(x => x.IsActive) && quotation.Terms.Where(x => x.IsActive)
+                .OrderBy(x => x.SortOrder).Select(x => (x.LabelVi, x.LabelEn, x.ValueVi, x.ValueEn, x.SortOrder))
+                .SequenceEqual(replacementTerms.Where(x => x.IsActive).OrderBy(x => x.SortOrder)
+                    .Select(x => (x.LabelVi, x.LabelEn, x.ValueVi, x.ValueEn, x.SortOrder)));
+            if (replacementTerms is not null && !sameTerms)
             {
                 foreach (var existingTerm in quotation.Terms.Where(x => x.IsActive))
                 {

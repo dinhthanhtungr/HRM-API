@@ -1,3 +1,5 @@
+using HRM.Application.Abstractions.Security;
+using HRM.Application.Commons.Reporting;
 using HRM.Application.Abstractions.Persistence.Reports;
 using HRM.Application.Features.Reports.ExecutivePnL.Queries.GetExecutivePnLReport.Models;
 using HRM.Application.Features.Reports.ExecutivePnL.Queries.GetExecutivePnLReport.Services;
@@ -12,8 +14,11 @@ namespace HRM.Application.Features.Reports.ExecutivePnL.Queries.GetExecutivePnLR
         private readonly ExecutivePnLActualReader _actualReader;
         private readonly ExecutivePnLReportBuilder _reportBuilder;
 
-        public GetExecutivePnLReportQueryHandler(IReportReadDbContext dbContext)
+        private readonly ICurrentUser _currentUser;
+
+        public GetExecutivePnLReportQueryHandler(IReportReadDbContext dbContext, ICurrentUser currentUser)
         {
+            _currentUser = currentUser;
             _actualReader = new ExecutivePnLActualReader(dbContext);
             _reportBuilder = new ExecutivePnLReportBuilder();
         }
@@ -25,7 +30,7 @@ namespace HRM.Application.Features.Reports.ExecutivePnL.Queries.GetExecutivePnLR
             var period = ExecutivePnLPeriod.Create(request.FromMonth, request.ToMonth);
             var filter = new ExecutivePnLFilter
             {
-                CompanyId = request.CompanyId,
+                CompanyId = ReportCompanyScope.Resolve(_currentUser, request.CompanyId),
                 BusinessUnit = request.BusinessUnit,
                 Currency = request.Currency,
                 FromMonth = period.FromMonth,

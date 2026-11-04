@@ -10,6 +10,7 @@ using HRM.Domain.Enums.Category;
 using HRM.Domain.Enums.CustomerEnum;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using HRM.Application.Commons.Concurrency;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -27,6 +28,7 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.CreateQuotation
         private readonly IExternalIdService _externalIdService;
         private readonly IDateTimeProvider _dateTimeProvider;
         private readonly QuotationLineBuilder _lineBuilder;
+        private readonly KeyedMutationLock<Guid> _mutationLock;
 
         public CreateQuotationCommandHandler(
             ICRMReadDbContext readDbContext,
@@ -34,7 +36,8 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.CreateQuotation
             ICustomerVisibilityService visibilityService,
             IExternalIdService externalIdService,
             IDateTimeProvider dateTimeProvider,
-            QuotationLineBuilder lineBuilder)
+            QuotationLineBuilder lineBuilder,
+            KeyedMutationLock<Guid> mutationLock)
         {
             _readDbContext = readDbContext;
             _writeDbContext = writeDbContext;
@@ -42,6 +45,7 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.CreateQuotation
             _externalIdService = externalIdService;
             _dateTimeProvider = dateTimeProvider;
             _lineBuilder = lineBuilder;
+            _mutationLock = mutationLock;
         }
 
         public async Task<OperationResult<QuotationCreateResultDto>> Handle(
@@ -49,6 +53,8 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.CreateQuotation
             CancellationToken cancellationToken)
         {
             var request = command.Request;
+            if (request.IdempotencyKey == Guid.Empty)
+                return OperationResult<QuotationCreateResultDto>.Fail("IdempotencyKey cannot be empty.");
             if (request.CustomerId == Guid.Empty)
             {
                 return OperationResult<QuotationCreateResultDto>.Fail("CustomerId is required.");
@@ -100,6 +106,14 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.CreateQuotation
                     "Customer was not found or is outside your visibility scope.");
             }
 
+            var quotationId = request.IdempotencyKey.HasValue
+                ? QuotationCreateReplayRules.Id(scope.CompanyId, request.IdempotencyKey.Value) : Guid.CreateVersion7();
+            using var lease = await _mutationLock.AcquireAsync(quotationId, cancellationToken);
+            if (request.IdempotencyKey.HasValue)
+            {
+                var replay = await ResolveReplayAsync(quotationId, scope.CompanyId, scope.EmployeeId, request, cancellationToken);
+                if (replay is not null) return replay;
+            }
             var contactResult = await ResolveContactAsync(
                 request.CustomerId,
                 request.ContactId,
@@ -139,7 +153,6 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.CreateQuotation
                     $"Quotation external id {externalId} already exists in this company.");
             }
 
-            var quotationId = Guid.CreateVersion7();
             var termResult = QuotationTermBuilder.Build(
                 quotationId,
                 request.Terms);
@@ -195,7 +208,17 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.CreateQuotation
             QuotationRules.RecalculateTotals(quotation);
 
             await _writeDbContext.Quotations.AddAsync(quotation, cancellationToken);
-            await _writeDbContext.SaveChangesAsync(cancellationToken);
+            try
+            {
+                await _writeDbContext.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateException) when (request.IdempotencyKey.HasValue)
+            {
+                _writeDbContext.ClearTrackedChanges();
+                var replay = await ResolveReplayAsync(quotationId, scope.CompanyId, scope.EmployeeId, request, cancellationToken);
+                if (replay is not null) return replay;
+                throw;
+            }
 
             return OperationResult<QuotationCreateResultDto>.Ok(new QuotationCreateResultDto
             {
@@ -207,6 +230,23 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.CreateQuotation
                 TaxAmount = quotation.TaxAmount,
                 TotalAmount = quotation.TotalAmount
             }, "Quotation draft created successfully.");
+        }
+
+        private async Task<OperationResult<QuotationCreateResultDto>?> ResolveReplayAsync(
+            Guid id, Guid companyId, Guid employeeId, CreateQuotationRequest request, CancellationToken cancellationToken)
+        {
+            var saved = await _readDbContext.Quotations.AsNoTracking().Include(x => x.Lines).ThenInclude(x => x.PriceTiers)
+                .Include(x => x.Terms).FirstOrDefaultAsync(x => x.QuotationId == id && x.CompanyId == companyId, cancellationToken);
+            if (saved is null) return null;
+            if (!saved.IsActive || saved.CreatedBy != employeeId || !QuotationCreateReplayRules.Matches(saved, request))
+                return new QuotationCreateConflictFailure { Success = false,
+                    ExistingQuotationId = saved.CreatedBy == employeeId && saved.CustomerId == request.CustomerId && saved.IsActive ? saved.QuotationId : null,
+                    Message = "This creation attempt already exists with different data. Reload the quotation before continuing." };
+            return OperationResult<QuotationCreateResultDto>.Ok(new()
+            {
+                QuotationId = saved.QuotationId, ExternalId = saved.ExternalId, SubTotal = saved.SubTotal,
+                DiscountAmount = saved.DiscountAmount, TaxPercent = saved.TaxPercent, TaxAmount = saved.TaxAmount, TotalAmount = saved.TotalAmount
+            }, "Quotation creation already completed.");
         }
 
         private async Task<ContactResolution> ResolveContactAsync(

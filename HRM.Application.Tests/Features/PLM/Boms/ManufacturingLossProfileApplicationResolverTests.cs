@@ -45,7 +45,7 @@ public sealed class ManufacturingLossProfileApplicationResolverTests
             BomVersionId = version.BomVersionId,
             FromManufacturingBomStageId = mix.ManufacturingBomStageId,
             ToManufacturingBomStageId = pack.ManufacturingBomStageId,
-            Code = "MIX-PACK",
+            ExternalId = "MIX-PACK",
             SequenceNo = 1
         };
         version.ManufacturingStageTransitions = [transition];
@@ -67,7 +67,7 @@ public sealed class ManufacturingLossProfileApplicationResolverTests
         var lossType = new ManufacturingLossType
         {
             ManufacturingLossTypeId = Guid.NewGuid(),
-            Code = "PROCESS",
+            ExternalId = "PROCESS",
             Name = "Process loss"
         };
         profile.Rules =
@@ -102,7 +102,7 @@ public sealed class ManufacturingLossProfileApplicationResolverTests
         => new()
         {
             ManufacturingLossProfileId = Guid.NewGuid(),
-            Code = "DEFAULT",
+            ExternalId = "DEFAULT",
             Name = "Default",
             Status = ManufacturingLossProfileStatus.Released,
             EffectiveFrom = new DateTime(2026, 1, 1)
@@ -113,7 +113,7 @@ public sealed class ManufacturingLossProfileApplicationResolverTests
         {
             ManufacturingBomStageId = Guid.NewGuid(),
             BomVersionId = version.BomVersionId,
-            Code = code,
+            ExternalId = code,
             Name = code,
             SequenceNo = sequence,
             IsActive = true

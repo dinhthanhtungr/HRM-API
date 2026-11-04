@@ -6,6 +6,11 @@ Worker giao audience đã enqueue với `InternalMailAreaAccessService.DeliveryR
 
 ## Mục đích
 
+Notification định tuyến của Sample Request và @tag dùng cùng outbox hiện có. Mention hợp lệ vượt mute tại
+dispatch nhờ deliveryMentionEmployeeIds do BE ghi, nhưng vẫn kiểm tra membership active, company, khu vực,
+eligibility sản phẩm và archived state. Tag không cấp quyền truy cập. Xem
+[notification routing](../InternalMail/NOTIFICATION_ROUTING.md) cho audience và payload contract.
+
 Web Push là kênh chuyển phát bổ sung cho Notification hiện tại. Notification và
 `NotificationUserState` vẫn là nguồn dữ liệu chính; Web Push chỉ giúp trình duyệt hoặc hệ
 điều hành báo có thông báo mới khi tab không mở hoặc SignalR chưa kết nối.

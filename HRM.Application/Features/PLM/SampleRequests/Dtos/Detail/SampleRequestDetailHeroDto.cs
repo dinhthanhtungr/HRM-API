@@ -3,6 +3,7 @@ namespace HRM.Application.Features.PLM.SampleRequests.Dtos.Detail
     public sealed class SampleRequestDetailHeroDto
     {
         public Guid SampleRequestId { get; set; }
+        public string WorkflowMode { get; set; } = string.Empty;
         public string ExternalId { get; set; } = string.Empty;
         public string Status { get; set; } = string.Empty;
         public string? Title { get; set; }
@@ -18,5 +19,6 @@ namespace HRM.Application.Features.PLM.SampleRequests.Dtos.Detail
         public DateTime CreatedDate { get; set; }
         public DateTime? ExpectedDeliveryDate { get; set; }
         public bool IsActive { get; set; }
+        public bool CanDeactivate { get; set; }
     }
 }

@@ -18,6 +18,14 @@ public partial class SampleRequestSampleTrial
 
     public string? BatchNo { get; set; }
     public decimal? DeliveredSampleQuantityKg { get; set; }
+    /// <summary>Derived from the quantity of this delivery, never the current request quantity.</summary>
+    [System.ComponentModel.DataAnnotations.Schema.NotMapped]
+    public SampleDeliveryKind DeliveryKind => DeliveredSampleQuantityKg switch
+    {
+        0 => SampleDeliveryKind.ColorChip,
+        > 0 => SampleDeliveryKind.TrialSample,
+        _ => SampleDeliveryKind.Unknown
+    };
     public decimal? AdditiveRate { get; set; }
     public DateTime? RequestReceivedDate { get; set; }
     public DateTime? FinishedDate { get; set; }

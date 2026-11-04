@@ -381,7 +381,7 @@ public sealed class CustomerCrmController : ControllerBase
     /// Lấy dashboard trong visibility scope của leader; endpoint yêu cầu role quản lý sale.
     /// </summary>
     [HttpGet("dashboard/leader")]
-    [Authorize(Roles = RoleSets.SaleLeaders)]
+    [Authorize(Roles = HRM.Application.Commons.Authorization.ApplicationRoleSets.CRM.LeaderReaderRolesCsv)]
     public async Task<IActionResult> GetLeaderDashboard(CancellationToken cancellationToken)
         => Ok((await _sender.Send(new GetLeaderCrmDashboardQuery(), cancellationToken)).Data);
 
@@ -389,7 +389,7 @@ public sealed class CustomerCrmController : ControllerBase
     /// Lấy dashboard tổng quan dành cho director/admin; endpoint yêu cầu role quản trị.
     /// </summary>
     [HttpGet("dashboard/director")]
-    [Authorize(Roles = RoleSets.Admins)]
+    [Authorize(Roles = HRM.Application.Commons.Authorization.ApplicationRoleSets.CRM.DirectorReaderRolesCsv)]
     public async Task<IActionResult> GetDirectorDashboard(CancellationToken cancellationToken)
         => Ok((await _sender.Send(new GetDirectorCrmDashboardQuery(), cancellationToken)).Data);
 

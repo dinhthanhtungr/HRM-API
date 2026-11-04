@@ -29,12 +29,14 @@ public static class NotificationTopicCatalog
             TopicNotifications.MerchandiseOrderCreated => SalesOrder("sales.merchandise_order.created", "lifecycle"),
             TopicNotifications.MerchandiseOrderUpdated => SalesOrder("sales.merchandise_order.updated", "change"),
             TopicNotifications.MerchandiseOrderDeleted => SalesOrder("sales.merchandise_order.deleted", "lifecycle"),
+            TopicNotifications.MerchandiseOrderPromisedDeliveryNotified => SalesOrder("sales.merchandise_order.promised_delivery_notified", "schedule"),
 
             TopicNotifications.ManufacturingOrderCreated => Production("mfg.manufacturing_order.created", "lifecycle", "ManufacturingOrder"),
             TopicNotifications.ManufacturingOrderUpdated => Production("mfg.manufacturing_order.updated", "change", "ManufacturingOrder"),
             TopicNotifications.ManufacturingOrderDeleted => Production("mfg.manufacturing_order.deleted", "lifecycle", "ManufacturingOrder"),
 
             TopicNotifications.PriceOverSellCreated => System("sales.price_over_sell.created", "pricing", "PriceOverSell"),
+            TopicNotifications.DeveloperNotificationTest => System("dev.notification.test", "test", null),
             TopicNotifications.WarehouseStockLost => Warehouse("warehouse.stock.lost", "inventory", "WarehouseStock"),
 
             TopicNotifications.CustomerLeadAssigned => Customer("crm.customer.lead.assigned", "assignment", "CustomerLead"),
@@ -52,17 +54,22 @@ public static class NotificationTopicCatalog
 
             TopicNotifications.SampleRequestMessageCreated => SampleRequest("plm.sample_request.message.created", "message"),
             TopicNotifications.SampleRequestPriceQuoteRequested => SampleRequest("plm.sample_request.price_quote.requested", "quotation"),
+            TopicNotifications.SampleRequestCustomerPriceFeedbackRecorded => SampleRequest("plm.sample_request.customer_price.feedback_recorded", "quotation"),
             TopicNotifications.SampleRequestChangeRequested => SampleRequest("plm.sample_request.change.requested", "change"),
             TopicNotifications.SampleRequestUpdateRequested => SampleRequest("plm.sample_request.update.requested", "change"),
             TopicNotifications.SampleRequestUpdateApproved => SampleRequest("plm.sample_request.update.approved", "change"),
             TopicNotifications.SampleRequestUpdateRejected => SampleRequest("plm.sample_request.update.rejected", "change"),
             TopicNotifications.InternalMailMessageCreated => InternalMail("internal_mail.message.created", "message"),
+            TopicNotifications.SampleRequestMessageReacted => SampleRequest("plm.sample_request.message.reacted", "reaction"),
+            TopicNotifications.QuotationMessageReacted => Quotation("crm.quotation.message.reacted", "reaction"),
+            TopicNotifications.InternalMailMessageReacted => InternalMail("internal_mail.message.reacted", "reaction"),
 
             TopicNotifications.SampleRequestDataChangeRequested => SampleRequest("plm.sample_request.data_change.requested", "change"),
             TopicNotifications.SampleRequestDataChangeApproved => SampleRequest("plm.sample_request.data_change.approved", "change"),
             TopicNotifications.SampleRequestDataChangeRejected => SampleRequest("plm.sample_request.data_change.rejected", "change"),
             TopicNotifications.MerchandiseOrderDeliveryPaused => SalesOrder("sales.merchandise_order.delivery.paused", "delivery"),
             TopicNotifications.MerchandiseOrderDeliveryResumed => SalesOrder("sales.merchandise_order.delivery.resumed", "delivery"),
+            TopicNotifications.QuotationSendConfirmationRequested => Quotation("crm.quotation.send_confirmation.requested", "approval"),
             TopicNotifications.QuotationSent => Quotation("crm.quotation.sent", "status"),
             TopicNotifications.QuotationMessageCreated => Quotation("crm.quotation.message.created", "message"),
             TopicNotifications.QuotationRequested => Quotation("crm.quotation.requested", "request"),

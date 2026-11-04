@@ -9,7 +9,7 @@ internal static class FormulaSampleSentRules
 {
     private const decimal MaxDeliveredSampleQuantityKg = 99999999999999.9999m;
 
-    public static string? ValidateRequest(UpdateFormulaStatusRequest request)
+    public static string? ValidateRequest(UpdateFormulaStatusRequest request, bool isChip = false)
     {
         if (request.Status != FormulaStatus.SampleSent)
         {
@@ -23,6 +23,9 @@ internal static class FormulaSampleSentRules
             return "SampleRequestId is required when sending a sample.";
         }
 
+        if (isChip)
+            return request.DeliveredSampleQuantityKg is null or 0 ? null : "Chip delivery must not specify kg.";
+
         if (!request.DeliveredSampleQuantityKg.HasValue ||
             request.DeliveredSampleQuantityKg.Value < 0 ||
             request.DeliveredSampleQuantityKg.Value > MaxDeliveredSampleQuantityKg)
@@ -32,6 +35,11 @@ internal static class FormulaSampleSentRules
 
         return null;
     }
+
+    public static bool CanConfirmFromStatus(string? currentStatus)
+        => string.Equals(currentStatus, FormulaStatus.Draft.ToString(), StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(currentStatus, FormulaStatus.Rework.ToString(), StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(currentStatus, FormulaStatus.Approved.ToString(), StringComparison.OrdinalIgnoreCase);
 
     public static bool CanSendFromStatus(string? currentStatus)
         => string.Equals(currentStatus, FormulaStatus.Approved.ToString(), StringComparison.OrdinalIgnoreCase) ||
@@ -47,7 +55,7 @@ internal static class FormulaSampleSentRules
     {
         trial.FormulaId = formulaId;
         trial.BatchNo = formulaExternalId.Trim();
-        trial.Status = SampleTrialStatus.SampleSent;
+        trial.Status = SampleTrialStatus.WaitingCustomerFeedback;
         trial.DeliveredSampleQuantityKg = deliveredSampleQuantityKg;
         trial.SentDate = now;
         trial.SentByEmployeeId = currentEmployeeId;

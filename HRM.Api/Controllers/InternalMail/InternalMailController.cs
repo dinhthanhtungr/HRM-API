@@ -1,5 +1,7 @@
 using System.Text.Json;
 using HRM.Application.Features.InternalMail.Commands.AddParticipants;
+using HRM.Application.Features.InternalMail.Commands.EnsureDefaultAreas;
+using HRM.Application.Features.InternalMail.Commands.ForwardToGroup;
 using HRM.Application.Features.InternalMail.Commands.CreateArea;
 using HRM.Application.Features.InternalMail.Commands.ForwardMessage;
 using HRM.Application.Features.InternalMail.Commands.CreateConversation;
@@ -15,7 +17,12 @@ using HRM.Application.Features.InternalMail.Queries.GetAttachmentContent;
 using HRM.Application.Features.InternalMail.Queries.GetConversations;
 using HRM.Application.Features.InternalMail.Queries.GetMessageContext;
 using HRM.Application.Features.InternalMail.Queries.GetMessages;
+using HRM.Application.Features.InternalMail.Queries.GetParticipants;
+using HRM.Application.Features.InternalMail.Queries.GetInviteCandidates;
 using HRM.Application.Features.InternalMail.Queries.SearchMessages;
+using HRM.Application.Features.InternalMail.Queries.SearchGroupMembers;
+using HRM.Application.Features.InternalMail.Commands.SetReaction;
+using HRM.Application.Features.InternalMail.Queries.GetReactions;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -84,6 +91,67 @@ public sealed class InternalMailController : ControllerBase
         command.ConversationId = conversationId;
         var result = await _sender.Send(command, cancellationToken);
         return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    /// <summary>Đồng bộ nhóm Kỹ thuật/Giá và thành viên mặc định của một hồ sơ phối mẫu, gồm President ở cả hai nhóm.</summary>
+    /// <remarks>Không cần body. Nhận ID hội thoại gốc hoặc nhóm con; không khôi phục thành viên đã bị loại, không phát lại notification.</remarks>
+    [HttpPost("conversations/{conversationId:guid}/areas/ensure-defaults")]
+    public async Task<IActionResult> EnsureDefaultAreas(Guid conversationId, CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new EnsureInternalConversationAreasCommand(conversationId), cancellationToken);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    [HttpPost("conversations/{conversationId:guid}/groups/forward")]
+    public async Task<IActionResult> ForwardToGroup(Guid conversationId, [FromBody] ForwardToInternalGroupCommand command, CancellationToken cancellationToken)
+    {
+        command.ConversationId = conversationId;
+        var result = await _sender.Send(command, cancellationToken);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    [HttpGet("conversations/{conversationId:guid}/participants/candidates")]
+    public async Task<IActionResult> GetInviteCandidates(Guid conversationId, CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new GetInternalMailInviteCandidatesQuery(conversationId), cancellationToken);
+        return result is null ? NotFound() : Ok(result);
+    }
+
+    [HttpGet("conversations/{conversationId:guid}/groups/member-search")]
+    public async Task<IActionResult> SearchGroupMembers(Guid conversationId, [FromQuery] string? keyword, CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new SearchInternalMailGroupMembersQuery(conversationId, keyword), cancellationToken);
+        return result is null ? NotFound() : Ok(result);
+    }
+
+    [HttpPut("conversations/{conversationId:guid}/messages/{messageId:guid}/reaction")]
+    public async Task<IActionResult> SetReaction(Guid conversationId, Guid messageId,
+        [FromBody] SetInternalMessageReactionRequest request, CancellationToken ct)
+    {
+        var result = await _sender.Send(new SetInternalMessageReactionCommand(conversationId, messageId, request.ReactionType), ct);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    [HttpDelete("conversations/{conversationId:guid}/messages/{messageId:guid}/reaction")]
+    public async Task<IActionResult> RemoveReaction(Guid conversationId, Guid messageId, CancellationToken ct)
+    {
+        var result = await _sender.Send(new SetInternalMessageReactionCommand(conversationId, messageId, null), ct);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    [HttpGet("conversations/{conversationId:guid}/messages/{messageId:guid}/reaction")]
+    public async Task<IActionResult> GetReactionSummary(Guid conversationId, Guid messageId, CancellationToken ct)
+    {
+        var result = await _sender.Send(new GetInternalMessageReactionSummaryQuery(conversationId, messageId), ct);
+        return result is null ? NotFound() : Ok(result);
+    }
+
+    [HttpGet("conversations/{conversationId:guid}/messages/{messageId:guid}/reactions")]
+    public async Task<IActionResult> GetReactions(Guid conversationId, Guid messageId,
+        [FromQuery] int pageNumber = 1, [FromQuery] int pageSize = 30, CancellationToken ct = default)
+    {
+        var result = await _sender.Send(new GetInternalMessageReactionsQuery(conversationId, messageId, pageNumber, pageSize), ct);
+        return result is null ? NotFound() : Ok(result);
     }
 
     [HttpGet("conversations/{conversationId:guid}/messages")]
@@ -194,6 +262,13 @@ public sealed class InternalMailController : ControllerBase
         }
 
         var form = await Request.ReadFormAsync(cancellationToken);
+        var mentionedIds = new List<Guid>();
+        foreach (var value in form["mentionedEmployeeIds"])
+        {
+            if (!Guid.TryParse(value, out var mentionedId) || mentionedId == Guid.Empty)
+                return BadRequest("MentionedEmployeeIds is invalid.");
+            mentionedIds.Add(mentionedId);
+        }
         var replyToMessageIdText = form["replyToMessageId"].FirstOrDefault();
         if (!Guid.TryParse(replyToMessageIdText, out var replyToMessageId) &&
             !string.IsNullOrWhiteSpace(replyToMessageIdText))
@@ -216,6 +291,7 @@ public sealed class InternalMailController : ControllerBase
             {
                 ConversationId = conversationId,
                 Body = form["body"].FirstOrDefault() ?? string.Empty,
+                MentionedEmployeeIds = mentionedIds,
                 AreaCode = form["areaCode"].FirstOrDefault(),
                 ReplyToMessageId = replyToMessageId == Guid.Empty ? null : replyToMessageId,
                 IsUrgent = isUrgent,
@@ -371,13 +447,13 @@ public sealed class InternalMailController : ControllerBase
     public async Task<IActionResult> GetParticipants(Guid conversationId, CancellationToken cancellationToken,
         [FromQuery] string? areaCode = null)
     {
-        var result = await _sender.Send(new GetInternalConversationDetailQuery
+        var result = await _sender.Send(new GetInternalConversationParticipantsQuery
         {
             AreaCode = areaCode,
             ConversationId = conversationId
         }, cancellationToken);
 
-        return result is null ? NotFound() : Ok(result.Participants);
+        return result is null ? NotFound() : Ok(result);
     }
 
     [HttpPost("conversations/{conversationId:guid}/participants")]

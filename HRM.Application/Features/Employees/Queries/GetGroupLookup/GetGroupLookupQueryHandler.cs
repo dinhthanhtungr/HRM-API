@@ -95,7 +95,7 @@ internal sealed class GetGroupLookupQueryHandler
 
     private bool HasFullGroupLookupAccess()
         => _currentUser.IsInRole(ApplicationRoles.Admin) ||
-           _currentUser.IsInRole(ApplicationRoles.President) ||
+           _currentUser.IsInAnyRole(ApplicationRoleSets.CRM.ExecutiveReaders) ||
            _currentUser.IsInRole(ApplicationRoles.Developer) ||
            _currentUser.IsInRole(ApplicationRoles.Sales.CustomerViewAll);
 }

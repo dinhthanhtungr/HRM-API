@@ -7,6 +7,11 @@ public partial class ProductInspection
 {
     public Guid Id { get; set; }
 
+    /// <summary>Công ty sở hữu phiếu mới; phiếu legacy chưa có dùng company của tiêu chuẩn.</summary>
+    public Guid? CompanyId { get; set; }
+    public Guid? ProductId { get; set; }
+    public Guid? MfgProductionOrderId { get; set; }
+
     public string? BatchId { get; set; }
 
     public string? ProductCode { get; set; }

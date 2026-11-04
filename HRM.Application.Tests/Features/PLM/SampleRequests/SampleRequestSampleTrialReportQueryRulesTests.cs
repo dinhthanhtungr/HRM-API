@@ -53,9 +53,10 @@ public sealed class SampleRequestSampleTrialReportQueryRulesTests
     }
 
     [Fact]
-    public void DailyWorkToday_IncludesOnlyWorkDueOnSelectedDay()
+    public void DailyWorkToday_IncludesUnfinishedWorkWithOrWithoutDelayRegardlessOfDueDate()
     {
         var dueToday = CreateRow(SampleRequestStatus.InProgress, SampleTrialStatus.Draft);
+        dueToday.SampleRequest.CreatedDate = new DateTime(2026, 9, 1);
         dueToday.SampleRequest.ExpectedDeliveryDate = new DateTime(2026, 9, 23);
         var overdue = CreateRow(SampleRequestStatus.InProgress, SampleTrialStatus.Draft);
         overdue.SampleRequest.ExpectedDeliveryDate = new DateTime(2023, 10, 14);
@@ -70,7 +71,7 @@ public sealed class SampleRequestSampleTrialReportQueryRulesTests
         var result = SampleRequestSampleTrialReportQueryRules.ApplyReportType(
             new[] { dueToday, overdue, closed }.AsQueryable(), request).ToList();
 
-        Assert.Same(dueToday, Assert.Single(result));
+        Assert.Equal(new[] { dueToday, overdue }, result);
     }
 
     [Fact]
@@ -94,15 +95,21 @@ public sealed class SampleRequestSampleTrialReportQueryRulesTests
     }
 
     [Fact]
-    public void DailyWork_DueQuotationStopsAfterActualQuoteDate()
+    public void DailyWork_QuotationStopsAtFormulaPriceRequest_NotSaleQuoteDate()
     {
         var due = CreateRow(SampleRequestStatus.InProgress, SampleTrialStatus.Draft);
         due.SampleRequest.InfoType = "Báo giá";
+        due.SampleRequest.CreatedDate = new DateTime(2026, 9, 1);
         due.SampleRequest.ExpectedPriceQuoteDate = new DateTime(2026, 9, 23);
+        due.SampleRequest.IsDelayed = false;
+        due.SampleRequest.RealPriceQuoteDate = new DateTime(2026, 9, 22);
         var quoted = CreateRow(SampleRequestStatus.InProgress, SampleTrialStatus.Draft);
         quoted.SampleRequest.InfoType = "Báo giá";
+        quoted.SampleRequest.CreatedDate = new DateTime(2026, 9, 1);
         quoted.SampleRequest.ExpectedPriceQuoteDate = new DateTime(2026, 9, 23);
         quoted.SampleRequest.RealPriceQuoteDate = new DateTime(2026, 9, 22);
+        quoted.SampleRequest.IsDelayed = false;
+        quoted.LabFormulaConfirmedAt = new DateTime(2026, 9, 22);
 
         var result = SampleRequestSampleTrialReportQueryRules.ApplyReportType(
             new[] { due, quoted }.AsQueryable(),
@@ -113,19 +120,150 @@ public sealed class SampleRequestSampleTrialReportQueryRulesTests
     }
 
     [Fact]
-    public void DailyWorkToday_IncludesFailedTrialWithFeedbackOnSelectedDay()
+    public void DailyWorkToday_IncludesFailedWorkRegardlessOfFeedbackDateOrDelay()
     {
         var failedToday = CreateRow(SampleRequestStatus.InProgress, SampleTrialStatus.Failed,
             customerReplyDate: new DateTime(2026, 9, 23, 14, 0, 0));
+        failedToday.SampleRequest.CreatedDate = new DateTime(2026, 9, 1);
         var failedEarlier = CreateRow(SampleRequestStatus.InProgress, SampleTrialStatus.Failed,
             customerReplyDate: new DateTime(2026, 9, 22, 14, 0, 0));
+        failedEarlier.SampleRequest.IsDelayed = true;
 
         var result = SampleRequestSampleTrialReportQueryRules.ApplyReportType(
             new[] { failedToday, failedEarlier }.AsQueryable(),
             new GetSampleRequestSampleTrialsQuery { DailyWorkDate = new DateOnly(2026, 9, 23) })
             .ToList();
 
-        Assert.Same(failedToday, Assert.Single(result));
+        Assert.Equal(new[] { failedToday, failedEarlier }, result);
+    }
+
+    [Theory]
+    [InlineData(SampleRequestStatus.Completed, SampleTrialStatus.Approved)]
+    [InlineData(SampleRequestStatus.Cancelled, SampleTrialStatus.Cancelled)]
+    public void DailyWorkToday_ExcludesFinishedLabWorkEvenWithDelay(
+        SampleRequestStatus requestStatus, SampleTrialStatus trialStatus)
+    {
+        var row = CreateRow(requestStatus, trialStatus);
+        row.SampleRequest.IsDelayed = true;
+
+        var result = SampleRequestSampleTrialReportQueryRules.ApplyReportType(
+            new[] { row }.AsQueryable(),
+            new GetSampleRequestSampleTrialsQuery { DailyWorkDate = new DateOnly(2026, 9, 23) });
+
+        Assert.Empty(result);
+    }
+
+    [Theory]
+    [InlineData(SampleRequestStatus.InProgress, SampleTrialStatus.SampleSent)]
+    [InlineData(SampleRequestStatus.InProgress, SampleTrialStatus.WaitingCustomerFeedback)]
+    [InlineData(SampleRequestStatus.InProgress, SampleTrialStatus.Approved)]
+    public void DailyWorkToday_FinishedLabWorkAppearsOnlyWhileDelayed(
+        SampleRequestStatus requestStatus, SampleTrialStatus trialStatus)
+    {
+        var row = CreateRow(requestStatus, trialStatus);
+        var request = new GetSampleRequestSampleTrialsQuery { DailyWorkDate = new DateOnly(2026, 9, 23) };
+        row.SampleRequest.CreatedDate = new DateTime(2026, 9, 1);
+        Assert.Empty(SampleRequestSampleTrialReportQueryRules.ApplyReportType(new[] { row }.AsQueryable(), request));
+
+        row.SampleRequest.IsDelayed = true;
+        Assert.Same(row, Assert.Single(SampleRequestSampleTrialReportQueryRules.ApplyReportType(
+            new[] { row }.AsQueryable(), request)));
+    }
+
+    [Fact]
+    public void DailyWorkToday_RequestedQuotationStillAppearsWhileDelayed()
+    {
+        var row = CreateRow(SampleRequestStatus.InProgress, SampleTrialStatus.Draft);
+        row.SampleRequest.InfoType = "Quotation";
+        row.LabFormulaConfirmedAt = new DateTime(2026, 9, 22);
+        row.SampleRequest.IsDelayed = true;
+
+        Assert.Same(row, Assert.Single(SampleRequestSampleTrialReportQueryRules.ApplyReportType(
+            new[] { row }.AsQueryable(),
+            new GetSampleRequestSampleTrialsQuery { DailyWorkDate = new DateOnly(2026, 9, 23) })));
+    }
+
+    [Fact]
+    public void DailyWorkToday_IncludesDelayedRequestWithoutTrialOrDueDate()
+    {
+        var row = CreateRow(SampleRequestStatus.New, SampleTrialStatus.Draft);
+        row.SampleRequest.IsDelayed = true;
+        row.Trial = null;
+
+        var result = SampleRequestSampleTrialReportQueryRules.ApplyReportType(
+            new[] { row }.AsQueryable(),
+            new GetSampleRequestSampleTrialsQuery { DailyWorkDate = new DateOnly(2026, 9, 23) });
+
+        Assert.Same(row, Assert.Single(result));
+    }
+
+    [Fact]
+    public void DelayView_OnlyIncludesManuallyMarkedOpenRequests_EvenAfterLabFinished()
+    {
+        var unfinished = CreateRow(SampleRequestStatus.InProgress, SampleTrialStatus.Draft);
+        var sent = CreateRow(SampleRequestStatus.SampleSent, SampleTrialStatus.SampleSent);
+        sent.SampleRequest.IsDelayed = true;
+        var closed = CreateRow(SampleRequestStatus.Completed, SampleTrialStatus.Approved);
+        closed.SampleRequest.IsDelayed = true;
+        var result = SampleRequestSampleTrialReportQueryRules.ApplyReportType(
+            new[] { unfinished, sent, closed }.AsQueryable(), new GetSampleRequestSampleTrialsQuery
+            {
+                DailyWorkDate = new DateOnly(2026, 10, 30), DailyWorkView = SampleRequestDailyView.Delay
+            });
+        Assert.Same(sent, Assert.Single(result));
+    }
+
+    [Fact]
+    public void FailedQuotation_ReappearsUntilConfirmedAfterFeedback()
+    {
+        var feedback = new DateTime(2026, 10, 30, 12, 0, 0);
+        var row = CreateRow(SampleRequestStatus.InProgress, SampleTrialStatus.Failed, customerReplyDate: feedback);
+        row.SampleRequest.CreatedDate = feedback.Date;
+        row.SampleRequest.InfoType = "Quotation";
+        row.LabFormulaConfirmedAt = feedback.AddDays(-1);
+        var request = new GetSampleRequestSampleTrialsQuery { DailyWorkDate = new DateOnly(2026, 10, 30) };
+        Assert.Same(row, Assert.Single(SampleRequestSampleTrialReportQueryRules.ApplyReportType(new[] { row }.AsQueryable(), request)));
+        row.LabFormulaConfirmedAt = feedback.AddMinutes(1);
+        Assert.Empty(SampleRequestSampleTrialReportQueryRules.ApplyReportType(new[] { row }.AsQueryable(), request));
+    }
+
+    [Fact]
+    public void QuotationType_IsTrimmedAndCaseInsensitive()
+    {
+        var row = CreateRow(SampleRequestStatus.InProgress, SampleTrialStatus.Draft);
+        row.SampleRequest.InfoType = "  qUoTaTiOn  ";
+        row.SampleRequest.CreatedDate = new DateTime(2026, 10, 1);
+        row.LabFormulaConfirmedAt = new DateTime(2026, 10, 30);
+        Assert.Empty(SampleRequestSampleTrialReportQueryRules.ApplyReportType(new[] { row }.AsQueryable(),
+            new GetSampleRequestSampleTrialsQuery { DailyWorkDate = new DateOnly(2026, 10, 30) }));
+    }
+
+    [Theory]
+    [InlineData(2026, 10)]
+    [InlineData(2026, 12)]
+    [InlineData(2024, 2)]
+    [InlineData(9999, 12)]
+    public void Today_DoesNotReapplyCreationMonthAfterOperationalScope(int year, int month)
+    {
+        var start = new DateTime(year, month, 1);
+        var last = new DateTime(year, month, DateTime.DaysInMonth(year, month), 23, 59, 59);
+        var firstRow = CreateRow(SampleRequestStatus.InProgress, SampleTrialStatus.Draft, start);
+        var lastRow = CreateRow(SampleRequestStatus.InProgress, SampleTrialStatus.Draft, last);
+        var old = CreateRow(SampleRequestStatus.InProgress, SampleTrialStatus.Draft, start.AddDays(-1));
+        old.Trial!.CreatedDate = start; // Trial mới không được kéo hồ sơ cũ vào tháng hiện tại.
+        var pinned = CreateRow(SampleRequestStatus.SampleSent, SampleTrialStatus.SampleSent, start.AddMonths(-1));
+        pinned.SampleRequest.IsDelayed = true;
+        var rows = new List<SampleRequestSampleTrialReportRow> { firstRow, lastRow, old, pinned };
+        if (year != 9999 || month != 12)
+            rows.Add(CreateRow(SampleRequestStatus.InProgress, SampleTrialStatus.Draft, start.AddMonths(1)));
+
+        var result = SampleRequestSampleTrialReportQueryRules.ApplyReportType(rows.AsQueryable(),
+            new GetSampleRequestSampleTrialsQuery { DailyWorkDate = new DateOnly(year, month, 15) });
+
+        Assert.Equal(rows, result);
+        pinned.SampleRequest.IsDelayed = false;
+        Assert.DoesNotContain(pinned, SampleRequestSampleTrialReportQueryRules.ApplyReportType(rows.AsQueryable(),
+            new GetSampleRequestSampleTrialsQuery { DailyWorkDate = new DateOnly(year, month, 15) }));
     }
 
     [Fact]
@@ -197,19 +335,21 @@ public sealed class SampleRequestSampleTrialReportQueryRulesTests
     }
 
     [Fact]
-    public void WaitingCustomerFeedback_DateRangeUsesRequestReceivedDate()
+    public void WaitingCustomerFeedback_DateRangeUsesSentDateNotLegacySaleReceipt()
     {
         var inRange = CreateRow(
             SampleRequestStatus.SampleSent,
             SampleTrialStatus.WaitingCustomerFeedback,
             sampleRequestCreatedDate: new DateTime(2026, 6, 1),
             requestReceivedDate: new DateTime(2026, 5, 31),
+            sentDate: new DateTime(2026, 5, 30),
             customerReplyStatus: "WAITING");
         var outOfRange = CreateRow(
             SampleRequestStatus.SampleSent,
             SampleTrialStatus.WaitingCustomerFeedback,
             sampleRequestCreatedDate: new DateTime(2026, 5, 1),
             requestReceivedDate: new DateTime(2026, 6, 1),
+            sentDate: new DateTime(2026, 6, 1),
             customerReplyStatus: "WAITING");
         var request = new GetSampleRequestSampleTrialsQuery
         {
@@ -226,7 +366,7 @@ public sealed class SampleRequestSampleTrialReportQueryRulesTests
     }
 
     [Fact]
-    public void WaitingCustomerFeedback_IncludesUnreceivedSentSamplesBeforeCustomerFeedbackQueue()
+    public void WaitingCustomerFeedback_IncludesSentTrialsWithoutReceiptAndSortsByDelivery()
     {
         var awaitingSaleReceipt = CreateRow(
             SampleRequestStatus.SampleSent,
@@ -236,6 +376,7 @@ public sealed class SampleRequestSampleTrialReportQueryRulesTests
             SampleRequestStatus.SampleSent,
             SampleTrialStatus.WaitingCustomerFeedback,
             requestReceivedDate: new DateTime(2026, 9, 3),
+            sentDate: new DateTime(2026, 9, 3),
             customerReplyStatus: "WAITING");
         var receivedButStillSent = CreateRow(
             SampleRequestStatus.SampleSent,
@@ -255,7 +396,7 @@ public sealed class SampleRequestSampleTrialReportQueryRulesTests
                 })
             .ToList();
 
-        Assert.Equal([awaitingSaleReceipt, awaitingCustomerFeedback], sorted);
+        Assert.Equal([receivedButStillSent, awaitingCustomerFeedback, awaitingSaleReceipt], sorted);
     }
 
     private static List<SampleRequestSampleTrialReportRow> ApplyReportType(

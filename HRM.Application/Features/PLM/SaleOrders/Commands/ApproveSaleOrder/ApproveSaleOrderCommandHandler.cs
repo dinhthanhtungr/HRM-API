@@ -48,6 +48,9 @@ internal sealed class ApproveSaleOrderCommandHandler : IRequestHandler<ApproveSa
         }
 
         await using var transaction = await _dbContext.BeginTransactionAsync(cancellationToken);
+        await _dbContext.MerchandiseOrders.Where(x => x.CompanyId == companyId
+                && x.MerchandiseOrderId == command.MerchandiseOrderId && x.IsActive)
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.UpdatedDate, x => x.UpdatedDate), cancellationToken);
         var order = await _dbContext.MerchandiseOrders
             .Include(x => x.MerchandiseOrderDetails)
             .FirstOrDefaultAsync(x => x.CompanyId == companyId && x.MerchandiseOrderId == command.MerchandiseOrderId && x.IsActive, cancellationToken);

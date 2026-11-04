@@ -86,6 +86,7 @@ internal sealed class GetSupplierDetailQueryHandler : IRequestHandler<GetSupplie
             }).ToListAsync(cancellationToken);
 
         supplier.Materials = new PagedResult<SupplierMaterialDto>(materials, total, request.NormalizedPageNumber, request.NormalizedPageSize);
+        await SupplierActualDeliveryReader.PopulateAsync(_dbContext, companyId, request.SupplierId, supplier, cancellationToken);
         return supplier;
     }
 }

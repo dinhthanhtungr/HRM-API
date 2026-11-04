@@ -16,6 +16,10 @@ namespace HRM.Domain.Entities.ManufacturingSchema
         // 1. Identity
         // =========================================================
         public Guid ColorChipMfgRecordId { get; set; }
+        // Existing legacy columns; mapped only, no schema creation.
+        public string? ColorCode { get; set; }
+        public string? ProductName { get; set; }
+        public double? UsageRate { get; set; }
 
         // =========================================================
         // 2. Classification / Business Type

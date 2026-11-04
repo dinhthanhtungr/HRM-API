@@ -26,5 +26,6 @@ namespace HRM.Application.Features.Dispatch.DeliveryOrders.Commands.CreateDelive
 
         public IReadOnlyCollection<Guid> DelivererInforIds { get; init; } = [];
         public IReadOnlyCollection<DeliveryOrderLineRequest> Lines { get; init; } = [];
+        public IReadOnlyCollection<DeliveryAttachedGoodsRequest> AttachedGoods { get; init; } = [];
     }
 }

@@ -29,11 +29,20 @@ internal static class PresentationDependencyInjection
         services.AddEndpointsApiExplorer();
         services.AddHttpContextAccessor();
         services.AddScoped<ICurrentUser, CurrentUser>();
+        // GROUP-STORAGE-TRANSITION: switch — temporary configuration binding, see InternalMail/design/group-storage/TRANSITION_CLEANUP.md.
+        services.Configure<HRM.Application.Features.InternalMail.Services.InternalMailGroupStorageOptions>(
+            configuration.GetSection(HRM.Application.Features.InternalMail.Services.InternalMailGroupStorageOptions.SectionName));
+        services.Configure<HRM.Application.Features.InternalMail.Services.InternalMailReactionOptions>(
+            configuration.GetSection(HRM.Application.Features.InternalMail.Services.InternalMailReactionOptions.SectionName));
         services.AddSingleton(
             configuration.GetSection(QuotationFeatureOptions.SectionName)
                 .Get<QuotationFeatureOptions>() ?? new QuotationFeatureOptions());
         services.AddSignalR();
         services.AddHostedService<OutboxProcessor>();
+        services.AddHostedService<SampleRequestWorkflowNotificationWorker>();
+        services.AddScoped<HRM.Application.Features.InternalMail.Services.IInternalMessageReactionEvents,
+            HRM.Infrastructure.Services.InternalMail.InternalMessageReactionEvents>();
+        services.AddHostedService<InternalMessageReactionOutboxProcessor>();
         services.AddHostedService<WebPushOutboxProcessor>();
         services.AddHostedService<CustomerFollowUpTaskDueReminderWorker>();
         services.AddHostedService<QuotationPricingExpiryReminderWorker>();
@@ -41,10 +50,13 @@ internal static class PresentationDependencyInjection
             configuration.GetSection("Gemini:Automation"));
         services.AddHostedService<CustomerInteractionAiSummaryAutomationWorker>();
         services.AddHostedService<MaterialDocumentImportWorker>();
+        services.AddHostedService<MaterialTdsExtractionWorker>();
 
         services.AddSwaggerGen(options =>
         {
             options.CustomSchemaIds(CreateSwaggerSchemaId);
+            options.OperationFilter<HRM.Api.OpenApi.PLPUDrilldownOperationFilter>();
+            options.OperationFilter<HRM.Api.OpenApi.PurchasingCategoryOptionsOperationFilter>();
 
             options.SwaggerDoc("v1", new OpenApiInfo
             {

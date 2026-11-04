@@ -68,6 +68,7 @@ artifacts/
 # Local Codex inspection and generated output
 /.codex/tmp/
 /output/
+/outputs/
 /tmp/
 
 # Tye

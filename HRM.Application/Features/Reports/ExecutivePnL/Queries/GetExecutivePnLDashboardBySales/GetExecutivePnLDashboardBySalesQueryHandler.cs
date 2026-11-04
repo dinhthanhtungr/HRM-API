@@ -1,3 +1,5 @@
+using HRM.Application.Commons.Reporting;
+using HRM.Application.Commons.Authorization;
 using HRM.Application.Abstractions.Persistence.Reports;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Features.Reports.ExecutivePnL.Queries.GetExecutivePnLReport.Models;
@@ -14,10 +16,12 @@ namespace HRM.Application.Features.Reports.ExecutivePnL.Queries.GetExecutivePnLD
     {
         private readonly ExecutivePnLSalesReader _reader;
         private readonly ICurrentUser _currentUser;
+        private readonly ICurrentUserPermissionService _permissions;
 
-        public GetExecutivePnLDashboardBySalesQueryHandler(IReportReadDbContext dbContext, ICurrentUser currentUser)
+        public GetExecutivePnLDashboardBySalesQueryHandler(IReportReadDbContext dbContext, ICurrentUser currentUser, ICurrentUserPermissionService permissions)
         {
             _currentUser = currentUser;
+            _permissions = permissions;
             _reader = new ExecutivePnLSalesReader(dbContext, currentUser);
         }
 
@@ -26,21 +30,25 @@ namespace HRM.Application.Features.Reports.ExecutivePnL.Queries.GetExecutivePnLD
             CancellationToken cancellationToken)
         {
             var period = ExecutivePnLPeriod.Create(query.FromMonth, query.ToMonth);
+            if (!_currentUser.IsAuthenticated
+                || !_currentUser.IsInAnyRole(ApplicationRoleSets.Reports.SalesScopedReaders))
+                throw new UnauthorizedAccessException("Không có quyền xem báo cáo sale.");
             var filter = ExecutivePnLDashboardFilterFactory.CreateSaleFilter(
-                query.CompanyId,
+                ReportCompanyScope.Resolve(_currentUser, query.CompanyId),
                 query.BusinessUnit,
                 query.Currency,
                 GetComparisonFromMonth(period.FromMonth, query.PeriodType),
                 query.ToMonth,
                 query.SaleGroup,
                 query.SalePerson);
-            var rows = await _reader.ReadMonthlyAsync(filter, cancellationToken);
+            var canViewProfit = _permissions.HasPermission(ApplicationPermissions.Reports.ViewSalesProfit);
+            var rows = await _reader.ReadMonthlyAsync(filter, cancellationToken, canViewProfit);
 
             return ExecutivePnLDashboardBuilder.BuildSalesAnalysisTab(
                 period.Months,
                 rows,
                 query.TopN,
-                query.PeriodType);
+                query.PeriodType, canViewProfit);
         }
 
         private static DateTime GetComparisonFromMonth(

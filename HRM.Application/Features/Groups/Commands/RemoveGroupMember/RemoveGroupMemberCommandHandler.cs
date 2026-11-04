@@ -46,7 +46,9 @@ internal sealed class RemoveGroupMemberCommandHandler
         var hasFullAccess = ApplicationRoleSets.SuperUsers.Any(_currentUser.IsInRole);
         var isCurrentLeader = await _dbContext.MemberInGroups.AnyAsync(
             member => member.GroupId == request.GroupId &&
-                member.Profile == currentEmployeeId && member.IsActive && member.IsAdmin == true,
+                member.Profile == currentEmployeeId && member.IsActive && member.IsAdmin == true &&
+                member.ProfileNavigation != null && member.ProfileNavigation.IsActive &&
+                member.ProfileNavigation.CompanyId == companyId,
             cancellationToken);
         if (!hasFullAccess && !isCurrentLeader)
         {
@@ -56,7 +58,9 @@ internal sealed class RemoveGroupMemberCommandHandler
 
         var membership = await _dbContext.MemberInGroups
             .Where(member => member.GroupId == request.GroupId &&
-                member.Profile == request.EmployeeId && member.IsActive)
+                member.Profile == request.EmployeeId && member.IsActive &&
+                member.ProfileNavigation != null &&
+                member.ProfileNavigation.CompanyId == companyId)
             .Select(member => new
             {
                 Membership = member,
@@ -67,7 +71,7 @@ internal sealed class RemoveGroupMemberCommandHandler
         if (membership is null)
         {
             return Fail(GroupCommandError.NotFound,
-                "Nhân viên không phải thành viên active của nhóm.");
+                "Không tìm thấy nhân viên cùng công ty là thành viên active của nhóm.");
         }
 
         if (membership.Membership.IsAdmin == true)
@@ -80,7 +84,9 @@ internal sealed class RemoveGroupMemberCommandHandler
 
             var activeLeaderCount = await _dbContext.MemberInGroups.CountAsync(
                 member => member.GroupId == request.GroupId && member.IsActive &&
-                    member.Profile != null && member.IsAdmin == true,
+                    member.Profile != null && member.IsAdmin == true &&
+                    member.ProfileNavigation != null && member.ProfileNavigation.IsActive &&
+                    member.ProfileNavigation.CompanyId == companyId,
                 cancellationToken);
             if (!GroupManagementRules.CanRemoveLeader(activeLeaderCount))
             {

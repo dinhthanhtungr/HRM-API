@@ -7,6 +7,8 @@ public sealed class SupplierSummaryDto
     public Guid SupplierId { get; init; }
     public string SupplierCode { get; init; } = string.Empty;
     public string SupplierName { get; init; } = string.Empty;
+    /// <summary>Địa chỉ hiển thị đầy đủ của NCC; null nếu không có địa chỉ.</summary>
+    public string? SupplierAddress { get; init; }
     public string? Phone { get; init; }
     public string? ContactName { get; init; }
     public string? ContactPhone { get; init; }
@@ -31,6 +33,7 @@ public sealed class SupplierDetailDto
     public IReadOnlyList<SupplierContactDto> Contacts { get; init; } = [];
     public IReadOnlyList<SupplierAddressDto> Addresses { get; init; } = [];
     public PagedResult<SupplierMaterialDto> Materials { get; set; } = default!;
+    public SupplierActualDeliveryDto ActualDelivery { get; set; } = new();
 }
 
 public sealed class SupplierContactDto
@@ -65,4 +68,5 @@ public sealed class SupplierMaterialDto
     public string? Currency { get; init; }
     public bool IsPreferred { get; init; }
     public int? MinDeliveryDays { get; init; }
+    public SupplierActualDeliveryDto ActualDelivery { get; set; } = new();
 }

@@ -6,6 +6,7 @@ using HRM.Application.Features.CRM.CustomerCare.Visibility;
 using HRM.Application.Features.CRM.Quotations.Dtos;
 using HRM.Application.Features.CRM.Quotations.Services;
 using HRM.Domain.Enums.CustomerEnum;
+using HRM.Domain.Entities.CustomerSchema;
 using Microsoft.EntityFrameworkCore;
 
 namespace HRM.Application.Features.CRM.Quotations.Services;
@@ -43,7 +44,7 @@ internal sealed class QuotationCustomerPriceUpdateService
                 "QuotationId, expectedUpdatedDate and at least one customer price line are required.");
         }
 
-        if (requestedLines.Any(x => x.QuotationLineId == Guid.Empty) ||
+        if (requestedLines.Any(x => x is null || x.QuotationLineId == Guid.Empty || x.PriceTiers is null || x.PriceTiers.Any(t => t is null)) ||
             requestedLines.Select(x => x.QuotationLineId).Distinct().Count() != requestedLines.Count)
         {
             return OperationResult<QuotationTotalsDto>.Fail(
@@ -54,6 +55,7 @@ internal sealed class QuotationCustomerPriceUpdateService
             .AsTracking()
             .Include(x => x.Lines.Where(line => line.IsActive))
                 .ThenInclude(x => x.PriceTiers)
+            .Include(x => x.Terms)
             .FirstOrDefaultAsync(x =>
                 x.QuotationId == quotationId &&
                 x.CompanyId == scope.CompanyId &&
@@ -70,8 +72,11 @@ internal sealed class QuotationCustomerPriceUpdateService
         if (!QuotationWorkflowRules.CanEditCustomerPricing(quotation.Status))
         {
             return OperationResult<QuotationTotalsDto>.Fail(
-                "Customer price tiers can only be edited while pricing is pending or approved.");
+                "Customer price tiers can only be edited on an unsent draft, pricing-pending, approved or send-pending quotation.");
         }
+
+        if (persist && quotation.Status == QuotationStatus.PendingSendConfirmation)
+            return OperationResult<QuotationTotalsDto>.Fail("Pending send prices must be saved through the atomic quotation workflow.");
 
         var concurrencyError = OptimisticConcurrencyHelper.ValidateExpectedUpdatedDate(
             expectedUpdatedDate, quotation.UpdatedDate, "Quotation");
@@ -91,6 +96,12 @@ internal sealed class QuotationCustomerPriceUpdateService
                     $"lines[{index}].quotationLineId does not belong to this quotation.");
             }
 
+            if (request.NoteOnly)
+            {
+                if (request.PriceTiers.Count != 0)
+                    return OperationResult<QuotationTotalsDto>.Fail($"lines[{index}]: noteOnly cannot include price tiers.");
+                continue;
+            }
             var result = QuotationPriceTierBuilder.Build(
                 line.QuotationLineId,
                 line.Quantity,
@@ -104,18 +115,20 @@ internal sealed class QuotationCustomerPriceUpdateService
             pricingByLineId.Add(line.QuotationLineId, result.Data);
         }
 
+        var previousUpdatedDate = quotation.UpdatedDate;
+        var commercialBefore = quotation.Status == QuotationStatus.PendingSendConfirmation
+            ? QuotationConfirmationCommercialRules.Fingerprint(quotation) : null;
         foreach (var request in requestedLines)
         {
             var line = lineById[request.QuotationLineId];
-            var pricing = pricingByLineId[line.QuotationLineId];
-            _writeDbContext.QuotationLinePriceTiers.RemoveRange(line.PriceTiers);
-            line.PriceTiers.Clear();
-            foreach (var tier in pricing.PriceTiers)
+            if (pricingByLineId.TryGetValue(line.QuotationLineId, out var pricing) && !SameTiers(line.PriceTiers, pricing.PriceTiers))
             {
-                line.PriceTiers.Add(tier);
+                _writeDbContext.QuotationLinePriceTiers.RemoveRange(line.PriceTiers);
+                line.PriceTiers.Clear();
+                foreach (var tier in pricing.PriceTiers)
+                    line.PriceTiers.Add(tier);
+                _writeDbContext.QuotationLinePriceTiers.AddRange(pricing.PriceTiers);
             }
-
-            _writeDbContext.QuotationLinePriceTiers.AddRange(pricing.PriceTiers);
             line.LineTotal = QuotationRules.CalculateLineTotal(
                 line.Quantity, line.UnitPrice, line.DiscountPercent);
             line.Note = QuotationRules.TrimToNull(request.Note);
@@ -123,7 +136,9 @@ internal sealed class QuotationCustomerPriceUpdateService
 
         QuotationRules.RecalculateTotals(quotation);
         quotation.UpdatedBy = scope.EmployeeId;
-        quotation.UpdatedDate = _dateTimeProvider.Now;
+        quotation.UpdatedDate = QuotationWorkflowRules.NextUpdatedDate(_dateTimeProvider.Now, expectedUpdatedDate);
+        if (commercialBefore is not null && commercialBefore == QuotationConfirmationCommercialRules.Fingerprint(quotation))
+            quotation.UpdatedDate = previousUpdatedDate;
 
         try
         {
@@ -137,6 +152,7 @@ internal sealed class QuotationCustomerPriceUpdateService
 
         return OperationResult<QuotationTotalsDto>.Ok(new QuotationTotalsDto
         {
+            Status = quotation.Status,
             SubTotal = quotation.SubTotal,
             DiscountAmount = quotation.DiscountAmount,
             TaxPercent = quotation.TaxPercent,
@@ -144,5 +160,18 @@ internal sealed class QuotationCustomerPriceUpdateService
             TotalAmount = quotation.TotalAmount,
             UpdatedDate = quotation.UpdatedDate
         }, "Customer price tiers updated successfully.");
+    }
+
+    private static bool SameTiers(IEnumerable<QuotationLinePriceTier> stored, IEnumerable<QuotationLinePriceTier> proposed)
+    {
+        static object Values(QuotationLinePriceTier tier) => new
+        {
+            tier.QuantityRangeLabel, tier.MinQuantity, tier.MaxQuantity, tier.MinInclusive, tier.MaxInclusive,
+            tier.UnitPrice, tier.CommissionAmount, tier.SortOrder, tier.IsActive
+        };
+        var remaining = proposed.Select(Values).ToList();
+        foreach (var tier in stored)
+            if (!remaining.Remove(Values(tier))) return false;
+        return remaining.Count == 0;
     }
 }

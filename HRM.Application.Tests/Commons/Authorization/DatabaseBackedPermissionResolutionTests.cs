@@ -6,6 +6,15 @@ namespace HRM.Application.Tests.Commons.Authorization;
 public sealed class DatabaseBackedPermissionResolutionTests
 {
     [Fact]
+    public void DeveloperCanConfirmQuotationWithOlderExplicitToken()
+    {
+        var service = new CurrentUserPermissionService(new ExplicitPermissionCurrentUser(
+            [ApplicationRoles.Developer], []));
+        Assert.True(service.HasPermission(ApplicationPermissions.Quotations.ConfirmSent));
+        Assert.False(service.HasPermission(ApplicationPermissions.Pricing.Manage));
+    }
+
+    [Fact]
     public void ExplicitPermissionSet_OverridesLegacyRoleMapping()
     {
         var currentUser = new ExplicitPermissionCurrentUser(

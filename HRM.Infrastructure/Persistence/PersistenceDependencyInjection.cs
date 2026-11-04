@@ -52,12 +52,18 @@ internal static class PersistenceDependencyInjection
         QuestPDF.Settings.License = questPdfLicense;
         services.AddSingleton<IQuotationPdfRenderer, QuotationPdfRenderer>();
         services.AddSingleton<IManufacturingVUFormulaPdfRenderer, ManufacturingVUFormulaPdfRenderer>();
+        services.AddSingleton<IManufacturingAdjustmentPdfRenderer, ManufacturingAdjustmentPdfRenderer>();
+        services.AddSingleton<IManufacturingOrderPdfRenderer, ManufacturingOrderPdfRenderer>();
         services.AddSingleton<IComplaintReportPdfRenderer, ComplaintReportPdfRenderer>();
         services.AddSingleton<IProductInspectionPdfRenderer, ProductInspectionPdfRenderer>();
         services.AddSingleton<IColorChipRecordPdfRenderer, ColorChipRecordPdfRenderer>();
         services.AddSingleton<IFormulaMaterialsExcelRenderer, FormulaMaterialsExcelRenderer>();
+        services.AddSingleton<IProductionOrderQuantityExcelRenderer, ProductionOrderQuantityExcelRenderer>();
+        services.AddSingleton<IManufacturingFormulaExcelRenderer, ManufacturingFormulaExcelRenderer>();
+        services.AddSingleton<IMerchandiseOrderVaExcelRenderer, MerchandiseOrderVaExcelRenderer>();
         services.AddSingleton<IPurchaseOrderPdfRenderer, PurchaseOrderPdfRenderer>();
         services.AddSingleton<IPurchaseOrderExcelRenderer, PurchaseOrderExcelRenderer>();
+        services.AddSingleton<IPLPUFinishReportExcelRenderer, ExportFinishReportExcelHelper>();
         services.AddSingleton<IDeliveryOrderPdfRenderer, DeliveryOrderPdfRenderer>();
         services.AddSingleton<IDeliveryOrderExcelRenderer, DeliveryOrderExcelRenderer>();
 
@@ -84,6 +90,8 @@ internal static class PersistenceDependencyInjection
         // Dispatch DbContexts
         services.AddScoped<IDispatchReadDbContext>(provider => provider.GetRequiredService<ApplicationDbContext>());
         services.AddScoped<IDispatchWriteDbContext>(provider => provider.GetRequiredService<ApplicationDbContext>());
+        services.AddScoped<HRM.Application.Abstractions.Documents.IDeliveryReportExcelRenderer,
+            HRM.Infrastructure.Documents.Excels.DeliveryReportExcelRenderer>();
 
         // CRM DbContexts
         services.AddScoped<ICRMReadDbContext>(provider => provider.GetRequiredService<ApplicationDbContext>());
@@ -92,13 +100,32 @@ internal static class PersistenceDependencyInjection
             provider.GetRequiredService<ApplicationDbContext>());
 
         // PLM DbContexts
+        services.AddScoped<HRM.Application.Abstractions.Persistence.PLM.Manufacturing.IManufacturingDbContext>(
+            provider => provider.GetRequiredService<ApplicationDbContext>());
         services.AddScoped<IPLMReadDbContext>(provider => provider.GetRequiredService<ApplicationDbContext>());
         services.AddScoped<IPLMWriteDbContext>(provider => provider.GetRequiredService<ApplicationDbContext>());
+        services.AddScoped<HRM.Application.Abstractions.Persistence.PLM.ProductionOrders.IProductionOrderDbContext>(
+            provider => provider.GetRequiredService<ApplicationDbContext>());
 
         // PLM Sale Order DbContext
         services.AddScoped<ISaleOrderDbContext>(provider => provider.GetRequiredService<ApplicationDbContext>());
         services.AddScoped<IPurchaseOrderDbContext>(provider => provider.GetRequiredService<ApplicationDbContext>());
         services.AddScoped<IComplaintReportDbContext>(provider => provider.GetRequiredService<ApplicationDbContext>());
+
+        services.AddScoped<HRM.Application.Abstractions.Persistence.DevAndQA.IEvaluationDbContext>(
+            sp => sp.GetRequiredService<ApplicationDbContext>());
+        services.AddScoped<HRM.Application.Abstractions.Persistence.DevAndQA.ILabTestDbContext>(
+            sp => sp.GetRequiredService<ApplicationDbContext>());
+        services.AddSingleton<HRM.Application.Abstractions.Documents.ILabTestSheetReader,
+            HRM.Infrastructure.Documents.Excels.LabTests.LabTestSheetReader>();
+        services.AddScoped<HRM.Application.Abstractions.Persistence.DevAndQA.IIqcDbContext>(
+            provider => provider.GetRequiredService<ApplicationDbContext>());
+        services.AddScoped<HRM.Application.Abstractions.Persistence.DevAndQA.IEvaluationFileSaveDbContext>(
+            provider => provider.GetRequiredService<ApplicationDbContext>());
+        services.AddSingleton<HRM.Application.Abstractions.Documents.IIqcEvaluationExcelRenderer,
+            HRM.Infrastructure.Documents.Excels.IQC.IqcEvaluationExcelRenderer>();
+        services.AddSingleton<HRM.Application.Abstractions.Documents.IIqcExcelRenderer,
+            HRM.Infrastructure.Documents.Excels.IQC.IqcExcelRenderer>();
 
         // Warehouse DbContexts
         services.AddScoped<IWarehouseReadDbContext>(provider => provider.GetRequiredService<ApplicationDbContext>());

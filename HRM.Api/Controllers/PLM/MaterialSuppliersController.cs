@@ -26,6 +26,7 @@ public sealed class MaterialSuppliersController : ControllerBase
     }
 
     [HttpGet("suppliers")]
+    [ProducesResponseType(typeof(PagedResult<SupplierSummaryDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetSuppliers(
         [FromQuery] GetSuppliersQuery query,
         CancellationToken cancellationToken)

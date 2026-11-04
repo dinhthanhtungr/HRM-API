@@ -1,0 +1,1053 @@
+--- /dev/null
++++ b/VietausWebAPI.Core/Domain/Entities/DevandqaSchema/MeasurementMethod.cs
+@@ -0,0 +1,23 @@
++using VietausWebAPI.Core.Domain.Entities.CompanySchema;
++using VietausWebAPI.Core.Domain.Entities.HrSchema;
++
++namespace VietausWebAPI.Core.Domain.Entities.DevandqaSchema;
++
++/// <summary>Danh mục phương pháp đo theo công ty, dùng để chọn vào chỉ tiêu và template.</summary>
++public class MeasurementMethod
++{
++    public Guid Id { get; set; }
++    public Guid CompanyId { get; set; }
++    public string Code { get; set; } = string.Empty;
++    public string Name { get; set; } = string.Empty;
++    public string? Description { get; set; }
++    public bool IsActive { get; set; } = true;
++    public int SortOrder { get; set; }
++    public Guid CreatedBy { get; set; }
++    public DateTime CreatedDate { get; set; }
++    public Guid? UpdatedBy { get; set; }
++    public DateTime? UpdatedDate { get; set; }
++    public Company Company { get; set; } = null!;
++    public Employee CreatedByEmployee { get; set; } = null!;
++    public Employee? UpdatedByEmployee { get; set; }
++}
+--- /dev/null
++++ b/VietausWebAPI.Infrastructure/DatabaseContext/Configurations/DevandqaSchema/MeasurementMethodConfiguration.cs
+@@ -0,0 +1,29 @@
++using VietausWebAPI.Core.Domain.Entities.DevandqaSchema;
++using Microsoft.EntityFrameworkCore;
++using Microsoft.EntityFrameworkCore.Metadata.Builders;
++
++namespace VietausWebAPI.Infrastructure.DatabaseContext.Configurations.DevandqaSchema;
++
++public sealed class MeasurementMethodConfiguration : IEntityTypeConfiguration<MeasurementMethod>
++{
++    public void Configure(EntityTypeBuilder<MeasurementMethod> entity)
++    {
++        entity.ToTable("MeasurementMethod", "devandqa", table => table.HasCheckConstraint("ck_measurementmethod_sortorder", "sortorder >= 0"));
++        entity.HasKey(x => x.Id);
++        entity.Property(x => x.Id).HasColumnName("id").HasDefaultValueSql("gen_random_uuid()");
++        entity.Property(x => x.CompanyId).HasColumnName("companyid");
++        entity.Property(x => x.Code).HasColumnName("code").HasColumnType("citext").HasMaxLength(50).IsRequired();
++        entity.Property(x => x.Name).HasColumnName("name").HasMaxLength(200).IsRequired();
++        entity.Property(x => x.Description).HasColumnName("description").HasColumnType("text");
++        entity.Property(x => x.IsActive).HasColumnName("isactive").HasDefaultValue(true);
++        entity.Property(x => x.SortOrder).HasColumnName("sortorder").HasDefaultValue(0);
++        entity.Property(x => x.CreatedBy).HasColumnName("createdby");
++        entity.Property(x => x.CreatedDate).HasColumnName("createddate").HasColumnType("timestamp without time zone");
++        entity.Property(x => x.UpdatedBy).HasColumnName("updatedby");
++        entity.Property(x => x.UpdatedDate).HasColumnName("updateddate").HasColumnType("timestamp without time zone");
++        entity.HasIndex(x => new { x.CompanyId, x.Code }).IsUnique();
++        entity.HasOne(x => x.Company).WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
++        entity.HasOne(x => x.CreatedByEmployee).WithMany().HasForeignKey(x => x.CreatedBy).OnDelete(DeleteBehavior.Restrict);
++        entity.HasOne(x => x.UpdatedByEmployee).WithMany().HasForeignKey(x => x.UpdatedBy).OnDelete(DeleteBehavior.Restrict);
++    }
++}
+--- a/VietausWebAPI.Core/Domain/Entities/DevandqaSchema/EvaluationStandard.cs
++++ b/VietausWebAPI.Core/Domain/Entities/DevandqaSchema/EvaluationStandard.cs
+@@ -1,15 +1,28 @@
+ using VietausWebAPI.Core.Domain.Entities.CompanySchema;
+ using VietausWebAPI.Core.Domain.Entities.HrSchema;
+ 
++using VietausWebAPI.Core.Domain.Enums.Devandqa;
++
+ namespace VietausWebAPI.Core.Domain.Entities.DevandqaSchema;
+ 
+-/// <summary>Danh mục tiêu chuẩn đánh giá IQC có thể quản lý theo công ty.</summary>
++/// <summary>Danh mục chỉ tiêu theo công ty dùng cho dropdown IQC/COA; cấu hình là mặc định để sao chép.</summary>
+ public class EvaluationStandard
+ {
+     public Guid Id { get; set; }
+     public string Code { get; set; } = string.Empty;
+     public string Name { get; set; } = string.Empty;
+     public string? Description { get; set; }
++    public EvaluationDataType DataType { get; set; } = EvaluationDataType.Text;
++    public string? Unit { get; set; }
++    public Guid? MeasurementMethodId { get; set; }
++    public MeasurementMethod? MeasurementMethod { get; set; }
++    public string? TestMethod { get; set; }
++    public string? InputConfigJson { get; set; }
++    public string? AcceptanceRuleJson { get; set; }
++    public string? SpecificationText { get; set; }
++    public bool IsRequired { get; set; }
++    public bool ShowOnReport { get; set; } = true;
++    public bool ShowOnCoa { get; set; } = true;
+     public Guid CompanyId { get; set; }
+     public bool IsActive { get; set; } = true;
+     public int SortOrder { get; set; }
+--- a/VietausWebAPI.Infrastructure/DatabaseContext/Configurations/DevandqaSchema/EvaluationStandardConfiguration.cs
++++ b/VietausWebAPI.Infrastructure/DatabaseContext/Configurations/DevandqaSchema/EvaluationStandardConfiguration.cs
+@@ -11,10 +11,22 @@
+     {
+         entity.ToTable("EvaluationStandard", "devandqa");
+         entity.HasKey(x => x.Id);
++        entity.Property(x => x.MeasurementMethodId).HasColumnName("measurementmethodid");
++        entity.HasOne(x => x.MeasurementMethod).WithMany().HasForeignKey(x => x.MeasurementMethodId).OnDelete(DeleteBehavior.Restrict);
++
+         entity.Property(x => x.Id).HasColumnName("id").HasDefaultValueSql("gen_random_uuid()");
+         entity.Property(x => x.Code).HasColumnName("code").HasColumnType("citext").HasMaxLength(50).IsRequired();
+         entity.Property(x => x.Name).HasColumnName("name").HasColumnType("citext").HasMaxLength(200).IsRequired();
+         entity.Property(x => x.Description).HasColumnName("description").HasColumnType("text");
++        entity.Property(x => x.DataType).HasColumnName("datatype").HasConversion<int>().HasDefaultValue(VietausWebAPI.Core.Domain.Enums.Devandqa.EvaluationDataType.Text);
++        entity.Property(x => x.Unit).HasColumnName("unit").HasMaxLength(50);
++        entity.Property(x => x.TestMethod).HasColumnName("testmethod").HasColumnType("text");
++        entity.Property(x => x.InputConfigJson).HasColumnName("inputconfig").HasColumnType("jsonb");
++        entity.Property(x => x.AcceptanceRuleJson).HasColumnName("acceptancerule").HasColumnType("jsonb");
++        entity.Property(x => x.SpecificationText).HasColumnName("specificationtext").HasColumnType("text");
++        entity.Property(x => x.IsRequired).HasColumnName("isrequired").HasDefaultValue(false);
++        entity.Property(x => x.ShowOnReport).HasColumnName("showonreport").HasDefaultValue(true);
++        entity.Property(x => x.ShowOnCoa).HasColumnName("showoncoa").HasDefaultValue(true);
+         entity.Property(x => x.CompanyId).HasColumnName("companyid");
+         entity.Property(x => x.IsActive).HasColumnName("isactive").HasDefaultValue(true);
+         entity.Property(x => x.SortOrder).HasColumnName("sortorder").HasDefaultValue(0);
+--- /dev/null
++++ b/VietausWebAPI.Core/Domain/Entities/DevandqaSchema/EvaluationTemplate.cs
+@@ -0,0 +1,27 @@
++using VietausWebAPI.Core.Domain.Entities.CompanySchema;
++using VietausWebAPI.Core.Domain.Entities.HrSchema;
++using VietausWebAPI.Core.Domain.Enums.Devandqa;
++
++namespace VietausWebAPI.Core.Domain.Entities.DevandqaSchema;
++
++/// <summary>Mẫu chung theo chức năng và công ty; không bắt buộc gắn với nguyên liệu/sản phẩm.</summary>
++public class EvaluationTemplate
++{
++    public Guid Id { get; set; }
++    public Guid CompanyId { get; set; }
++    public string Code { get; set; } = string.Empty;
++    public string Name { get; set; } = string.Empty;
++    public EvaluationTemplateType Type { get; set; }
++    public int Version { get; set; } = 1;
++    public EvaluationTemplateStatus Status { get; set; }
++    public bool IsDefault { get; set; }
++    public DateTime? EffectiveFrom { get; set; }
++    public Guid CreatedBy { get; set; }
++    public DateTime CreatedDate { get; set; }
++    public Guid? PublishedBy { get; set; }
++    public DateTime? PublishedDate { get; set; }
++    public Company Company { get; set; } = null!;
++    public Employee CreatedByEmployee { get; set; } = null!;
++    public Employee? PublishedByEmployee { get; set; }
++    public ICollection<EvaluationTemplateItem> Items { get; set; } = new List<EvaluationTemplateItem>();
++}
+--- /dev/null
++++ b/VietausWebAPI.Infrastructure/DatabaseContext/Configurations/DevandqaSchema/EvaluationTemplateConfiguration.cs
+@@ -0,0 +1,38 @@
++using VietausWebAPI.Core.Domain.Entities.DevandqaSchema;
++using Microsoft.EntityFrameworkCore;
++using Microsoft.EntityFrameworkCore.Metadata.Builders;
++
++namespace VietausWebAPI.Infrastructure.DatabaseContext.Configurations.DevandqaSchema;
++
++public sealed class EvaluationTemplateConfiguration : IEntityTypeConfiguration<EvaluationTemplate>
++{
++    public void Configure(EntityTypeBuilder<EvaluationTemplate> entity)
++    {
++        entity.ToTable("EvaluationTemplate", "devandqa", table =>
++        {
++            table.HasCheckConstraint("ck_evaluationtemplate_version", "version > 0");
++            table.HasCheckConstraint("ck_evaluationtemplate_type", "type IN (1, 2, 3)");
++            table.HasCheckConstraint("ck_evaluationtemplate_status", "status IN (0, 1, 2)");
++            table.HasCheckConstraint("ck_evaluationtemplate_default", "NOT isdefault OR status = 1");
++        });
++        entity.HasKey(x => x.Id);
++        entity.Property(x => x.Id).HasColumnName("id").HasDefaultValueSql("gen_random_uuid()");
++        entity.Property(x => x.CompanyId).HasColumnName("companyid");
++        entity.Property(x => x.Code).HasColumnName("code").HasColumnType("citext").HasMaxLength(50).IsRequired();
++        entity.Property(x => x.Name).HasColumnName("name").HasMaxLength(200).IsRequired();
++        entity.Property(x => x.Type).HasColumnName("type").HasConversion<int>();
++        entity.Property(x => x.Version).HasColumnName("version");
++        entity.Property(x => x.Status).HasColumnName("status").HasConversion<int>();
++        entity.Property(x => x.IsDefault).HasColumnName("isdefault");
++        entity.Property(x => x.EffectiveFrom).HasColumnName("effectivefrom").HasColumnType("timestamp without time zone");
++        entity.Property(x => x.CreatedBy).HasColumnName("createdby");
++        entity.Property(x => x.CreatedDate).HasColumnName("createddate").HasColumnType("timestamp without time zone");
++        entity.Property(x => x.PublishedBy).HasColumnName("publishedby");
++        entity.Property(x => x.PublishedDate).HasColumnName("publisheddate").HasColumnType("timestamp without time zone");
++        entity.HasIndex(x => new { x.CompanyId, x.Type, x.Code, x.Version }).IsUnique();
++        entity.HasIndex(x => new { x.CompanyId, x.Type }).IsUnique().HasFilter("isdefault = TRUE AND status = 1");
++        entity.HasOne(x => x.Company).WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
++        entity.HasOne(x => x.CreatedByEmployee).WithMany().HasForeignKey(x => x.CreatedBy).OnDelete(DeleteBehavior.Restrict);
++        entity.HasOne(x => x.PublishedByEmployee).WithMany().HasForeignKey(x => x.PublishedBy).OnDelete(DeleteBehavior.Restrict);
++    }
++}
+--- /dev/null
++++ b/VietausWebAPI.Core/Domain/Entities/DevandqaSchema/EvaluationTemplateItem.cs
+@@ -0,0 +1,29 @@
++using VietausWebAPI.Core.Domain.Enums.Devandqa;
++
++namespace VietausWebAPI.Core.Domain.Entities.DevandqaSchema;
++
++/// <summary>Dòng template lưu cấu hình riêng, không tự đổi theo danh mục.</summary>
++public class EvaluationTemplateItem
++{
++    public Guid Id { get; set; }
++    public Guid EvaluationTemplateId { get; set; }
++    public Guid EvaluationStandardId { get; set; }
++    public string CriterionCode { get; set; } = string.Empty;
++    public string CriterionName { get; set; } = string.Empty;
++    public EvaluationDataType DataType { get; set; } = EvaluationDataType.Text;
++    public string? Unit { get; set; }
++    public Guid? MeasurementMethodId { get; set; }
++    /// <summary>Bản sao mã phương pháp đo tại thời điểm tạo dòng.</summary>
++    public string? MeasurementMethodCode { get; set; }
++    public string? TestMethod { get; set; }
++    public string? InputConfigJson { get; set; }
++    public string? AcceptanceRuleJson { get; set; }
++    public string? SpecificationText { get; set; }
++    public bool IsRequired { get; set; }
++    public bool ShowOnReport { get; set; } = true;
++    public bool ShowOnCoa { get; set; } = true;
++    public int SortOrder { get; set; }
++    public EvaluationTemplate EvaluationTemplate { get; set; } = null!;
++    public EvaluationStandard EvaluationStandard { get; set; } = null!;
++    public MeasurementMethod? MeasurementMethod { get; set; }
++}
+--- /dev/null
++++ b/VietausWebAPI.Infrastructure/DatabaseContext/Configurations/DevandqaSchema/EvaluationTemplateItemConfiguration.cs
+@@ -0,0 +1,23 @@
++using VietausWebAPI.Core.Domain.Entities.DevandqaSchema;
++using Microsoft.EntityFrameworkCore;
++using Microsoft.EntityFrameworkCore.Metadata.Builders;
++
++namespace VietausWebAPI.Infrastructure.DatabaseContext.Configurations.DevandqaSchema;
++
++public sealed class EvaluationTemplateItemConfiguration : IEntityTypeConfiguration<EvaluationTemplateItem>
++{
++    public void Configure(EntityTypeBuilder<EvaluationTemplateItem> entity)
++    {
++        entity.ToTable("EvaluationTemplateItem", "devandqa");
++        entity.HasKey(x => x.Id);
++        entity.Property(x => x.Id).HasColumnName("id").HasDefaultValueSql("gen_random_uuid()");
++        entity.Property(x => x.EvaluationTemplateId).HasColumnName("evaluationtemplateid");
++        entity.Property(x => x.EvaluationStandardId).HasColumnName("evaluationstandardid");
++        EvaluationSnapshotConfiguration.Configure(entity);
++        entity.HasIndex(x => new { x.EvaluationTemplateId, x.EvaluationStandardId }).IsUnique();
++        entity.HasIndex(x => new { x.EvaluationTemplateId, x.CriterionCode }).IsUnique();
++        entity.HasOne(x => x.EvaluationTemplate).WithMany(x => x.Items).HasForeignKey(x => x.EvaluationTemplateId).OnDelete(DeleteBehavior.Restrict);
++        entity.HasOne(x => x.EvaluationStandard).WithMany().HasForeignKey(x => x.EvaluationStandardId).OnDelete(DeleteBehavior.Restrict);
++        entity.HasOne(x => x.MeasurementMethod).WithMany().HasForeignKey(x => x.MeasurementMethodId).OnDelete(DeleteBehavior.Restrict);
++    }
++}
+--- a/VietausWebAPI.Core/Domain/Entities/DevandqaSchema/IqcSpecification.cs
++++ b/VietausWebAPI.Core/Domain/Entities/DevandqaSchema/IqcSpecification.cs
+@@ -1,6 +1,5 @@
+-using DocumentFormat.OpenXml.Drawing.Diagrams;
+-using System;
+-using System.Collections.Generic;
++using VietausWebAPI.Core.Domain.Entities.CompanySchema;
++using VietausWebAPI.Core.Domain.Entities.HrSchema;
+ using VietausWebAPI.Core.Domain.Enums.Devandqa;
+ 
+ namespace VietausWebAPI.Core.Domain.Entities.DevandqaSchema;
+@@ -21,4 +20,7 @@
+     public Guid CreatedBy { get; set; }
+     public DateTime CreatedDate { get; set; }
+     public ICollection<IqcSpecificationItem> Items { get; set; } = new List<IqcSpecificationItem>();
++    public virtual Company Company { get; set; } = null!;
++    public virtual Employee CreatedByEmployee { get; set; } = null!;
++    public virtual Employee? ApprovedByEmployee { get; set; }
+ }
+--- a/VietausWebAPI.Infrastructure/DatabaseContext/Configurations/DevandqaSchema/IqcSpecificationConfiguration.cs
++++ b/VietausWebAPI.Infrastructure/DatabaseContext/Configurations/DevandqaSchema/IqcSpecificationConfiguration.cs
+@@ -1,13 +1,7 @@
+-using VietausWebAPI.Core.Domain.Entities.CompanySchema;
++using VietausWebAPI.Core.Domain.Entities.DevandqaSchema;
+ using VietausWebAPI.Core.Domain.Entities.MaterialSchema;
+ using Microsoft.EntityFrameworkCore;
+ using Microsoft.EntityFrameworkCore.Metadata.Builders;
+-using System;
+-using System.Collections.Generic;
+-using System.Linq;
+-using System.Text;
+-using System.Threading.Tasks;
+-using VietausWebAPI.Core.Domain.Entities.DevandqaSchema;
+ 
+ namespace VietausWebAPI.Infrastructure.DatabaseContext.Configurations.DevandqaSchema;
+ 
+@@ -30,7 +24,10 @@
+         entity.Property(x => x.CreatedBy).HasColumnName("createdby");
+         entity.Property(x => x.CreatedDate).HasColumnName("createddate").HasColumnType("timestamp without time zone");
+         entity.HasIndex(x => new { x.CompanyId, x.Code, x.Version }).IsUnique();
+-        entity.HasOne<Company>().WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
++        entity.HasOne(x => x.Company).WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
+         entity.HasOne<Material>().WithMany().HasForeignKey(x => x.MaterialId).OnDelete(DeleteBehavior.Restrict);
++
++        entity.HasOne(x => x.CreatedByEmployee).WithMany().HasForeignKey(x => x.CreatedBy).OnDelete(DeleteBehavior.Restrict);
++        entity.HasOne(x => x.ApprovedByEmployee).WithMany().HasForeignKey(x => x.ApprovedBy).OnDelete(DeleteBehavior.Restrict);
+     }
+ }
+--- a/VietausWebAPI.Core/Domain/Entities/DevandqaSchema/IqcSpecificationItem.cs
++++ b/VietausWebAPI.Core/Domain/Entities/DevandqaSchema/IqcSpecificationItem.cs
+@@ -1,6 +1,3 @@
+-using DocumentFormat.OpenXml.Drawing.Diagrams;
+-using System;
+-using System.Collections.Generic;
+ using VietausWebAPI.Core.Domain.Enums.Devandqa;
+ 
+ namespace VietausWebAPI.Core.Domain.Entities.DevandqaSchema;
+@@ -16,6 +13,9 @@
+     public EvaluationDataType DataType { get; set; } = EvaluationDataType.Text;
+     public string? InputConfigJson { get; set; }
+     public string? Unit { get; set; }
++    public Guid? MeasurementMethodId { get; set; }
++    public string? MeasurementMethodCode { get; set; }
++    public MeasurementMethod? MeasurementMethod { get; set; }
+     public string? TestMethod { get; set; }
+     public string? AcceptanceRuleJson { get; set; }
+     public string? SpecificationText { get; set; }
+--- a/VietausWebAPI.Infrastructure/DatabaseContext/Configurations/DevandqaSchema/IqcSpecificationItemConfiguration.cs
++++ b/VietausWebAPI.Infrastructure/DatabaseContext/Configurations/DevandqaSchema/IqcSpecificationItemConfiguration.cs
+@@ -1,11 +1,6 @@
++using VietausWebAPI.Core.Domain.Entities.DevandqaSchema;
+ using Microsoft.EntityFrameworkCore;
+ using Microsoft.EntityFrameworkCore.Metadata.Builders;
+-using System;
+-using System.Collections.Generic;
+-using System.Linq;
+-using System.Text;
+-using System.Threading.Tasks;
+-using VietausWebAPI.Core.Domain.Entities.DevandqaSchema;
+ 
+ namespace VietausWebAPI.Infrastructure.DatabaseContext.Configurations.DevandqaSchema;
+ 
+@@ -15,6 +10,10 @@
+     {
+         entity.ToTable("IqcSpecificationItem", "devandqa");
+         entity.HasKey(x => x.Id);
++        entity.Property(x => x.MeasurementMethodId).HasColumnName("measurementmethodid");
++        entity.HasOne(x => x.MeasurementMethod).WithMany().HasForeignKey(x => x.MeasurementMethodId).OnDelete(DeleteBehavior.Restrict);
++        entity.Property(x => x.MeasurementMethodCode).HasColumnName("measurementmethodcode").HasMaxLength(50);
++
+         entity.Property(x => x.Id).HasColumnName("id").HasDefaultValueSql("gen_random_uuid()");
+         entity.Property(x => x.IqcSpecificationId).HasColumnName("iqcspecificationid");
+         entity.Property(x => x.EvaluationStandardId).HasColumnName("evaluationstandardid");
+--- a/VietausWebAPI.Core/Domain/Entities/DevandqaSchema/IqcInspectionEvaluation.cs
++++ b/VietausWebAPI.Core/Domain/Entities/DevandqaSchema/IqcInspectionEvaluation.cs
+@@ -1,15 +1,17 @@
+-using DocumentFormat.OpenXml.Drawing.Diagrams;
+-using System;
+-using System.Collections.Generic;
++namespace VietausWebAPI.Core.Domain.Entities.DevandqaSchema;
+ 
+-namespace VietausWebAPI.Core.Domain.Entities.DevandqaSchema;
+-/// <summary>Liên kết phiếu IQC hiện có với phiên bản tiêu chuẩn dùng để nhập chỉ tiêu.</summary>
++/// <summary>Đầu đánh giá của phiếu IQC; lưu nguồn template chung hoặc bộ tiêu chuẩn cũ.</summary>
+ public class IqcInspectionEvaluation
+ {
+     public Guid Id { get; set; }
++    public Guid? EvaluationTemplateId { get; set; }
++    public string? TemplateCode { get; set; }
++    public string? TemplateName { get; set; }
++    public int? TemplateVersion { get; set; }
++    public EvaluationTemplate? EvaluationTemplate { get; set; }
+     public Guid QCInputByQCId { get; set; }
+-    public Guid IqcSpecificationId { get; set; }
++    public Guid? IqcSpecificationId { get; set; }
+     public QCInputByQC QCInputByQC { get; set; } = null!;
+-    public IqcSpecification IqcSpecification { get; set; } = null!;
++    public IqcSpecification? IqcSpecification { get; set; }
+     public ICollection<IqcInspectionResult> Results { get; set; } = new List<IqcInspectionResult>();
+ }
+--- a/VietausWebAPI.Infrastructure/DatabaseContext/Configurations/DevandqaSchema/IqcInspectionEvaluationConfiguration.cs
++++ b/VietausWebAPI.Infrastructure/DatabaseContext/Configurations/DevandqaSchema/IqcInspectionEvaluationConfiguration.cs
+@@ -1,11 +1,6 @@
++using VietausWebAPI.Core.Domain.Entities.DevandqaSchema;
+ using Microsoft.EntityFrameworkCore;
+ using Microsoft.EntityFrameworkCore.Metadata.Builders;
+-using System;
+-using System.Collections.Generic;
+-using System.Linq;
+-using System.Text;
+-using System.Threading.Tasks;
+-using VietausWebAPI.Core.Domain.Entities.DevandqaSchema;
+ 
+ namespace VietausWebAPI.Infrastructure.DatabaseContext.Configurations.DevandqaSchema;
+ 
+@@ -15,6 +10,12 @@
+     {
+         entity.ToTable("IqcInspectionEvaluation", "devandqa");
+         entity.HasKey(x => x.Id);
++        entity.Property(x => x.EvaluationTemplateId).HasColumnName("evaluationtemplateid");
++        entity.Property(x => x.TemplateCode).HasColumnName("templatecode").HasMaxLength(50);
++        entity.Property(x => x.TemplateName).HasColumnName("templatename").HasMaxLength(200);
++        entity.Property(x => x.TemplateVersion).HasColumnName("templateversion");
++        entity.HasOne(x => x.EvaluationTemplate).WithMany().HasForeignKey(x => x.EvaluationTemplateId).OnDelete(DeleteBehavior.Restrict);
++
+         entity.Property(x => x.Id).HasColumnName("id").HasDefaultValueSql("gen_random_uuid()");
+         entity.Property(x => x.QCInputByQCId).HasColumnName("qcinputbyqcid");
+         entity.Property(x => x.IqcSpecificationId).HasColumnName("iqcspecificationid");
+--- a/VietausWebAPI.Core/Domain/Entities/DevandqaSchema/IqcInspectionResult.cs
++++ b/VietausWebAPI.Core/Domain/Entities/DevandqaSchema/IqcInspectionResult.cs
+@@ -1,18 +1,38 @@
+-using DocumentFormat.OpenXml.Drawing.Diagrams;
+-using System;
+-using System.Collections.Generic;
++using VietausWebAPI.Core.Domain.Enums.Devandqa;
+ 
+ namespace VietausWebAPI.Core.Domain.Entities.DevandqaSchema;
+ 
+-/// <summary>Giá trị của một chỉ tiêu trong phiếu IQC; cấu hình nằm tại phiên bản tiêu chuẩn.</summary>
++/// <summary>Giá trị của một chỉ tiêu trong phiếu IQC; lưu bản sao cấu hình/yêu cầu để bảo toàn lịch sử.</summary>
+ public class IqcInspectionResult
+ {
+     public Guid Id { get; set; }
+     public Guid IqcInspectionEvaluationId { get; set; }
+-    public Guid IqcSpecificationItemId { get; set; }
++    public Guid? IqcSpecificationItemId { get; set; }
+     /// <summary>Key đọc được của chỉ tiêu, ví dụ MOISTURE; lấy từ CriterionCode của standard item.</summary>
+     public string ExternalId { get; set; } = string.Empty;
++    public Guid? SourceTemplateItemId { get; set; }
++    public Guid? EvaluationStandardId { get; set; }
++    public string CriterionCode { get; set; } = string.Empty;
++    public string CriterionName { get; set; } = string.Empty;
++    public EvaluationDataType DataType { get; set; } = EvaluationDataType.Text;
++    public string? Unit { get; set; }
++    public Guid? MeasurementMethodId { get; set; }
++    /// <summary>Bản sao mã phương pháp đo tại thời điểm tạo dòng.</summary>
++    public string? MeasurementMethodCode { get; set; }
++    public string? TestMethod { get; set; }
++    public string? InputConfigJson { get; set; }
++    public string? AcceptanceRuleJson { get; set; }
++    public string? SpecificationText { get; set; }
++    public bool IsRequired { get; set; }
++    public bool ShowOnReport { get; set; } = true;
++    public bool ShowOnCoa { get; set; } = true;
++    public int SortOrder { get; set; }
++    /// <summary>False chỉ dành cho dữ liệu cũ chưa backfill snapshot; phiếu mới phải đặt True.</summary>
++    public bool HasConfigurationSnapshot { get; set; }
++    public EvaluationTemplateItem? SourceTemplateItem { get; set; }
++    public EvaluationStandard? EvaluationStandard { get; set; }
++    public MeasurementMethod? MeasurementMethod { get; set; }
+     public string? Value { get; set; }
+     public IqcInspectionEvaluation IqcInspectionEvaluation { get; set; } = null!;
+-    public IqcSpecificationItem IqcSpecificationItem { get; set; } = null!;
++    public IqcSpecificationItem? IqcSpecificationItem { get; set; }
+ }
+--- a/VietausWebAPI.Infrastructure/DatabaseContext/Configurations/DevandqaSchema/IqcInspectionResultConfiguration.cs
++++ b/VietausWebAPI.Infrastructure/DatabaseContext/Configurations/DevandqaSchema/IqcInspectionResultConfiguration.cs
+@@ -1,11 +1,6 @@
++using VietausWebAPI.Core.Domain.Entities.DevandqaSchema;
+ using Microsoft.EntityFrameworkCore;
+ using Microsoft.EntityFrameworkCore.Metadata.Builders;
+-using System;
+-using System.Collections.Generic;
+-using System.Linq;
+-using System.Text;
+-using System.Threading.Tasks;
+-using VietausWebAPI.Core.Domain.Entities.DevandqaSchema;
+ 
+ namespace VietausWebAPI.Infrastructure.DatabaseContext.Configurations.DevandqaSchema;
+ 
+@@ -13,8 +8,18 @@
+ {
+     public void Configure(EntityTypeBuilder<IqcInspectionResult> entity)
+     {
+-        entity.ToTable("IqcInspectionResult", "devandqa");
++        entity.ToTable("IqcInspectionResult", "devandqa", table => table.HasCheckConstraint(
++            "ck_iqcinspectionresult_snapshot",
++            "NOT hasconfigurationsnapshot OR (evaluationstandardid IS NOT NULL AND criterioncode <> '' AND criterionname <> '' AND datatype BETWEEN 1 AND 7 AND sortorder >= 0)"));
+         entity.HasKey(x => x.Id);
++        EvaluationSnapshotConfiguration.Configure(entity);
++        entity.Property(x => x.SourceTemplateItemId).HasColumnName("sourcetemplateitemid");
++        entity.Property(x => x.EvaluationStandardId).HasColumnName("evaluationstandardid");
++        entity.Property(x => x.HasConfigurationSnapshot).HasColumnName("hasconfigurationsnapshot");
++        entity.HasOne(x => x.SourceTemplateItem).WithMany().HasForeignKey(x => x.SourceTemplateItemId).OnDelete(DeleteBehavior.Restrict);
++        entity.HasOne(x => x.EvaluationStandard).WithMany().HasForeignKey(x => x.EvaluationStandardId).OnDelete(DeleteBehavior.Restrict);
++        entity.HasOne(x => x.MeasurementMethod).WithMany().HasForeignKey(x => x.MeasurementMethodId).OnDelete(DeleteBehavior.Restrict);
++
+         entity.Property(x => x.Id).HasColumnName("id").HasDefaultValueSql("gen_random_uuid()");
+         entity.Property(x => x.IqcInspectionEvaluationId).HasColumnName("iqcinspectionevaluationid");
+         entity.Property(x => x.IqcSpecificationItemId).HasColumnName("iqcspecificationitemid");
+--- a/VietausWebAPI.Core/Domain/Entities/DevandqaSchema/CoaSpecification.cs
++++ b/VietausWebAPI.Core/Domain/Entities/DevandqaSchema/CoaSpecification.cs
+@@ -1,6 +1,3 @@
+-using DocumentFormat.OpenXml.Drawing.Diagrams;
+-using System;
+-using System.Collections.Generic;
+ using VietausWebAPI.Core.Domain.Entities.CompanySchema;
+ using VietausWebAPI.Core.Domain.Entities.HrSchema;
+ using VietausWebAPI.Core.Domain.Enums.Devandqa;
+--- a/VietausWebAPI.Infrastructure/DatabaseContext/Configurations/DevandqaSchema/CoaSpecificationConfiguration.cs
++++ b/VietausWebAPI.Infrastructure/DatabaseContext/Configurations/DevandqaSchema/CoaSpecificationConfiguration.cs
+@@ -1,13 +1,7 @@
+-using VietausWebAPI.Core.Domain.Entities.CompanySchema;
++using VietausWebAPI.Core.Domain.Entities.DevandqaSchema;
+ using VietausWebAPI.Core.Domain.Entities.SampleRequestSchema;
+ using Microsoft.EntityFrameworkCore;
+ using Microsoft.EntityFrameworkCore.Metadata.Builders;
+-using System;
+-using System.Collections.Generic;
+-using System.Linq;
+-using System.Text;
+-using System.Threading.Tasks;
+-using VietausWebAPI.Core.Domain.Entities.DevandqaSchema;
+ 
+ namespace VietausWebAPI.Infrastructure.DatabaseContext.Configurations.DevandqaSchema;
+ 
+@@ -30,7 +24,10 @@
+         entity.Property(x => x.CreatedBy).HasColumnName("createdby");
+         entity.Property(x => x.CreatedDate).HasColumnName("createddate").HasColumnType("timestamp without time zone");
+         entity.HasIndex(x => new { x.CompanyId, x.Code, x.Version }).IsUnique();
+-        entity.HasOne<Company>().WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
++        entity.HasOne(x => x.Company).WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
+         entity.HasOne<Product>().WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Restrict);
++
++        entity.HasOne(x => x.CreatedByEmployee).WithMany().HasForeignKey(x => x.CreatedBy).OnDelete(DeleteBehavior.Restrict);
++        entity.HasOne(x => x.ApprovedByEmployee).WithMany().HasForeignKey(x => x.ApprovedBy).OnDelete(DeleteBehavior.Restrict);
+     }
+ }
+--- a/VietausWebAPI.Core/Domain/Entities/DevandqaSchema/CoaSpecificationItem.cs
++++ b/VietausWebAPI.Core/Domain/Entities/DevandqaSchema/CoaSpecificationItem.cs
+@@ -1,6 +1,3 @@
+-using DocumentFormat.OpenXml.Drawing.Diagrams;
+-using System;
+-using System.Collections.Generic;
+ using VietausWebAPI.Core.Domain.Enums.Devandqa;
+ 
+ namespace VietausWebAPI.Core.Domain.Entities.DevandqaSchema;
+@@ -16,6 +13,9 @@
+     public EvaluationDataType DataType { get; set; } = EvaluationDataType.Text;
+     public string? InputConfigJson { get; set; }
+     public string? Unit { get; set; }
++    public Guid? MeasurementMethodId { get; set; }
++    public string? MeasurementMethodCode { get; set; }
++    public MeasurementMethod? MeasurementMethod { get; set; }
+     public string? TestMethod { get; set; }
+     public string? AcceptanceRuleJson { get; set; }
+     public string? SpecificationText { get; set; }
+--- a/VietausWebAPI.Infrastructure/DatabaseContext/Configurations/DevandqaSchema/CoaSpecificationItemConfiguration.cs
++++ b/VietausWebAPI.Infrastructure/DatabaseContext/Configurations/DevandqaSchema/CoaSpecificationItemConfiguration.cs
+@@ -1,11 +1,6 @@
++using VietausWebAPI.Core.Domain.Entities.DevandqaSchema;
+ using Microsoft.EntityFrameworkCore;
+ using Microsoft.EntityFrameworkCore.Metadata.Builders;
+-using System;
+-using System.Collections.Generic;
+-using System.Linq;
+-using System.Text;
+-using System.Threading.Tasks;
+-using VietausWebAPI.Core.Domain.Entities.DevandqaSchema;
+ 
+ namespace VietausWebAPI.Infrastructure.DatabaseContext.Configurations.DevandqaSchema;
+ 
+@@ -15,6 +10,10 @@
+     {
+         entity.ToTable("CoaSpecificationItem", "devandqa");
+         entity.HasKey(x => x.Id);
++        entity.Property(x => x.MeasurementMethodId).HasColumnName("measurementmethodid");
++        entity.HasOne(x => x.MeasurementMethod).WithMany().HasForeignKey(x => x.MeasurementMethodId).OnDelete(DeleteBehavior.Restrict);
++        entity.Property(x => x.MeasurementMethodCode).HasColumnName("measurementmethodcode").HasMaxLength(50);
++
+         entity.Property(x => x.Id).HasColumnName("id").HasDefaultValueSql("gen_random_uuid()");
+         entity.Property(x => x.CoaSpecificationId).HasColumnName("coaspecificationid");
+         entity.Property(x => x.EvaluationStandardId).HasColumnName("evaluationstandardid");
+--- a/VietausWebAPI.Core/Domain/Entities/DevandqaSchema/CoaCertificate.cs
++++ b/VietausWebAPI.Core/Domain/Entities/DevandqaSchema/CoaCertificate.cs
+@@ -1,6 +1,3 @@
+-using DocumentFormat.OpenXml.Drawing.Diagrams;
+-using System;
+-using System.Collections.Generic;
+ using VietausWebAPI.Core.Domain.Entities.CompanySchema;
+ using VietausWebAPI.Core.Domain.Entities.HrSchema;
+ using VietausWebAPI.Core.Domain.Enums.Devandqa;
+@@ -11,8 +8,13 @@
+ public class CoaCertificate
+ {
+     public Guid Id { get; set; }
++    public Guid? EvaluationTemplateId { get; set; }
++    public string? TemplateCode { get; set; }
++    public string? TemplateName { get; set; }
++    public int? TemplateVersion { get; set; }
++    public EvaluationTemplate? EvaluationTemplate { get; set; }
+     public Guid CompanyId { get; set; }
+-    public Guid CoaSpecificationId { get; set; }
++    public Guid? CoaSpecificationId { get; set; }
+     public string CertificateNo { get; set; } = string.Empty;
+     public string ProductCode { get; set; } = string.Empty;
+     public string ProductName { get; set; } = string.Empty;
+@@ -25,7 +27,7 @@
+     public DateTime? IssuedDate { get; set; }
+     public Guid CreatedBy { get; set; }
+     public DateTime CreatedDate { get; set; }
+-    public CoaSpecification CoaSpecification { get; set; } = null!;
++    public CoaSpecification? CoaSpecification { get; set; }
+     public ICollection<CoaCertificateResult> Results { get; set; } = new List<CoaCertificateResult>();
+     public virtual Company Company { get; set; } = null!;
+     public virtual Employee CreatedByEmployee { get; set; } = null!;
+--- a/VietausWebAPI.Infrastructure/DatabaseContext/Configurations/DevandqaSchema/CoaCertificateConfiguration.cs
++++ b/VietausWebAPI.Infrastructure/DatabaseContext/Configurations/DevandqaSchema/CoaCertificateConfiguration.cs
+@@ -1,20 +1,21 @@
+-using VietausWebAPI.Core.Domain.Entities.CompanySchema;
++using VietausWebAPI.Core.Domain.Entities.DevandqaSchema;
+ using Microsoft.EntityFrameworkCore;
+ using Microsoft.EntityFrameworkCore.Metadata.Builders;
+-using System;
+-using System.Collections.Generic;
+-using System.Linq;
+-using System.Text;
+-using System.Threading.Tasks;
+-using VietausWebAPI.Core.Domain.Entities.DevandqaSchema;
+ 
+ namespace VietausWebAPI.Infrastructure.DatabaseContext.Configurations.DevandqaSchema;
++
+ public sealed class CoaCertificateConfiguration : IEntityTypeConfiguration<CoaCertificate>
+ {
+     public void Configure(EntityTypeBuilder<CoaCertificate> entity)
+     {
+         entity.ToTable("CoaCertificate", "devandqa");
+         entity.HasKey(x => x.Id);
++        entity.Property(x => x.EvaluationTemplateId).HasColumnName("evaluationtemplateid");
++        entity.Property(x => x.TemplateCode).HasColumnName("templatecode").HasMaxLength(50);
++        entity.Property(x => x.TemplateName).HasColumnName("templatename").HasMaxLength(200);
++        entity.Property(x => x.TemplateVersion).HasColumnName("templateversion");
++        entity.HasOne(x => x.EvaluationTemplate).WithMany().HasForeignKey(x => x.EvaluationTemplateId).OnDelete(DeleteBehavior.Restrict);
++
+         entity.Property(x => x.Id).HasColumnName("id").HasDefaultValueSql("gen_random_uuid()");
+         entity.Property(x => x.CompanyId).HasColumnName("companyid");
+         entity.Property(x => x.CoaSpecificationId).HasColumnName("coaspecificationid");
+@@ -31,7 +32,10 @@
+         entity.Property(x => x.CreatedBy).HasColumnName("createdby");
+         entity.Property(x => x.CreatedDate).HasColumnName("createddate").HasColumnType("timestamp without time zone");
+         entity.HasIndex(x => new { x.CompanyId, x.CertificateNo }).IsUnique();
+-        entity.HasOne<Company>().WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
++        entity.HasOne(x => x.Company).WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
+         entity.HasOne(x => x.CoaSpecification).WithMany().HasForeignKey(x => x.CoaSpecificationId).OnDelete(DeleteBehavior.Restrict);
++
++        entity.HasOne(x => x.CreatedByEmployee).WithMany().HasForeignKey(x => x.CreatedBy).OnDelete(DeleteBehavior.Restrict);
++        entity.HasOne(x => x.IssuedByEmployee).WithMany().HasForeignKey(x => x.IssuedBy).OnDelete(DeleteBehavior.Restrict);
+     }
+ }
+--- a/VietausWebAPI.Core/Domain/Entities/DevandqaSchema/CoaCertificateResult.cs
++++ b/VietausWebAPI.Core/Domain/Entities/DevandqaSchema/CoaCertificateResult.cs
+@@ -1,18 +1,38 @@
+-using DocumentFormat.OpenXml.Drawing.Diagrams;
+-using System;
+-using System.Collections.Generic;
++using VietausWebAPI.Core.Domain.Enums.Devandqa;
+ 
+ namespace VietausWebAPI.Core.Domain.Entities.DevandqaSchema;
+ 
+-/// <summary>Giá trị của một chỉ tiêu trong phiếu COA; cấu hình nằm tại phiên bản tiêu chuẩn.</summary>
++/// <summary>Giá trị của một chỉ tiêu trong phiếu COA; lưu bản sao cấu hình/yêu cầu để bảo toàn lịch sử.</summary>
+ public class CoaCertificateResult
+ {
+     public Guid Id { get; set; }
+     public Guid CoaCertificateId { get; set; }
+-    public Guid CoaSpecificationItemId { get; set; }
++    public Guid? CoaSpecificationItemId { get; set; }
+     /// <summary>Key đọc được của chỉ tiêu, ví dụ MOISTURE; lấy từ CriterionCode của standard item.</summary>
+     public string ExternalId { get; set; } = string.Empty;
++    public Guid? SourceTemplateItemId { get; set; }
++    public Guid? EvaluationStandardId { get; set; }
++    public string CriterionCode { get; set; } = string.Empty;
++    public string CriterionName { get; set; } = string.Empty;
++    public EvaluationDataType DataType { get; set; } = EvaluationDataType.Text;
++    public string? Unit { get; set; }
++    public Guid? MeasurementMethodId { get; set; }
++    /// <summary>Bản sao mã phương pháp đo tại thời điểm tạo dòng.</summary>
++    public string? MeasurementMethodCode { get; set; }
++    public string? TestMethod { get; set; }
++    public string? InputConfigJson { get; set; }
++    public string? AcceptanceRuleJson { get; set; }
++    public string? SpecificationText { get; set; }
++    public bool IsRequired { get; set; }
++    public bool ShowOnReport { get; set; } = true;
++    public bool ShowOnCoa { get; set; } = true;
++    public int SortOrder { get; set; }
++    /// <summary>False chỉ dành cho dữ liệu cũ chưa backfill snapshot.</summary>
++    public bool HasConfigurationSnapshot { get; set; }
++    public EvaluationTemplateItem? SourceTemplateItem { get; set; }
++    public EvaluationStandard? EvaluationStandard { get; set; }
++    public MeasurementMethod? MeasurementMethod { get; set; }
+     public string? Value { get; set; }
+     public CoaCertificate CoaCertificate { get; set; } = null!;
+-    public CoaSpecificationItem CoaSpecificationItem { get; set; } = null!;
++    public CoaSpecificationItem? CoaSpecificationItem { get; set; }
+ }
+--- a/VietausWebAPI.Infrastructure/DatabaseContext/Configurations/DevandqaSchema/CoaCertificateResultConfiguration.cs
++++ b/VietausWebAPI.Infrastructure/DatabaseContext/Configurations/DevandqaSchema/CoaCertificateResultConfiguration.cs
+@@ -1,11 +1,6 @@
++using VietausWebAPI.Core.Domain.Entities.DevandqaSchema;
+ using Microsoft.EntityFrameworkCore;
+ using Microsoft.EntityFrameworkCore.Metadata.Builders;
+-using System;
+-using System.Collections.Generic;
+-using System.Linq;
+-using System.Text;
+-using System.Threading.Tasks;
+-using VietausWebAPI.Core.Domain.Entities.DevandqaSchema;
+ 
+ namespace VietausWebAPI.Infrastructure.DatabaseContext.Configurations.DevandqaSchema;
+ 
+@@ -13,8 +8,18 @@
+ {
+     public void Configure(EntityTypeBuilder<CoaCertificateResult> entity)
+     {
+-        entity.ToTable("CoaCertificateResult", "devandqa");
++        entity.ToTable("CoaCertificateResult", "devandqa", table => table.HasCheckConstraint(
++            "ck_coacertificateresult_snapshot",
++            "NOT hasconfigurationsnapshot OR (evaluationstandardid IS NOT NULL AND criterioncode <> '' AND criterionname <> '' AND datatype BETWEEN 1 AND 7 AND sortorder >= 0)"));
+         entity.HasKey(x => x.Id);
++        EvaluationSnapshotConfiguration.Configure(entity);
++        entity.Property(x => x.SourceTemplateItemId).HasColumnName("sourcetemplateitemid");
++        entity.Property(x => x.EvaluationStandardId).HasColumnName("evaluationstandardid");
++        entity.Property(x => x.HasConfigurationSnapshot).HasColumnName("hasconfigurationsnapshot");
++        entity.HasOne(x => x.SourceTemplateItem).WithMany().HasForeignKey(x => x.SourceTemplateItemId).OnDelete(DeleteBehavior.Restrict);
++        entity.HasOne(x => x.EvaluationStandard).WithMany().HasForeignKey(x => x.EvaluationStandardId).OnDelete(DeleteBehavior.Restrict);
++        entity.HasOne(x => x.MeasurementMethod).WithMany().HasForeignKey(x => x.MeasurementMethodId).OnDelete(DeleteBehavior.Restrict);
++
+         entity.Property(x => x.Id).HasColumnName("id").HasDefaultValueSql("gen_random_uuid()");
+         entity.Property(x => x.CoaCertificateId).HasColumnName("coacertificateid");
+         entity.Property(x => x.CoaSpecificationItemId).HasColumnName("coaspecificationitemid");
+--- /dev/null
++++ b/VietausWebAPI.Infrastructure/DatabaseContext/Configurations/DevandqaSchema/EvaluationSnapshotConfiguration.cs
+@@ -0,0 +1,27 @@
++using VietausWebAPI.Core.Domain.Enums.Devandqa;
++using Microsoft.EntityFrameworkCore;
++using Microsoft.EntityFrameworkCore.Metadata.Builders;
++
++namespace VietausWebAPI.Infrastructure.DatabaseContext.Configurations.DevandqaSchema;
++
++/// <summary>Ánh xạ các cột snapshot trên dòng template và dòng phiếu.</summary>
++internal static class EvaluationSnapshotConfiguration
++{
++    public static void Configure<TEntity>(EntityTypeBuilder<TEntity> entity) where TEntity : class
++    {
++        entity.Property<string>("CriterionCode").HasColumnName("criterioncode").HasColumnType("citext").HasMaxLength(50).IsRequired();
++        entity.Property<string>("CriterionName").HasColumnName("criterionname").HasMaxLength(200).IsRequired();
++        entity.Property<EvaluationDataType>("DataType").HasColumnName("datatype").HasConversion<int>();
++        entity.Property<string>("Unit").HasColumnName("unit").HasMaxLength(50);
++        entity.Property<Guid?>("MeasurementMethodId").HasColumnName("measurementmethodid");
++        entity.Property<string>("MeasurementMethodCode").HasColumnName("measurementmethodcode").HasMaxLength(50);
++        entity.Property<string>("TestMethod").HasColumnName("testmethod").HasColumnType("text");
++        entity.Property<string>("InputConfigJson").HasColumnName("inputconfig").HasColumnType("jsonb");
++        entity.Property<string>("AcceptanceRuleJson").HasColumnName("acceptancerule").HasColumnType("jsonb");
++        entity.Property<string>("SpecificationText").HasColumnName("specificationtext").HasColumnType("text");
++        entity.Property<bool>("IsRequired").HasColumnName("isrequired");
++        entity.Property<bool>("ShowOnReport").HasColumnName("showonreport");
++        entity.Property<bool>("ShowOnCoa").HasColumnName("showoncoa");
++        entity.Property<int>("SortOrder").HasColumnName("sortorder");
++    }
++}
+--- /dev/null
++++ b/VietausWebAPI.Core/Domain/Enums/Devandqa/EvaluationTemplateType.cs
+@@ -0,0 +1,4 @@
++namespace VietausWebAPI.Core.Domain.Enums.Devandqa;
++
++/// <summary>Chức năng sử dụng template đánh giá.</summary>
++public enum EvaluationTemplateType { Iqc = 1, Coa = 2, ProductEvaluation = 3 }
+--- /dev/null
++++ b/VietausWebAPI.Core/Domain/Enums/Devandqa/EvaluationTemplateStatus.cs
+@@ -0,0 +1,4 @@
++namespace VietausWebAPI.Core.Domain.Enums.Devandqa;
++
++/// <summary>Template đã phát hành phải tạo phiên bản mới khi thay đổi.</summary>
++public enum EvaluationTemplateStatus { Draft = 0, Published = 1, Retired = 2 }
+--- /dev/null
++++ b/VietausWebAPI.Infrastructure/DatabaseContext/ApplicationDbs/ApplicationDbContext.EvaluationTemplates.cs
+@@ -0,0 +1,21 @@
++using Microsoft.EntityFrameworkCore;
++using VietausWebAPI.Core.Domain.Entities.DevandqaSchema;
++
++namespace VietausWebAPI.Infrastructure.DatabaseContext.ApplicationDbs;
++
++/// <summary>DbSet cho danh mục, template và dữ liệu IQC/COA động; không thay đổi các DbSet legacy.</summary>
++public partial class ApplicationDbContext
++{
++    public DbSet<MeasurementMethod> MeasurementMethods { get; set; } = default!;
++    public DbSet<EvaluationStandard> EvaluationStandards { get; set; } = default!;
++    public DbSet<EvaluationTemplate> EvaluationTemplates { get; set; } = default!;
++    public DbSet<EvaluationTemplateItem> EvaluationTemplateItems { get; set; } = default!;
++    public DbSet<IqcSpecification> IqcSpecifications { get; set; } = default!;
++    public DbSet<IqcSpecificationItem> IqcSpecificationItems { get; set; } = default!;
++    public DbSet<IqcInspectionEvaluation> IqcInspectionEvaluations { get; set; } = default!;
++    public DbSet<IqcInspectionResult> IqcInspectionResults { get; set; } = default!;
++    public DbSet<CoaSpecification> CoaSpecifications { get; set; } = default!;
++    public DbSet<CoaSpecificationItem> CoaSpecificationItems { get; set; } = default!;
++    public DbSet<CoaCertificate> CoaCertificates { get; set; } = default!;
++    public DbSet<CoaCertificateResult> CoaCertificateResults { get; set; } = default!;
++}
+--- /dev/null
++++ b/VietausWebAPI.Infrastructure/DatabaseContext/DeploymentScripts/20261007_AddEvaluationStandardDefaults.sql
+@@ -0,0 +1,18 @@
++BEGIN;
++
++-- Requires the existing catalog table. Old rows retain a Text default without inferred rules.
++ALTER TABLE devandqa."EvaluationStandard"
++    ADD COLUMN datatype integer NOT NULL DEFAULT 1,
++    ADD COLUMN unit varchar(50),
++    ADD COLUMN testmethod text,
++    ADD COLUMN inputconfig jsonb,
++    ADD COLUMN acceptancerule jsonb,
++    ADD COLUMN specificationtext text,
++    ADD COLUMN isrequired boolean NOT NULL DEFAULT false,
++    ADD COLUMN showonreport boolean NOT NULL DEFAULT true,
++    ADD COLUMN showoncoa boolean NOT NULL DEFAULT true;
++
++ALTER TABLE devandqa."EvaluationStandard"
++    ADD CONSTRAINT ck_evaluationstandard_datatype CHECK (datatype BETWEEN 1 AND 7);
++
++COMMIT;
+--- /dev/null
++++ b/VietausWebAPI.Infrastructure/DatabaseContext/DeploymentScripts/20261007_AddEvaluationStandardDefaults.rollback.sql
+@@ -0,0 +1,16 @@
++BEGIN;
++
++-- Rollback discards default configuration entered after deployment; back up before running.
++ALTER TABLE devandqa."EvaluationStandard"
++    DROP CONSTRAINT ck_evaluationstandard_datatype,
++    DROP COLUMN datatype,
++    DROP COLUMN unit,
++    DROP COLUMN testmethod,
++    DROP COLUMN inputconfig,
++    DROP COLUMN acceptancerule,
++    DROP COLUMN specificationtext,
++    DROP COLUMN isrequired,
++    DROP COLUMN showonreport,
++    DROP COLUMN showoncoa;
++
++COMMIT;
+--- /dev/null
++++ b/VietausWebAPI.Infrastructure/DatabaseContext/DeploymentScripts/20261007_AddEvaluationTemplates.sql
+@@ -0,0 +1,165 @@
++-- Reviewed deployment script only: NOT executed by the coding agent.
++-- Prerequisite: existing nine dynamic IQC/COA tables and EvaluationStandard default columns.
++-- Back up first. Execute once, before running the application with the new model.
++BEGIN;
++CREATE TABLE devandqa."MeasurementMethod" (
++ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
++ companyid uuid NOT NULL REFERENCES company."Companies"("companyId") ON DELETE RESTRICT,
++ code citext NOT NULL, name varchar(200) NOT NULL, description text,
++ isactive boolean NOT NULL DEFAULT true, sortorder integer NOT NULL DEFAULT 0,
++ createdby uuid NOT NULL REFERENCES hr."Employees"("EmployeeID") ON DELETE RESTRICT,
++ createddate timestamp without time zone NOT NULL,
++ updatedby uuid REFERENCES hr."Employees"("EmployeeID") ON DELETE RESTRICT,
++ updateddate timestamp without time zone,
++ CONSTRAINT ck_measurementmethod_sortorder CHECK (sortorder >= 0),
++ UNIQUE(companyid, code)
++);
++CREATE TABLE devandqa."EvaluationTemplate" (
++ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
++ companyid uuid NOT NULL REFERENCES company."Companies"("companyId") ON DELETE RESTRICT,
++ code citext NOT NULL, name varchar(200) NOT NULL,
++ type integer NOT NULL, version integer NOT NULL, status integer NOT NULL, isdefault boolean NOT NULL,
++ effectivefrom timestamp without time zone,
++ createdby uuid NOT NULL REFERENCES hr."Employees"("EmployeeID") ON DELETE RESTRICT,
++ createddate timestamp without time zone NOT NULL,
++ publishedby uuid REFERENCES hr."Employees"("EmployeeID") ON DELETE RESTRICT,
++ publisheddate timestamp without time zone,
++ CONSTRAINT ck_evaluationtemplate_version CHECK (version > 0),
++ CONSTRAINT ck_evaluationtemplate_type CHECK (type IN (1,2,3)),
++ CONSTRAINT ck_evaluationtemplate_status CHECK (status IN (0,1,2)),
++ CONSTRAINT ck_evaluationtemplate_default CHECK (NOT isdefault OR status = 1),
++ UNIQUE(companyid,type,code,version)
++);
++CREATE UNIQUE INDEX ux_evaluationtemplate_default ON devandqa."EvaluationTemplate"(companyid,type)
++ WHERE isdefault = TRUE AND status = 1;
++CREATE TABLE devandqa."EvaluationTemplateItem" (
++ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
++ evaluationtemplateid uuid NOT NULL REFERENCES devandqa."EvaluationTemplate"(id) ON DELETE RESTRICT,
++ evaluationstandardid uuid NOT NULL REFERENCES devandqa."EvaluationStandard"(id) ON DELETE RESTRICT,
++ criterioncode citext NOT NULL DEFAULT '',
++ criterionname varchar(200) NOT NULL DEFAULT '',
++ datatype integer NOT NULL DEFAULT 1,
++ unit varchar(50),
++ measurementmethodid uuid,
++ measurementmethodcode varchar(50),
++ testmethod text,
++ inputconfig jsonb,
++ acceptancerule jsonb,
++ specificationtext text,
++ isrequired boolean NOT NULL DEFAULT false,
++ showonreport boolean NOT NULL DEFAULT true,
++ showoncoa boolean NOT NULL DEFAULT true,
++ sortorder integer NOT NULL DEFAULT 0,
++ FOREIGN KEY(measurementmethodid) REFERENCES devandqa."MeasurementMethod"(id) ON DELETE RESTRICT,
++ UNIQUE(evaluationtemplateid,evaluationstandardid),
++ UNIQUE(evaluationtemplateid,criterioncode)
++);
++ALTER TABLE devandqa."EvaluationStandard" ADD COLUMN measurementmethodid uuid REFERENCES devandqa."MeasurementMethod"(id) ON DELETE RESTRICT;
++ALTER TABLE devandqa."IqcSpecificationItem" ADD COLUMN measurementmethodid uuid REFERENCES devandqa."MeasurementMethod"(id) ON DELETE RESTRICT;
++ALTER TABLE devandqa."IqcSpecificationItem" ADD COLUMN measurementmethodcode varchar(50);
++ALTER TABLE devandqa."CoaSpecificationItem" ADD COLUMN measurementmethodid uuid REFERENCES devandqa."MeasurementMethod"(id) ON DELETE RESTRICT;
++ALTER TABLE devandqa."CoaSpecificationItem" ADD COLUMN measurementmethodcode varchar(50);
++ALTER TABLE devandqa."IqcInspectionEvaluation"
++ ALTER COLUMN iqcspecificationid DROP NOT NULL,
++ ADD COLUMN evaluationtemplateid uuid REFERENCES devandqa."EvaluationTemplate"(id) ON DELETE RESTRICT,
++ ADD COLUMN templatecode varchar(50), ADD COLUMN templatename varchar(200), ADD COLUMN templateversion integer;
++ALTER TABLE devandqa."CoaCertificate"
++ ALTER COLUMN coaspecificationid DROP NOT NULL,
++ ADD COLUMN evaluationtemplateid uuid REFERENCES devandqa."EvaluationTemplate"(id) ON DELETE RESTRICT,
++ ADD COLUMN templatecode varchar(50), ADD COLUMN templatename varchar(200), ADD COLUMN templateversion integer;
++ALTER TABLE devandqa."IqcInspectionResult"
++ ALTER COLUMN iqcspecificationitemid DROP NOT NULL,
++ ADD COLUMN sourcetemplateitemid uuid REFERENCES devandqa."EvaluationTemplateItem"(id) ON DELETE RESTRICT,
++ ADD COLUMN evaluationstandardid uuid REFERENCES devandqa."EvaluationStandard"(id) ON DELETE RESTRICT,
++ ADD COLUMN hasconfigurationsnapshot boolean NOT NULL DEFAULT false,
++ ADD COLUMN criterioncode citext NOT NULL DEFAULT '',
++ ADD COLUMN criterionname varchar(200) NOT NULL DEFAULT '',
++ ADD COLUMN datatype integer NOT NULL DEFAULT 1,
++ ADD COLUMN unit varchar(50),
++ ADD COLUMN measurementmethodid uuid,
++ ADD COLUMN measurementmethodcode varchar(50),
++ ADD COLUMN testmethod text,
++ ADD COLUMN inputconfig jsonb,
++ ADD COLUMN acceptancerule jsonb,
++ ADD COLUMN specificationtext text,
++ ADD COLUMN isrequired boolean NOT NULL DEFAULT false,
++ ADD COLUMN showonreport boolean NOT NULL DEFAULT true,
++ ADD COLUMN showoncoa boolean NOT NULL DEFAULT true,
++ ADD COLUMN sortorder integer NOT NULL DEFAULT 0;
++ALTER TABLE devandqa."IqcInspectionResult" ADD FOREIGN KEY (measurementmethodid) REFERENCES devandqa."MeasurementMethod"(id) ON DELETE RESTRICT;
++UPDATE devandqa."IqcInspectionResult" r SET evaluationstandardid = i.evaluationstandardid,
++ hasconfigurationsnapshot = true,
++ criterioncode = i.criterioncode,
++ criterionname = i.criterionname,
++ datatype = i.datatype,
++ unit = i.unit,
++ measurementmethodid = i.measurementmethodid,
++ measurementmethodcode = i.measurementmethodcode,
++ testmethod = i.testmethod,
++ inputconfig = i.inputconfig,
++ acceptancerule = i.acceptancerule,
++ specificationtext = i.specificationtext,
++ isrequired = i.isrequired,
++ showonreport = i.showonreport,
++ sortorder = i.sortorder
++ FROM devandqa."IqcSpecificationItem" i WHERE r.iqcspecificationitemid = i.id;
++ALTER TABLE devandqa."IqcInspectionResult" ADD CONSTRAINT ck_iqcinspectionresult_snapshot
++ CHECK (NOT hasconfigurationsnapshot OR (evaluationstandardid IS NOT NULL AND criterioncode <> '' AND criterionname <> '' AND datatype BETWEEN 1 AND 7 AND sortorder >= 0));
++CREATE INDEX ix_iqcinspectionresult_sourcetemplateitemid ON devandqa."IqcInspectionResult"(sourcetemplateitemid);
++CREATE INDEX ix_iqcinspectionresult_evaluationstandardid ON devandqa."IqcInspectionResult"(evaluationstandardid);
++CREATE INDEX ix_iqcinspectionresult_measurementmethodid ON devandqa."IqcInspectionResult"(measurementmethodid);
++ALTER TABLE devandqa."CoaCertificateResult"
++ ALTER COLUMN coaspecificationitemid DROP NOT NULL,
++ ADD COLUMN sourcetemplateitemid uuid REFERENCES devandqa."EvaluationTemplateItem"(id) ON DELETE RESTRICT,
++ ADD COLUMN evaluationstandardid uuid REFERENCES devandqa."EvaluationStandard"(id) ON DELETE RESTRICT,
++ ADD COLUMN hasconfigurationsnapshot boolean NOT NULL DEFAULT false,
++ ADD COLUMN criterioncode citext NOT NULL DEFAULT '',
++ ADD COLUMN criterionname varchar(200) NOT NULL DEFAULT '',
++ ADD COLUMN datatype integer NOT NULL DEFAULT 1,
++ ADD COLUMN unit varchar(50),
++ ADD COLUMN measurementmethodid uuid,
++ ADD COLUMN measurementmethodcode varchar(50),
++ ADD COLUMN testmethod text,
++ ADD COLUMN inputconfig jsonb,
++ ADD COLUMN acceptancerule jsonb,
++ ADD COLUMN specificationtext text,
++ ADD COLUMN isrequired boolean NOT NULL DEFAULT false,
++ ADD COLUMN showonreport boolean NOT NULL DEFAULT true,
++ ADD COLUMN showoncoa boolean NOT NULL DEFAULT true,
++ ADD COLUMN sortorder integer NOT NULL DEFAULT 0;
++ALTER TABLE devandqa."CoaCertificateResult" ADD FOREIGN KEY (measurementmethodid) REFERENCES devandqa."MeasurementMethod"(id) ON DELETE RESTRICT;
++UPDATE devandqa."CoaCertificateResult" r SET evaluationstandardid = i.evaluationstandardid,
++ hasconfigurationsnapshot = true,
++ criterioncode = i.criterioncode,
++ criterionname = i.criterionname,
++ datatype = i.datatype,
++ unit = i.unit,
++ measurementmethodid = i.measurementmethodid,
++ measurementmethodcode = i.measurementmethodcode,
++ testmethod = i.testmethod,
++ inputconfig = i.inputconfig,
++ acceptancerule = i.acceptancerule,
++ specificationtext = i.specificationtext,
++ isrequired = i.isrequired,
++ showoncoa = i.showoncoa,
++ sortorder = i.sortorder
++ FROM devandqa."CoaSpecificationItem" i WHERE r.coaspecificationitemid = i.id;
++ALTER TABLE devandqa."CoaCertificateResult" ADD CONSTRAINT ck_coacertificateresult_snapshot
++ CHECK (NOT hasconfigurationsnapshot OR (evaluationstandardid IS NOT NULL AND criterioncode <> '' AND criterionname <> '' AND datatype BETWEEN 1 AND 7 AND sortorder >= 0));
++CREATE INDEX ix_coacertificateresult_sourcetemplateitemid ON devandqa."CoaCertificateResult"(sourcetemplateitemid);
++CREATE INDEX ix_coacertificateresult_evaluationstandardid ON devandqa."CoaCertificateResult"(evaluationstandardid);
++CREATE INDEX ix_coacertificateresult_measurementmethodid ON devandqa."CoaCertificateResult"(measurementmethodid);
++CREATE INDEX ix_measurementmethod_companyid ON devandqa."MeasurementMethod"(companyid);
++CREATE INDEX ix_measurementmethod_createdby ON devandqa."MeasurementMethod"(createdby);
++CREATE INDEX ix_measurementmethod_updatedby ON devandqa."MeasurementMethod"(updatedby);
++CREATE INDEX ix_evaluationtemplate_companyid ON devandqa."EvaluationTemplate"(companyid);
++CREATE INDEX ix_evaluationtemplate_createdby ON devandqa."EvaluationTemplate"(createdby);
++CREATE INDEX ix_evaluationtemplate_publishedby ON devandqa."EvaluationTemplate"(publishedby);
++CREATE INDEX ix_evaluationstandard_measurementmethodid ON devandqa."EvaluationStandard"(measurementmethodid);
++CREATE INDEX ix_iqcspecificationitem_measurementmethodid ON devandqa."IqcSpecificationItem"(measurementmethodid);
++CREATE INDEX ix_coaspecificationitem_measurementmethodid ON devandqa."CoaSpecificationItem"(measurementmethodid);
++CREATE INDEX ix_evaluationtemplateitem_measurementmethodid ON devandqa."EvaluationTemplateItem"(measurementmethodid);
++CREATE INDEX ix_iqcinspectionevaluation_evaluationtemplateid ON devandqa."IqcInspectionEvaluation"(evaluationtemplateid);
++CREATE INDEX ix_coacertificate_evaluationtemplateid ON devandqa."CoaCertificate"(evaluationtemplateid);
++CREATE INDEX ix_evaluationtemplateitem_evaluationstandardid ON devandqa."EvaluationTemplateItem"(evaluationstandardid);
++COMMIT;
+--- /dev/null
++++ b/VietausWebAPI.Infrastructure/DatabaseContext/DeploymentScripts/20261007_AddEvaluationTemplates.rollback.sql
+@@ -0,0 +1,59 @@
++-- Run only before new template/method data is used. Never discard new inspection data.
++BEGIN;
++DO $$ BEGIN
++ IF EXISTS (SELECT 1 FROM devandqa."EvaluationTemplate")
++ OR EXISTS (SELECT 1 FROM devandqa."MeasurementMethod")
++ OR EXISTS (SELECT 1 FROM devandqa."IqcInspectionEvaluation" WHERE iqcspecificationid IS NULL)
++ OR EXISTS (SELECT 1 FROM devandqa."CoaCertificate" WHERE coaspecificationid IS NULL)
++ OR EXISTS (SELECT 1 FROM devandqa."IqcInspectionResult" WHERE iqcspecificationitemid IS NULL)
++ OR EXISTS (SELECT 1 FROM devandqa."CoaCertificateResult" WHERE coaspecificationitemid IS NULL)
++ THEN RAISE EXCEPTION 'Rollback blocked: new data exists; preserve it or restore a reviewed backup.';
++ END IF;
++END $$;
++ALTER TABLE devandqa."IqcInspectionResult" DROP CONSTRAINT ck_iqcinspectionresult_snapshot,
++ DROP COLUMN sourcetemplateitemid,
++ DROP COLUMN evaluationstandardid,
++ DROP COLUMN hasconfigurationsnapshot,
++ DROP COLUMN criterioncode,
++ DROP COLUMN criterionname,
++ DROP COLUMN datatype,
++ DROP COLUMN unit,
++ DROP COLUMN measurementmethodid,
++ DROP COLUMN measurementmethodcode,
++ DROP COLUMN testmethod,
++ DROP COLUMN inputconfig,
++ DROP COLUMN acceptancerule,
++ DROP COLUMN specificationtext,
++ DROP COLUMN isrequired,
++ DROP COLUMN showonreport,
++ DROP COLUMN showoncoa,
++ DROP COLUMN sortorder,
++ ALTER COLUMN iqcspecificationitemid SET NOT NULL;
++ALTER TABLE devandqa."CoaCertificateResult" DROP CONSTRAINT ck_coacertificateresult_snapshot,
++ DROP COLUMN sourcetemplateitemid,
++ DROP COLUMN evaluationstandardid,
++ DROP COLUMN hasconfigurationsnapshot,
++ DROP COLUMN criterioncode,
++ DROP COLUMN criterionname,
++ DROP COLUMN datatype,
++ DROP COLUMN unit,
++ DROP COLUMN measurementmethodid,
++ DROP COLUMN measurementmethodcode,
++ DROP COLUMN testmethod,
++ DROP COLUMN inputconfig,
++ DROP COLUMN acceptancerule,
++ DROP COLUMN specificationtext,
++ DROP COLUMN isrequired,
++ DROP COLUMN showonreport,
++ DROP COLUMN showoncoa,
++ DROP COLUMN sortorder,
++ ALTER COLUMN coaspecificationitemid SET NOT NULL;
++ALTER TABLE devandqa."IqcInspectionEvaluation" DROP COLUMN evaluationtemplateid, DROP COLUMN templatecode, DROP COLUMN templatename, DROP COLUMN templateversion, ALTER COLUMN iqcspecificationid SET NOT NULL;
++ALTER TABLE devandqa."CoaCertificate" DROP COLUMN evaluationtemplateid, DROP COLUMN templatecode, DROP COLUMN templatename, DROP COLUMN templateversion, ALTER COLUMN coaspecificationid SET NOT NULL;
++ALTER TABLE devandqa."EvaluationStandard" DROP COLUMN measurementmethodid;
++ALTER TABLE devandqa."IqcSpecificationItem" DROP COLUMN measurementmethodid, DROP COLUMN measurementmethodcode;
++ALTER TABLE devandqa."CoaSpecificationItem" DROP COLUMN measurementmethodid, DROP COLUMN measurementmethodcode;
++DROP TABLE devandqa."EvaluationTemplateItem";
++DROP TABLE devandqa."EvaluationTemplate";
++DROP TABLE devandqa."MeasurementMethod";
++COMMIT;

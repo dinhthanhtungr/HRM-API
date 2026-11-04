@@ -31,7 +31,7 @@ internal sealed class DeliveryOrderLotInventoryService
             .Where(x =>
                 x.CompanyId == companyId &&
                 productCodes.Contains(x.Code!) &&
-                x.StockType == StockType.FinishedGood &&
+                (x.StockType == StockType.FinishedGood || x.StockType == StockType.DefectiveFinishedGood) &&
                 x.WarehouseShelves != null &&
                 x.WarehouseShelves.IsActive &&
                 ((x.LotNo != null && x.LotNo != string.Empty) ||
@@ -41,6 +41,7 @@ internal sealed class DeliveryOrderLotInventoryService
                 ProductCode = x.Code!,
                 LotNo = x.LotNo != null && x.LotNo != string.Empty ? x.LotNo : x.LotKey!,
                 x.LotKey,
+                x.StockType,
                 x.QtyKg
             })
             .ToListAsync(cancellationToken);
@@ -88,14 +89,14 @@ internal sealed class DeliveryOrderLotInventoryService
         }
 
         var onHandByLot = stockRows
-            .GroupBy(x => DeliveryOrderLotInventoryRules.Key(x.ProductCode, x.LotNo))
+            .GroupBy(x => DeliveryOrderLotInventoryRules.Key(x.ProductCode, x.LotNo, x.StockType))
             .ToDictionary(x => x.Key, x => x.Sum(y => y.QtyKg));
         var stockLotKeyMap = stockRows
-            .Where(x => !string.IsNullOrWhiteSpace(x.LotKey))
+            .Where(x => x.StockType == StockType.FinishedGood && !string.IsNullOrWhiteSpace(x.LotKey))
             .GroupBy(x => DeliveryOrderLotInventoryRules.Key(x.ProductCode, x.LotKey!))
             .ToDictionary(
                 x => x.Key,
-                x => DeliveryOrderLotInventoryRules.Key(x.First().ProductCode, x.First().LotNo));
+                x => DeliveryOrderLotInventoryRules.Key(x.First().ProductCode, x.First().LotNo, x.First().StockType));
         var reservedByLot = reserveRows
             .Where(x => !string.IsNullOrWhiteSpace(x.LotKey))
             .GroupBy(x =>
@@ -105,15 +106,13 @@ internal sealed class DeliveryOrderLotInventoryService
             })
             .ToDictionary(x => x.Key, x => x.Sum(y => y.Remaining));
         var productAvailable = stockRows
-            .GroupBy(x => DeliveryOrderLotInventoryRules.Normalize(x.ProductCode))
+            .GroupBy(x => DeliveryOrderLotInventoryRules.ProductKey(x.ProductCode, x.StockType))
             .ToDictionary(
                 x => x.Key,
-                x => x.Sum(y => y.QtyKg) - reserveRows
-                    .Where(r => DeliveryOrderLotInventoryRules.Normalize(r.Code) == x.Key)
-                    .Sum(r => r.Remaining));
+                x => x.Sum(y => y.QtyKg));
 
         return stockRows
-            .GroupBy(x => DeliveryOrderLotInventoryRules.Key(x.ProductCode, x.LotNo))
+            .GroupBy(x => DeliveryOrderLotInventoryRules.Key(x.ProductCode, x.LotNo, x.StockType))
             .ToDictionary(
                 x => x.Key,
                 x =>
@@ -122,16 +121,17 @@ internal sealed class DeliveryOrderLotInventoryService
                     var normalizedProduct = DeliveryOrderLotInventoryRules.Normalize(row.ProductCode);
                     var normalizedLot = DeliveryOrderLotInventoryRules.Normalize(row.LotNo);
                     var onHand = onHandByLot[x.Key];
-                    var reserved = reservedByLot.GetValueOrDefault(x.Key);
+                    var reserved = row.StockType == StockType.FinishedGood ? reservedByLot.GetValueOrDefault(x.Key) : 0m;
                     return new DeliveryOrderLotInventorySnapshot(
                         productMap[normalizedProduct].ProductId,
                         row.ProductCode,
                         row.LotNo,
                         onHand,
                         reserved,
-                        Math.Max(0m, onHand - reserved),
-                        Math.Max(0m, productAvailable.GetValueOrDefault(normalizedProduct)),
-                        costMap.GetValueOrDefault(normalizedLot));
+                        // Dispatch uses physical stock; reserved remains informational and is not consumed here.
+                        Math.Max(0m, onHand),
+                        Math.Max(0m, productAvailable.GetValueOrDefault(DeliveryOrderLotInventoryRules.ProductKey(row.ProductCode, row.StockType))),
+                        costMap.GetValueOrDefault(normalizedLot), row.StockType);
                 });
     }
 }

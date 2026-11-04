@@ -1,3 +1,5 @@
+using HRM.Application.Abstractions.Security;
+using HRM.Application.Commons.Reporting;
 using HRM.Application.Abstractions.Persistence.Reports;
 using HRM.Application.Features.Reports.ExecutivePnL.Shared.Dtos;
 using HRM.Application.Features.Reports.ExecutivePnL.Shared.Services.Builders;
@@ -11,8 +13,11 @@ namespace HRM.Application.Features.Reports.ExecutivePnL.Queries.GetExecutivePnLD
     {
         private readonly ExecutivePnLTrendReader _reader;
 
-        public GetExecutivePnLDashboardTrendQueryHandler(IReportReadDbContext dbContext)
+        private readonly ICurrentUser _currentUser;
+
+        public GetExecutivePnLDashboardTrendQueryHandler(IReportReadDbContext dbContext, ICurrentUser currentUser)
         {
+            _currentUser = currentUser;
             _reader = new ExecutivePnLTrendReader(dbContext);
         }
 
@@ -21,7 +26,7 @@ namespace HRM.Application.Features.Reports.ExecutivePnL.Queries.GetExecutivePnLD
             CancellationToken cancellationToken)
         {
             var filter = ExecutivePnLDashboardFilterFactory.Create(
-                query.CompanyId,
+                ReportCompanyScope.Resolve(_currentUser, query.CompanyId),
                 query.BusinessUnit,
                 query.Currency,
                 query.FromMonth,

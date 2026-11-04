@@ -1,3 +1,5 @@
+using HRM.Application.Abstractions.Security;
+using HRM.Application.Commons.Authorization;
 using HRM.Application.Features.Reports.ExecutivePnL.Queries.GetExecutivePnLDashboardByCustomer;
 using HRM.Application.Features.Reports.ExecutivePnL.Queries.GetExecutivePnLDashboardByProductType;
 using HRM.Application.Features.Reports.ExecutivePnL.Queries.GetExecutivePnLDashboardBySales;
@@ -14,10 +16,12 @@ namespace HRM.Api.Controllers.Reports
     public sealed class ExecutivePnLDashboardController : ControllerBase
     {
         private readonly ISender _sender;
+        private readonly ICurrentUser _currentUser;
 
-        public ExecutivePnLDashboardController(ISender sender)
+        public ExecutivePnLDashboardController(ISender sender, ICurrentUser currentUser)
         {
             _sender = sender;
+            _currentUser = currentUser;
         }
 
         [HttpGet("trend")]
@@ -25,15 +29,22 @@ namespace HRM.Api.Controllers.Reports
             [FromQuery] GetExecutivePnLDashboardTrendQuery query,
             CancellationToken cancellationToken)
         {
+            if (!_currentUser.CompanyId.HasValue || _currentUser.CompanyId == Guid.Empty
+                || (query.CompanyId.HasValue && query.CompanyId != _currentUser.CompanyId))
+                return Forbid();
             var result = await _sender.Send(query, cancellationToken);
             return Ok(result);
         }
 
         [HttpGet("by-sales")]
+        [Authorize(Roles = ApplicationRoleSets.Reports.SalesScopedReaderRolesCsv)]
         public async Task<IActionResult> GetBySales(
             [FromQuery] GetExecutivePnLDashboardBySalesQuery query,
             CancellationToken cancellationToken)
         {
+            if (!_currentUser.CompanyId.HasValue || _currentUser.CompanyId == Guid.Empty
+                || (query.CompanyId.HasValue && query.CompanyId != _currentUser.CompanyId))
+                return Forbid();
             var result = await _sender.Send(query, cancellationToken);
             return Ok(result);
         }
@@ -43,6 +54,9 @@ namespace HRM.Api.Controllers.Reports
             [FromQuery] GetExecutivePnLDashboardByProductTypeQuery query,
             CancellationToken cancellationToken)
         {
+            if (!_currentUser.CompanyId.HasValue || _currentUser.CompanyId == Guid.Empty
+                || (query.CompanyId.HasValue && query.CompanyId != _currentUser.CompanyId))
+                return Forbid();
             var result = await _sender.Send(query, cancellationToken);
             return Ok(result);
         }
@@ -52,6 +66,9 @@ namespace HRM.Api.Controllers.Reports
             [FromQuery] GetExecutivePnLDashboardByCustomerQuery query,
             CancellationToken cancellationToken)
         {
+            if (!_currentUser.CompanyId.HasValue || _currentUser.CompanyId == Guid.Empty
+                || (query.CompanyId.HasValue && query.CompanyId != _currentUser.CompanyId))
+                return Forbid();
             var result = await _sender.Send(query, cancellationToken);
             return Ok(result);
         }

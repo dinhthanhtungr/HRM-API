@@ -1,4 +1,17 @@
+## 2026-11-04 — Sample-trial managed Sale workflow
+
+- Composer phản hồi mẫu kiểm tra owner/managed-owner bằng write scope, chặn gọi CRM trực tiếp để vượt quyền PLM. SaleAdmin ghi nhận actor thực tế, giữ owner hồ sơ và khách hàng; interaction mặc định giao Sale owner khi làm thay.
+- Khôi phục tracking trên customer mutation query sau visibility để lưu mốc liên hệ đúng transaction hiện có.
+
 # Changelog
+
+## 2026-11-01
+
+### Bổ sung 03/11/2026
+
+- Phản hồi chip trên hồ sơ hiện hành mở bước Formula Rework thay vì tự hoàn thành/chọn VU. Phản hồi mẫu kg không mở sửa VU đã gửi; giữ scope, idempotency và outbox hiện có.
+
+- Phản hồi Trial ghi SampleRequestWorkflowEvent và outbox cùng giao dịch CRM; bỏ gửi thông báo trực tiếp sau SaveChanges để retry không tạo lại phản hồi.
 
 ## 2026-09-08
 

@@ -8,6 +8,12 @@ internal static class QuotationSaveRules
 {
     public static string? Validate(SaveQuotationRequest request)
     {
+        if (request.AcceptedStandardPriceChanges is null || request.ObservedStandardPriceVersions is null ||
+            request.AcceptedStandardPriceChanges.Count > QuotationRules.MaximumLineCount ||
+            request.ObservedStandardPriceVersions.Count > QuotationRules.MaximumLineCount ||
+            request.AcceptedStandardPriceChanges.Any(x => x.Key == Guid.Empty || x.Value is null || x.Value.Length != 64) ||
+            request.ObservedStandardPriceVersions.Any(x => x.Key == Guid.Empty || x.Value == Guid.Empty))
+            return "Standard price reference acknowledgments are invalid.";
         if (!request.ExpectedUpdatedDate.HasValue || request.ExpectedUpdatedDate == default(DateTime))
             return "expectedUpdatedDate is required.";
         if (request.ClearFields is null)
@@ -34,7 +40,7 @@ internal static class QuotationSaveRules
             request.CustomerPriceLines?.Any(x => x is null || x.PriceTiers is null || x.PriceTiers.Any(t => t is null)) == true ||
             request.Header?.Terms?.Any(x => x is null) == true)
             return "Lines, terms and price tiers cannot contain null items; priceTiers cannot be null.";
-        if (request.Header is null && request.Lines is null && request.CustomerPriceLines is null && request.ClearFields.Count == 0)
+        if (request.Header is null && request.Lines is null && request.CustomerPriceLines is null && request.ClearFields.Count == 0 && !request.SyncStandardReferences)
             return "At least one update section or clear field is required.";
         if (request.ClearFields.Distinct(StringComparer.Ordinal).Count() != request.ClearFields.Count)
             return "clearFields must contain unique field names.";
@@ -62,12 +68,12 @@ internal static class QuotationSaveRules
 
     public static string? ValidateStatus(Quotation quotation, SaveQuotationRequest request)
     {
-        if (quotation.Status is not (QuotationStatus.Draft or QuotationStatus.PendingApproval or QuotationStatus.Approved))
-            return "Only a draft, pending or approved quotation can be saved.";
+        if (quotation.Status is not (QuotationStatus.Draft or QuotationStatus.PendingApproval or QuotationStatus.Approved or QuotationStatus.PendingSendConfirmation))
+            return "Only an unsent draft, pricing-pending, approved or send-pending quotation can be saved.";
         if (request.Lines is not null && quotation.Status != QuotationStatus.Draft)
             return "Only a draft quotation can have its lines replaced.";
         if (request.CustomerPriceLines is not null && !QuotationWorkflowRules.CanEditCustomerPricing(quotation.Status))
-            return "Customer price tiers can only be edited while pricing is pending or approved.";
+            return "Customer price tiers can only be edited on an unsent draft, pricing-pending, approved or send-pending quotation.";
         var header = request.Header;
         if (quotation.Status != QuotationStatus.Draft && header is not null &&
             ((header.CustomerId.HasValue && header.CustomerId != quotation.CustomerId) ||

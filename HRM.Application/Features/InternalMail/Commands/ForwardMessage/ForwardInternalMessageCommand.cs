@@ -9,4 +9,5 @@ public sealed class ForwardInternalMessageCommand : IRequest<OperationResult<Sen
 {
     [JsonIgnore] public Guid MessageId { get; set; }
     public Guid TargetConversationId { get; set; }
+    [JsonIgnore] internal bool HasGroupTransaction { get; init; }
 }

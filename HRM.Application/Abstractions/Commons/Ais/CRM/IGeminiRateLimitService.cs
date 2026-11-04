@@ -6,4 +6,5 @@ public interface IGeminiRateLimitService
 {
     AiRateLimitInfoDto GetCurrent(string model);
     AiRateLimitInfoDto TryConsume(string model);
+    bool TryAcquire(string model) => TryConsume(model).CanRequest;
 }

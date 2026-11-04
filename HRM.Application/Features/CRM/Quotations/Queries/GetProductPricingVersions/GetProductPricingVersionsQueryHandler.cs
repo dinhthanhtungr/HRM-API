@@ -27,7 +27,7 @@ internal sealed class GetProductPricingVersionsQueryHandler
         GetProductPricingVersionsQuery request,
         CancellationToken cancellationToken)
     {
-        if (!ProductPricingAccessRules.CanManage(_currentUser))
+        if (!ProductPricingAccessRules.CanViewManagementData(_currentUser))
             return OperationResult<IReadOnlyList<ProductPricingVersionDto>>.Fail(
                 "Only President or Developer can view product pricing version history.");
         if (request.ProductId == Guid.Empty ||

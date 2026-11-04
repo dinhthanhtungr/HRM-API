@@ -48,7 +48,7 @@ internal sealed class ResolveTransferSourceQueryHandler
             return OperationResult<TransferSourceResolutionDto>.Fail("CustomerIds contains empty or duplicate values.");
         }
 
-        var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+        var scope = await _visibilityService.BuildReadScopeAsync(cancellationToken);
 
         if (!scope.HasFullCustomerView && scope.LeaderGroupIds.Count == 0)
         {

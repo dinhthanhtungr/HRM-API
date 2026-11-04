@@ -1,5 +1,6 @@
 using HRM.Application.Abstractions.Persistence.Warehouse;
 using HRM.Application.Abstractions.Security;
+using HRM.Application.Commons.Authorization;
 using HRM.Application.Commons.Models;
 using HRM.Application.Commons.Pagination;
 using HRM.Application.Features.Warehouse.Dtos;
@@ -18,15 +19,18 @@ public sealed class GetStockAvailableQueryHandler
     private readonly IWarehouseReadDbContext _dbContext;
     private readonly ICurrentUser _currentUser;
     private readonly IWarehouseStockVisibilityService _stockVisibilityService;
+    private readonly ICurrentUserPermissionService _permissions;
 
     public GetStockAvailableQueryHandler(
         IWarehouseReadDbContext dbContext,
         ICurrentUser currentUser,
-        IWarehouseStockVisibilityService stockVisibilityService)
+        IWarehouseStockVisibilityService stockVisibilityService,
+        ICurrentUserPermissionService permissions)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
         _stockVisibilityService = stockVisibilityService;
+        _permissions = permissions;
     }
 
     public async Task<OperationResult<PagedResult<StockAvailableDto>>> Handle(
@@ -40,6 +44,11 @@ public sealed class GetStockAvailableQueryHandler
 
         var pageNumber = request.NormalizedPageNumber;
         var pageSize = request.NormalizedPageSize;
+
+        if (request.StockTypes.Any(type => !Enum.IsDefined(type)))
+        {
+            return OperationResult<PagedResult<StockAvailableDto>>.Fail("Invalid stock type.");
+        }
 
         var items = await BuildStockAvailableItemsAsync(request, companyId, cancellationToken);
         var totalCount = items.Count;
@@ -57,9 +66,19 @@ public sealed class GetStockAvailableQueryHandler
         Guid companyId,
         CancellationToken cancellationToken)
     {
-        var shelfQuery = WarehouseStockQueryHelper.ActiveShelfStocks(
-            _dbContext.WarehouseShelfStocks.AsNoTracking(),
-            companyId);
+        // This overview includes disabled shelves for visibility only. Operational readers
+        // continue using ActiveShelfStocks/ForItemStock and must never use this query.
+        var shelfQuery = _dbContext.WarehouseShelfStocks.AsNoTracking().Where(stock =>
+            stock.CompanyId == companyId &&
+            stock.Code != null && stock.Code != string.Empty &&
+            stock.WarehouseShelves != null && stock.WarehouseShelves.CompanyId == companyId);
+
+        if (!_permissions.HasPermission(ApplicationPermissions.Warehouse.ViewMixingStock))
+        {
+            shelfQuery = shelfQuery.Where(stock =>
+                stock.ShelfStockCode != WarehouseStockQueryHelper.MixingShelfCode &&
+                stock.WarehouseShelves!.SlotCode != WarehouseStockQueryHelper.MixingShelfCode);
+        }
 
         var keyword = request.NormalizedKeyword;
         shelfQuery = await _stockVisibilityService.ApplyAsync(
@@ -111,9 +130,10 @@ public sealed class GetStockAvailableQueryHandler
                 select stock;
         }
 
-        if (request.StockTypes.HasValue)
+        if (request.StockTypes.Length > 0)
         {
-            shelfQuery = shelfQuery.Where(stock => stock.StockType == request.StockTypes.Value);
+            var stockTypes = request.StockTypes.Distinct().ToArray();
+            shelfQuery = shelfQuery.Where(stock => stockTypes.Contains(stock.StockType));
         }
 
         return shelfQuery;
@@ -135,9 +155,12 @@ public sealed class GetStockAvailableQueryHandler
                 ShelfStockId = stockGroup.Min(x => x.ShelfStockId),
                 Code = stockGroup.Key.Code!,
                 StockType = stockGroup.Key.StockType,
-                TotalOnHandKg = stockGroup.Sum(x => (decimal?)x.QtyKg) ?? 0m
+                TotalOnHandKg = stockGroup.Sum(x => x.WarehouseShelves!.IsActive ? (decimal?)x.QtyKg : 0m) ?? 0m,
+                PhysicalOnHandKg = stockGroup.Sum(x => (decimal?)x.QtyKg) ?? 0m,
+                InactiveShelfOnHandKg = stockGroup.Sum(x => !x.WarehouseShelves!.IsActive ? (decimal?)x.QtyKg : 0m) ?? 0m
             })
             .OrderBy(x => x.Code)
+            .ThenBy(x => x.StockType)
             .ToListAsync(cancellationToken);
 
         if (items.Count == 0)
@@ -192,6 +215,7 @@ public sealed class GetStockAvailableQueryHandler
                 stock.Code,
                 stock.StockType,
                 stock.ShelfStockCode,
+                ShelfIsActive = stock.WarehouseShelves!.IsActive,
                 CompanyName = stock.Company != null ? stock.Company.Name : string.Empty,
                 stock.LotNo
             }
@@ -202,6 +226,7 @@ public sealed class GetStockAvailableQueryHandler
                 stockGroup.Key.ShelfStockCode,
                 stockGroup.Key.CompanyName ?? string.Empty,
                 stockGroup.Key.LotNo,
+                stockGroup.Key.ShelfIsActive,
                 stockGroup.Sum(x => (decimal?)x.QtyKg) ?? 0m))
             .ToListAsync(cancellationToken);
 
@@ -248,6 +273,9 @@ public sealed class GetStockAvailableQueryHandler
             })
             .ToListAsync(cancellationToken);
 
+        var formulaCodesByMfg = await ReservedManufacturingFormulaReader.ReadAsync(
+            _dbContext, companyId, reservedVaRows.Select(x => x.VaCode).Distinct().ToArray(), cancellationToken);
+
         var reservedVaMap = reservedVaRows
             .GroupBy(x => NormalizeCode(x.Code))
             .ToDictionary(
@@ -257,14 +285,16 @@ public sealed class GetStockAvailableQueryHandler
                     .ThenBy(y => y.CreatedDate)
                     .Select(y => new ReservedVaCodeDto
                     {
-                        VaCode = y.VaCode,
+                        VaCode = formulaCodesByMfg.GetValueOrDefault(y.VaCode) ?? string.Empty,
                         ReservedKg = y.ReservedKg,
                         CreatedDate = y.CreatedDate
                     })
                     .ToList());
 
         var headerMap = items.ToDictionary(x => StockKey(x.Code, x.StockType));
-        foreach (var detail in detailRows)
+        foreach (var detail in detailRows.OrderBy(x => x.ShelfStockCode, StringComparer.Ordinal)
+                     .ThenBy(x => x.LotNo, StringComparer.Ordinal)
+                     .ThenBy(x => x.CompanyName, StringComparer.Ordinal))
         {
             if (!headerMap.TryGetValue(StockKey(detail.Code, detail.StockType), out var header))
             {
@@ -276,7 +306,11 @@ public sealed class GetStockAvailableQueryHandler
                 LotNo = detail.LotNo,
                 ShelfStockCode = WarehouseStockQueryHelper.GetShelfDisplayName(detail.ShelfStockCode),
                 CompanyName = detail.CompanyName,
-                OnHandKg = detail.OnHandKg
+                OnHandKg = detail.OnHandKg,
+                ShelfIsActive = detail.ShelfIsActive,
+                CanUse = detail.ShelfIsActive && detail.OnHandKg > 0m,
+                UnavailableReason = !detail.ShelfIsActive ? "ShelfInactive"
+                    : detail.OnHandKg <= 0m ? "NoOnHandStock" : null
             });
         }
 
@@ -343,5 +377,6 @@ public sealed class GetStockAvailableQueryHandler
         string ShelfStockCode,
         string CompanyName,
         string? LotNo,
+        bool ShelfIsActive,
         decimal OnHandKg);
 }

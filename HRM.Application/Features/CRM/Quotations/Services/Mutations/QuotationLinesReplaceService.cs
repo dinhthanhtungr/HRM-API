@@ -38,7 +38,8 @@ namespace HRM.Application.Features.CRM.Quotations.Services
 
         public async Task<OperationResult<QuotationTotalsDto>> ApplyAsync(
             Guid quotationId, ReplaceQuotationLinesRequest request,
-            DateTime? expectedUpdatedDate, bool persist, CancellationToken cancellationToken)
+            DateTime? expectedUpdatedDate, bool persist, CancellationToken cancellationToken,
+            IReadOnlySet<Guid>? retainedStandardReferences = null)
         {
             var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
             var quotation = await _writeDbContext.Quotations
@@ -87,7 +88,7 @@ namespace HRM.Application.Features.CRM.Quotations.Services
                 quotation.Currency,
                 quotation.ExchangeRate,
                 request.Lines,
-                cancellationToken);
+                cancellationToken, retainedStandardReferences);
             if (!lineResult.Success || lineResult.Data is null)
             {
                 return OperationResult<QuotationTotalsDto>.Fail(lineResult.Message!);

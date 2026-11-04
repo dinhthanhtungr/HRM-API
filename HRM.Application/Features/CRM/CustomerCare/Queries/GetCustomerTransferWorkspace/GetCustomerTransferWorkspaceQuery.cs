@@ -38,7 +38,7 @@ internal sealed class GetCustomerTransferWorkspaceQueryHandler
         GetCustomerTransferWorkspaceQuery request,
         CancellationToken cancellationToken)
     {
-        var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+        var scope = await _visibilityService.BuildReadScopeAsync(cancellationToken);
         if (!CustomerTransferRules.CanTransfer(scope))
         {
             return OperationResult<CustomerTransferWorkspaceDto>.Fail(

@@ -42,10 +42,14 @@ internal sealed class GetGroupsQueryHandler
                 GroupType = group.GroupType,
                 PartId = group.PartId,
                 MemberCount = group.MemberInGroups.Count(member =>
-                    member.IsActive && member.Profile != null),
+                    member.IsActive && member.Profile != null &&
+                    member.ProfileNavigation != null && member.ProfileNavigation.IsActive &&
+                    member.ProfileNavigation.CompanyId == companyId),
                 LeaderCount = group.MemberInGroups.Count(member =>
                     member.IsActive &&
                     member.Profile != null &&
+                    member.ProfileNavigation != null && member.ProfileNavigation.IsActive &&
+                    member.ProfileNavigation.CompanyId == companyId &&
                     member.IsAdmin == true)
             })
             .ToListAsync(cancellationToken);

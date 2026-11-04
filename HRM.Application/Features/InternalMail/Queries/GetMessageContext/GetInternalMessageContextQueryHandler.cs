@@ -17,17 +17,19 @@ internal sealed class GetInternalMessageContextQueryHandler
     private readonly ICurrentUser _currentUser;
     private readonly InternalMailAreaAccessService _areas;
     private readonly IInternalConversationAccessService _conversationAccessService;
+    private readonly InternalMessageReactionReader? _reactions;
 
     public GetInternalMessageContextQueryHandler(
         IInternalMailDbContext dbContext,
         ICurrentUser currentUser,
         IInternalConversationAccessService conversationAccessService,
-        InternalMailAreaAccessService areas)
+        InternalMailAreaAccessService areas, InternalMessageReactionReader? reactions = null)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
         _areas = areas;
         _conversationAccessService = conversationAccessService;
+        _reactions = reactions;
     }
 
     public async Task<InternalMessageContextDto?> Handle(
@@ -110,7 +112,7 @@ internal sealed class GetInternalMessageContextQueryHandler
             .Select(x => new InternalMessageDto
             {
                 MessageId = x.InternalMessageId,
-                AreaCode = x.Conversation.RelatedType == HRM.Domain.Enums.InternalMailEnums.InternalMailRelatedType.ConversationTechnical ? "technical" : x.Conversation.RelatedType == HRM.Domain.Enums.InternalMailEnums.InternalMailRelatedType.ConversationPricing ? "pricing" : "general",
+                AreaCode = InternalMailAreaAccessService.AreaOf(x.Conversation.RelatedType),
                 ConversationId = x.InternalConversationId,
                 SenderEmployeeId = x.SenderEmployeeId,
                 SenderName = x.SenderEmployee.FullName,
@@ -148,6 +150,7 @@ internal sealed class GetInternalMessageContextQueryHandler
             .ToListAsync(cancellationToken);
 
         await AttachReferencesAndAttachmentsAsync(messages, cancellationToken);
+        if (_reactions is not null) await _reactions.AttachAsync(messages, cancellationToken);
 
         var firstSentAt = messages.FirstOrDefault()?.SentAt ?? target.SentAt;
         var lastSentAt = messages.LastOrDefault()?.SentAt ?? target.SentAt;
@@ -166,6 +169,7 @@ internal sealed class GetInternalMessageContextQueryHandler
                 x.SentAt > lastSentAt,
                 cancellationToken);
 
+        await _areas.MaskPriceMessagesAsync(messages, cancellationToken);
         return new InternalMessageContextDto
         {
             TargetMessageId = target.InternalMessageId,

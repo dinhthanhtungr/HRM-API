@@ -15,6 +15,7 @@ public sealed class DeliveryOrderListItemDto
     public DateTime? UpdatedDate { get; init; }
     public string? Note { get; init; }
     public bool IsActive { get; init; }
+    public bool HasPrinted { get; init; }
     public bool CanEdit { get; init; }
     public int LineCount { get; init; }
     public decimal TotalQuantity { get; init; }

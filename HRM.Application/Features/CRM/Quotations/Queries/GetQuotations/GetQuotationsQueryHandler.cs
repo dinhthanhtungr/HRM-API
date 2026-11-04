@@ -1,4 +1,4 @@
-﻿using HRM.Application.Abstractions.Persistence.CRM.CustomerCare;
+using HRM.Application.Abstractions.Persistence.CRM.CustomerCare;
 using HRM.Application.Commons.Models;
 using HRM.Application.Commons.Pagination;
 using HRM.Application.Features.CRM.CustomerCare.Visibility;
@@ -23,15 +23,18 @@ namespace HRM.Application.Features.CRM.Quotations.Queries.GetQuotations
         private readonly ICRMReadDbContext _dbContext;
         private readonly ICustomerVisibilityService _visibilityService;
         private readonly ProductStandardPriceReviewQueryService _standardPriceReviewQueryService;
+        private readonly ProductPricingRequestQueryService _pricingRequestQueryService;
 
         public GetQuotationsQueryHandler(
             ICRMReadDbContext dbContext,
             ICustomerVisibilityService visibilityService,
-            ProductStandardPriceReviewQueryService standardPriceReviewQueryService)
+            ProductStandardPriceReviewQueryService standardPriceReviewQueryService,
+            ProductPricingRequestQueryService pricingRequestQueryService)
         {
             _dbContext = dbContext;
             _visibilityService = visibilityService;
             _standardPriceReviewQueryService = standardPriceReviewQueryService;
+            _pricingRequestQueryService = pricingRequestQueryService;
         }
 
         public async Task<OperationResult<PagedResult<QuotationListItemDto>>> Handle(
@@ -44,7 +47,7 @@ namespace HRM.Application.Features.CRM.Quotations.Queries.GetQuotations
                     "From cannot be later than To.");
             }
 
-            var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+            var scope = await _visibilityService.BuildReadScopeAsync(cancellationToken);
 
             var query = _visibilityService.ApplyQuotationVisibility(
                 _dbContext.Quotations.AsNoTracking(),
@@ -125,12 +128,25 @@ namespace HRM.Application.Features.CRM.Quotations.Queries.GetQuotations
                 scope.CompanyId,
                 lineProducts.Select(x => x.ProductId).Distinct().ToArray(),
                 cancellationToken);
+            var requests = lineProducts.Count == 0
+                ? Array.Empty<ProductPricingRequestRow>()
+                : await _pricingRequestQueryService.LoadAsync(
+                    scope.CompanyId,
+                    lineProducts.Select(x => x.ProductId).Distinct().ToArray(),
+                    cancellationToken);
+            var requestedAtByLine = requests
+                .Where(x => quotationIds.Contains(x.QuotationId))
+                .GroupBy(x => (x.QuotationId, x.ProductId))
+                .ToDictionary(group => group.Key, group => (DateTime?)group.Max(x => x.RequestedAt));
             foreach (var quotation in page.Items)
             {
                 quotation.StandardPriceReview = AggregateReview(
                     lineProducts
                         .Where(x => x.QuotationId == quotation.QuotationId)
-                        .Select(x => states.GetValueOrDefault(x.ProductId))
+                        .Select(x => states.TryGetValue(x.ProductId, out var state)
+                            ? ProductStandardPriceStateResolver.ApplySaleRequest(
+                                state, requestedAtByLine.GetValueOrDefault((x.QuotationId, x.ProductId)))
+                            : null)
                         .Where(x => x is not null)
                         .Cast<ProductStandardPriceStateResult>()
                         .ToArray());

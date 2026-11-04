@@ -38,16 +38,18 @@ internal sealed class PatchProductInspectionCommandHandler
             return OperationResult<ProductInspectionWriteResultDto>.Fail(validationError);
 
         var entity = await _dbContext.ProductInspections
-            .Where(x => x.Id == command.Id &&
-                x.ProductStandardId.HasValue &&
-                _dbContext.ProductStandards.Any(s =>
-                    s.Id == x.ProductStandardId.Value && s.CompanyId == companyId))
+            .ForCompany(_dbContext, companyId)
+            .Where(x => x.Id == command.Id)
             .FirstOrDefaultAsync(cancellationToken);
 
         if (entity is null)
             return OperationResult<ProductInspectionWriteResultDto>.Fail("Product inspection was not found or is outside your company.");
 
         var changed = false;
+        if (command.Request.MfgProductionOrderId.HasValue && command.Request.MfgProductionOrderId != entity.MfgProductionOrderId)
+            return OperationResult<ProductInspectionWriteResultDto>.Fail("The source production order cannot be changed after creation.");
+        if (entity.MfgProductionOrderId.HasValue && command.Request.BatchId is { } batch && batch.Trim() != entity.BatchId)
+            return OperationResult<ProductInspectionWriteResultDto>.Fail("BatchId cannot be changed for a production-order-linked inspection.");
         if (command.Request.ProductStandardId is { } newStandardId && newStandardId != entity.ProductStandardId)
         {
             var standard = await _dbContext.ProductStandards
@@ -56,6 +58,7 @@ internal sealed class PatchProductInspectionCommandHandler
                 .Select(x => new
                 {
                     x.Id,
+                    x.ProductId,
                     ProductCode = x.ProductExternalId ?? x.Product!.ColourCode,
                     ProductName = x.Product!.Name
                 })
@@ -63,6 +66,9 @@ internal sealed class PatchProductInspectionCommandHandler
 
             if (standard is null)
                 return OperationResult<ProductInspectionWriteResultDto>.Fail("Product standard was not found or is outside your company.");
+
+            if (entity.ProductId.HasValue && standard.ProductId != entity.ProductId)
+                return OperationResult<ProductInspectionWriteResultDto>.Fail("Product standard does not belong to the inspection's product.");
 
             changed |= PatchHelper.SetNullable<Guid>(standard.Id, () => entity.ProductStandardId, value => entity.ProductStandardId = value);
             changed |= PatchHelper.SetNullableRef(standard.ProductCode, () => entity.ProductCode, value => entity.ProductCode = value);

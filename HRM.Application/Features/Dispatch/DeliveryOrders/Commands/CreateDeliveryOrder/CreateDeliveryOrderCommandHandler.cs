@@ -1,7 +1,9 @@
 using HRM.Application.Abstractions.Persistence.Dispatch;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Models;
-using HRM.Application.Features.Dispatch.DeliveryOrders.Queries;
+using HRM.Application.Features.Dispatch.DeliveryOrders.Services;
+using HRM.Application.Abstractions.Commons.ExternalIds;
+using HRM.Domain.Enums.Category;
 using HRM.Domain.Entities.DeliverySchema;
 using HRM.Domain.Enums.Deliveries;
 using MediatR;
@@ -18,15 +20,27 @@ internal sealed class CreateDeliveryOrderCommandHandler
     private readonly IDispatchWriteDbContext _dbContext;
     private readonly ICurrentUser _currentUser;
     private readonly DeliveryOrderLotInventoryService _inventoryService;
+    private readonly IExternalIdService _codes;
+    private readonly DeliveryWarehouseRequestService _warehouseRequests;
+    private readonly DeliveryOrderFulfillmentService _fulfillment;
+    private readonly DeliveryAttachedGoodsService _attachedGoods;
 
     public CreateDeliveryOrderCommandHandler(
         IDispatchWriteDbContext dbContext,
         ICurrentUser currentUser,
-        DeliveryOrderLotInventoryService inventoryService)
+        DeliveryOrderLotInventoryService inventoryService,
+        IExternalIdService codes,
+        DeliveryWarehouseRequestService warehouseRequests,
+        DeliveryAttachedGoodsService attachedGoods,
+        DeliveryOrderFulfillmentService fulfillment)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
         _inventoryService = inventoryService;
+        _codes = codes;
+        _warehouseRequests = warehouseRequests;
+        _fulfillment = fulfillment;
+        _attachedGoods = attachedGoods;
     }
 
     public async Task<OperationResult<Guid>> Handle(
@@ -70,7 +84,6 @@ internal sealed class CreateDeliveryOrderCommandHandler
                 x.ProductId,
                 x.ProductExternalIdSnapshot,
                 x.ProductNameSnapshot,
-                x.ExpectedQuantity,
                 MerchandiseOrderCustomerId = x.MerchandiseOrder.CustomerId,
                 MerchandiseOrderIsActive = x.MerchandiseOrder.IsActive,
                 x.MerchandiseOrder.PONo
@@ -92,33 +105,7 @@ internal sealed class CreateDeliveryOrderCommandHandler
             return OperationResult<Guid>.Fail("Có dòng PO không cùng khách hàng với phiếu giao.");
         }
 
-        var deliveredQuantities = await _dbContext.DeliveryOrderDetails
-            .AsNoTracking()
-            .CountedForAllocation(companyId)
-            .Where(x => detailIds.Contains(x.MerchandiseOrderDetailId!.Value))
-            .GroupBy(x => x.MerchandiseOrderDetailId!.Value)
-            .Select(group => new
-            {
-                MerchandiseOrderDetailId = group.Key,
-                Quantity = group.Sum(x => x.Quantity)
-            })
-            .ToListAsync(cancellationToken);
-
-        foreach (var line in requestedLines)
-        {
-            var detail = orderDetails.Single(x =>
-                x.MerchandiseOrderDetailId == line.MerchandiseOrderDetailId);
-            var delivered = deliveredQuantities
-                .FirstOrDefault(x => x.MerchandiseOrderDetailId == line.MerchandiseOrderDetailId)
-                ?.Quantity ?? 0m;
-            var remaining = detail.ExpectedQuantity - delivered;
-
-            if (line.Quantity > remaining)
-            {
-                return OperationResult<Guid>.Fail(
-                    $"Số lượng giao vượt quá còn lại. Product: {detail.ProductExternalIdSnapshot}, còn lại: {remaining}.");
-            }
-        }
+        // Cho phép giao vượt lượng đặt; giới hạn lượng giao vẫn được kiểm tra theo tồn lot/loại hàng.
 
         var requestedInventoryLots = requestedLines
             .SelectMany(line =>
@@ -129,7 +116,7 @@ internal sealed class CreateDeliveryOrderCommandHandler
                     detail.ProductId,
                     detail.ProductExternalIdSnapshot,
                     lot.LotNo,
-                    lot.Quantity));
+                    lot.Quantity, lot.StockType));
             })
             .ToArray();
         var inventory = await _inventoryService.LoadAsync(
@@ -160,12 +147,14 @@ internal sealed class CreateDeliveryOrderCommandHandler
             }
         }
 
+        var attached = await _attachedGoods.BuildAsync(request.AttachedGoods, companyId, cancellationToken);
+        if (!attached.Success) return OperationResult<Guid>.Fail(attached.Message!);
         var now = DateTime.Now;
         var deliveryOrderId = Guid.CreateVersion7();
         var deliveryOrder = new DeliveryOrder
         {
             Id = deliveryOrderId,
-            ExternalId = TrimToNull(request.ExternalId),
+            ExternalId = null,
             Status = DeliveryOrderStatus.Pending.ToString(),
             CustomerId = request.CustomerId,
             CustomerExternalIdSnapShot = TrimToNull(request.CustomerExternalIdSnapShot),
@@ -236,8 +225,16 @@ internal sealed class CreateDeliveryOrderCommandHandler
         }
 
         await using var transaction = await _dbContext.BeginDeliveryOrderTransactionAsync(cancellationToken);
+        foreach (var detail in attached.Data!)
+        {
+            detail.DeliveryOrderId = deliveryOrderId;
+            deliveryOrder.Details.Add(detail);
+        }
+        deliveryOrder.ExternalId = await _codes.GenerateMonthlyCodeAsync(companyId, nameof(DocumentPrefix.PGH), cancellationToken);
+        await _warehouseRequests.AddAsync(deliveryOrder, cancellationToken, requestedLines);
         _dbContext.DeliveryOrders.Add(deliveryOrder);
         await _dbContext.SaveChangesAsync(cancellationToken);
+        await _fulfillment.SyncAsync(deliveryOrderId, companyId, employeeId, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
         return OperationResult<Guid>.Ok(deliveryOrderId, "Tạo phiếu giao hàng thành công.");
@@ -269,21 +266,18 @@ internal sealed class CreateDeliveryOrderCommandHandler
         Guid employeeId,
         DateTime createdDate)
     {
-        foreach (var lot in lots)
+        foreach (var group in lots.GroupBy(x => DeliveryOrderLotInventoryRules.Normalize(x.LotNo)))
         {
-            var unitCost = inventory[DeliveryOrderLotInventoryRules.Key(productCode, lot.LotNo)]
-                .UnitCostSnapshot;
+            var quantity = group.Sum(x => x.Quantity);
+            var totalCost = group.Sum(lot => DeliveryOrderLotInventoryRules.CalculateTotalCost(lot.Quantity,
+                inventory[DeliveryOrderLotInventoryRules.Key(productCode, lot.LotNo, lot.StockType)].UnitCostSnapshot));
             detail.LotConsumptions.Add(new DeliveryOrderDetailLotConsumption
             {
-                Id = Guid.CreateVersion7(),
-                DeliveryOrderDetailId = detail.Id,
-                LotNo = lot.LotNo,
-                Quantity = lot.Quantity,
-                UnitCostSnapshot = unitCost,
-                TotalCostSnapshot = DeliveryOrderLotInventoryRules.CalculateTotalCost(lot.Quantity, unitCost),
-                CreatedBy = employeeId,
-                CreatedDate = createdDate,
-                IsActive = true
+                Id = Guid.CreateVersion7(), DeliveryOrderDetailId = detail.Id,
+                LotNo = group.First().LotNo, Quantity = quantity,
+                UnitCostSnapshot = quantity == 0m ? 0m : totalCost / quantity,
+                TotalCostSnapshot = totalCost, CreatedBy = employeeId,
+                CreatedDate = createdDate, IsActive = true
             });
         }
     }

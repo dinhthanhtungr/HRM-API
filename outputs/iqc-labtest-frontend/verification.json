@@ -1,0 +1,29 @@
+{
+  "scopedFiles": [
+    "src/core/i18n/messages/labTests.ts",
+    "src/modules/iqc/incoming/presentation/screens/IncomingWorkspaceScreen.tsx",
+    "src/modules/iqc/lab-tests/application/use-cases/CreateLabTestUseCase.ts",
+    "src/modules/iqc/lab-tests/application/use-cases/DeleteLabTestUseCase.ts",
+    "src/modules/iqc/lab-tests/application/use-cases/GetLabTestUseCase.ts",
+    "src/modules/iqc/lab-tests/application/use-cases/GetMaterialTestGridUseCase.ts",
+    "src/modules/iqc/lab-tests/application/use-cases/ImportLabTestsUseCase.ts",
+    "src/modules/iqc/lab-tests/application/use-cases/PatchLabTestUseCase.ts",
+    "src/modules/iqc/lab-tests/application/use-cases/PreviewLabTestImportUseCase.ts",
+    "src/modules/iqc/lab-tests/domain/dtos/LabTest.ts",
+    "src/modules/iqc/lab-tests/domain/repositories/LabTestRepository.ts",
+    "src/modules/iqc/lab-tests/infrastructure/api/LabTestApiRepository.ts",
+    "src/modules/iqc/lab-tests/infrastructure/factories/createLabTestUseCases.ts",
+    "src/modules/iqc/lab-tests/presentation/components/LabTestEditor.tsx",
+    "src/modules/iqc/lab-tests/presentation/components/LabTestImportDialog.tsx",
+    "src/modules/iqc/lab-tests/presentation/components/LabTests.module.css",
+    "src/modules/iqc/lab-tests/presentation/components/MaterialTestTable.tsx",
+    "src/modules/iqc/lab-tests/presentation/form/labTest.validation.ts",
+    "src/modules/iqc/lab-tests/presentation/form/labTestForm.test.ts",
+    "src/modules/iqc/lab-tests/presentation/form/labTestForm.ts",
+    "src/modules/iqc/lab-tests/presentation/hooks/useLabTests.ts",
+    "src/modules/iqc/lab-tests/presentation/permissions/labTestPermission.ts",
+    "src/modules/iqc/lab-tests/presentation/screens/LabTestGridScreen.tsx"
+  ],
+  "status": "verified",
+  "sharedFiles": "checked semantic additions without overwriting concurrent changes"
+}

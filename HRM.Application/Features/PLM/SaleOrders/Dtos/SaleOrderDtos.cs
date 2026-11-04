@@ -19,6 +19,8 @@ public sealed class CreateSaleOrderResultDto
 /// </summary>
 public sealed record SaleOrderLineRequest
 {
+    public bool StandardSampleReviewed { get; init; }
+    public bool HasStandardSample { get; init; }
     public Guid MerchandiseOrderDetailId { get; init; }
     public Guid ProductId { get; init; }
     public string? ProductExternalIdSnapshot { get; init; }
@@ -70,6 +72,8 @@ public sealed record CreateSaleOrderRequest
 /// </summary>
 public sealed record UpdateSaleOrderRequest
 {
+    /// <summary>Chỉ hỗ trợ vat/paymentDate; thiếu hoặc null không xóa field nếu không có trong danh sách này.</summary>
+    public IReadOnlyList<string>? ClearFields { get; init; }
     public Guid MerchandiseOrderId { get; init; }
     public string? CustomerNameSnapshot { get; init; }
     public string? CustomerExternalIdSnapshot { get; init; }
@@ -111,6 +115,7 @@ public sealed record CancelSaleOrderRequest
 /// </summary>
 public class SaleOrderListItemDto
 {
+    public int WaitingForStandardSampleCount { get; init; }
     public Guid MerchandiseOrderId { get; init; }
     public string ExternalId { get; init; } = string.Empty;
     public Guid CustomerId { get; init; }
@@ -155,6 +160,7 @@ public sealed class SaleOrderDetailDto : SaleOrderListItemDto
 /// </summary>
 public sealed class SaleOrderLineDto
 {
+    public bool CanConfirmStandardSample { get; init; }
     public Guid MerchandiseOrderDetailId { get; init; }
     public Guid ProductId { get; init; }
     public string ProductExternalIdSnapshot { get; init; } = string.Empty;

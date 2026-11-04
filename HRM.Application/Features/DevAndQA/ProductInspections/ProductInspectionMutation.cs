@@ -24,10 +24,12 @@ internal static class ProductInspectionMutation
 
     internal static string? Validate(ProductInspectionWriteRequest request, bool creating)
     {
-        if (creating && (!request.ProductStandardId.HasValue || request.ProductStandardId.Value == Guid.Empty))
+        if (creating && !request.ProductStandardId.HasValue && !request.MfgProductionOrderId.HasValue)
         {
-            return "ProductStandardId is required.";
+            return "MfgProductionOrderId is required when ProductStandardId is absent.";
         }
+
+        if (request.MfgProductionOrderId == Guid.Empty) return "MfgProductionOrderId is invalid.";
 
         if (creating && string.IsNullOrWhiteSpace(request.BatchId))
         {

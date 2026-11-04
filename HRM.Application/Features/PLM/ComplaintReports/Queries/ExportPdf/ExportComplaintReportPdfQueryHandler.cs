@@ -54,7 +54,7 @@ internal sealed class ExportComplaintReportPdfQueryHandler
                 "Complaint report was not found or is outside your visibility scope.");
         }
 
-        var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+        var scope = await _visibilityService.BuildReadScopeAsync(cancellationToken);
         var visibleCustomers = _visibilityService.ApplyCustomerVisibility(
             _dbContext.Customers.AsNoTracking(), scope);
         var document = await _dbContext.ComplaintReports.AsNoTracking()

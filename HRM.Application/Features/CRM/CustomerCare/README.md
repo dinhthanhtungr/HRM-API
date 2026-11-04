@@ -1,5 +1,26 @@
 # Customer CRM
 
+Phản hồi Trial dùng cùng phân luồng [legacy/chip/kg](../../PLM/SampleRequests/CHIP_SAMPLE_FLOW.md):
+chip Đạt/Không đạt mở bước Rework cho VU trên hồ sơ còn mở, không tự hoàn thành/chọn Formula.
+Mẫu kg Đạt giữ luồng hoàn thành, Không đạt không mở sửa VU đã gửi. Phản hồi bổ sung không mở lại hồ sơ Completed.
+
+## Phản hồi Trial và lịch sử nghiệp vụ
+
+CreateSampleTrialInteraction lưu Trial, CRM interaction/reference, SampleRequestWorkflowEvent
+`CustomerFeedbackRecorded` và outbox thông báo trong cùng SaveChanges. Sự kiện liên kết đúng
+SampleRequest/Trial/Formula; dùng cùng Id với interaction để replay idempotency không tạo sự kiện trùng.
+Lỗi phát tin nhắn/notification được retry qua outbox, không yêu cầu Sale lưu phản hồi lại. AuditLog
+tiếp tục lưu thay đổi trạng thái, không làm nguồn đọc xác nhận giá/công thức.
+
+## Công việc mẫu của Sale
+
+View saleToday của báo cáo PLM tái sử dụng WorkTask mở của chính user, đến hạn hôm nay/quá hạn,
+liên kết qua CustomerInteraction -> reference SampleTrial -> Sample Request. Không tạo task mới
+chỉ vì một hồ sơ đang chờ phản hồi, không suy ra hạn từ trạng thái và không gán việc của cùng KH
+cho mọi hồ sơ. Luồng ghi interaction/phản hồi hiện có giữ nguyên. Xem [contract workflow](../../PLM/SampleRequests/WORKFLOW.md).
+
+ACCUser được xem khách hàng, hồ sơ, tương tác, task/work plan, calendar và dashboard trong toàn công ty như President. Các query/service đọc dùng BuildReadScopeAsync; command vẫn dùng BuildScopeAsync với ownership/group và gate ghi hiện có. Quyền xem không cấp quyền chuyển giao, sửa hồ sơ hoặc quản lý assignee. Leader/director dashboard dùng nhóm reader riêng có ACCUser, giữ nguyên các role cũ. Customer/employee/reference vẫn phải cùng company.
+
 ## Repair CustomerAssignment group
 
 Admin có thể đồng bộ `GroupId` của toàn bộ `CustomerAssignment` active đang thuộc một Sale về group active của Sale đó trong công ty hiện tại:
@@ -292,6 +313,8 @@ phản hồi khách trên trial tương ứng. Nếu có `nextFollowUpDate`, API
 API luôn validate customer visibility, contact thuộc customer và trial thuộc đúng customer/company trước khi ghi.
 Nếu phản hồi này làm đổi `SampleRequest.Status`, cùng transaction còn tạo `AuditLog` lưu status cũ/mới, actor,
 thời điểm và reason `CustomerCareSampleTrialInteraction`; không đổi status thì không thêm audit dòng thừa.
+
+SaleAdmin được ghi nhận phản hồi mẫu thay Sale chỉ khi có capability workflow Sale và capability làm thay, owner của SampleRequest nằm trong EmployeeIdsInScope của write scope. Quyền đọc toàn company không bỏ qua gate này. Cả endpoint PLM và composer CRM chuyên biệt đều kiểm tra cùng rule, company, employee active và visibility; không mở quyền tương tác CRM chung. Actor tạo interaction/audit/sự kiện là người thực hiện, không đổi ManagerBy của hồ sơ. Khi làm thay và không chọn assigned Sale rõ ràng, interaction giao cho Sale owner; CurrentSaleId khách hàng không bị chuyển sang SaleAdmin (kể cả khi đã chọn assigned Sale cho interaction). Contact date vẫn cập nhật qua query tracking rõ ràng sau khi ghép visibility.
 
 Route PLM `POST /api/v1/plm/sample-requests/{sampleRequestId}/sample-trials/{trialId}/customer-feedback` là contract ưu tiên cho dialog mở từ Trial. Route tự resolve customer từ Trial, chỉ cho nhóm Sale, bắt buộc `idempotencyKey` và cho phép chọn `interactionType`. Một lần `SaveChangesAsync` cập nhật phản hồi Trial, tạo `CustomerInteraction`, tạo reference primary `SampleTrial/trialId` và tạo follow-up task tùy chọn. Vì toàn bộ mutation dùng cùng CRM write context, lỗi ở bất kỳ phần nào làm transaction rollback, không để Trial hoặc CRM interaction bị lưu riêng lẻ. Sau khi lưu thành công, composer gửi message/notification tiếng Việt trong conversation Sample Request với topic `SampleRequestCustomerFeedbackRecorded`; Sample Request private/KH_VIETAUS vẫn không tạo message theo rule chung.
 
@@ -598,7 +621,7 @@ nhiều instance chỉ nên bật automation trên một instance cho đến khi
   phải cùng company và nằm trong scope được phép; không chỉ lọc theo ID.
 - Leader chỉ được chuyển lead/customer trong các group mình quản lý. Full-view user được chuyển trong
   toàn công ty nhưng vẫn phải validate employee/group active.
-- Leader dashboard yêu cầu `RoleSets.SaleLeaders`; director dashboard yêu cầu `RoleSets.Admins`.
+- Leader dashboard yêu cầu `ApplicationRoleSets.CRM.LeaderReaderRolesCsv`; director dashboard yêu cầu `ApplicationRoleSets.CRM.DirectorReaderRolesCsv`.
 - Reference là FK mềm nên service phải validate entity cha; không tin trực tiếp ReferenceId từ FE.
 - `CustomerInteractionReference` cũng áp cùng nguyên tắc: chỉ link tới SampleRequest/SampleTrial/Quotation cùng customer,
   cùng company và còn active.

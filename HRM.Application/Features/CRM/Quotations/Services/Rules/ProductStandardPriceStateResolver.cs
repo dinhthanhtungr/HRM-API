@@ -39,12 +39,21 @@ internal static class ProductStandardPriceStateResolver
                 : ProductStandardPriceState.Active,
             formulaPending,
             reviewExpired,
-            dueDate);
+            dueDate,
+            approvedAt);
     }
+
+    internal static ProductStandardPriceStateResult ApplySaleRequest(
+        ProductStandardPriceStateResult state,
+        DateTime? requestedAt)
+        => state.ApprovedAt.HasValue && requestedAt > state.ApprovedAt
+            ? state with { State = ProductStandardPriceState.PendingReapproval }
+            : state;
 }
 
 internal sealed record ProductStandardPriceStateResult(
     ProductStandardPriceState State,
     bool HasFormulaConfirmationPending,
     bool IsPricingReviewExpired,
-    DateTime? PricingReviewDueDate);
+    DateTime? PricingReviewDueDate,
+    DateTime? ApprovedAt = null);

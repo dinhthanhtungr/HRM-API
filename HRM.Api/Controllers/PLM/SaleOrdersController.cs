@@ -14,6 +14,8 @@ using HRM.Application.Features.PLM.SaleOrders.Queries.GetCustomerProductStock;
 using HRM.Application.Features.PLM.SaleOrders.Queries.GetLastSaleOrderByCustomer;
 using HRM.Application.Features.PLM.SaleOrders.Queries.GetSaleOrderById;
 using HRM.Application.Features.PLM.SaleOrders.Queries.GetSaleOrders;
+using HRM.Application.Features.PLM.SaleOrders.Queries.ReviewStandardSamples;
+using HRM.Application.Features.PLM.SaleOrders.Commands.ConfirmStandardSample;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -85,6 +87,20 @@ public sealed class SaleOrdersController : ControllerBase
                 await uploadFile.Stream.DisposeAsync();
             }
         }
+    }
+
+    [HttpPost("standard-samples/review")]
+    public async Task<IActionResult> ReviewStandardSamples([FromBody] CreateSaleOrderRequest request, CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new ReviewStandardSamplesQuery(request), cancellationToken);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    [HttpPatch("{merchandiseOrderId:guid}/details/{detailId:guid}/confirm-standard-sample")]
+    public async Task<IActionResult> ConfirmStandardSample(Guid merchandiseOrderId, Guid detailId, CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new ConfirmStandardSampleCommand(merchandiseOrderId, detailId), cancellationToken);
+        return result.Success ? Ok(result) : BadRequest(result);
     }
 
     [HttpGet]

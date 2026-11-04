@@ -54,7 +54,7 @@ internal sealed class WarehouseStockVisibilityService : IWarehouseStockVisibilit
         string? keyword,
         CancellationToken cancellationToken = default)
     {
-        if (!IsSalesScopedUser())
+        if (WarehouseVoucherAccessRules.CanReadAll(_currentUser) || !IsSalesScopedUser())
         {
             return detailQuery;
         }
@@ -118,7 +118,7 @@ internal sealed class WarehouseStockVisibilityService : IWarehouseStockVisibilit
         return isSale &&
                !_currentUser.IsInRole(ApplicationRoles.Admin) &&
                !_currentUser.IsInRole(ApplicationRoles.Developer) &&
-               !_currentUser.IsInRole(ApplicationRoles.President) &&
+               !_currentUser.IsInAnyRole(ApplicationRoleSets.CRM.ExecutiveReaders) &&
                !_currentUser.IsInRole(ApplicationRoles.Warehouse.KHOUser) &&
                !_currentUser.IsInRole(ApplicationRoles.Sales.CustomerViewAll);
     }

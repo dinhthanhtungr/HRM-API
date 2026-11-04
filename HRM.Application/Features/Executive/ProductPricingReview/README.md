@@ -1,19 +1,31 @@
 # Executive Product Pricing Review
 
+ACCUser được đọc các GET và preview trong Pricing Review qua GetReadContext. GetContext cho writer tiếp tục chỉ cho President/Developer; quyền sửa/duyệt legacy không đổi. Company/employee, Product–Material, source/version/quotation scope vẫn được kiểm tra.
+
 Nhóm API mới cho drawer duyệt giá của President. Route, request/response DTO và MediatR handler độc lập hoàn toàn
 với các API CRM pricing legacy; tầng dưới vẫn dùng chung nguồn giá vật tư, pricing policy, pricing engine,
 optimistic concurrency, notification và quotation reconciliation để không tạo hai rule tính giá khác nhau.
 
 ## Quyền và scope
 
-Tất cả endpoint yêu cầu policy `Executive.ManageProductPricingReview`, hiện chỉ gồm role `President` và
-`Developer`. Handler kiểm tra lại `CompanyId`, `EmployeeId`, Product active/cùng company và quan hệ Product–Material
+Tất cả endpoint yêu cầu policy `Executive.ManageProductPricingReview`, gồm role `President`,
+`Developer` và `ACCUser`. Handler ghi tiếp tục chỉ nhận President/Developer; handler đọc cho phép cả ACCUser.
+Handler kiểm tra lại `CompanyId`, `EmployeeId`, Product active/cùng company và quan hệ Product–Material
 trước khi trả cost, margin, supplier price hoặc history. `quotationId`, `sourceId`, `materialId` và `versionId`
 không được dùng độc lập nếu không thuộc Product/company trên route.
 
 Hiện nhóm API này chỉ hỗ trợ `currency=VND`.
 
 ## Endpoint
+
+### Bộ lọc VA gợi ý và source-options
+
+VA có thành phần active loại `Product`/`ProductFailure` với `Product.ColourCode` hiện tại trùng mã sản phẩm
+đang định giá bị loại khỏi gợi ý và `source-options`. So sánh trim, không phân biệt hoa/thường; mã null/rỗng
+không trùng. Không so ProductId hay mã snapshot. VA sang bao có mã khác vẫn theo rule cũ.
+Bộ lọc chạy trước chọn ứng viên mới nhất và tính total/phân trang, giữ scope company hiện hành.
+Nguồn đã lưu, API đọc trực tiếp nguồn cũ, validation duyệt, giá đã duyệt, giá khách và snapshot lịch sử
+không thay đổi. Không backfill hoặc ghi dữ liệu DB; nguồn cũ không tự được thay thế.
 
 ```text
 GET  /api/v1/executive/pricing-review/products/{productId}

@@ -51,14 +51,14 @@ Features/MessageRecipients
 Resolver cụ thể của từng feature không đặt ở đây. Ví dụ Sample Request đặt tại:
 
 ```text
-Features/PLM/SampleRequests/Services/SampleRequestMessageRecipientResolver.cs
+Features/PLM/SampleRequests/Services/Messaging/SampleRequestMessageRecipientResolver.cs
 ```
 
 Rule người nhận bắt buộc của Sample Request đặt gần Sample Request:
 
 ```text
-Features/PLM/SampleRequests/Rules/SampleRequestRecipientRules.cs
-Features/PLM/SampleRequests/Services/SampleRequestRecipientResolver.cs
+Features/PLM/SampleRequests/Services/Messaging/SampleRequestRecipientRules.cs
+Features/PLM/SampleRequests/Services/Messaging/SampleRequestRecipientResolver.cs
 ```
 
 ## Endpoint

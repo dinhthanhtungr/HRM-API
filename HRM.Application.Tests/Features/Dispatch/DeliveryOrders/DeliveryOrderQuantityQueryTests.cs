@@ -1,4 +1,5 @@
 using HRM.Application.Features.Dispatch.DeliveryOrders.Queries;
+using HRM.Application.Commons.Deliveries;
 using HRM.Domain.Entities.DeliverySchema;
 using HRM.Infrastructure.DatabaseContext.ApplicationDbs;
 using Microsoft.EntityFrameworkCore;
@@ -7,6 +8,29 @@ namespace HRM.Application.Tests.Features.Dispatch.DeliveryOrders;
 
 public sealed class DeliveryOrderQuantityQueryTests
 {
+    [Fact]
+    public void SavedQuantity_IncludesUnprintedAndPrinted_AndReleasesEditedCanceledDeletedLines()
+    {
+        var companyId = Guid.NewGuid();
+        var unprinted = Row(companyId);
+        var printed = Row(companyId);
+        printed.DeliveryOrder.HasPrinted = true;
+        var oldVersion = Row(companyId);
+        oldVersion.IsActive = false;
+        var canceled = Row(companyId, "Canceled");
+        var deleted = Row(companyId);
+        deleted.DeliveryOrder.IsActive = false;
+        var rows = new[] { unprinted, printed, oldVersion, canceled, deleted }.AsQueryable();
+
+        Assert.Equal(20m, rows.EffectiveDeliveryLines(companyId).Sum(x => x.Quantity));
+        unprinted.DeliveryOrder.HasPrinted = true;
+        Assert.Equal(20m, rows.EffectiveDeliveryLines(companyId).Sum(x => x.Quantity));
+        unprinted.Quantity = 7m;
+        Assert.Equal(17m, rows.EffectiveDeliveryLines(companyId).Sum(x => x.Quantity));
+        unprinted.DeliveryOrder.Status = "Canceled";
+        Assert.Equal(10m, rows.EffectiveDeliveryLines(companyId).Sum(x => x.Quantity));
+    }
+
     [Theory]
     [InlineData("Pending", true)]
     [InlineData("InProgress", true)]

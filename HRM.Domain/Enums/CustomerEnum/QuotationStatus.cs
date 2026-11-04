@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -16,6 +16,7 @@ namespace HRM.Domain.Enums.CustomerEnum
         Accepted = 50,
         Rejected = 60,
         Expired = 70,
-        Cancelled = 80
+        Cancelled = 80,
+        PendingSendConfirmation = 90
     }
 }

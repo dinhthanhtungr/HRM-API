@@ -163,7 +163,8 @@ internal sealed class GetDeliveryOrdersQueryHandler
                 UpdatedDate = x.UpdatedDate,
                 Note = x.Note,
                 IsActive = x.IsActive,
-                CanEdit = canManage && x.IsActive && x.Status == "Pending",
+                HasPrinted = x.HasPrinted,
+                CanEdit = canManage && x.IsActive && x.Status == "Pending" && !x.HasPrinted,
                 LineCount = x.Details.Count(d => d.IsActive && !d.IsAttach),
                 TotalQuantity = x.Details
                     .Where(d => d.IsActive && !d.IsAttach)

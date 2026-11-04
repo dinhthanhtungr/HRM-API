@@ -1,5 +1,6 @@
 using HRM.Application.Commons.Authorization;
 using HRM.Application.Features.Notifications.Commands.BackfillSampleRequestPriceQuoteRecipients;
+using HRM.Application.Features.Notifications.Commands.SendTestNotification;
 using HRM.Application.Features.Notifications.Dtos;
 using HRM.Application.Features.Notifications.Services;
 using HRM.Domain.Enums.Notifications;
@@ -26,6 +27,15 @@ public sealed class NotificationsController : ControllerBase
         _sender = sender;
     }
 
+    /// <summary>Gửi thông báo kiểm thử chỉ đến Developer active trong cùng công ty.</summary>
+    [HttpPost("test")]
+    [Authorize(Roles = ApplicationRoles.Developer)]
+    public async Task<IActionResult> SendTest(CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new SendTestNotificationCommand(), cancellationToken);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
     [HttpGet("feed")]
     public async Task<ActionResult<IReadOnlyList<NotificationDto>>> GetFeed(
         [FromQuery] int take = 20,
@@ -33,6 +43,8 @@ public sealed class NotificationsController : ControllerBase
         [FromQuery] DateTime? afterCreated = null,
         [FromQuery] string? categoryCode = null,
         [FromQuery] string? eventGroupCode = null,
+        [FromQuery] bool unreadOnly = false,
+        [FromQuery] bool mentionedOnly = false,
         CancellationToken cancellationToken = default)
     {
         if (categoryCode is not null && !NotificationTopicCatalog.IsKnownCategory(categoryCode))
@@ -57,7 +69,7 @@ public sealed class NotificationsController : ControllerBase
             afterCreated,
             categoryCode,
             eventGroupCode,
-            cancellationToken);
+            cancellationToken, unreadOnly: unreadOnly, mentionedOnly: mentionedOnly);
 
         return Ok(result);
     }

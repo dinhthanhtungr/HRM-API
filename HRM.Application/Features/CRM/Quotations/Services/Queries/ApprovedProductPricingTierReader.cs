@@ -1,4 +1,6 @@
 using HRM.Application.Abstractions.Persistence.CRM.CustomerCare;
+using HRM.Application.Abstractions.Commons.Time;
+using Microsoft.Extensions.Options;
 using HRM.Domain.Enums.CustomerEnum;
 using Microsoft.EntityFrameworkCore;
 
@@ -7,10 +9,15 @@ namespace HRM.Application.Features.CRM.Quotations.Services;
 internal sealed class ApprovedProductPricingTierReader
 {
     private readonly ICRMReadDbContext _dbContext;
+    private readonly IDateTimeProvider _clock;
+    private readonly QuotationFeatureOptions _options;
 
-    public ApprovedProductPricingTierReader(ICRMReadDbContext dbContext)
+    public ApprovedProductPricingTierReader(ICRMReadDbContext dbContext,
+        IDateTimeProvider clock, IOptions<QuotationFeatureOptions> options)
     {
         _dbContext = dbContext;
+        _clock = clock;
+        _options = options.Value;
     }
 
     public async Task<IReadOnlyDictionary<Guid, ApprovedProductTierPricingReference>> LoadAsync(
@@ -61,7 +68,15 @@ internal sealed class ApprovedProductPricingTierReader
             })
             .ToListAsync(cancellationToken);
 
+        var evaluatedAt = _clock.Now;
+        DateTime? ValidUntil(ApprovedVersionRow row) => _options.ApprovedPricingReviewAfterDays > 0
+            ? row.PriceDate.AddDays(_options.ApprovedPricingReviewAfterDays) : null;
+        bool Effective(ApprovedVersionRow row) => row.PriceDate <= evaluatedAt
+            && (!ValidUntil(row).HasValue || ValidUntil(row) > evaluatedAt);
         var latestVersions = versions
+            .OrderByDescending(Effective)
+            .ThenByDescending(x => x.PriceDate)
+            .ThenByDescending(x => x.Version).ThenBy(x => x.ProductPricingVersionId)
             .GroupBy(x => x.ProductId)
             .Select(x => x.First())
             .ToArray();
@@ -125,7 +140,12 @@ internal sealed class ApprovedProductPricingTierReader
                 x.PublisherNote,
                 x.MaterialCostSnapshot,
                 x.ManufacturingCost,
-                x.ProfitMarginRate));
+                x.ProfitMarginRate)
+            {
+                ValidFrom = x.PriceDate, ValidUntil = ValidUntil(x),
+                EvaluatedAt = evaluatedAt, IsEffectiveForSending = Effective(x)
+                    && tiersByVersion.GetValueOrDefault(x.ProductPricingVersionId)?.Count > 0
+            });
     }
 
     private sealed class ApprovedVersionRow

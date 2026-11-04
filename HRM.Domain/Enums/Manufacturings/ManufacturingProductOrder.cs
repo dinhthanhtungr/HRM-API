@@ -40,7 +40,8 @@ namespace HRM.Domain.Enums.Manufacturings
         Reported,
         Done,
 
-        Stocked
+        Stocked,
+        WaitingForStandardSample // Chờ xác nhận mẫu chuẩn 
     }
 
 }

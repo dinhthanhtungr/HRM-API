@@ -67,10 +67,10 @@ internal static class DeliveryOrderUpdateRules
                     group => group.Sum(x => x.Quantity),
                     StringComparer.OrdinalIgnoreCase);
 
-            if (existingLots.Count != requestedLine.Lots.Count ||
-                requestedLine.Lots.Any(lot =>
-                    !existingLots.TryGetValue(lot.LotNo, out var quantity) ||
-                    quantity != lot.Quantity))
+            var requestedLots = requestedLine.Lots.GroupBy(x => x.LotNo, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(x => x.Key, x => x.Sum(lot => lot.Quantity), StringComparer.OrdinalIgnoreCase);
+            if (existingLots.Count != requestedLots.Count ||
+                requestedLots.Any(lot => !existingLots.TryGetValue(lot.Key, out var quantity) || quantity != lot.Value))
             {
                 return false;
             }

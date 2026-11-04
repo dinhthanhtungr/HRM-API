@@ -5,6 +5,49 @@ namespace HRM.Application.Tests.Features.Dispatch.DeliveryOrders;
 
 public sealed class DeliveryOrderLotNormalizerTests
 {
+    [Theory]
+    [InlineData("Material")]
+    [InlineData("")]
+    [InlineData("finishedgood")]
+    public void TryNormalize_RejectsNonDeliverableStockBeforeMergingSameLot(string stockType)
+    {
+        var success = DeliveryOrderLotNormalizer.TryNormalize(
+            [new DeliveryOrderLineRequest
+            {
+                MerchandiseOrderDetailId = Guid.NewGuid(),
+                Quantity = 266.5m,
+                Lots =
+                [
+                    new() { LotNo = "VA260700418", Quantity = 57m, StockType = "FinishedGood" },
+                    new() { LotNo = "va260700418", Quantity = 209.5m, StockType = stockType }
+                ]
+            }], out var lines, out var error);
+
+        Assert.False(success);
+        Assert.Empty(lines);
+        Assert.Contains("Loại tồn giao hàng", error);
+    }
+
+    [Fact]
+    public void TryNormalize_AcceptsMultipleExplicitFinishedGoodLots()
+    {
+        var success = DeliveryOrderLotNormalizer.TryNormalize(
+            [new DeliveryOrderLineRequest
+            {
+                MerchandiseOrderDetailId = Guid.NewGuid(),
+                Quantity = 60m,
+                Lots =
+                [
+                    new() { LotNo = "LOT-A", Quantity = 57m, StockType = "FinishedGood" },
+                    new() { LotNo = "LOT-B", Quantity = 3m, StockType = "FinishedGood" }
+                ]
+            }], out var lines, out var error);
+
+        Assert.True(success);
+        Assert.Null(error);
+        Assert.Equal(2, Assert.Single(lines).Lots.Count);
+    }
+
     [Fact]
     public void TryNormalize_AcceptsLegacyLotNoListAsSingleLot()
     {
@@ -140,7 +183,9 @@ public sealed class DeliveryOrderLotNormalizerTests
             .Select(x => x.Name)
             .ToArray();
 
-        Assert.Equal(2, propertyNames.Length);
+        Assert.Equal(4, propertyNames.Length);
+        Assert.Contains("NumOfBags", propertyNames);
+        Assert.Contains("StockType", propertyNames);
         Assert.Contains("LotNo", propertyNames);
         Assert.Contains("Quantity", propertyNames);
         Assert.DoesNotContain("UnitCostSnapshot", propertyNames);

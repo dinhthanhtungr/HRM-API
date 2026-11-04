@@ -2,6 +2,7 @@ using HRM.Domain.Entities.CompanySchema;
 using HRM.Domain.Entities.CustomerSchema;
 using HRM.Domain.Entities.HrSchema;
 using HRM.Domain.Entities.MaterialSchema;
+using HRM.Domain.Entities.ManufacturingSchema;
 using HRM.Domain.Entities.OrderSchema;
 using HRM.Domain.Entities.SampleRequestSchema;
 using HRM.Domain.Entities.WarehouseSchema;
@@ -14,6 +15,8 @@ public interface IWarehouseReadDbContext
     DbSet<WarehouseShelfStock> WarehouseShelfStocks { get; }
 
     DbSet<WarehouseTempStock> WarehouseTempStocks { get; }
+
+    DbSet<ProductionSelectVersion> ProductionSelectVersions { get; }
 
     DbSet<Material> Materials { get; }
 

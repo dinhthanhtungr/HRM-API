@@ -25,7 +25,15 @@ public sealed class NotificationDto
     /// Tiêu đề conversation hiện tại mà employee đang được phép xem. FE dùng field này làm title canonical khi gom feed theo thread.
     /// </summary>
     public string? ConversationTitle { get; internal set; }
+    /// <summary>Current display metadata, resolved only for a readable same-company conversation in this feed page.</summary>
+    public HRM.Application.Features.InternalMail.Dtos.SampleRequestConversationInfoDto? SampleRequestInfo { get; internal set; }
+    public HRM.Application.Features.InternalMail.Dtos.QuotationConversationInfoDto? QuotationInfo { get; internal set; }
     public Guid? MessageId { get; internal set; }
+    public Guid? MentionedMessageId { get; internal set; }
+    public int UnreadMentionCount { get; internal set; }
+    public string? PersonalReason { get; internal set; }
+    public DateTime? PersonalActivityDate { get; internal set; }
+    public Guid? PersonalMessageId { get; internal set; }
     public DateTime CreatedDate { get; set; }
     public Guid CompanyId { get; set; }
     public bool IsRead { get; set; }

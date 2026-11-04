@@ -31,4 +31,8 @@ public sealed class InternalMailNotificationPayload
     [JsonPropertyName("isForwarded")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool IsForwarded { get; set; }
+
+    [JsonPropertyName("forwardedSenderName")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ForwardedSenderName { get; set; }
 }

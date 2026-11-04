@@ -30,7 +30,7 @@ internal sealed class GetEmployeeAccountPermissionsQueryHandler
         GetEmployeeAccountPermissionsQuery request,
         CancellationToken cancellationToken)
     {
-        if (!EmployeeAdministrationRules.CanManageEmployees(_currentUser))
+        if (!EmployeeAdministrationRules.CanViewEmployees(_currentUser))
         {
             return EmployeeAdministrationResult<EmployeeAccountPermissionsDto>.Fail(
                 EmployeeAdministrationError.Forbidden,

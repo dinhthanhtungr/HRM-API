@@ -15,6 +15,7 @@ namespace HRM.Domain.Enums.SampleRequests
         Completed,
         Cancelled,
         New,
-        FormulaUpdateRequested
+        FormulaUpdateRequested,
+        WaitingCustomerPriceConfirmation
     }
 }

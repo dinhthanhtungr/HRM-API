@@ -153,7 +153,11 @@ internal sealed class FormulaWriteService
             .OrderBy(x => x.LineNo)
             .ToListAsync(cancellationToken);
 
-        if (!FormulaMaterialMutationRules.CanReplaceMaterials(formula.Status))
+        var hasSentKg = await _dbContext.SampleRequestSampleTrials.AsNoTracking().AnyAsync(x => x.IsActive &&
+            x.FormulaId == formula.FormulaId && x.SampleRequest.CompanyId == companyId &&
+            x.SampleRequest.CreatedDate >= HRM.Application.Features.PLM.SampleRequests.Services.Workflow.SampleFlowRules.StartsAt &&
+            x.DeliveredSampleQuantityKg > 0 && x.SentDate != null, cancellationToken);
+        if (hasSentKg || !FormulaMaterialMutationRules.CanReplaceMaterials(formula.Status))
         {
             var currentComposition = activeRows
                 .Select(x => new FormulaMaterialCompositionItem(
@@ -171,6 +175,8 @@ internal sealed class FormulaWriteService
                 currentComposition,
                 requestedComposition);
 
+            if (hasSentKg && hasCompositionChanges)
+                throw new InvalidOperationException("This formula has been sent in kg. Create a new formula and sample request to change its composition.");
             FormulaMaterialMutationRules.EnsureCanReplaceMaterials(
                 formula.Status,
                 hasCompositionChanges);
@@ -214,6 +220,13 @@ internal sealed class FormulaWriteService
         DateTime now,
         CancellationToken cancellationToken)
     {
+        if (!FormulaMaterialMutationRules.CanReplaceMaterials(formula.Status) &&
+            ((request.ProductId.HasValue && request.ProductId != formula.ProductId) ||
+             (request.ExternalId is not null && request.ExternalId.Trim() != formula.ExternalId) ||
+             (request.Name is not null && request.Name.Trim() != formula.Name) ||
+             (request.StepOfProduct.HasValue && request.StepOfProduct != formula.StepOfProduct) ||
+             (request.IsSelect.HasValue && request.IsSelect != formula.IsSelect)))
+            throw new InvalidOperationException("A sent or finalized formula is locked. Use the appropriate workflow action.");
         // Validate/handle materials first so a locked composition change cannot leave
         // other tracked fields mutated in the current request scope.
         await ReplaceMaterialsAsync(formula, request.Materials, companyId, cancellationToken);

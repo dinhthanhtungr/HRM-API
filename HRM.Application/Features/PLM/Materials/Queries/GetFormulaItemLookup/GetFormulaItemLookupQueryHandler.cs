@@ -108,6 +108,7 @@ internal sealed class GetFormulaItemLookupQueryHandler
             ItemId = x.MaterialId,
             ItemType = ItemType.Material,
             ExternalId = x.ExternalId,
+            StockCode = x.ExternalId,
             CustomCode = x.CustomCode,
             Name = x.Name ?? string.Empty,
             CategoryId = x.CategoryId,
@@ -142,6 +143,7 @@ internal sealed class GetFormulaItemLookupQueryHandler
                 .Select(sr => sr.ExternalId)
                 .FirstOrDefault(),
             CustomCode = x.Code,
+            StockCode = x.ColourCode,
             Name = "[" + (x.ColourCode ?? string.Empty) + "] " + (x.Name ?? string.Empty),
             CategoryId = x.CategoryId,
             CategoryCode = ProductCategoryCode,
@@ -193,6 +195,7 @@ internal sealed class GetFormulaItemLookupQueryHandler
                     ItemId = x.ItemId,
                     ItemType = x.ItemType,
                     ExternalId = x.ExternalId,
+                    StockCode = x.StockCode,
                     CustomCode = x.CustomCode,
                     Name = x.Name,
                     Label = BuildLabel(x),
@@ -269,6 +272,7 @@ internal sealed class GetFormulaItemLookupQueryHandler
         public Guid ItemId { get; init; }
         public ItemType ItemType { get; init; }
         public string? ExternalId { get; init; }
+        public string? StockCode { get; init; }
         public string? CustomCode { get; init; }
         public string Name { get; init; } = string.Empty;
         public Guid? CategoryId { get; init; }

@@ -74,7 +74,7 @@ public sealed class InternalConversationNotificationUnreadTests
         void Add(object? payload, bool read = false, bool archived = false, Guid? recipient = null, Guid? tenant = null)
         {
             var id = Guid.NewGuid();
-            notifications.Add(new { id, company_id = tenant ?? company, payload_json = payload });
+            notifications.Add(new { id, company_id = tenant ?? company, payload_json = payload, topic = 0 });
             states.Add(new { notification_id = id, user_id = recipient ?? employee, is_read = read, is_archived = archived });
         }
 
@@ -120,6 +120,11 @@ public sealed class InternalConversationNotificationUnreadTests
         Assert.Equal(restrictConversation ? 1 : 2, actual.Count);
         Assert.Equal(2, actual[second]);
         if (!restrictConversation) Assert.Equal(1, actual[first]);
+        var scoped = await db.QueryInternalConversationNotificationUnreadCounts(company, employee, [second])
+            .ToDictionaryAsync(item => item.ConversationId, item => item.UnreadCount);
+        Assert.Equal(2, Assert.Single(scoped).Value);
+        Assert.Equal(second, Assert.Single(scoped).Key);
+        Assert.Empty(await db.QueryInternalConversationNotificationUnreadCounts(company, employee, []).ToListAsync());
         Assert.Empty(await db.QueryInternalConversationNotificationUnreadCounts(Guid.NewGuid(), employee).ToListAsync());
         Assert.Empty(await db.QueryInternalConversationNotificationUnreadCounts(company, Guid.NewGuid()).ToListAsync());
         await transaction.RollbackAsync();
@@ -135,7 +140,7 @@ public sealed class InternalConversationNotificationUnreadTests
             Replace("notification.notification_user_states", "fixture_states", states,
                 "notification_id uuid, user_id uuid, is_read boolean, is_archived boolean");
             Replace("notification.notifications", "fixture_notifications", notifications,
-                "id uuid, company_id uuid, payload_json jsonb");
+                "id uuid, company_id uuid, payload_json jsonb, topic integer");
             Replace("\"InternalMail\".\"InternalConversations\"", "fixture_conversations", conversations,
                 "\"InternalConversationId\" uuid, \"CompanyId\" uuid, \"IsActive\" boolean");
             Replace("\"InternalMail\".\"InternalConversationParticipants\"", "fixture_participants", participants,

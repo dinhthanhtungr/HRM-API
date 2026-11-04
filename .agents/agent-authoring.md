@@ -7,6 +7,7 @@
 - Root `AGENTS.md` là router kèm một nhóm nhỏ invariant an toàn; không bắt đọc mọi file con.
 - Mỗi rule chỉ có một source of truth. Router và file khác chỉ trỏ tới nguồn đó, không sao chép checklist.
 - Rule phải ghi rõ trigger đọc và phạm vi áp dụng.
+- Phân biệt luật áp dụng với thao tác đọc: nội dung còn đầy đủ trong context không cần nạp lại. README/rule nhiều phần độc lập dùng router hoặc heading rõ để chỉ đọc phần liên quan cùng invariant chung.
 - Rule nền dùng chung đặt ở `core.md`; workflow chỉ dành cho task phức tạp; build/Git chỉ ở `git-and-build.md`.
 - Security và module rules chỉ nạp khi task đụng đúng capability, dữ liệu hoặc feature đó.
 - Không đặt quy tắc chọn model, báo cáo dài hoặc nghi thức hội thoại vào luồng mặc định nếu chúng không bảo vệ code/nghiệp vụ.
@@ -22,4 +23,5 @@ Không tạo file mới cho một rule đơn lẻ và không sao chép invariant
 - Rule nghiệp vụ phải mô tả trạng thái code hiện hành và trỏ tới class/file thật khi có.
 - Khi tối ưu rule, ưu tiên đổi routing trước; không đổi semantics của feature, permission, field visibility, topic/recipient hoặc contract.
 - Trước khi xóa bản sao, xác nhận còn một source of truth và router vẫn dẫn tới nó bằng đúng trigger.
+- Khi đổi routing, đối chiếu các nhóm task với rule đích, kiểm tra đường dẫn và bảo toàn dependency xuyên feature. Ưu tiên giảm nội dung mỗi task phải nạp, không giảm dung lượng bằng cách bỏ luật.
 - Dùng tiếng Việt có dấu, UTF-8; README/rule mô tả trạng thái hiện tại, không phải nhật ký.

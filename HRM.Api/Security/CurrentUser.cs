@@ -8,12 +8,23 @@ public sealed class CurrentUser : ICurrentUser
 {
     private readonly IHttpContextAccessor _httpContextAccessor;
 
-    public CurrentUser(IHttpContextAccessor httpContextAccessor)
+    private readonly HRM.Application.Features.PLM.SampleRequests.Services.SampleWorkPreviewSession? _preview;
+
+    public CurrentUser(IHttpContextAccessor httpContextAccessor,
+        HRM.Application.Features.PLM.SampleRequests.Services.SampleWorkPreviewSession? preview = null)
     {
         _httpContextAccessor = httpContextAccessor;
+        _preview = preview;
     }
 
-    private ClaimsPrincipal? Principal => _httpContextAccessor.HttpContext?.User;
+    private ClaimsPrincipal? Principal => _preview?.User is { } user
+        ? new ClaimsPrincipal(new ClaimsIdentity(new[]
+        {
+            new Claim(ClaimTypes.NameIdentifier, user.UserId.ToString()),
+            new Claim("companyId", user.CompanyId!.Value.ToString()),
+            new Claim("employeeId", user.EmployeeId!.Value.ToString())
+        }.Concat(user.Roles.Select(role => new Claim(ClaimTypes.Role, role))), "SampleWorkReadOnlyPreview"))
+        : _httpContextAccessor.HttpContext?.User;
 
     public bool IsAuthenticated => Principal?.Identity?.IsAuthenticated == true;
 

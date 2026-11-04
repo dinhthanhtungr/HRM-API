@@ -44,6 +44,7 @@ Nếu API dùng `EmployeeId`, phải có fallback hoặc fail rõ ràng khi user
 - Lookup/options endpoint phải rõ route, request, response.
 - Error message ngắn gọn, rõ ràng.
 - Route nên ổn định và đúng module, ví dụ `/api/v1/plm/sample-requests/...`, `/api/v1/notifications/...`.
+- Không public API notification cho FE tự gửi tùy tiện nếu nghiệp vụ cần đi qua feature cụ thể.
 
 ## PATCH And Partial Update
 

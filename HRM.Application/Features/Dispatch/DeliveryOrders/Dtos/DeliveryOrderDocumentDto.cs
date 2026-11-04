@@ -16,6 +16,9 @@ public sealed class DeliveryOrderDocumentDto
     public string? TaxNumber { get; init; }
     public string? PaymentType { get; init; }
     public string? Note { get; init; }
+    public string? CustomerAddress { get; init; }
+    public string? PaymentDeadline { get; init; }
+    public string? MerchandiseOrderExternalIds { get; init; }
     public List<string> Deliverers { get; init; } = [];
     public List<DeliveryOrderDocumentLineDto> Lines { get; init; } = [];
     public decimal TotalQuantity => Lines.Where(x => !x.IsAttach).Sum(x => x.Quantity);
@@ -24,6 +27,9 @@ public sealed class DeliveryOrderDocumentDto
 
 public sealed class DeliveryOrderDocumentLineDto
 {
+    public Guid? MerchandiseOrderDetailId { get; init; }
+    public Guid? ProductId { get; init; }
+    public bool IsSingleMaterialFormula { get; set; }
     public string? ProductCode { get; init; }
     public string? ProductName { get; init; }
     public string? LotNo { get; init; }

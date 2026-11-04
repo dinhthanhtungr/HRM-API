@@ -6,7 +6,13 @@
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
+  <!-- Giữ tests của API LabTest đã tạm dừng để khôi phục cùng feature; model tests cơ bản vẫn chạy. -->
   <ItemGroup>
+    <Compile Remove="Features\DevAndQA\LabTests\**\*.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <Compile Include="..\HRM.Api\Security\DeveloperSampleWorkMiddleware.cs" Link="Security\DeveloperSampleWorkMiddleware.cs" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.0.0-pre.49">
@@ -20,5 +26,6 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="..\HRM.Api\Assets\Fonts\OpenSans-Regular.ttf" Link="Assets\Fonts\OpenSans-Regular.ttf" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\HRM.Api\Assets\Pdf\*.png" Link="Assets\Pdf\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

@@ -20,6 +20,10 @@ namespace HRM.Application.Features.CRM.CustomerCare.Visibility
         /// <returns></returns>
         Task<ViewerScope> BuildScopeAsync(CancellationToken cancellationToken = default);
 
+        /// <summary>Phạm vi chỉ đọc; không sử dụng để cấp quyền ghi hoặc chuyển giao khách hàng.</summary>
+        Task<ViewerScope> BuildReadScopeAsync(CancellationToken cancellationToken = default)
+            => BuildScopeAsync(cancellationToken);
+
 
         /// <summary>
         /// Áp dụng các bộ lọc dựa trên ViewerScope để giới hạn truy cập vào dữ liệu khách hàng. 

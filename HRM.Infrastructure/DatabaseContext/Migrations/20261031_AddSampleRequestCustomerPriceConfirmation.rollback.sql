@@ -1,0 +1,3 @@
+-- Retired prototype. No columns are created or dropped by this script.
+-- Use 20261031_UseStatusAndAuditForCustomerPrice.sql to seed capabilities and safely import existing prototype data.
+-- Preserve existing columns/audits when rolling back binaries; do not erase confirmation history.

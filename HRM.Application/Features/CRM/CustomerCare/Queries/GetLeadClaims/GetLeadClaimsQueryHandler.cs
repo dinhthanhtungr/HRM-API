@@ -31,7 +31,7 @@ internal sealed class GetLeadClaimsQueryHandler
             return OperationResult<LeadClaimDetailsDto>.Fail("CustomerId is invalid.");
         }
 
-        var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+        var scope = await _visibilityService.BuildReadScopeAsync(cancellationToken);
         var customer = await _visibilityService
             .ApplyCustomerVisibility(_dbContext.Customers.AsNoTracking(), scope)
             .Where(item => item.CustomerId == request.CustomerId)

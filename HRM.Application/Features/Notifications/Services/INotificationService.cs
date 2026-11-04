@@ -23,7 +23,11 @@ public interface INotificationService
         DateTime? afterCreated = null,
         string? categoryCode = null,
         string? eventGroupCode = null,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        bool latestForHub = false,
+        bool unreadOnly = false,
+        bool urgentOnly = false,
+        bool mentionedOnly = false);
 
     /// <summary>
     /// Đếm notification chưa đọc mà nhân viên hiện tại được thấy.

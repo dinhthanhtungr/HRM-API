@@ -54,7 +54,7 @@ internal sealed class GetQuotationPricingWorkspaceQueryHandler
                 "QuotationId and current company context are required.");
         }
 
-        var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+        var scope = await _visibilityService.BuildReadScopeAsync(cancellationToken);
         var quotation = await _visibilityService
             .ApplyQuotationVisibility(
                 _dbContext.Quotations.AsNoTracking(),

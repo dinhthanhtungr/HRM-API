@@ -19,6 +19,8 @@ public sealed class InternalMessageDto
 
     public string Body { get; set; } = string.Empty;
     public string? PayloadJson { get; set; }
+    public bool CanConfirmSent { get; set; }
+    public string? ConfirmSentBlockedReasonCode { get; set; }
     public Guid? ReplyToMessageId { get; set; }
     public InternalMessageReplyDto? ReplyTo { get; set; }
     public bool IsUrgent { get; set; }
@@ -26,6 +28,9 @@ public sealed class InternalMessageDto
     public bool IsEdited { get; set; }
     public DateTime? EditedAt { get; set; }
     public bool IsDeleted { get; set; }
+    public bool ReactionsEnabled { get; set; }
+    public bool CanReact { get; set; }
+    public InternalMessageReactionSummaryDto Reactions { get; set; } = InternalMessageReactionSummaryDto.Empty;
     public bool IsRead { get; set; }
     public DateTime? ReadAt { get; set; }
     public IReadOnlyList<InternalMessageReferenceDto> References { get; set; } = Array.Empty<InternalMessageReferenceDto>();

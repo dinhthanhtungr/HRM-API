@@ -1,5 +1,139 @@
 # Sample Requests
 
+SaleAdmin có quyền `plm.sample-request.workflow.sale.managed` được thực hiện thao tác
+Sale thay nhân viên thuộc phạm vi nhóm quản lý hiện hành (`ViewerScope.EmployeeIdsInScope`),
+kèm quyền workflow Sale cơ bản và write visibility của hồ sơ. Quyền xem toàn bộ không
+tự cấp quyền làm thay ngoài phạm vi này. SaleUser giữ điều kiện chính mình phụ trách.
+Lịch sử/thông báo ghi nhân viên thực sự thao tác, không đổi Sale phụ trách.
+Khi triển khai môi trường đã dùng role claims, cấp bốn permission cho SaleAdmin bằng
+[script quyền luồng mẫu](deployment/20261104_saleadmin_managed_workflow_permissions.sql)
+hoặc màn quản lý quyền role; sau đó refresh/đăng nhập lại. Script chỉ thêm claim vào
+bảng Identity hiện có, không tạo migration/bảng/cột và không tự chạy trong tác vụ này.
+Không thay quyền xem giá, duyệt giá chuẩn hoặc sửa kỹ thuật của Lab.
+
+Workflow command đọc cùng bằng chứng xác nhận Lab với báo cáo: sự kiện đúng
+company/hồ sơ và VU active đúng sản phẩm, phiên bản Approved có dấu xác nhận,
+hoặc thông điệp xác nhận cũ trong đúng conversation. Không suy diễn đã xác nhận
+chỉ từ Formula.Status. Giá chuẩn phải là phiên bản active Approved, giá bán dương,
+mới nhất theo version/thời điểm duyệt, đúng company/sản phẩm/VU và tiền tệ mặc định
+của báo cáo (`GetSampleRequestSampleTrialsQuery.DefaultCurrency`), như luồng xác nhận
+giá hiện tại. Thiếu bằng chứng không mặc định đã có giá hoặc đã xác nhận.
+
+VU làm căn cứ thống nhất cho việc cần làm, giá được khách chấp nhận và DTO:
+legacy ưu tiên VU đã chọn trên hồ sơ; luồng mới ưu tiên VU của lần gửi hiện tại;
+sau đó mới đến VU đã được xác nhận và VU trên hồ sơ. Metadata VU trả cùng căn cứ,
+giới hạn VU active đúng company/sản phẩm. Trạng thái chốt chip lấy sự kiện mới nhất
+giữa chốt/mở lại của đúng VU và lần gửi. Legacy đã gửi nhưng thiếu VU trạng thái
+SampleSent vào nhóm cần kiểm tra, không hiện nút hoàn thành giả.
+
+Contract hàng đợi/nút thao tác theo LabUser, SaleUser, LabAdmin và Developer xem thử:
+[ROLE_WORK_QUEUES.md](ROLE_WORK_QUEUES.md). Lịch quản lý LabAdmin, token và audit:
+[WORK_SCHEDULE.md](WORK_SCHEDULE.md).
+
+Nhánh Báo giá không kg của hồ sơ từ 01/11/2026: khách đồng ý giá đúng VU →
+Lab bấm **Hoàn thành công thức** (`FinalizeQuotation`) → Sale hoàn thành hồ sơ → lên đơn.
+Lab chỉ chuyển VU Approved thành Completed, lưu snapshot/sự kiện/thông báo;
+hồ sơ vẫn mở và chưa tự chọn VU. Sale chưa được Complete trước bước Lab.
+API tạo đơn cũng chặn VU đã chốt báo giá trên hồ sơ hiện hành còn mở, dù không có Trial.
+Chi tiết điều kiện, token và trường hợp VU Completed sẵn: [CHIP_SAMPLE_FLOW.md](CHIP_SAMPLE_FLOW.md).
+
+Bucket MyActionRequired của audience Sale giữ cùng điều kiện việc Sale cần làm
+như ActionRequired, thêm ManagerBy = employee đăng nhập trước phân trang.
+ActionRequired và WaitingLab vẫn dùng phạm vi nhìn thấy của Yêu cầu phối mẫu.
+
+Theo dõi mẫu Sale dùng cùng ApplySampleRequestVisibility/BuildReadScopeAsync với
+Yêu cầu phối mẫu, không tự ép ManagerBy bằng employee đăng nhập. WorkAudience và
+bucket chỉ chọn nhóm công việc; SaleEmployeeId chỉ lọc khi được gửi rõ ràng.
+Quyền thao tác và IsActionForCurrentUser vẫn kiểm tra theo owner/capability riêng.
+Các view SalePending/SaleToday legacy không có WorkAudience giữ hành vi cũ.
+
+Chọn VU khi lên đơn trên hồ sơ legacy SampleSent chỉ cập nhật công thức được chọn
+và thông tin sản phẩm được gửi trong PATCH, giữ quyền FormulaSelectors/internal Lab,
+company/customer scope, kiểm tra VU thuộc Product và concurrency token. Không duyệt
+Trial, không điền ngày/nội dung phản hồi khách, không đổi SampleRequest thành Completed,
+không hoàn thành Formula và không phát thông báo phản hồi/hoàn thành. Hồ sơ legacy
+hoàn thành bằng thao tác workflow tường minh; không suy diễn từ việc lên PO.
+Hồ sơ mới vẫn không được dùng PATCH chọn VU để vượt luồng gửi/phản hồi/hoàn thành.
+Nhánh FormulaUpdateRequested có yêu cầu duyệt riêng vẫn duyệt VU đề xuất như trước.
+
+Quản trị job thông báo lỗi/chờ lâu (Developer): [JOB_ADMIN.md](JOB_ADMIN.md).
+
+## Luồng hiện hành và legacy
+
+Hồ sơ tạo trước 01/11/2026 không phát thông báo bổ sung của luồng theo dõi mẫu
+(nhận mẫu chuẩn, xác nhận/thu hồi giá, phản hồi Trial và bước chip/kg).
+Sự kiện vẫn lưu; dispatcher bỏ qua cả job cũ còn chờ thuộc các loại này.
+Tin đã phát không bị sửa/xóa. Thông báo vận hành tạo yêu cầu, xác nhận công thức/
+yêu cầu BGD báo giá, gửi mẫu và hủy vẫn giữ; các publisher cũ ngoài dispatcher không đổi.
+Chọn công thức khi lên PO cho hồ sơ legacy không phát thêm tin phản hồi khách.
+Hồ sơ từ 01/11/2026 giữ nguyên luồng thông báo hiện hành.
+
+Phân team mặc định cho hàng đợi Lab và bộ lọc xem tất cả: [LAB_TEAMS.md](LAB_TEAMS.md).
+
+Kết quả test thao tác FE và validation: [UAT 03/11/2026](UAT_FLOW_20261103.md).
+
+[Contract legacy/chip/kg, API, quyền và triển khai](CHIP_SAMPLE_FLOW.md) là nguồn chuẩn cho giai đoạn và chuyển bước mới. BE định tuyến legacy theo ngày tạo hồ sơ trước 01/11/2026; FE dùng `item.flow`, không tự chọn service bằng ngày. Không tạo/chạy migration cho thay đổi này.
+
+Chip không đạt giữ việc chính `ReworkFormula`, nhưng Lab được gửi lại cùng VU sau khi lưu điều chỉnh nếu BE trả `flow.allowedActions` có `Send`. Gửi lại tạo vòng chip mới, giữ lần không đạt cũ và khóa VU chờ Sale; không dùng mã việc chính thay cho danh sách thao tác được phép. Nhánh kg và hồ sơ đã đóng vẫn giữ chốt chặn riêng.
+
+## Sửa phản hồi lần gửi mẫu mới nhất
+
+[Quyền Sale, API chỉnh ngày/ghi chú và lịch sử AuditLog](FEEDBACK_CORRECTIONS.md).
+
+## Quy trình giá và mẫu mới
+
+[Quy trình Sale/Lab, dữ liệu, API và rollout](WORKFLOW.md) là contract của xác nhận giá cho
+yêu cầu Thẻ màu dùng SampleRequest.Status + SampleRequestWorkflowEvent. AuditLog giữ lịch sử sửa dữ liệu,
+không còn là nguồn nghiệp vụ xác nhận giá/công thức. Hồ sơ cũ giữ nguyên status, không phải xác nhận lại. Ngày Lab nhận chuẩn
+giữ ở Sample Request; gửi mẫu mới chuyển Trial thẳng sang chờ phản hồi, không có bước Sale nhận.
+Thẻ màu mới cho phép Lab tạo/chọn/xác nhận công thức trước khi khách đồng ý giá. Xác nhận giá
+chỉ mở sau công thức, giá chuẩn đúng nguồn và ngày Sale báo giá. Theo luồng hiện hành,
+khách đồng ý giá đúng VU là điều kiện gửi mẫu kg; gửi chip không bị chặn bởi giá.
+
+## Vô hiệu hóa yêu cầu phối mẫu
+
+`POST /api/v1/plm/sample-requests/{sampleRequestId}/deactivate` không nhận body.
+Capability `plm.sample-request.deactivate` mặc định chỉ cấp cho `SaleUser` qua
+`ApplicationPermissionRoleSets` và baseline seed `20260913_SeedRolePermissionClaims.sql`.
+Không tự chạy seed/database update khi triển khai code. Môi trường dùng permission
+explicit cần cập nhật role claim từ baseline seed rồi login/refresh token; token cũ
+không tự có capability mới. Không thêm bảng/cột hoặc EF migration.
+
+Backend bắt buộc authenticated, có company/employee context, employee active trong
+company, Sample Request active cùng company và `ManagerBy == current EmployeeId`.
+Chặn `SampleSent`, `Completed`, `SendDate`, `RealDeliveryDate`, hoặc bất kỳ Trial nào
+(kể cả inactive) đã có `SentDate`/`RequestReceivedDate` hoặc trạng thái `SampleSent`,
+`WaitingCustomerFeedback`, `Approved`, `Failed`, `ReworkRequested`. Draft/PriceQuote
+chưa gửi vẫn được phép. Đây là soft delete, không xóa Product, Formula, Trial hoặc file.
+Điều kiện được kiểm tra ngay trong UPDATE; gọi lại hoặc trạng thái/quyền đã đổi sẽ fail.
+
+Thành công trả `{"success":true,"data":"<sampleRequestId>"}`, đặt `IsActive=false`,
+`UpdatedBy/UpdatedDate` và ghi audit old/new `IsActive` với reason
+`SampleRequestDeactivated` trong cùng transaction; không gửi notification.
+Thất bại trả HTTP 400 với `{"success":false,"message":"..."}`, không tiết lộ record
+ngoài company/ownership. `[Authorize]` vẫn yêu cầu đăng nhập.
+
+Detail trả thêm `hero.canDeactivate` (boolean, mặc định false) từ cùng predicate và
+capability backend. FE dùng cờ này để hiện nút xác nhận; cờ không thay thế kiểm tra
+server tại thời điểm gọi API. Yêu cầu inactive bị loại khỏi các danh sách active.
+
+Nhóm hội thoại phối mẫu tuân theo [InternalMail AREAS](../../InternalMail/AREAS.md):
+Developer/President có capability `internal-mail.sample-request-groups.observe` được xem
+Chung, Kỹ thuật, Giá và nhóm riêng trong cùng company; quyền quan sát không tự cấp gửi/mời.
+Token explicit cần seed capability rồi login/refresh theo hướng dẫn triển khai trong tài liệu đó.
+
+ACCUser có quyền xem Sample Request, detail/history/report, Formula options và thông tin kỹ thuật như President trong cùng công ty. Query dùng BuildReadScopeAsync; trường giá/NVL/kỹ thuật vẫn qua capability riêng. ProductTechnicalViewers bao gồm ACCUser, ProductTechnicalEditors giữ nguyên. Command, approval và private conversation area giữ gate hiện có.
+
+Tài liệu cho Codex FE: [Summary, detail, POST và PATCH](FE_HANDOFF.md).
+
+## Tổ chức code
+
+Cấp gốc giữ Commands, Queries, Dtos và Services. Commands/Queries nhóm use case theo Requests, SampleTrials, ChangeRequests, Messaging, Reporting, Pricing, Products hoặc Formulas tùy trách nhiệm; mỗi command/query và handler vẫn ở file riêng.
+
+Services nhóm code dùng chung theo nghiệp vụ: Requests, SampleTrials (gồm Receipts), ChangeRequests (Data/Formula), Messaging, Pricing, Formulas và Attachments. Các nhóm có thể chứa service, rule thuần, payload hoặc contract; việc đặt trong Services không biến rule thuần thành DI service. Loader/model chỉ dùng cho một query vẫn đặt cạnh query đó. Dtos tiếp tục chia theo loại response.
+
+Namespace hiện có được giữ để không ảnh hưởng caller và DI ở module khác. Thay đổi này chỉ tổ chức file, giữ nguyên logic, quyền, transaction và public API.
+
 ## Product category options
 
 ## Lookup cho Sale Order
@@ -36,23 +170,65 @@ Create and patch requests validate `categoryId` against the same canonical codes
 
 ## Sample trial report
 
-Dialog **Phản hồi khách hàng/Ghi chú phản hồi** dùng composer `POST /api/v1/plm/sample-requests/{sampleRequestId}/sample-trials/{trialId}/customer-feedback`. Endpoint chỉ dành cho Sale, bắt buộc `idempotencyKey`, tự resolve customer từ Trial và trong một transaction vừa cập nhật phản hồi Trial vừa tạo CRM interaction/reference `SampleTrial/trialId` cùng follow-up task tùy chọn. Contract đầy đủ nằm trong `SampleRequestSampleTrials.README.md`.
+Trial tạo mới chỉ thuộc hồ sơ còn mở; không khởi tạo sẵn kết quả Approved/Failed/Cancelled/ReworkRequested.
+Kết quả phản hồi phải ghi qua composer customer-feedback để cập nhật đồng bộ Trial, hồ sơ, CRM và sự kiện.
+PATCH Trial vẫn cho sửa metadata theo quyền; không đổi delivery/phản hồi của Trial đã kết thúc hoặc hồ sơ đóng.
+Payload đầy đủ gửi lại giá trị workflow không đổi vẫn được chấp nhận. CanCreateTrial=false trên hồ sơ Completed/Cancelled.
 
-Khi Lab gửi mẫu, message trong Notification Hub trả thêm `sampleReceiptAction` gắn chính xác với Trial vừa tạo. Sale/Leader xác nhận đã nhận mẫu bằng `POST /api/v1/plm/sample-requests/{sampleRequestId}/sample-trials/{trialId}/confirm-receipt`. Nếu không gửi `sampleReceivedDate`, backend dùng thời điểm hiện tại; kết quả được lưu vào Trial và action chuyển từ `Pending` sang `Confirmed`.
+Xác nhận giá lưu liên kết Formula theo nguồn đủ điều kiện của hồ sơ, không đợi SampleRequest.FormulaId được chọn khi
+khách duyệt mẫu. Tham chiếu ngoài hệ thống giữ ProductPricingVersion Approved hiện hành; dòng báo giá đã gửi giữ
+version giá/nguồn công thức lịch sử của chính dòng đó. Thu hồi giữ liên kết từ sự kiện xác nhận trước.
+Nguồn tính readiness giá ưu tiên công thức vừa được Lab xác nhận của hồ sơ, không bị Formula của Trial cũ
+đè lên. Formula trên dòng Trial vẫn hiển thị đúng phương án đã gửi; khóa nguồn giá nội bộ không thêm public field.
 
-Ngày Sale nhận mẫu được lưu vào `Trial.RequestReceivedDate` đã có sẵn. Action chuyển Trial từ `SampleSent` sang `WaitingCustomerFeedback` và dùng `UpdatedBy/UpdatedDate` để audit; không bổ sung cột database mới.
+Dialog **Phản hồi khách hàng/Ghi chú phản hồi** dùng composer `POST /api/v1/plm/sample-requests/{sampleRequestId}/sample-trials/{trialId}/customer-feedback`. Endpoint chỉ dành cho Sale, bắt buộc `idempotencyKey`, tự resolve customer từ Trial và trong một transaction vừa cập nhật phản hồi Trial vừa tạo CRM interaction/reference `SampleTrial/trialId` cùng follow-up task tùy chọn. Contract đầy đủ nằm trong `Services/SampleTrials/README.md`.
 
-`GET /api/v1/plm/sample-requests/sample-trials` trả danh sách phân trang theo từng Sample Request. Mỗi Sample Request chỉ trả một dòng/card và gắn Trial active mới nhất theo `TrialNo`; hồ sơ chưa có Trial vẫn xuất hiện với `hasTrial = false`. `trialCount` và `hasPreviousTrials` cho FE biết có thể mở lịch sử hay không. `reportType=All` (và không truyền `reportType`) trả mọi Sample Request active trong company/customer visibility, không loại theo trạng thái workflow. `CompletedSamples` lấy Sample Request `Completed` có Trial mới nhất `Approved`, lọc/sắp theo `CustomerReplyDate`; `WaitingCustomerFeedback` là hàng đợi theo dõi gồm Trial `SampleSent` chưa có `RequestReceivedDate` (**Chờ Sale nhận mẫu**, luôn xếp trước, sắp theo `SentDate`) và Trial `WaitingCustomerFeedback` đã nhận mẫu (**Chờ phản hồi khách hàng**, sắp theo `RequestReceivedDate`). FE dùng `status` để hiển thị đúng nhãn từng nhóm. Lịch sử được tải lười bằng `GET /api/v1/plm/sample-requests/{sampleRequestId}/sample-trials`, trả các Trial active giảm dần theo `TrialNo`. Dữ liệu luôn loại khách nội bộ `KH_VIETAUS`; `additiveRate` và `labNote` trả `null` nếu current user không có quyền xem thông tin kỹ thuật PLM.
+Khi Lab gửi mẫu mới, Trial chuyển thẳng sang `WaitingCustomerFeedback`; message không tạo `sampleReceiptAction`. Sale ghi phản hồi trực tiếp vào Trial, không xác nhận nhận mẫu từ Lab.
+
+`Trial.RequestReceivedDate` được giữ để đọc lịch sử Sale nhận từ Lab. Ngày Lab nhận mẫu chuẩn lấy từ `SampleRequest.LabReceivedDate`, không đổi nghĩa dữ liệu cũ.
+
+`GET /api/v1/plm/sample-requests/sample-trials` trả danh sách phân trang theo từng Sample Request. Ngoại trừ `WaitingCustomerFeedback` trả từng Trial còn chờ phản hồi (kể cả Trial cũ), mỗi Sample Request chỉ trả một dòng/card và gắn Trial active mới nhất theo `TrialNo`; hồ sơ chưa có Trial vẫn xuất hiện với `hasTrial = false`. `trialCount` và `hasPreviousTrials` cho FE biết có thể mở lịch sử hay không. `reportType=All` (và không truyền `reportType`) trả mọi Sample Request active trong company/customer visibility, không loại theo trạng thái workflow. `CompletedSamples` lấy Sample Request `Completed` có Trial mới nhất `Approved`, lọc/sắp theo `CustomerReplyDate`; `WaitingCustomerFeedback` là hàng đợi theo dõi gồm Trial `SampleSent`, `WaitingCustomerFeedback` hoặc `PriceQuote`, đều lọc/sắp theo `SentDate`, không phụ thuộc ngày Sale nhận. Lịch sử được tải lười bằng `GET /api/v1/plm/sample-requests/{sampleRequestId}/sample-trials`, trả các Trial active giảm dần theo `TrialNo`. Dữ liệu luôn loại khách nội bộ `KH_VIETAUS`; `additiveRate` và `labNote` trả `null` nếu current user không có quyền xem thông tin kỹ thuật PLM.
 
 Các field giá trên card Trial dùng pricing capability chung: Sale chỉ nhận giá chuẩn đã duyệt (cùng ghi chú/thời điểm duyệt), còn `systemCalculatedStandardSellingPrice` luôn `null`; backend cũng không tải nguồn giá realtime cho Sale.
 
 Mỗi dòng luôn trả `requestDeliveryDate` (ngày Sale yêu cầu có mẫu), `labReceivedDate` (ngày Lab thực tế nhận mẫu đầu vào từ Sale), `labReceivedByEmployeeId`/`labReceivedByName` (người Lab nhận mẫu), `isDelayed` (cờ delay hiện tại) và `expectedDeliveryDate` (ngày dự kiến có mẫu) từ Sample Request, kể cả khi `hasTrial = false`. Các field Lab nhận mẫu thuộc toàn bộ Sample Request và không phải `requestReceivedDate` của Trial, vốn là ngày Sale xác nhận nhận mẫu đã hoàn thành từ Lab. FE tạo hoặc chỉnh hai ngày yêu cầu/dự kiến qua contract hiện hành; PATCH có thể xóa chúng qua `clearFields` với mã `sample_request.request_delivery_date` hoặc `sample_request.expected_delivery_date`.
 
+`dueDate` là hạn dùng chung cho thẻ công việc và nhóm Quá hạn, không thay đổi các ngày nguồn. Nhánh Báo giá không yêu cầu kg dùng `expectedPriceQuoteDate` (`dueDateSource=PriceQuoteExpected`), thiếu mốc này thì hạn là null. Nhánh còn lại ưu tiên `expectedDeliveryDate` do Lab lập lịch (`LabExpected`), sau đó `requestDeliveryDate` của Sale (`SaleRequested`), cuối cùng mới suy từ ngày Lab nhận mẫu chuẩn cộng số ngày giao mẫu (`LabReceiptPlusDays`). Mốc suy chỉ hợp lệ khi số ngày không âm và phép cộng không vượt giới hạn ngày; nếu không có nguồn hợp lệ thì trả null/`Unknown`. Vì vậy chỉnh lịch dự kiến cập nhật ngay hạn trên thẻ và điều kiện Quá hạn, còn ngày Sale yêu cầu giữ nguyên. Chỉ việc mở còn thuộc Lab được tính quá hạn.
+
 ## Bảng công việc ngày và báo cáo kỳ
+
+Tên màn hình là **Theo dõi mẫu của Lab/Sale** và **Báo cáo mẫu tổng hợp**. Báo cáo tổng hợp
+mở cho mọi nhân viên đã đăng nhập có company/employee hợp lệ; giữ read scope, masking
+giá/kỹ thuật và mọi quyền mutation độc lập. Xem [contract theo role](ROLE_WORK_REPORTS.md).
+
+Phạm vi vận hành từ 01/11/2026, việc tồn tự mang sang tháng/năm sau và Admin chọn hồ sơ
+cũ theo dõi tiếp: xem [Phạm vi công việc mẫu](WORK_SCOPE.md), gồm API, quyền và hướng dẫn triển khai.
+
+Ba màn hình Sale/Lab/Admin mới sử dụng contract tại [Công việc theo role và báo cáo Admin](ROLE_WORK_REPORTS.md). API period legacy giữ nguyên; Admin có summary/details riêng theo hồ sơ.
 
 `PATCH /api/v1/plm/sample-requests/{sampleRequestId}` nhận thêm `labReceivedDate` và `isDelayed`. Chỉ LabUser, LabAdmin, Developer, President được sửa hai field này; Sale không được sửa dù có quyền PATCH các field khác trên cùng Sample Request. `labReceivedByEmployeeId` không nhận từ payload: backend gán nhân viên đang đăng nhập, kiểm tra active/cùng company. `labReceivedDate` không được ở tương lai quá 5 phút. Xóa ngày bằng `clearFields: ["sample_request.lab_received_date"]` sẽ xóa cả ngày và người nhận; gửi field và clear cùng lúc bị từ chối. `isDelayed: true|false` bật/tắt cờ, không dùng `clearFields` và không nhận `null` để xóa. Các thay đổi được ghi vào audit trực tiếp của Sample Request; `updatedDate` tiếp tục dùng cho optimistic concurrency. Detail, summary và danh sách Trial đều trả `isDelayed` dạng boolean, `null` trong DB được xem là `false`.
 
-`GET /api/v1/plm/sample-requests/reports/daily?date=2026-09-23&view=today&pageNumber=1&pageSize=15` trả **cùng `PagedResult<SampleRequestSampleTrialReportDto>`** như `GET /api/v1/plm/sample-requests/sample-trials`, có thêm các field công việc ngày. FE có thể dùng một response để dựng toàn bộ card Trial: mã TP, TrialNo/TrialCount, FormulaExternalId, loại sản phẩm, khối lượng, tất cả mốc thời gian, tỷ lệ sử dụng, ghi chú Lab và các field giá. Hai route dùng chung projection, customer/company visibility và masking giá/field kỹ thuật; route `sample-trials` cũ giữ nguyên filter, sorting và các field `workStatus`/`nextAction*` không xuất hiện ở route cũ. Ngày mặc định là hôm nay theo đồng hồ server; `view=today` là mặc định và chỉ lấy yêu cầu còn mở có hạn báo giá/gửi mẫu **đúng ngày xem** hoặc Trial mới nhất `Failed` có phản hồi đúng ngày xem. Hồ sơ quá hạn cũ không tự xuất hiện ở chế độ này. `view=all` lấy tất cả Sample Request active thuộc phạm vi người xem, kể cả đã hoàn thành/hủy và không phụ thuộc ngày hạn; ngày chọn chỉ dùng để tính field gợi ý công việc. Cả hai view sắp xếp theo `sampleRequestCreatedDate` mới nhất trước, sau đó theo mã yêu cầu; không áp dụng `sortBy`/`sortDirection`. Có thể lọc thêm `customerId`, `keyword`, `currency` và phân trang. Mỗi dòng là **một Sample Request** với Trial active mới nhất. `workStatus`/`nextActionCode` là gợi ý UI tính từ trạng thái hiện tại, không ghi DB; `responsibleRole` là vai trò phụ trách, `responsibleEmployeeId` chỉ có cho việc Sale (lấy từ `ManagerBy`), `isActionForCurrentUser` cho FE tách "Cần tôi xử lý" khỏi "Chờ người khác". Đây là gợi ý màn hình, không thay thế kiểm tra quyền của API thực hiện action. `feedbackRecordedOnDate` là sự kiện độc lập: Trial `Failed` trong ngày vẫn có `workStatus=ReworkRequired`. `dueDate` là `expectedPriceQuoteDate` cho `InfoType=Quotation|Báo giá`, còn lại là `expectedDeliveryDate`. `isOverdue` chỉ so ngày hạn với ngày đang xem và chỉ true khi vẫn có action. `sentDate`/`deliveredSampleQuantityKg` là Lab gửi cho Sale, `requestReceivedDate` là Sale nhận từ Lab; API không tuyên bố ngày/khối lượng Sale thực gửi khách. Khi Trial `SampleSent`, next action là Sale xử lý/xác nhận nhận mẫu; việc xuất hiện trong báo cáo **không chờ** API xác nhận nhận mẫu. Dữ liệu hiển thị theo company/customer visibility hiện hành và loại khách nội bộ `KH_VIETAUS` như danh sách Trial. Nếu chọn một ngày trong quá khứ, các trạng thái/giá vẫn là dữ liệu hiện tại, không phải snapshot tại ngày đó.
+`GET /api/v1/plm/sample-requests/reports/daily` trả `PagedResult<SampleRequestSampleTrialReportDto>`. Contract Cần làm (`today`), Delay thủ công (`delay`), Tất cả (`all`), nguồn xác nhận công thức, P.I.C, hạn và thao tác Lab nhận mẫu được mô tả tại [Công việc Lab](LAB_WORK.md). Daily dùng cùng projection và masking giá/kỹ thuật với sample-trials; lọc trước phân trang, giữ company/customer visibility và loại KH_VIETAUS.
+
+Nhóm `FeedbackReceived` nhận cả phản hồi giá đã lưu và phản hồi chip/mẫu. Response có
+`feedbackSummaries` để phân biệt loại, kết quả, ngày và ghi chú của đúng phản hồi đã chọn.
+Phản hồi khách nhập riêng qua `customerFeedbackNote` được chia sẻ cho người được xem hồ sơ,
+kể cả Lab; drawer hiển thị cùng kết quả và ngày phản hồi. Ghi chú riêng/căn cứ phản hồi
+**giá** chỉ trả khi có quyền `CanViewApprovedSellingPrice`; người không có quyền vẫn thấy
+loại, kết quả, ngày và phản hồi được chia sẻ, nhưng không nhận nội dung giá.
+Ghi chú cũ có thể lẫn mức giá nên không tự chuyển sang nội dung chia sẻ. Thông báo có
+nội dung giá đi nhóm Giá theo quyền; phản hồi khách được chia sẻ đi nhóm Chung.
+Ghi chú chip/mẫu giữ phạm vi kỹ thuật hiện có. Không thêm trường giá tiền
+hoặc căn cứ giá có cấu trúc. Điều kiện SQL, lịch sử thu hồi và semantics chi tiết:
+[phản hồi khách theo vai trò](ROLE_WORK_QUEUES.md).
+
+Daily và sample-trials trả thêm `customerExternalId`, lấy trực tiếp từ `SampleRequest.Customer.ExternalId`
+cùng khách hàng của `customerName`, ví dụ `{ "customerName": "CÔNG TY TNHH VIETPLAST", "customerExternalId": "KH_12345" }`.
+Đây là mã khách hàng hiện tại, không phải snapshot hoặc mã TP; null/rỗng nghĩa là thiếu mã để hiển thị.
+Field dùng cùng company/customer visibility của dòng báo cáo; FE có thể rút gọn tên bằng formatter chung
+và hiển thị mã bên dưới mà không phải gọi lookup riêng cho từng dòng.
+
+`reports/period` vẫn là thống kê kết quả Trial theo kỳ, độc lập với danh sách Cần làm/Delay; không đổi cách tính báo cáo kỳ trong thay đổi này.
 
 Tìm kiếm BE cho báo cáo ngày: `keyword` (tối đa 80 ký tự) tìm cả tên Sale và tách các từ theo dấu cách, mỗi từ có thể khớp một field khác nhau nên `Ung Ký`/`Ký Ung` đều tìm được nếu giữ nguyên dấu. `saleEmployeeId` lọc đúng `SampleRequest.ManagerBy`, `sampleRequestId` lọc đúng hồ sơ; các ID này có thể kết hợp với `customerId`, `date`, `view`, `keyword`. ID ngoài phạm vi company/customer visibility trả danh sách rỗng. `GET /api/v1/plm/sample-requests/reports/daily/suggestions?q=Ký%20Ung&date=2026-09-23&view=all&customerId=...` trả tối đa 8 gợi ý trong cùng phạm vi dữ liệu của báo cáo ngày: 3 Sale, 3 khách hàng, 2 mã TP. `q` bắt buộc dài 2–80 ký tự; mọi từ trong `q` phải khớp trong cùng tên/mã, không phụ thuộc thứ tự. Response rút gọn:
 
@@ -75,7 +251,7 @@ Nhánh Báo giá chỉ xác định `workStatus=AwaitingStandardPrice`/`Awaiting
 Các query keyword Sample Request hỗ trợ mã TP của chính yêu cầu, tên/mã màu Product và mã VU Formula liên quan.
 Riêng danh sách trial còn tìm theo VU gắn trên Trial.
 
-Contract chi tiết, mapping dữ liệu và script tạo bảng nằm trong `SampleRequestSampleTrials.README.md`.
+Contract chi tiết, mapping dữ liệu và script tạo bảng nằm trong `Services/SampleTrials/README.md`.
 
 Trial được tạo bằng `POST /api/v1/plm/sample-requests/{sampleRequestId}/sample-trials` và cập nhật bằng `PATCH /api/v1/plm/sample-requests/{sampleRequestId}/sample-trials/{trialId}`. PATCH dùng `clearFields` whitelist để xóa field nullable; backend không dùng upsert và không tự đoán create/update.
 
@@ -104,6 +280,8 @@ This keeps the summary API fast and lets the browser load/cache images separatel
 
 ## Detail And Write APIs
 
+PATCH `usageRate`, `expiryType` và clear `product.usage_rate`/`product.expiry_type` chỉ cho Developer, LabUser, President (tập role `ProductUsageAndExpiryEditors`). Áp dụng cả thao tác từ màn hình MFG. Quyền endpoint và company/customer visibility vẫn bắt buộc; Admin/PLPU/Sale không được sửa hai field này nếu không có thêm một trong ba role trên. Các field kỹ thuật khác giữ rule hiện tại.
+
 Sample request detail is loaded by id:
 
 ```http
@@ -125,6 +303,20 @@ POST /api/v1/plm/sample-requests
 ```
 
 After a sample request is created, backend automatically creates an InternalMail message for the sample request thread and publishes a notification to Lab recipients, except for internal sample requests. FE may send `initialLabMessage` so Sale can review/edit the message content before submit. If `initialLabMessage` is blank, backend falls back to a generated summary from the key Sale-entered sample request and product fields. The message uses `SampleRequestNotificationType.GeneralMessage`, title `Yêu cầu phối mẫu mới`, the default sample request message topic, and does not expose extra sensitive payload beyond the normal message payload.
+
+The initial message is persisted synchronously in the transaction that creates the request, using the
+creation event ID as its stable message ID. Successful creation therefore does not depend on a background
+worker creating the summary later. `SampleRequestWorkflowNotification` is still queued atomically,
+but for this initial message its worker reuses the stored message and only publishes the notification.
+Notification/SignalR/Web Push failures are retried independently and cannot roll back the saved request
+or summary. A notification retry does not recreate message read states or change its sent time/latest-message
+position. Validation and database persistence failures still fail creation; internal-request suppression remains
+unchanged. This change does not automatically repair previously swallowed workflow jobs or missing old summaries.
+
+Admin job retry supports the exact legacy error `No handler for type SampleRequestWorkflowNotification`
+mistakenly marked processed, only with no event message/notification IDs and no existing event-ID message.
+It locks and requeues the original company-scoped row. Repeated retry returns AlreadyQueued/Completed;
+it never clones the event/job. Normal successful processed jobs remain non-retryable. Existing retry permissions apply.
 
 Product data in the create, detail and patch contracts includes `grs` (boolean; omitted on create defaults to `false`) and `grsConsumerType` (nullable enum: `0 = PostConsumer`, `1 = PreConsumer`). `grsConsumerType` may be cleared only through PATCH `clearFields: ["product.grs_consumer_type"]`.
 
@@ -467,7 +659,8 @@ SampleRequestSampleTrial.TrialNo = max(TrialNo) + 1
 Chỉ khi Sale ghi nhận Trial `Approved`, backend mới chọn Formula của Trial, chuyển Formula và Sample Request sang `Completed`.
 Nếu Trial `Failed`, Sample Request quay về `InProgress` để Lab làm/clone Formula mới; nếu `Cancelled`, Sample Request chuyển `Cancelled`.
 `PATCH /api/v1/plm/sample-requests/{sampleRequestId}` không được phép gán trực tiếp `SampleSent`/`Completed`,
-hoặc chọn Formula khi Sample Request đang `SampleSent`; FE phải gọi action nghiệp vụ tương ứng.
+với hồ sơ mới, chọn Formula khi Sample Request đang `SampleSent` cũng bị chặn; FE phải gọi action nghiệp vụ tương ứng.
+Legacy SampleSent được chọn VU để lên đơn nhưng việc chọn không duyệt mẫu hay hoàn thành hồ sơ.
 
 Luồng chốt công thức của Sample Request được tách theo ý nghĩa nghiệp vụ:
 
@@ -680,13 +873,13 @@ Nếu không gửi `sampleRequestId`, backend chỉ fallback cập nhật các S
 Keep query-only projection models in:
 
 ```text
-Queries/GetSampleRequestSummary/Models/GetSampleRequestSummaryModels.cs
+Queries/Requests/GetSampleRequestSummary/Models/GetSampleRequestSummaryModels.cs
 ```
 
 Keep query-specific data loading in:
 
 ```text
-Queries/GetSampleRequestSummary/Services/SampleRequestSummaryRelatedDataLoader.cs
+Queries/Requests/GetSampleRequestSummary/Services/SampleRequestSummaryRelatedDataLoader.cs
 ```
 
 This loader is static and receives `IPLMReadDbContext` from the handler. It is not registered in DI because it is a query-local helper without state.
@@ -738,6 +931,11 @@ For `LabUser`, Sample Request visibility includes the internal customer `KH_VIET
 Với user bị giới hạn theo phạm vi Sales, `/summary` mặc định không trả Sample Request của khách nội bộ `KH_VIETAUS`. Khi request có `keyword`, riêng query này cho phép khách nội bộ tham gia tập tìm kiếm rồi áp dụng đầy đủ điều kiện keyword; vì vậy user có thể tìm bằng `KH_VIETAUS` hoặc thông tin khác của record nhưng không nhận toàn bộ hồ sơ nội bộ nếu chúng không khớp keyword. Company scope vẫn luôn được giữ nguyên. Role `SaleUser` có thể mở detail và PATCH kết quả nội bộ tìm được; ngoại lệ này không tự mở history hoặc message.
 
 ## Message Recipients
+
+Preview/membership bên dưới mô tả người tham gia và luồng tạo hồ sơ. Notification cho sự kiện mới dùng
+[notification routing](../../InternalMail/NOTIFICATION_ROUTING.md). Sale nhận thông báo lấy CustomerAssignments,
+không dùng ManagerBy/sender. Command gửi tin/direct-patch/data-change/formula-change nhận mentionedEmployeeIds;
+tag không tự thêm participant.
 
 All Sample Request thread message types resolve default recipients through `SampleRequestRecipientResolver`. Static role/group rules live in `SampleRequestRecipientRules`. Locked required recipients are active employees in roles `President` and `LabAdmin`, plus the active account with username `qaqcad01` in the current company. Khi sender có role `SaleUser`, mọi leader active (`MemberInGroup.IsAdmin = true`) và employee có role `SaleAdmin` cùng nằm trong chính group active của sender cũng là required recipient (`source = sales_group_leader` hoặc `sales_group_admin`); rule group-scoped này không dùng role `Leader`/`SaleAdmin` toàn công ty, loại sender và tự bỏ trùng. Default leader recipients cho Lab là active leaders trong current company và được resolved theo stable product category `ExternalId`:
 
@@ -817,15 +1015,15 @@ Preview request accepts `selectedSilentWatcherEmployeeIds`; response returns the
 
 Each silent watcher is added to the new Sample Request conversation with `Role = Watcher` and `IsMuted = true`.
 They can read the thread and may unmute it later through their own conversation preference. While muted, the initial
-message and later thread messages still appear in their Notification Hub as already-read items, but do not create an
+message appears in their Notification Hub as an already-read item, but does not create an
 unread badge, SignalR event or Web Push alert. A silent watcher must
 be active in the current company, cannot be the current creator, and cannot also be in the normal recipient list.
 The initial Sample Request message uses the selected watcher ids directly, so it also creates their Hub item before
 the new conversation participants have been persisted. The same rule applies to initial normal recipients; subsequent
-messages resolve the persisted participant preference. This applies equally to action-specific recipient overrides
-(for example pricing or approval decisions): an employee who has muted the conversation remains a silent watcher and
-cannot be made a normal notification recipient by an override. Once that employee un-mutes their own conversation,
-later messages and actions notify them normally again.
+messages use the event audience described in notification routing above. Non-target watchers keep conversation
+access but do not get a silent inbox item for each later event. Ordinary notifications respect mute; explicit valid
+mentions bypass mute without granting membership. Unmuting does not subscribe an employee to events outside their
+business audience.
 When `selectedSilentWatcherEmployeeIds` is omitted on the first preview, all active `LabUser` and `LabAdmin`
 employees absent from `requiredRecipients`, `suggestedRecipients` and `selectedRecipients` are selected as default
 silent watchers. Sending an explicit empty array lets FE remove those optional defaults.
@@ -869,7 +1067,7 @@ Khi **tạo mới** Sample Request, backend cũng dùng cùng rule: nếu Produc
 
 ## Quy tắc chuyển trạng thái
 
-`Rules/SampleRequestStatusTransitionRules.cs` là nơi duy nhất gán trạng thái Sample Request cho các sự kiện lifecycle: tạo mới, đủ định danh Product, gửi mẫu, khách chấp nhận/không đạt/hủy và yêu cầu/ra quyết định cập nhật Formula. Handler vẫn chịu trách nhiệm phân quyền, tải dữ liệu, audit, `UpdatedBy/UpdatedDate`, lưu transaction và message/notification; rule không có side effect.
+`Services/Requests/SampleRequestStatusTransitionRules.cs` là nơi duy nhất gán trạng thái Sample Request cho các sự kiện lifecycle: tạo mới, đủ định danh Product, gửi mẫu, khách chấp nhận/không đạt/hủy và yêu cầu/ra quyết định cập nhật Formula. Handler vẫn chịu trách nhiệm phân quyền, tải dữ liệu, audit, `UpdatedBy/UpdatedDate`, lưu transaction và message/notification; rule không có side effect.
 
 Điều kiện gửi:
 
@@ -939,3 +1137,16 @@ feed làm nguồn thread. Cách này giữ yêu cầu trong tab của cả sende
 API lưu read-model phục vụ hiển thị/in phiếu Color Chip được tách tại
 `Features/PLM/ColorChipRecords`. Contract GET/POST/PATCH, company scope, quyền chỉnh sửa, attachment collection và
 semantics `clearFields` được mô tả trong [Color Chip Records README](../ColorChipRecords/README.md).
+
+
+### Thread notification cho Developer
+
+SendSampleRequestMessageCommandHandler vẫn no-op theo SampleRequestMessageRules với hồ sơ nội bộ. Với message hợp lệ,
+luôn gọi PublishAsync dù audience nghiệp vụ rỗng để Developer active cùng công ty nhận event. Người nhận thông thường
+vẫn theo audience/mute/tag hiện hành; NotificationService bổ sung Dev ngoài exact audience, không thêm membership Dev.
+President chỉ đọc/gửi thread khi có participant active; rule cấp default members không đổi. Không phát lại tin cũ.
+
+Endpoint chat công khai `POST /api/v1/plm/sample-requests/{id}/messages` bật kiểm tra quyền gửi conversation hiện có
+trước khi resolve/thêm participant; FE không thể tắt bằng JSON. Developer có quyền company-send; President và role
+khác cần participant active. Publisher nghiệp vụ nội bộ vẫn theo gate nghiệp vụ riêng, không bị cờ endpoint này tác động.
+GET messages dùng scope đọc tập trung, không ép membership lần hai đối với Developer.

@@ -34,7 +34,7 @@ internal sealed class GetComplaintSourceLinesQueryHandler
             return Array.Empty<ComplaintSourceLineDto>();
         }
 
-        var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+        var scope = await _visibilityService.BuildReadScopeAsync(cancellationToken);
         var visibleOrders = _visibilityService.ApplyMerchandiseOrderVisibility(
                 _dbContext.MerchandiseOrders.AsNoTracking(),
                 _dbContext.Customers.AsNoTracking(),

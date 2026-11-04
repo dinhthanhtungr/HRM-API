@@ -15,6 +15,14 @@ using HRM.Application.Features.Dispatch.DeliveryOrders.Queries.ExportDeliveryOrd
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using HRM.Domain.Security.Rules.Roles;
+using HRM.Application.Features.Dispatch.Deliverers.Commands.CreateDeliverer;
+using HRM.Application.Features.Dispatch.DeliveryOrders.Commands.PrintDeliveryOrder;
+using HRM.Application.Features.Dispatch.DeliveryOrders.Commands.PatchDeliveryOrder;
+using HRM.Application.Features.Dispatch.DeliveryOrders.Commands.DeleteDeliveryOrder;
+using HRM.Application.Features.Dispatch.DeliveryOrders.Commands.FinishDelivery;
+using HRM.Application.Features.Dispatch.DeliveryOrders.Queries.ExportDeliveryReport;
+using HRM.Application.Features.Dispatch.DeliveryOrders.Queries.GetDeliveryPlan;
+using HRM.Application.Features.Dispatch.DeliveryOrders.Queries.GetTransportSummary;
 
 namespace HRM.Domain.Entities.Controllers.Dispatch;
 
@@ -31,6 +39,13 @@ public sealed class DeliveryOrdersController : ControllerBase
     }
 
     // =================================================== Queries ===================================================
+
+    [HttpGet("delivery-plan")]
+    public async Task<IActionResult> GetDeliveryPlan([FromQuery] GetDeliveryPlanQuery query, CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(query, cancellationToken);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
 
     [HttpGet("delivery-orders/{id:guid}/pdf")]
     public async Task<IActionResult> ExportPdf(Guid id, CancellationToken cancellationToken)
@@ -101,6 +116,79 @@ public sealed class DeliveryOrdersController : ControllerBase
     }
 
     // =================================================== Commands ===================================================
+
+    [HttpGet("delivery-orders/transport-summary")]
+    public async Task<IActionResult> GetTransportSummary([FromQuery] DateTime from,
+        [FromQuery] DateTime to, CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new GetTransportSummaryQuery(from, to), cancellationToken);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    [HttpGet("delivery-orders/export-transport-summary")]
+    public async Task<IActionResult> ExportTransportSummary([FromQuery] DateTime from,
+        [FromQuery] DateTime to, CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new ExportDeliveryReportQuery(from, to, DeliveryReportKind.Transport), cancellationToken);
+        return result.Success && result.Data is { } file ? File(file.Content, file.ContentType, file.FileName) : BadRequest(result);
+    }
+
+    [HttpGet("delivery-orders/reports/{kind}/excel")]
+    public async Task<IActionResult> ExportReport(DeliveryReportKind kind, [FromQuery] DateTime from,
+        [FromQuery] DateTime to, CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new ExportDeliveryReportQuery(from, to, kind), cancellationToken);
+        return result.Success && result.Data is { } file ? File(file.Content, file.ContentType, file.FileName) : BadRequest(result);
+    }
+
+    [HttpGet("delivery-plan/excel")]
+    public async Task<IActionResult> ExportDeliveryPlanExcel([FromQuery] DateTime from,
+        [FromQuery] DateTime to, CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new ExportDeliveryReportQuery(from, to, DeliveryReportKind.Plan), cancellationToken);
+        return result.Success && result.Data is { } file ? File(file.Content, file.ContentType, file.FileName) : BadRequest(result);
+    }
+
+    [HttpPost("deliverers")]
+    [Authorize(Roles = AppRoles.Admin)]
+    public async Task<IActionResult> CreateDeliverer(CreateDelivererCommand command, CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(command, cancellationToken);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    [HttpPost("delivery-orders/{id:guid}/print")]
+    [Authorize(Roles = DeliveryOrderAccessRules.ManageRoles)]
+    public async Task<IActionResult> Print(Guid id, CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new PrintDeliveryOrderCommand(id), cancellationToken);
+        return result.Success && result.Data is { } file ? File(file.Content, file.ContentType, file.FileName) : BadRequest(result);
+    }
+
+    [HttpPatch("delivery-orders/{id:guid}")]
+    [Authorize(Roles = DeliveryOrderAccessRules.ManageRoles)]
+    public async Task<IActionResult> Patch(Guid id, PatchDeliveryOrderCommand command, CancellationToken cancellationToken)
+    {
+        command.Id = id;
+        var result = await _sender.Send(command, cancellationToken);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    [HttpDelete("delivery-orders/{id:guid}")]
+    [Authorize(Roles = DeliveryOrderAccessRules.CancelRoles)]
+    public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new DeleteDeliveryOrderCommand(id), cancellationToken);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    [HttpPost("sale-orders/{id:guid}/finish-delivery")]
+    [Authorize(Roles = DeliveryOrderAccessRules.FinishRoles)]
+    public async Task<IActionResult> FinishDelivery(Guid id, CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new FinishDeliveryCommand(id), cancellationToken);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
 
     [HttpPost("delivery-orders/lot-consumptions/backfill")]
     [Authorize(Roles = AppRoles.Admin)]

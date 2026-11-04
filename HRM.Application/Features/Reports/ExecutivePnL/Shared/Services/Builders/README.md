@@ -47,7 +47,7 @@ ExecutivePnLDashboardBuilder.Charts.cs
 
 ### BY_SALES_REVENUE_PROFIT
 
-Dung cho chart top sale.
+Dung cho chart top sale. Tổng và thứ hạng chỉ lấy các period đang hiển thị; tháng so sánh ẩn chỉ phục vụ growth, không cộng vào tổng biểu đồ.
 
 ```text
 Dimension: sale
@@ -150,3 +150,10 @@ Bar group profit
 ```
 
 Neu cung dung dimension group va cung series, FE nen dung lai `BY_SALES_GROUP_COMPOSED`.
+
+## Visibility của by-sales
+
+BuildSalesAnalysisTab nhận decision canViewProfit từ handler. Khi false, bảng chỉ
+có metric revenue ở mọi cấp; biểu đồ chỉ có revenue/revenueGrowthPercent. Những key
+costOfSales/profit/marginPercent/profitGrowthPercent bị omit, không dùng 0 để biểu diễn
+field bị cấm. Quyền không thay đổi thứ tự/tổng doanh thu hoặc scope customer.

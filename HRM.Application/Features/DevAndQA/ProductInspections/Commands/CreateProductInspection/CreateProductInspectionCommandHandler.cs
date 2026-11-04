@@ -41,20 +41,49 @@ internal sealed class CreateProductInspectionCommandHandler
         if (validationError is not null)
             return OperationResult<ProductInspectionWriteResultDto>.Fail(validationError);
 
-        var standardId = command.Request.ProductStandardId!.Value;
+        var order = command.Request.MfgProductionOrderId is { } orderId
+            ? await _dbContext.MfgProductionOrders.AsNoTracking()
+                .Where(x => x.MfgProductionOrderId == orderId && x.CompanyId == companyId &&
+                    _dbContext.Products.Any(p => p.ProductId == x.ProductId && p.CompanyId == companyId))
+                .Select(x => new { x.MfgProductionOrderId, x.ProductId, x.ProductExternalIdSnapshot,
+                    ProductName = _dbContext.Products.Where(p => p.ProductId == x.ProductId).Select(p => p.Name).FirstOrDefault() })
+                .FirstOrDefaultAsync(cancellationToken)
+            : null;
+        if (command.Request.MfgProductionOrderId.HasValue && order is null)
+            return OperationResult<ProductInspectionWriteResultDto>.Fail("Production order was not found or is outside your company.");
+
+        if (order is not null)
+        {
+            var batch = command.Request.BatchId!.Trim();
+            var matchesBatch = await (from version in _dbContext.ProductionSelectVersions
+                join formula in _dbContext.ManufacturingFormulas
+                    on version.ManufacturingFormulaId equals formula.ManufacturingFormulaId
+                where version.CompanyId == companyId && formula.CompanyId == companyId && formula.IsActive &&
+                    version.MfgProductionOrderId == order.MfgProductionOrderId &&
+                    (formula.ExternalId == batch || formula.ExternalId == "VA" + batch)
+                select version.MfgProductionOrderId).AnyAsync(cancellationToken);
+            if (!matchesBatch)
+                return OperationResult<ProductInspectionWriteResultDto>.Fail("BatchId does not belong to the selected COA source.");
+        }
+
+        var standardId = command.Request.ProductStandardId;
         var standard = await _dbContext.ProductStandards
             .AsNoTracking()
             .Where(x => x.Id == standardId && x.CompanyId == companyId && x.IsActive)
             .Select(x => new
             {
                 x.Id,
+                x.ProductId,
                 ProductCode = x.ProductExternalId ?? x.Product!.ColourCode,
                 ProductName = x.Product!.Name
             })
             .FirstOrDefaultAsync(cancellationToken);
 
-        if (standard is null)
+        if (standardId.HasValue && standard is null)
             return OperationResult<ProductInspectionWriteResultDto>.Fail("Product standard was not found or is outside your company.");
+
+        if (standard is not null && order is not null && standard.ProductId != order.ProductId)
+            return OperationResult<ProductInspectionWriteResultDto>.Fail("Product standard does not belong to the selected production order's product.");
 
         var externalId = await _externalIdService.GenerateMonthlyCodeAsync(
             companyId,
@@ -64,9 +93,12 @@ internal sealed class CreateProductInspectionCommandHandler
         var entity = new ProductInspection
         {
             Id = Guid.CreateVersion7(),
-            ProductStandardId = standard.Id,
-            ProductCode = standard.ProductCode,
-            ProductName = standard.ProductName,
+            CompanyId = companyId,
+            ProductId = order?.ProductId ?? standard!.ProductId,
+            MfgProductionOrderId = order?.MfgProductionOrderId,
+            ProductStandardId = standard?.Id,
+            ProductCode = standard?.ProductCode ?? order?.ProductExternalIdSnapshot,
+            ProductName = standard?.ProductName ?? order?.ProductName,
             ExternalId = externalId,
             CreatedBy = _currentUser.UserName ?? employeeId.ToString(),
             CreateDate = DateTime.Now

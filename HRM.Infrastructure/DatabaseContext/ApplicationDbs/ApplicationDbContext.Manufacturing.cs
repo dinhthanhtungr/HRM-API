@@ -7,6 +7,9 @@ namespace HRM.Infrastructure.DatabaseContext.ApplicationDbs
     public partial class ApplicationDbContext
     {
         public virtual DbSet<ColorChipManufacturingRecord> ColorChipManufacturingRecords { get; set; } = default!;
+        public DbSet<ManufacturingFormulaAdjustment> ManufacturingFormulaAdjustments { get; set; } = default!;
+        public DbSet<ManufacturingFormulaAdjustmentBatch> ManufacturingFormulaAdjustmentBatches { get; set; } = default!;
+        public DbSet<ManufacturingFormulaAdjustmentItem> ManufacturingFormulaAdjustmentItems { get; set; } = default!;
         public virtual DbSet<MfgProductionOrder> MfgProductionOrders { get; set; } = default!;
         public virtual DbSet<ManufacturingFormulaMaterial> ManufacturingFormulaMaterials { get; set; } = default!;
         public virtual DbSet<ManufacturingFormula> ManufacturingFormulas { get; set; } = default!;

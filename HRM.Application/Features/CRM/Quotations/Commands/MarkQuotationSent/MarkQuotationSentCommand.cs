@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore;
 namespace HRM.Application.Features.CRM.Quotations.Commands.MarkQuotationSent;
 
 /// <summary>
-/// Xác nhận báo giá đã gửi khách hàng; handler ghi interaction, thư nội bộ, notification và chuyển sang Sent.
+/// Ghi nhận gửi báo giá; giá thấp hơn chuẩn còn hiệu lực phải chờ BGĐ xác nhận qua tin nhắn.
 /// </summary>
 public sealed record MarkQuotationSentCommand(Guid QuotationId, MarkQuotationSentRequest Request)
     : IRequest<OperationResult>;

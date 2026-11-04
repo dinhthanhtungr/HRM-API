@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using HRM.Application.Abstractions.Commons.Time;
 using HRM.Application.Abstractions.FileStorage;
 using HRM.Application.Abstractions.Persistence.InternalMail;
@@ -9,6 +9,7 @@ using HRM.Application.Features.InternalMail.Dtos;
 using HRM.Application.Features.InternalMail.Services;
 using HRM.Application.Features.Notifications.Dtos;
 using HRM.Application.Features.Notifications.Services;
+using HRM.Application.Features.PLM.SampleRequests.Services;
 using HRM.Domain.Entities.AttachmentSchema;
 using HRM.Domain.Entities.InternalMailSchema;
 using HRM.Domain.Enums.Attachment;
@@ -33,6 +34,8 @@ internal sealed class SendInternalMessageCommandHandler
     private readonly INotificationService _notificationService;
     private readonly IFileStorage _fileStorage;
     private readonly IImageThumbnailGenerator _thumbnailGenerator;
+    private readonly InternalMailMentionResolver _mentions;
+    private readonly SampleRequestNotificationAudienceResolver _audience;
 
     public SendInternalMessageCommandHandler(
         IInternalMailDbContext dbContext,
@@ -41,7 +44,9 @@ internal sealed class SendInternalMessageCommandHandler
         INotificationService notificationService,
         IFileStorage fileStorage,
         IImageThumbnailGenerator thumbnailGenerator,
-        InternalMailAreaAccessService areas)
+        InternalMailAreaAccessService areas,
+        InternalMailMentionResolver mentions,
+        SampleRequestNotificationAudienceResolver audience)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
@@ -50,6 +55,8 @@ internal sealed class SendInternalMessageCommandHandler
         _notificationService = notificationService;
         _fileStorage = fileStorage;
         _thumbnailGenerator = thumbnailGenerator;
+        _mentions = mentions;
+        _audience = audience;
     }
 
     public async Task<OperationResult<SendInternalMessageResultDto>> Handle(
@@ -79,21 +86,21 @@ internal sealed class SendInternalMessageCommandHandler
             return OperationResult<SendInternalMessageResultDto>.Fail("Current employee or company is invalid.");
         }
 
-        var conversation = await _areas.Conversations()
+        var conversation = await _areas.SendableConversations()
             .FirstOrDefaultAsync(x =>
                 x.InternalConversationId == request.ConversationId &&
                 x.CompanyId == companyId.Value &&
-                x.IsActive &&
-                x.Participants.Any(participant => participant.EmployeeId == senderId.Value && participant.IsActive),
+                x.IsActive,
                 cancellationToken);
         if (conversation is null)
         {
             return OperationResult<SendInternalMessageResultDto>.Fail("Conversation was not found.");
         }
-        if (request.AreaCode is not null && request.AreaCode != InternalMailAreaAccessService.AreaOf(conversation.RelatedType))
+        var group = (await _areas.GroupInfoAsync([conversation.InternalConversationId], cancellationToken))[conversation.InternalConversationId];
+        if (request.AreaCode is not null && request.AreaCode != InternalMailAreaAccessService.AreaOf(group.GroupType))
             return OperationResult<SendInternalMessageResultDto>.Fail("The selected area does not match this conversation.");
-        var businessContext = InternalMailAreaAccessService.IsPrivateArea(conversation.RelatedType)
-            ? await _dbContext.InternalConversations.AsNoTracking().FirstAsync(c => c.InternalConversationId == conversation.RelatedId &&
+        var businessContext = group.RootConversationId != conversation.InternalConversationId
+            ? await _dbContext.InternalConversations.AsNoTracking().FirstAsync(c => c.InternalConversationId == group.RootConversationId &&
                 c.CompanyId == companyId.Value && c.IsActive, cancellationToken)
             : conversation;
 
@@ -121,6 +128,12 @@ internal sealed class SendInternalMessageCommandHandler
             .ToListAsync(cancellationToken);
 
         var now = _dateTimeProvider.Now;
+        var mentionResult = await _mentions.ResolveAsync(companyId.Value, conversation.InternalConversationId,
+            request.IsForwarded ? [] : request.MentionedEmployeeIds, cancellationToken);
+        if (!mentionResult.Success)
+            return OperationResult<SendInternalMessageResultDto>.Fail(mentionResult.Message!);
+        var mentions = mentionResult.Data!;
+        var mentionedIds = mentions.Select(m => m.EmployeeId).Where(id => id != senderId.Value).ToArray();
         var messageId = Guid.CreateVersion7();
         var payload = new InternalMailNotificationPayload
         {
@@ -130,7 +143,8 @@ internal sealed class SendInternalMessageCommandHandler
             RelatedId = businessContext.RelatedId,
             IsUrgent = request.IsUrgent,
             AttachmentCount = attachments.Count,
-            IsForwarded = request.IsForwarded
+            IsForwarded = request.IsForwarded,
+            ForwardedSenderName = request.ForwardedSenderName
         };
 
         var message = new InternalMessage
@@ -140,7 +154,7 @@ internal sealed class SendInternalMessageCommandHandler
             SenderEmployeeId = senderId.Value,
             MessageType = InternalMessageType.Text,
             Body = body,
-            PayloadJson = JsonSerializer.Serialize(payload),
+            PayloadJson = InternalMailMentions.Write(JsonSerializer.Serialize(payload), mentions),
             ReplyToMessageId = request.ReplyToMessageId is { } validReplyId && validReplyId != Guid.Empty
                 ? validReplyId
                 : null,
@@ -149,6 +163,12 @@ internal sealed class SendInternalMessageCommandHandler
         };
 
         var savedPaths = new List<string>(attachments.Count);
+        foreach (var sourceId in request.ForwardSourceConversationIds.Distinct())
+            message.References.Add(new InternalMessageReference
+            {
+                InternalMessageReferenceId = Guid.CreateVersion7(), InternalMessageId = messageId,
+                RelatedType = InternalMailRelatedType.ConversationForwardSource, RelatedId = sourceId
+            });
         try
         {
             await _dbContext.InternalMessages.AddAsync(message, cancellationToken);
@@ -169,27 +189,41 @@ internal sealed class SendInternalMessageCommandHandler
             conversation.LastMessageAt = now;
 
             var senderParticipant = await _dbContext.InternalConversationParticipants
-                .FirstAsync(x =>
+                .FirstOrDefaultAsync(x =>
                     x.InternalConversationId == conversation.InternalConversationId &&
                     x.EmployeeId == senderId.Value &&
                     x.IsActive,
                     cancellationToken);
-            senderParticipant.LastReadAt = now;
-            senderParticipant.IsArchived = false;
-            senderParticipant.ArchivedAt = null;
+            if (senderParticipant is not null)
+            {
+                senderParticipant.LastReadAt = now;
+                senderParticipant.IsArchived = false;
+                senderParticipant.ArchivedAt = null;
+            }
 
             var senderName = await _dbContext.Employees
                 .AsNoTracking()
                 .Where(x => x.EmployeeId == senderId.Value)
                 .Select(x => x.FullName)
                 .FirstOrDefaultAsync(cancellationToken);
+            var defaultIds = !InternalMailAreaAccessService.IsPrivateArea(conversation.RelatedType) &&
+                businessContext.RelatedType == InternalMailRelatedType.SampleRequest && businessContext.RelatedId.HasValue
+                ? await _audience.ResolveAsync(companyId.Value, businessContext.RelatedId.Value,
+                    TopicNotifications.SampleRequestMessageCreated, cancellationToken)
+                : participants.Select(p => p.EmployeeId).ToArray();
             var targetUserIds = participants
-                .Where(x => x.EmployeeId != senderId.Value && !x.IsMuted)
+                .Where(x => x.EmployeeId != senderId.Value &&
+                    (((InternalMailAreaAccessService.IsPrivateArea(conversation.RelatedType) || !x.IsMuted) &&
+                        defaultIds.Contains(x.EmployeeId)) || mentionedIds.Contains(x.EmployeeId)))
                 .Select(x => x.EmployeeId)
                 .ToArray();
 
             var notificationId = await _notificationService.PublishAsync(new PublishNotificationRequest
             {
+                UseExactAudience = businessContext.RelatedType == InternalMailRelatedType.SampleRequest ||
+                    (senderParticipant is null && _areas.CanSendCompanyMessages),
+                MentionedEmployeeIds = mentionedIds,
+                KeepMutedPrivateChatUnread = InternalMailAreaAccessService.IsPrivateArea(conversation.RelatedType),
                 CompanyId = companyId.Value,
                 CreatedBy = senderId.Value,
                 CreatedByNameSnapshot = senderName ?? _currentUser.UserName,
@@ -202,9 +236,11 @@ internal sealed class SendInternalMessageCommandHandler
                 AggregateCode = conversation.RelatedExternalId,
                 ConversationId = conversation.InternalConversationId,
                 MessageId = messageId,
-                PayloadJson = JsonSerializer.Serialize(payload),
+                PayloadJson = message.PayloadJson,
                 TargetUserIds = targetUserIds
             }, cancellationToken);
+
+            if (notificationId == Guid.Empty) await _dbContext.SaveChangesAsync(cancellationToken);
 
             return OperationResult<SendInternalMessageResultDto>.Ok(new SendInternalMessageResultDto
             {

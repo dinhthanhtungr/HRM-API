@@ -31,12 +31,13 @@ internal sealed class GetProductInspectionByIdQueryHandler
 
         var item = await _dbContext.ProductInspections
             .AsNoTracking()
-            .Where(x => x.Id == request.Id && x.ProductStandardId.HasValue &&
-                _dbContext.ProductStandards.Any(s =>
-                    s.Id == x.ProductStandardId.Value && s.CompanyId == companyId))
+            .ForCompany(_dbContext, companyId)
+            .Where(x => x.Id == request.Id)
             .Select(x => new ProductInspectionDetailDto
             {
                 Id = x.Id,
+                ProductId = x.ProductId,
+                MfgProductionOrderId = x.MfgProductionOrderId,
                 ExternalId = x.ExternalId,
                 ProductStandardId = x.ProductStandardId,
                 BatchId = x.BatchId,
@@ -46,7 +47,7 @@ internal sealed class GetProductInspectionByIdQueryHandler
                 ManufacturingDate = x.ManufacturingDate,
                 ExpiryDate = x.ExpiryDate,
                 ExpiryType = _dbContext.ProductStandards
-                    .Where(s => s.Id == x.ProductStandardId)
+                    .Where(s => s.Id == x.ProductStandardId && s.CompanyId == companyId)
                     .Select(s => s.Product!.ExpiryType)
                     .FirstOrDefault(),
                 Shape = x.Shape,
@@ -100,6 +101,11 @@ internal sealed class GetProductInspectionByIdQueryHandler
                 CreatedBy = x.CreatedBy
             })
             .FirstOrDefaultAsync(cancellationToken);
+
+        if (item?.ProductStandardId is { } standardId)
+            item.Specifications = await _dbContext.ProductStandards.AsNoTracking()
+                .Where(x => x.Id == standardId && x.CompanyId == companyId)
+                .Select(ProductInspectionQueries.Specifications).FirstOrDefaultAsync(cancellationToken);
 
         return item is null
             ? OperationResult<ProductInspectionDetailDto>.Fail("Product inspection was not found or is outside your company.")

@@ -19,7 +19,7 @@ internal sealed class PreviewFormulaPricingPolicyQueryHandler(
         PreviewFormulaPricingPolicyQuery query,
         CancellationToken cancellationToken)
     {
-        if (!ProductPricingAccessRules.CanManage(currentUser) ||
+        if (!ProductPricingAccessRules.CanViewManagementData(currentUser) ||
             currentUser.CompanyId is not { } companyId)
         {
             return OperationResult<FormulaPriceCalculationDto>.Fail(

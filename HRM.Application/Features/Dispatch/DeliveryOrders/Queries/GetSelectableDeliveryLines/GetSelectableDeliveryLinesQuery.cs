@@ -9,4 +9,5 @@ public sealed class GetSelectableDeliveryLinesQuery
 {
     public Guid? CompanyId { get; init; }
     public Guid? CustomerId { get; init; }
+    public Guid? MerchandiseOrderId { get; init; }
 }

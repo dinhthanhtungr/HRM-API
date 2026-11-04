@@ -48,7 +48,7 @@ internal sealed class GetMerchandiseOrderPriceHistoryQueryHandler
         if (item.Error is not null)
             return OperationResult<PagedResult<MerchandiseOrderPriceHistoryItemDto>>.Fail(item.Error);
 
-        var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+        var scope = await _visibilityService.BuildReadScopeAsync(cancellationToken);
         var orders = _visibilityService.ApplyMerchandiseOrderVisibility(
             _dbContext.MerchandiseOrders.AsNoTracking(),
             _dbContext.Customers.AsNoTracking(),
@@ -153,7 +153,7 @@ internal sealed class GetMerchandiseOrderPriceHistoryQueryHandler
 
     private string? Validate(GetMerchandiseOrderPriceHistoryQuery request)
     {
-        if (!CanAccess(_currentUser)) return "Only President or Developer can access merchandise order price history.";
+        if (!CanAccess(_currentUser)) return "Only President, Developer or ACCUser can access merchandise order price history.";
         if (!_currentUser.CompanyId.HasValue || _currentUser.CompanyId == Guid.Empty) return "Current company context is required.";
         if (request.ItemId is null || request.ItemId == Guid.Empty) return "itemId is required.";
         if (request.PageNumber < 1) return "pageNumber must be at least 1.";
@@ -163,7 +163,7 @@ internal sealed class GetMerchandiseOrderPriceHistoryQueryHandler
         return null;
     }
 
-    internal static bool CanAccess(ICurrentUser user) => user.IsInRole(ApplicationRoles.President) || user.IsInRole(ApplicationRoles.Developer);
+    internal static bool CanAccess(ICurrentUser user) => user.IsAuthenticated && user.IsInAnyRole(ApplicationRoleSets.Pricing.ExecutiveReaders);
 
     private sealed class MerchandiseOrderPriceHistoryRow
     {

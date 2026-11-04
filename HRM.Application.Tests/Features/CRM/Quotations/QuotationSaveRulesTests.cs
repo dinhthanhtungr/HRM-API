@@ -53,10 +53,20 @@ public sealed class QuotationSaveRulesTests
     [Theory]
     [InlineData(QuotationStatus.PendingApproval)]
     [InlineData(QuotationStatus.Approved)]
+    [InlineData(QuotationStatus.PendingSendConfirmation)]
     [InlineData(QuotationStatus.Sent)]
     public void FullLineReplacementIsRejectedOutsideDraft(QuotationStatus status)
         => Assert.NotNull(QuotationSaveRules.ValidateStatus(new Quotation { Status = status },
             new SaveQuotationRequest { ExpectedUpdatedDate = Token, Lines = [] }));
+
+    [Theory]
+    [InlineData(QuotationStatus.Draft)]
+    [InlineData(QuotationStatus.PendingApproval)]
+    [InlineData(QuotationStatus.Approved)]
+    [InlineData(QuotationStatus.PendingSendConfirmation)]
+    public void UnsentCustomerPriceSectionsAreAllowed(QuotationStatus status)
+        => Assert.Null(QuotationSaveRules.ValidateStatus(new Quotation { Status = status },
+            new SaveQuotationRequest { ExpectedUpdatedDate = Token, CustomerPriceLines = [] }));
 
     [Fact]
     public void PendingHeaderMayEchoUnchangedLockedFields()

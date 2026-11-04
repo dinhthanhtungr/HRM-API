@@ -79,6 +79,7 @@ internal sealed class GetFormulaMaterialsQueryHandler
                     item.MaterialExternalIdSnapshot),
                 currentItemData);
             item.MaterialNameSnapshot = display.Name;
+            item.StockCode = display.StockCode;
             item.MaterialExternalIdSnapshot = display.ExternalId;
         }
 

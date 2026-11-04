@@ -102,7 +102,7 @@ internal sealed class GetMaterialPreviewQueryHandler
         var lastPurchase = await LoadLastPurchaseAsync(
             material.MaterialId,
             companyId,
-            _fieldVisibility.CanViewFormulaPrices(),
+            _fieldVisibility.CanViewFormulaPrices() || _fieldVisibility.CanViewMaterialPriceReviewDetails(),
             cancellationToken);
 
         var totalOnHandKg = await LoadTotalOnHandKgAsync(

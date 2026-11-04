@@ -37,9 +37,8 @@ internal sealed class ExportProductInspectionPdfQueryHandler
 
         var inspection = await _dbContext.ProductInspections
             .AsNoTracking()
-            .Where(x => x.Id == request.Id && x.ProductStandardId.HasValue &&
-                _dbContext.ProductStandards.Any(s =>
-                    s.Id == x.ProductStandardId.Value && s.CompanyId == companyId))
+            .ForCompany(_dbContext, companyId)
+            .Where(x => x.Id == request.Id)
             .FirstOrDefaultAsync(cancellationToken);
 
         if (inspection is null)
@@ -77,7 +76,8 @@ internal sealed class ExportProductInspectionPdfQueryHandler
             ? null
             : await _dbContext.ProductTests
                 .AsNoTracking()
-                .Where(x => x.ExternalId != null && batchCandidates.Contains(x.ExternalId))
+                .Where(x => x.ExternalId != null && batchCandidates.Contains(x.ExternalId) &&
+                    _dbContext.Products.Any(p => p.ProductId == x.ProductId && p.CompanyId == companyId))
                 .Select(x => x.ProductPackage)
                 .FirstOrDefaultAsync(cancellationToken);
 

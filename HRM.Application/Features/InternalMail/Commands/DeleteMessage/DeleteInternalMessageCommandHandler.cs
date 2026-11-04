@@ -1,7 +1,9 @@
+using HRM.Application.Features.CRM.Quotations.Services;
 using HRM.Application.Abstractions.Commons.Time;
 using HRM.Application.Abstractions.Persistence.InternalMail;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Models;
+using HRM.Application.Commons.Authorization;
 using HRM.Application.Features.InternalMail.Services;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -13,7 +15,7 @@ internal sealed class DeleteInternalMessageCommandHandler
 {
     private readonly IInternalMailDbContext _dbContext;
     private readonly ICurrentUser _currentUser;
-    private readonly InternalMailAreaAccessService _areas;
+    private readonly InternalMessageDeletionAccess _access;
     private readonly IDateTimeProvider _dateTimeProvider;
     private readonly HRM.Application.Abstractions.Notifications.INotificationInboxArchiver _inboxArchiver;
 
@@ -22,11 +24,11 @@ internal sealed class DeleteInternalMessageCommandHandler
         ICurrentUser currentUser,
         IDateTimeProvider dateTimeProvider,
         HRM.Application.Abstractions.Notifications.INotificationInboxArchiver inboxArchiver,
-        InternalMailAreaAccessService areas)
+        ICurrentUserPermissionService permissions)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
-        _areas = areas;
+        _access = new InternalMessageDeletionAccess(currentUser, permissions);
         _dateTimeProvider = dateTimeProvider;
         _inboxArchiver = inboxArchiver;
     }
@@ -40,24 +42,29 @@ internal sealed class DeleteInternalMessageCommandHandler
             return OperationResult.Fail("Message or current user is invalid.");
         }
 
+        if (!_access.CanDelete)
+        {
+            return OperationResult.Fail("Only Developer with message deletion permission can delete messages.");
+        }
+
         await using var transaction = await _dbContext.BeginTransactionAsync(cancellationToken);
-        var message = await _areas.Messages()
+        var conversationId = await _access.Scope(_dbContext.InternalMessages).AsNoTracking()
+            .Where(x => x.InternalMessageId == request.MessageId)
+            .Select(x => (Guid?)x.InternalConversationId).FirstOrDefaultAsync(cancellationToken);
+        if (!conversationId.HasValue) return OperationResult.Fail("Message was not found or cannot be deleted.");
+        await _dbContext.LockInternalConversationAsync(companyId.Value, conversationId.Value, cancellationToken);
+        var message = await _access.Scope(_dbContext.InternalMessages)
             .FirstOrDefaultAsync(x =>
-                x.InternalMessageId == request.MessageId &&
-                !x.IsDeleted &&
-                x.Conversation.CompanyId == companyId.Value &&
-                x.Conversation.IsActive &&
-                x.Conversation.Participants.Any(participant =>
-                    participant.EmployeeId == employeeId.Value &&
-                    participant.IsActive &&
-                    (participant.Role == HRM.Domain.Enums.InternalMailEnums.InternalConversationParticipantRole.Owner ||
-                     x.SenderEmployeeId == employeeId.Value)),
+                x.InternalMessageId == request.MessageId,
                 cancellationToken);
 
         if (message is null)
         {
             return OperationResult.Fail("Message was not found or cannot be deleted.");
         }
+
+        if (QuotationSendService.ReadPayload(message.PayloadJson) is not null)
+            return OperationResult.Fail("Quotation confirmation messages are managed by the quotation workflow.");
 
         var now = _dateTimeProvider.Now;
         message.IsDeleted = true;

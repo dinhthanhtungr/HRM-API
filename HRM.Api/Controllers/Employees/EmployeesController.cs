@@ -1,4 +1,5 @@
 using HRM.Application.Features.Employees.Administration;
+using HRM.Application.Features.Employees.Administration.GetEmployeeRoleAccounts;
 using HRM.Application.Features.Employees.Administration.GetEmployeeRolePermissions;
 using HRM.Application.Features.Employees.Administration.SetEmployeeRolePermissions;
 using HRM.Application.Features.Employees.Administration.AssignEmployeeRole;
@@ -67,6 +68,13 @@ public sealed class EmployeesController : ControllerBase
         => ToAdministrationActionResult(await _sender.Send(
             new GetEmployeeRolePermissionsQuery(roleId), cancellationToken));
 
+    [HttpGet("roles/{roleId:guid}/accounts")]
+    public async Task<IActionResult> GetRoleAccounts(
+        Guid roleId, [FromQuery] GetEmployeeRoleAccountsQuery query, CancellationToken cancellationToken)
+    {
+        query.RoleId = roleId;
+        return ToAdministrationActionResult(await _sender.Send(query, cancellationToken));
+    }
     [HttpPut("roles/{roleId:guid}/permissions")]
     public async Task<IActionResult> SetRolePermissions(
         Guid roleId, [FromBody] SetEmployeeRolePermissionsCommand command, CancellationToken cancellationToken)

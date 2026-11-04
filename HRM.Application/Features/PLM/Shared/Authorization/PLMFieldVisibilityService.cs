@@ -4,6 +4,8 @@ namespace HRM.Application.Features.PLM.Shared.Authorization;
 
 internal sealed class PLMFieldVisibilityService : IPLMFieldVisibilityService
 {
+    public bool CanViewManufacturingDefectiveLots() =>
+        _permissionService.HasPermission(ApplicationPermissions.PLM.ViewManufacturingDefectiveLots);
     private readonly ICurrentUserPermissionService _permissionService;
 
     public PLMFieldVisibilityService(ICurrentUserPermissionService permissionService)

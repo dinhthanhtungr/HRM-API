@@ -1,17 +1,40 @@
 # Báo giá CRM
 
+## Đồng bộ ngày báo giá mẫu khi gửi BBG
+
+Khi Sale đánh dấu Đã gửi thành công (Sent hoặc PendingSendConfirmation), cập nhật
+SampleRequest.RealPriceQuoteDate bằng thời điểm thao tác mới nhất, cùng lần
+SaveChanges. Duyệt gửi về sau không ghi đè ngày mẫu bằng ngày duyệt. Quotation.SentDate
+vẫn theo luồng duyệt hiện có. Chỉ dùng SampleRequestId trên line active,
+đối chiếu cùng company/customer/product và SampleRequest active còn mở. Không suy
+ra hồ sơ theo Product, không ghi đè ngày mới hơn, không đổi hồ sơ Completed/Cancelled.
+Replay BBG đã Sent/đang chờ duyệt không đồng bộ lại. Ghi AuditLog thay đổi
+ngày, không tạo Trial, không đổi lifecycle/giá/snapshot hay phản hồi khách.
+
+## Metadata báo giá trong Notification Hub
+
+Trang feed có `quotationInfo` (mã báo giá, khách hàng, Sale) theo scope đọc hội thoại và company hiện hành.
+Tab Tất cả không phụ thuộc vào việc trang 50 hội thoại hỗn hợp có chứa đúng báo giá đó hay chưa; tab Báo giá
+vẫn dùng metadata hội thoại làm nguồn chính. Đây chỉ là display metadata, không có giá và không sửa snapshot
+dòng báo giá. Xem [contract feed](../../Notifications/README.md#metadata-phối-mẫu-của-từng-trang-feed).
+
+ACCUser xem quotation, workbench/workspace, queue, lookup và export theo phạm vi khách hàng toàn công ty qua BuildReadScopeAsync. Query đọc pricing management data cho phép ACCUser; gate command legacy và snapshot báo giá giữ nguyên. Company, active record và quan hệ customer/product/formula vẫn được kiểm tra.
+
 ## Lưu form trong một transaction
 
 `PUT /api/v1/crm/quotations/{quotationId}/save` dành cho nút Lưu trên form sửa báo giá.
-FE validate toàn bộ form rồi gửi một mutation, thay cho PATCH header rồi PUT lines/customer-price-tiers.
+FE validate phần thực sự gửi rồi dùng một mutation, thay cho PATCH header rồi PUT lines/customer-price-tiers.
+Rule giá trống/0, dialog thay giá chuẩn và chống tạo trùng xem [contract lưu/phục hồi](SAVE_RECOVERY_CONTRACT.md).
 Tạo báo giá mới vẫn dùng `POST /api/v1/crm/quotations`. Các API cũ tiếp tục hoạt động riêng lẻ;
 gọi nhiều API cũ không có bảo đảm transaction chung.
 
 API mới giữ `[Authorize]`, company scope và customer visibility như các API cập nhật hiện hành.
-Chỉ báo giá active ở Draft/PendingApproval/Approved được lưu. Không thêm hoặc đổi capability/role mapping.
-Header, terms và lines/tiers được stage qua service dùng chung với API cũ; chỉ gọi SaveChanges một lần
-trong transaction, bao gồm đồng bộ tiêu đề conversation nếu thay dòng. Validation hoặc concurrency thất bại
-thì rollback và bỏ tracked changes. Không phát notification hay đổi trạng thái báo giá.
+Chỉ báo giá active ở Draft/PendingApproval/Approved/PendingSendConfirmation được lưu. Sent bị khóa.
+Không thêm hoặc đổi capability/role mapping; giữ company/customer ownership scope hiện hành.
+Header, terms và lines/tiers dùng service chung với API cũ và cùng một transaction, bao gồm đồng bộ tiêu đề
+conversation nếu thay dòng. Nhánh 0/10/20 lưu một lần, không phát notification hay đổi trạng thái. Nhánh 90
+còn xử lý request message/notification/outbox trong cùng transaction theo mục 12.0.1. Validation hoặc concurrency
+thất bại thì rollback toàn bộ và bỏ tracked changes.
 
 Request sửa header và thay dòng ở Draft:
 
@@ -62,7 +85,7 @@ Request sửa header và thay dòng ở Draft:
   contactName/contactPhone; muốn xóa cả snapshot thì liệt kê cả ba field.
 - `lines` không gửi/`null`: giữ dòng. Gửi danh sách: thay toàn bộ dòng, chỉ Draft. `[]` xóa toàn bộ dòng;
   báo giá không có dòng active vẫn không được yêu cầu giá/đánh dấu đã gửi.
-- `customerPriceLines` không gửi/`null`: giữ mức giá khách. Chỉ PendingApproval/Approved được gửi
+- `customerPriceLines` không gửi/`null`: giữ mức giá khách. Draft/PendingApproval/Approved/PendingSendConfirmation được gửi
   danh sách này; phải có ít nhất một dòng. Không gửi đồng thời `lines` và `customerPriceLines`.
   Mỗi phần tử theo `UpdateQuotationCustomerPriceTierLineRequest`:
   `{ "quotationLineId": "<id dòng đã lưu>", "note": null, "priceTiers": [...] }`.
@@ -476,9 +499,9 @@ luôn là token persist mới nhất, không phải thời gian notification.
 
 ### 5.5.2. Sửa tier gửi khách và thu hồi
 
-`PUT /api/v1/crm/quotations/{quotationId}/customer-price-tiers` nhận báo giá `PendingApproval` hoặc `Approved` và
+`PUT /api/v1/crm/quotations/{quotationId}/customer-price-tiers` nhận Draft/PendingApproval/Approved/PendingSendConfirmation và
 cho phép người dùng nhìn thấy khách hàng theo CRM visibility thao tác. Sale có thể chuẩn bị rồi gửi giá khách trong lúc President/Developer tiếp tục xử lý
-giá chuẩn nội bộ; trạng thái giá chuẩn không chặn `mark-sent`.
+giá chuẩn nội bộ; `mark-sent` yêu cầu giá chuẩn đã duyệt còn hiệu lực theo mục 12.
 Request gồm `expectedUpdatedDate` và các line `{ quotationLineId, priceTiers, note }`. Endpoint chỉ thay snapshot
 tier gửi khách/note, giữ nguyên product và `ProductPricingVersionId`, validate khoảng không chồng lấn và giá `>= 0`,
 sau đó tính lại totals. Response là `QuotationTotalsDto` có token `updatedDate` mới.
@@ -543,6 +566,33 @@ Phục vụ màn hình danh sách. Hỗ trợ:
 - `sortBy`, `sortDirection`.
 
 Response là dữ liệu tóm tắt; không chứa đầy đủ lines và histories.
+
+List và GET detail trả thêm `displayStatus: { code, tone, reasonCode }`, BE tổng hợp cùng một rule.
+FE chỉ dịch code sang nhãn và hiển thị tone, không suy trạng thái từ giá, status hoặc review.
+`Draft` giữ Nháp; PendingApproval/Approved có review PendingReapproval trả `PendingPriceUpdate`
+(Chờ cập nhật giá); thiếu chuẩn hoặc đang chờ lần đầu trả `PendingPriceApproval`; Approved đủ chuẩn trả
+`Approved`. PendingSendConfirmation, Sent và các bước sau gửi giữ mã tương ứng. Mã không biết trả `Unknown`.
+Draft không tự chuyển sang chờ chỉ vì chưa có chuẩn; phải gửi yêu cầu theo workflow hiện hành.
+`reasonCode=StandardPriceReviewRequired` là lý do tổng quát, không khẳng định riêng Sale/Lab/quá hạn.
+Ví dụ: `{"status":20,"displayStatus":{"code":"PendingPriceUpdate","tone":"warning","reasonCode":"StandardPriceReviewRequired"}}`.
+Detail áp dụng cùng yêu cầu Sale chưa thu hồi của đúng quotation/product như list, bỏ qua dòng inactive.
+`status` lưu, filter/sort theo status, quyền thao tác và giá/snapshot giữ nguyên; displayStatus không cấp quyền.
+FE cũ vẫn dùng status; FE mới gặp response cũ thiếu displayStatus chỉ hiển thị status cũ, không tự tính review.
+
+`standardPriceReview` tổng hợp tình trạng giá chuẩn của các dòng active. Yêu cầu định giá từ Sale
+được xét theo đúng `quotationId` và Product của dòng, trong company/customer scope của người gọi.
+Nếu yêu cầu chưa thu hồi mới hơn `ApprovedAt ?? UpdatedDate ?? CreatedDate` của giá chuẩn Approved
+hiện hành, `state = PendingReapproval`, `requiresPricingAction = true` và dòng được tính vào
+`affectedLineCount`, dù Product đã có giá chuẩn trước đó. FE nên hiện “Đang chờ duyệt lại giá” thay cho
+“Đã có giá chuẩn” khi state này xuất hiện. Duyệt giá tại hoặc sau mốc yêu cầu, hoặc thu hồi yêu cầu,
+sẽ bỏ lý do chờ từ Sale; các lý do Lab/quá hạn vẫn được tính độc lập. Chưa có giá chuẩn thì giữ
+`PendingInitialApproval`. API không thay đổi giá hay snapshot của báo giá.
+
+Ví dụ đã có giá chuẩn nhưng Sale đang yêu cầu lại:
+
+```json
+{"standardPriceReview":{"state":"PendingReapproval","requiresPricingAction":true,"affectedLineCount":1}}
+```
 
 ### 5.7. Tra cứu dữ liệu định giá sản phẩm
 
@@ -957,6 +1007,21 @@ Response gồm:
 
 Mỗi `lines[]` tách bốn nguồn tier độc lập. FE không phải ghép giá chuẩn, giá hệ thống và giá báo cũ vào
 từng hàng snapshot:
+
+Giá chuẩn và giá hệ thống luôn lấy nguồn VND, kể cả khi báo giá là USD. Trong detail,
+`approvedPricing.currency`, `systemCalculatedPricing.currency` và `realtimePriceComparison.currency`
+vẫn là `VND`: các giá tham chiếu này chưa chia tỷ giá. FE hiển thị theo tiền tệ báo giá bằng
+`giá VND / quotation.exchangeRate` đúng một lần. `priceTiers` đã có snapshot và
+`latestQuotedPricing` là giá theo tiền tệ báo giá, không chia tỷ giá lại. Khi dòng chưa có tier,
+BE dựng `priceTiers` với `isSnapshot = false` và quy đổi sang tiền tệ báo giá trước khi trả về.
+API product pricing preview không nhận tỷ giá nên trả giá khởi tạo và `currency = VND`;
+giá báo gần nhất vẫn có currency riêng của báo giá khách hàng.
+Ví dụ nguồn chuẩn `70000 VND`, báo giá `USD`, `exchangeRate = 25000`: tham chiếu trả
+`70000` cùng `currency = VND`, còn tier khởi tạo của detail là `2.8 USD`.
+API pricing comparison trả `currentPriceTiers` theo VND để FE quy đổi một lần khi dựng form;
+`hasDifference` quy đổi nội bộ giá hiện tại sang tiền tệ báo giá để so với snapshot khách, không đổi giá trả về.
+Đối chiếu xác nhận gửi lấy nguồn VND rồi quy đổi đúng một lần trước khi so với snapshot khách hàng;
+tỷ giá ngoại tệ phải lớn hơn 0. Báo giá VND không chia tỷ giá.
 
 - `priceTiers`: giá **báo lần này** của chính quotation. Đây là list duy nhất Sale được sửa và gửi trong
   `PUT /quotations/{quotationId}/lines`. Khi đã lưu, từng tier có `isSnapshot = true`. GET detail trả cả tier
@@ -1529,9 +1594,9 @@ với tier gửi khách.
 Refresh price nhận `quotationLineId + productPricingVersionId`, sau đó cũng sao chép snapshot từ backend.
 Đổi currency bị từ chối khi báo giá đã có snapshot để tránh trộn hai loại tiền tệ.
 
-`mark-sent` nhận báo giá `Draft`, `PendingApproval` hoặc `Approved`. Backend không bắt buộc
-`ProductPricingVersionId`, vì giá chuẩn nội bộ có thể vẫn đang chờ; nhưng mọi line vẫn phải có snapshot tier active
-với giá không âm để nội dung thực gửi khách xác định được. PDF cũng từ chối export nếu line active thiếu tier.
+`mark-sent` nhận Draft/PendingApproval/Approved và yêu cầu giá chuẩn Approved còn hiệu lực cho mọi sản phẩm.
+Line không bắt buộc liên kết trực tiếp ProductPricingVersionId; backend chọn giá chuẩn hợp lệ để đối chiếu.
+Mọi line phải có tier active giá không âm; thấp hơn chuẩn phải chờ BGĐ theo mục 12. PDF từ chối line active thiếu tier.
 
 Mỗi line có từ 1 đến 100 price tiers. Backend vẫn yêu cầu đúng một tier khớp với `quantity` để bảo đảm bảng giá
 không bị hở hoặc mâu thuẫn, nhưng tier khớp không được snapshot vào `QuotationLine.UnitPrice` và không dùng tính
@@ -1629,34 +1694,249 @@ FE cần normalize đúng từng response; không giả định mọi endpoint �
 - `Customer.QuotationLinePriceTiers`.
 - `Customer.QuotationStatusHistories`.
 
-## 12. Xác nhận đã gửi báo giá
+## 12. Xác nhận gửi báo giá và giá thấp hơn chuẩn
 
-`POST /api/v1/crm/quotations/{quotationId}/mark-sent` nhận:
+`POST /api/v1/crm/quotations/{quotationId}/mark-sent` giữ response thành công `204 No Content`.
+FE tải lại quotation/thread sau mutation để biết trạng thái cuối cùng.
 
 ```json
 {
+  "expectedUpdatedDate": "2026-10-17T10:00:00.123456",
   "interactionType": "Quotation",
-  "note": "Đã gửi file PDF qua email khách hàng"
+  "note": "Khách hàng chiến lược, đề nghị áp dụng giá ưu đãi"
 }
 ```
 
-`interactionType` của endpoint này chỉ chấp nhận `Quotation` và mặc định là `Quotation`, vì vậy FE có thể bỏ field
-này. Các giá trị `Email`, `Zalo` và những loại interaction khác vẫn được giữ cho các API CRM thông thường.
+`interactionType` chỉ nhận `Quotation` (mặc định). `note` là lý do từ DTO, tối đa 4000 ký tự sau trim;
+chỉ bắt buộc khi có giá khách thấp hơn chuẩn. Không lưu lý do vào Quotation, line hoặc status history;
+lý do chỉ nằm trong `InternalMessage.Body`. Note trên header/line đã có không bị thay đổi.
 
-Khi báo giá Draft hợp lệ được xác nhận đã gửi, backend thực hiện đồng thời:
+Backend dùng helper `QuotationSendPriceComparison`, tách biệt với `pricing-comparison` realtime của Sale.
+Chọn ProductPricingVersion active, Approved, cùng company/product và currency VND, còn hiệu lực tại lúc mark-sent;
+quy đổi giá chuẩn sang tiền tệ báo giá bằng tỷ giá snapshot trước khi so sánh với giá khách.
+ưu tiên ngày duyệt gần nhất, rồi version lớn nhất. Ngày duyệt fallback UpdatedDate/CreatedDate theo rule hiện có.
+Hiệu lực: `approvedAt <= now < approvedAt + ApprovedPricingReviewAfterDays`; cấu hình <= 0 bỏ hạn cuối.
+Thiếu giá chuẩn còn hiệu lực, không có tier active, giá/khoảng chuẩn không hợp lệ hoặc các tier chuẩn
+chồng lấn tại phần đối chiếu thì trả lỗi và không tạo yêu cầu. Khoảng hở/ngoài bảng dùng fallback bên dưới.
 
-- Chuyển trạng thái sang `Sent`, lưu `SentDate` và status history.
-- Khóa nghiệp vụ sửa header, line và refresh giá theo quy tắc trạng thái hiện có.
-- Tạo `CustomerInteraction` theo `CustomerId` với `InteractionType = Quotation`; interaction lưu mã/tên sản phẩm,
-  toàn bộ price tiers, ghi chú line, ngày gửi và tiền tệ từ snapshot báo giá.
-- Tạo hoặc tái sử dụng một InternalMail conversation có `RelatedType = Quotation`, thêm leader của sale group liên quan
-  cùng President/Developer active cùng công ty làm participant và tạo action message.
-- Publish notification `QuotationSent` cho leader của sale group liên quan cùng President/Developer, không gửi lại cho chính người thao tác.
+So `CustomerUnitPrice = UnitPrice + CommissionAmount` theo toàn bộ khoảng khối lượng active, kể cả
+MinInclusive/MaxInclusive, từng điểm biên và khoảng không có cận trên. Không ghép bằng label/sortOrder và không
+làm tròn khối lượng hoặc mặc định bước 25 kg. Chuẩn 300–600 và khách 350–600 dùng phần giao 350–600.
 
-Gọi lại endpoint cho báo giá đã `Sent` trả thành công theo semantics idempotent và không tạo thêm interaction,
-message hoặc notification.
+- Nếu khoảng khách có phần giao dài dương với một hoặc nhiều tier chuẩn: chọn tier có phần giao dài nhất;
+  bằng nhau lấy giá cao hơn. Khoảng giao không có cận được xem là vô hạn. Dùng giá tier được chọn cho toàn
+  tier khách (`comparisonBasis=ApprovedTier`), kể cả điểm chạm biên hoặc phần hở còn lại trong tier khách đó.
+- Nếu không có phần giao dài dương: xét từng điểm biên/phần hở/ngoài bảng theo các quy tắc sau.
+- Điểm được đúng một tier chuẩn bao phủ: dùng `ProductPricingTier.UnitPrice` của tier đó.
+- Phần hở giữa hai mốc chuẩn: dùng giá cao hơn của hai mốc liền kề (`AdjacentTierFallback`).
+- Phần vượt mốc cuối: dùng giá của tier chuẩn active có cận trên lớn nhất theo khối lượng
+  (`LastApprovedTierFallback`), không dùng giá cao nhất toàn bảng và không dựa vào sortOrder.
+  Nếu nhiều tier có cùng cận cuối thì lấy giá cao hơn, giống FE. Điểm biên vẫn xét inclusive/exclusive;
+  nếu điểm cuối không được tier nào bao phủ thì áp dụng fallback mốc cuối.
+- Phần trước toàn bộ bảng: giữ giá cao nhất trong tất cả tier chuẩn active của phiên bản được chọn
+  (`HighestApprovedTierFallback`).
+- Khi không có phần giao dài dương, mức tham chiếu là giá cao nhất trong các phần fallback/điểm biên.
+  Chỉ giá khách thấp hơn mức tham chiếu mới cần lý do và BGĐ xác nhận. Giá bằng/cao hơn được gửi trực tiếp
+  nếu các điều kiện khác hợp lệ. Giá khách luôn gồm hoa hồng; BE làm tròn từng khoản đến 6 chữ số trước khi cộng.
 
-Đây là xác nhận của sale sau khi đã gửi báo giá. Endpoint không tự gửi email/PDF ra ngoài cho khách hàng.
+Ví dụ chuẩn 1025–3000 = 29800, 3025–6000 = 29400, 6025–10000 = 29000:
+khách 3000–4000 dùng 29400 (phần giao dài nhất), khoảng hở 6000–6025 dùng 29400,
+khách 10025–20000 hoặc >=20000 dùng 29000; khách >=7000 cũng dùng 29000 theo rule phần giao dài nhất.
+Giá ngoài bảng 29500 được gửi trực tiếp nếu không có line khác thấp hơn, vì cao hơn giá mốc cuối 29000.
+Với chuẩn 30200/29800/29400 tương ứng các khoảng trên, khách >=20000 giá 29000 thấp hơn 400 (1,3605%).
+Fallback chỉ là căn cứ kiểm soát gửi: không tạo/sửa tier chuẩn, không đổi ProductPricingVersion hoặc giá khách.
+
+Chênh lệch = giá khách - mức đối chiếu; phần trăm = chênh lệch / mức đối chiếu * 100,
+làm tròn 4 chữ số AwayFromZero. Mức đối chiếu 0 cho phần trăm null (không xác định); không coi thiếu giá là 0.
+
+- Không có giá thấp hơn: chuyển Sent, ghi SentDate/history, tạo CustomerInteraction và reference,
+  action message trong conversation báo giá, publish QuotationSent như luồng cũ.
+- Có giá thấp hơn: chuyển `PendingSendConfirmation = 90`, chưa ghi SentDate/interaction đã gửi.
+  Tạo action message khẩn trong đúng conversation RelatedType=Quotation/RelatedId=quotationId hiện có;
+  Body chứa lý do và đối chiếu. PayloadJson lưu snapshot giá/khoảng/version/ngày duyệt tại thời điểm yêu cầu,
+  không lưu lý do. Publish `QuotationSendConfirmationRequested = 56`, topicCode
+  `crm.quotation.send_confirmation.requested`, category quotation, event group approval, severity Warning.
+  Target là President active cùng công ty; NotificationService vẫn áp dụng cơ chế Developer theo dõi hiện có,
+  Developer có capability xác nhận nhưng vẫn chịu scope/token/validation. Không có BGĐ active thì fail, không tạo yêu cầu.
+- Gọi lại khi đang chờ hoặc Sent không tạo thêm yêu cầu/tin nhắn/interaction. ExpectedUpdatedDate sai vẫn trả
+  xung đột theo contract hiện có. Đọc notification không xác nhận yêu cầu và không bỏ cờ khẩn của tin nhắn.
+
+Khi chờ xác nhận gửi, full line replacement/refresh/request/withdraw và PATCH header riêng vẫn bị khóa.
+PUT save hoặc PUT customer-price-tiers được phép sửa giá khách theo luồng thay yêu cầu ở mục 12.0.1; save cũng
+cho sửa header trong whitelist hiện hành; dữ liệu thương mại đổi phải thay/vô hiệu hóa yêu cầu cũ.
+Lưu lại không đổi dữ liệu thương mại giữ nguyên yêu cầu/token, không đối chiếu lại vì chuẩn đổi.
+Pricing approval reconciliation chỉ cập nhật PendingApproval; expiry chỉ xử lý Approved; đồng bộ snapshot chỉ Draft.
+Yêu cầu đang chờ giữ bản đối chiếu ban đầu. BGĐ xác nhận giá khách và điều kiện thương mại đã đề nghị;
+không chạy lại helper trên chuẩn hiện tại. Chuẩn thay version/giá/hạn hoặc comparison rule mới không tự chặn.
+BE kiểm tra fingerprint thương mại mới hoặc token legacy cùng identity/pending/quyền/concurrency.
+Chi tiết tương thích yêu cầu cũ và mã lỗi: [CONFIRM_SENT_API.md](CONFIRM_SENT_API.md).
+
+### Metadata đối chiếu và hiệu lực cho FE
+
+Quotation detail và pricing preview trả `approvedPricing.validFrom`, `validUntil`, `evaluatedAt`,
+`isEffectiveForSending`, bên cạnh `productPricingVersionId`, `version`, `status`, `currency` và `priceTiers`.
+`validUntil=null` nghĩa là cấu hình không đặt hạn cuối; mốc hết hạn là exclusive. Reader ưu tiên phiên bản
+còn hiệu lực theo cùng thứ tự ngày duyệt/version/id của mark-sent; nếu không có thì vẫn trả bản lịch sử để
+hiển thị với `isEffectiveForSending=false`. `hasApprovedPricingAvailable` chỉ nói có bản Approved, không chứng
+minh còn hạn. FE kiểm tra currency tham chiếu là VND, quy đổi theo tỷ giá báo giá; backend kiểm tra hiệu lực lúc
+mark-sent/yêu cầu mới hoặc đối chiếu lại sau sửa thương mại. Xác nhận đề nghị cũ không yêu cầu chuẩn hiện tại còn hạn.
+Cờ hiệu lực không thay thế validation dữ liệu tier (giá âm, khoảng chồng lấn vẫn bị từ chối).
+
+Message payload mới có `comparisonRuleVersion=3`, `pricingEvaluatedAt`; mỗi phần tử `comparison` thêm:
+`customerPriceTierId`, `customerMinQuantity/customerMaxQuantity`, `customerMinInclusive/customerMaxInclusive`,
+`referenceUnitPrice` (giá mốc giao dài nhất; không có giao dài dương thì cao nhất của các phần fallback), `referenceDifferenceAmount`, `isBelowReference`,
+`currency`, `standardVersion`, `standardValidUntil`. `standardApprovedAt` là ngày hiệu lực đã resolve fallback.
+Các field `minQuantity/maxQuantity/minInclusive/maxInclusive` vẫn mô tả đoạn đối chiếu, không thay bằng khoảng
+khách gốc. Khi chọn được mốc giao dài nhất, `standardUnitPrice` của các đoạn dùng cùng giá mốc được chọn;
+không có giao dài dương thì giữ giá đối chiếu từng điểm/phần fallback. `differenceAmount/differencePercent`
+và `comparisonBasis` tương ứng với giá tham chiếu đó. FE dùng `referenceUnitPrice/isBelowReference` khi hiển thị quyết định cho toàn tier khách,
+không dùng `standardSellingPrice` chung. Backend làm tròn từng unitPrice/commission và giá chuẩn đến 6 chữ số
+AwayFromZero theo precision lưu trữ trước khi so; phần trăm vẫn 4 chữ số. Không làm tròn theo cách hiển thị VND.
+
+Ví dụ bảng chuẩn trên: 3500–4000 → 29400; 3000–4000 → 29400; 3000–3025 → 29800;
+6001–6024 → 29400; >10000 → 29800. Giá khách 500000 không cần duyệt giá thấp.
+
+### 12.0.1. Sửa giá khách trước khi gửi, kể cả PendingSendConfirmation=90
+
+`PUT /{quotationId}/save` và `PUT /{quotationId}/customer-price-tiers` cho phép sửa giá khách ở status 0/10/20/90.
+Status Sent=30 và các trạng thái sau gửi vẫn không được sửa. Quyền CRM/current company/customer visibility giữ
+nguyên, không cấp thêm role/capability. Tier builder vẫn kiểm tra giá/hoa hồng không âm, range và overlap,
+sortOrder, tối thiểu một tier active. Có thể sửa UnitPrice, CommissionAmount, Min/MaxQuantity, inclusive flags,
+IsActive và line Note; không nhận field status/company từ FE. `lines` thay toàn bộ dòng vẫn chỉ Draft.
+
+Save ở status 0/10/20 giữ trạng thái hiện tại và không tự yêu cầu gửi; mark-sent vẫn đối chiếu và yêu cầu lý do
+nếu cần như mục 12. Save ở status 90 xử lý toàn bộ form theo một transaction:
+
+| Giá sau lưu ở status 90 | Status sau lưu | Yêu cầu cũ |
+|---|---|---|
+| Có bất kỳ phần khoảng thấp hơn mức đối chiếu | 90 PendingSendConfirmation | superseded; tạo yêu cầu mới với snapshot và lý do mới |
+| Mọi giá bằng/cao hơn mức đối chiếu | 20 Approved | superseded; không còn yêu cầu duyệt giá thấp |
+| Thiếu lý do khi vẫn thấp, dữ liệu không hợp lệ hoặc conflict | Không thay đổi | rollback; yêu cầu cũ còn nguyên |
+
+Lưu không tự chuyển Sent và không ghi SentDate/tương tác đã gửi. Sau khi status=20, Sale gọi mark-sent riêng khi
+thực sự xác nhận gửi. Giá chuẩn được kiểm tra lại bằng helper/fallback/hiệu lực hiện có, không dùng HasDifference realtime.
+
+Request save ví dụ:
+
+```json
+{
+  "expectedUpdatedDate": "2026-10-17T10:00:00.123456",
+  "sendConfirmationNote": "Đề nghị mức chiết khấu mới theo khối lượng",
+  "customerPriceLines": [
+    {
+      "quotationLineId": "<lineId>", "note": "Ghi chú dòng báo giá",
+      "priceTiers": [
+        { "quantityRangeLabel": "350-500 kg", "minQuantity": 350, "maxQuantity": 500,
+          "minInclusive": true, "maxInclusive": true, "unitPrice": 75, "commissionAmount": 10,
+          "sortOrder": 0, "isActive": true },
+        { "quantityRangeLabel": "Không áp dụng", "minQuantity": 600, "maxQuantity": 700,
+          "unitPrice": 1, "commissionAmount": 0, "sortOrder": 1, "isActive": false }
+      ]
+    }
+  ]
+}
+```
+
+Endpoint customer-price-tiers nhận cùng `sendConfirmationNote` ở top level, collection vẫn tên `lines`.
+`sendConfirmationNote` chỉ bắt buộc khi lưu từ status 90 mà giá mới còn thấp hơn chuẩn; tối đa 4000 ký tự sau trim,
+chỉ lưu trong Body tin nhắn yêu cầu mới. Không tự tái sử dụng lý do cũ; không ghi lý do vào header/line/history.
+`customerPriceLines[].note` vẫn là ghi chú dòng bình thường, độc lập với lý do xác nhận. Mỗi lần save từ status 90
+được xem là một bản cần đối chiếu mới, kể cả khi form echo dữ liệu cũ; nếu vẫn cần duyệt, phải gửi lý do mới.
+
+Response 200 của hai endpoint bổ sung các field sau (các totals cũ vẫn giữ):
+
+```json
+{
+  "status": 90,
+  "requiresSendConfirmation": true,
+  "sendConfirmationMessageId": "<newMessageId>",
+  "updatedDate": "2026-10-17T10:00:00.123458",
+  "subTotal": 100000,
+  "totalAmount": 100000
+}
+```
+
+Khi không cần duyệt nữa: status=20, requiresSendConfirmation=false, sendConfirmationMessageId=null.
+Ở save từ 0/10/20, status giữ nguyên, requiresSendConfirmation=false, messageId=null. Field status của những
+mutation totals khác chưa cung cấp metadata có thể null: FE tải detail, không diễn giải null thành Draft.
+`updatedDate` là token persist mới, tăng theo độ chính xác microsecond kể cả khi clock trùng/lùi; FE giữ nguyên chuỗi.
+
+Mọi request message cũ chuyển payload.status=superseded, isUrgent=false, thêm supersededAt/supersededBy;
+Body/snapshot cũ giữ nguyên. Notification tương ứng chuyển Info và không còn khẩn; không xóa lịch sử.
+Giá còn thấp tạo request/notification khẩn mới trong cùng conversation. Giá không còn thấp tạo system message và
+notification QuotationMessageCreated để các client reload. Không tạo bảng/cột/migration.
+
+Confirm-sent kiểm tra requestMessageId, pending state và token đúng snapshot. Dùng requestId cũ với token mới
+vẫn bị từ chối, kể cả khi quotation đã Sent. GET messages chỉ trả canConfirmSent=true khi payload.pending và token
+khớp quotation hiện tại. FE không được giữ nút duyệt của request superseded hoặc coi superseded là confirmed.
+
+FE sau lưu phải thay token bằng response.updatedDate, reload quotation detail, messages và notification feed;
+chuyển nút/readonly theo status mới. Status 90 vẫn cho sửa giá nhưng chỉ BGĐ có quyền xác nhận request mới.
+Hiển thị lý do xác nhận riêng với ghi chú line/header. Nếu backend trả thiếu sendConfirmationNote, giữ draft và
+retry bằng token ban đầu sau khi nhập lý do (lần lưu lỗi đã rollback). HTTP 409 phải reload/đối chiếu dữ liệu,
+không tự ghi đè. Khi nhận QuotationSendConfirmationRequested hoặc QuotationMessageCreated, tải lại thread/detail.
+
+### FE: hiển thị hành động và gọi xác nhận
+
+GET messages của thread trả `canConfirmSent` theo permission người đang xem và trạng thái quotation hiện tại.
+Không persist quyền người xem trong payload dùng chung. FE chỉ hiện nút khi canConfirmSent=true và payload.status=pending.
+`payloadJson` vẫn là chuỗi JSON như contract tin nhắn hiện có, ví dụ sau khi parse:
+
+```json
+{
+  "contentType": "QuotationSendConfirmation",
+  "actionType": "quotation.confirm-sent",
+  "quotationId": "<quotationId>",
+  "requestMessageId": "<messageId>",
+  "conversationId": "<conversationId>",
+  "status": "pending",
+  "isUrgent": true,
+  "expectedUpdatedDate": "2026-10-17T10:00:00.123456",
+  "confirmedBy": null,
+  "confirmedAt": null,
+  "comparison": [
+    {
+      "quotationLineId": "<lineId>", "productCode": "P1",
+      "standardPricingVersionId": "<versionId>", "standardApprovedAt": "2026-10-16T09:00:00",
+      "minQuantity": 350, "maxQuantity": 600, "minInclusive": true, "maxInclusive": true,
+      "standardUnitPrice": 100, "customerUnitPrice": 90, "differenceAmount": -10, "differencePercent": -10,
+      "comparisonBasis": "ApprovedTier"
+    }
+  ]
+}
+```
+
+Min/max là phần khoảng khách được đối chiếu (phần giao, phần hở hoặc phần ngoài bảng); max=null là không có cận trên.
+`standardUnitPrice` là mức đối chiếu từ quy tắc trên; FE dùng `comparisonBasis` để phân biệt giá thuộc tier đã duyệt
+và giá tham chiếu fallback, không gọi phần ngoài bảng là tier đã được BGĐ duyệt. Payload cũ thiếu field này được
+hiểu là ApprovedTier khi hiển thị lịch sử. Rule hiện hành là `comparisonRuleVersion = 3`.
+Phiên bản chuẩn hoặc comparison rule mới không tự hủy yêu cầu duyệt mức giá khách. Yêu cầu version 0/1/2
+vẫn có thể xác nhận nếu còn pending hiện hành và dữ liệu thương mại không đổi; không dựng lại snapshot cũ.
+Chi tiết dấu thương mại, legacy token và mã lỗi: [Confirm-sent contract](CONFIRM_SENT_API.md).
+Tất cả giá cùng tiền tệ quotation, không kèm cost/margin.
+Body của yêu cầu mới giải thích căn cứ fallback bằng tiếng Việt; FE hiện có vẫn đọc được body mà không cần đổi API.
+
+`POST /api/v1/crm/quotations/{quotationId}/confirm-sent`:
+
+```json
+{
+  "requestMessageId": "<messageId của yêu cầu đang chờ>",
+  "expectedUpdatedDate": "2026-10-17T10:00:00.123456"
+}
+```
+
+Capability riêng `crm.quotation.send.confirm` cho President và Developer; Sale/Leader/anonymous không được duyệt.
+Developer có capability này kể cả token explicit thiếu claim; vẫn giữ scope/token/validation nghiệp vụ.
+Endpoint giữ Authorize, company/customer visibility, kiểm tra message đúng conversation/quotation, pending,
+và token khớp bản đang chờ. Thành công 204: chuyển Sent, ghi ngày/người xác nhận vào history/payload,
+tạo tương tác gửi và QuotationSent; yêu cầu chuyển confirmed, IsUrgent=false. Notification yêu cầu được cập nhật
+confirmed/Success, không xóa tin nhắn/lịch sử. FE tải lại thread/detail sau khi xác nhận hoặc nhận notification mới.
+Tin nhắn xác nhận không được sửa/xóa bằng API tin nhắn thông thường để không thay lý do hoặc làm kẹt yêu cầu.
+Toàn bộ quotation/message/notification/outbox trong một transaction; lỗi rollback, không lưu trạng thái dở dang.
+
+Không thêm schema/migration và không gửi email/PDF ra ngoài. Baseline seed/rollback permission hiện có được bổ sung
+claim mới; chưa chạy SQL lên database. Môi trường dùng token explicit phải cấp claim rồi login/refresh token;
+President với token explicit thiếu claim vẫn bị từ chối. Token cũ không explicit dùng fallback role tập trung.
 
 ## 12.1. Yêu cầu báo giá nội bộ
 
@@ -1849,7 +2129,8 @@ Sau đó FE gom theo `conversationId` nếu payload notification có trường n
 
 FE không được gọi API notification để tự tạo thông báo báo giá. Notification phải là side effect của command nghiệp vụ trong backend, ví dụ:
 
-- `mark-sent`: tạo/tái sử dụng conversation báo giá, tạo action message, publish `QuotationSent`.
+- `mark-sent`: tái sử dụng conversation báo giá, tạo action message; giá thấp hơn chuẩn publish
+  `QuotationSendConfirmationRequested`, còn lại publish `QuotationSent` theo mục 12.
 - Yêu cầu báo giá: command nghiệp vụ tạo request/message, publish `QuotationRequested`.
 - Hoàn thành báo giá: command nghiệp vụ cập nhật trạng thái hoặc message, publish `QuotationCompleted`.
 - Duyệt/từ chối báo giá: command nghiệp vụ cập nhật trạng thái hoặc message, publish `QuotationApproved`/`QuotationRejected`.
@@ -1926,7 +2207,7 @@ Visibility theo capability từ `IPricingVisibilityService`:
 ## 15. Snapshot bất biến và loại bỏ pricing legacy
 
 - Create/replace/refresh chỉ áp dụng `ProductPricingVersion` active, `Approved`, đúng
-  company/product/currency và luôn clone toàn bộ tiers vào `QuotationLinePriceTiers`.
+  company/product và currency VND; quy đổi theo tỷ giá báo giá rồi clone tiers vào `QuotationLinePriceTiers`.
 - Quotation detail không cập nhật lại snapshot cũ. Chỉ khi line chưa có tier, response mới kèm tier hệ thống
   `isSnapshot = false` để Sale nhập liệu; thao tác GET không ghi database. Nội dung `mark-sent` và PDF chỉ đọc snapshot.
 - Publish policy hoặc approve ProductPricingVersion mới không cập nhật Quotation đã có
@@ -1934,7 +2215,8 @@ Visibility theo capability từ `IPricingVisibilityService`:
 - `FormulaPricingEngine` là nơi duy nhất tính giá; calculator thuần chỉ nhận policy definition
   lấy từ DB. Workbench, workspace, resolver và options không giữ luật tính riêng.
 - Currency là input bắt buộc của policy, pricing version và API realtime; backend không tự
-  chọn một currency mặc định cho flow pricing.
+  suy currency của giá chuẩn từ tiền tệ báo giá. Luồng báo giá truyền VND khi resolve nguồn chuẩn,
+  giữ currency báo giá để tra lịch sử khách hàng và quy đổi snapshot/giá đối chiếu.
 - `PATCH /api/v1/plm/formulas/{formulaId}/pricing` đã deprecated và trả `410 Gone` với mã
   `PatchFormulaPricingDeprecated`. Flow ghi chính là ProductPricingVersion.
 - `Formula.TotalPrice`, `Formula.ProductionPrice`, `Formula.PresidentPrice` và các field legacy
@@ -1968,6 +2250,33 @@ Queries/
 Các request/response của Pricing Policy và ProductPricingVersion cũng được tách thành file
 theo đúng tên type trong `Dtos/`; không gom command, handler hoặc nhiều DTO pricing vào một file chung.
 
+## Xóa mềm báo giá nháp
+
+`DELETE /api/v1/crm/quotations/{quotationId}?expectedUpdatedDate=<token>` trả `204 No Content` khi thành công.
+Token bắt buộc là nguyên chuỗi `updatedDate` của GET detail; riêng dữ liệu cũ chưa cập nhật (`updatedDate=null`),
+dùng nguyên chuỗi `createdDate`. Không dùng thời gian máy hoặc tự đổi timezone.
+
+- Chỉ `Draft=0` chưa có `SentDate`. PendingApproval/Approved cần thu hồi yêu cầu định giá trước;
+  PendingSendConfirmation cần thu hồi xác nhận gửi trước. Báo giá đã gửi hoặc sau gửi không được xóa.
+- `[Authorize]`, current company và customer visibility áp dụng giống mutation sửa báo giá:
+  Sale trong scope khách hàng của mình, leader trong scope nhóm, full-view trong company hiện tại.
+  Developer vẫn phải qua company/scope và điều kiện trạng thái; FE không cấp thêm quyền cho API.
+- Chỉ đặt `Quotation.IsActive=false`, ghi `UpdatedBy/UpdatedDate`; giữ status, dòng/tier giá khách,
+  snapshot, terms, status history và hội thoại. Không xóa/đổi bảng giá chuẩn và không phát yêu cầu định giá mới.
+  List/detail hiện hành loại báo giá inactive; hội thoại lịch sử được giữ, mở báo giá đã xóa không còn trả detail.
+- Khóa mutation theo quotation, transaction và EF concurrency token bảo vệ đua với sửa/gửi/xóa khác.
+  Token cũ hoặc DB concurrency trả `409` theo conflict contract hiện có. Thiếu token, sai trạng thái,
+  không tồn tại/inactive/ngoài scope trả `400` với `OperationResult { success:false, message }`;
+  không phân biệt bản ghi ngoài scope với không tồn tại. Chưa đăng nhập trả `401`.
+- FE menu từng dòng có Xóa báo giá; ngoài Draft disable kèm lý do và hướng thu hồi.
+  Dialog tải detail mới và hiển thị mã/khách trước xác nhận. Cancel không mutation.
+  Sau 409 phải tải lại và xác nhận lại, không tự retry. Lỗi mạng báo kết quả chưa rõ và khóa xóa
+  đến khi kiểm tra lại; nếu đã xóa mà mất response, tải lại danh sách sẽ bỏ dòng đó.
+  Sau thành công tải lại list, giữ filter/sort.
+
+Ví dụ: `DELETE /api/v1/crm/quotations/{quotationId}?expectedUpdatedDate=2026-11-03T10%3A00%3A00.123456`
+(token minh họa định dạng, tích hợp phải lấy từ GET thật).
+
 ## 16. Giới hạn hiện tại
 
 Chưa có:
@@ -1978,7 +2287,6 @@ Chưa có:
 - Revise/version mới.
 - API tự gửi email.
 - Tự lưu và gửi bản PDF cố định khi `mark-sent`.
-- Endpoint xóa báo giá.
 
 Repo hiện chưa chứa migration cho các cột/bảng báo giá mới. Database chạy API phải được đồng bộ schema tương ứng trước khi sử dụng chức năng price tiers.
 
@@ -1989,8 +2297,8 @@ Repo hiện chưa chứa migration cho các cột/bảng báo giá mới. Databa
 `ApprovedAt`, fallback `UpdatedDate`, rồi `CreatedDate`, đúng với `pricingReviewDueDate` của Product Pricing
 Workbench. Đặt số ngày cấu hình bằng `0` để tắt hoàn toàn rule này.
 
-Khi đến hạn, backend giữ snapshot cũ, chuyển `Approved -> PendingApproval`, ghi status history nhưng không khóa
-`mark-sent`; Sale vẫn có thể gửi tier giá khách đã chuẩn bị. Backend đồng thời tạo action message trong đúng
+Khi đến hạn, backend giữ snapshot cũ, chuyển `Approved -> PendingApproval`, ghi status history.
+`mark-sent` chỉ cho tiếp tục khi có giá chuẩn Approved còn hiệu lực để đối chiếu theo mục 12. Backend tạo action message trong đúng
 `InternalConversation` có `RelatedType = Quotation` và publish
 `TopicNotifications.QuotationPricingExpired = 50` qua `INotificationService`. Topic trả về
 `topicCode = crm.quotation.pricing.expired`, `categoryCode = quotation`, `eventGroupCode = pricing-alert`,
@@ -2022,3 +2330,35 @@ Phần code nghiệp vụ trong `HRM.Application/Features/CRM/Quotations/Service
 - `Models/`: DTO/read-model nội bộ.
 
 Mỗi file đều giữ nguyên namespace `HRM.Application.Features.CRM.Quotations.Services` để tránh đổi hành vi cross file.
+
+
+### Thu hồi yêu cầu xác nhận gửi và phục hồi form
+
+`POST /api/v1/crm/quotations/{quotationId}/withdraw-send-confirmation` nhận
+`{ "expectedUpdatedDate": "2026-10-19T09:00:00.123456", "reason": "Cần yêu cầu giá lại" }`.
+Chỉ nhận `PendingSendConfirmation=90`; reason sau trim bắt buộc, tối đa 500 ký tự, token bắt buộc.
+Record phải active, cùng company và customer trong write visibility như luồng lưu.
+Endpoint không yêu cầu quyền xác nhận của BGĐ: người có quyền sửa báo giá trong scope được thu hồi yêu cầu chưa gửi.
+Không kiểm tra bảng chuẩn để tránh mắc kẹt khi chuẩn hết hạn/thiếu hoặc pending message đã mất.
+
+Trong cùng quotation lock/transaction: chuyển về Draft, tăng token theo precision microsecond,
+đánh dấu mọi pending request đọc được là superseded, bỏ urgency và cập nhật notification liên quan.
+Giữ nguyên giá/hoa hồng/range/tier ID và comparison/body lịch sử; không ghi SentDate/interaction gửi.
+Ghi status history với lý do; system message thông báo thu hồi qua QuotationMessageCreated (không tạo topic mới).
+Người nhận active cùng company gồm nhóm xác nhận hiện hành, Sale và người yêu cầu cũ; actor được silent.
+
+200 trả trực tiếp `QuotationTotalsDto` gồm `status=0`, `updatedDate`, totals và `sendConfirmationMessageId=null`.
+400 cho input/scope/status không hợp lệ; 409 cho token/DB conflict. Không retry tự động khi kết quả mạng chưa rõ.
+Confirm request cũ sau thu hồi bị chặn bởi status/token; confirm đồng thời thu hồi chỉ cho một transition hợp lệ.
+
+`comparisonRuleVersion=3` giữ quy tắc vùng giao dài nhất và dùng giá mốc cuối cho phần vượt bảng, đồng bộ FE.
+Yêu cầu phiên bản 0/1/2 không bị chặn chỉ vì khác version. Xác nhận chấp nhận giá khách/điều kiện đã đề nghị;
+chuẩn hiện tại thay đổi không làm mất hiệu lực. Dữ liệu thương mại đổi phải qua luồng đối chiếu lại/request mới.
+Không backfill comparison lịch sử bằng giá hiện tại. Contract đầy đủ: [CONFIRM_SENT_API.md](CONFIRM_SENT_API.md).
+
+FE lưu status 90 bằng atomic save, gửi `sendConfirmationNote` khi giá mới còn thấp hơn chuẩn.
+`standardPriceReview` là cảnh báo rà soát độc lập, không dùng làm điều kiện cấm gửi khi chuẩn còn hiệu lực.
+Metadata `approvedPricing.isEffectiveForSending/validFrom/validUntil/evaluatedAt` dùng cho preview; BE kiểm tra cuối cùng.
+Khi realtime đến lúc form dirty hoặc mutation đang chạy, FE giữ bản nhập và yêu cầu tải canonical có xác nhận.
+
+Ma trận kiểm thử và giới hạn kiểm chứng: [WORKFLOW_RECOVERY_TEST_MATRIX.md](WORKFLOW_RECOVERY_TEST_MATRIX.md).

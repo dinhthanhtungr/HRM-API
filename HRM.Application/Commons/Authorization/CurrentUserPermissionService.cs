@@ -18,6 +18,26 @@ internal sealed class CurrentUserPermissionService : ICurrentUserPermissionServi
             return false;
         }
 
+        // Developer can confirm CRM sending even with an older explicit permission token.
+        if (string.Equals(permission, ApplicationPermissions.Quotations.ConfirmSent, StringComparison.OrdinalIgnoreCase) &&
+            _currentUser.IsInRole(ApplicationRoles.Developer))
+            return true;
+
+        // Quyền mua hàng của PLPUUser được cấp theo role, kể cả token explicit chưa có claim.
+        if (string.Equals(permission, ApplicationPermissions.Purchasing.ManagePurchaseOrders, StringComparison.OrdinalIgnoreCase) &&
+            _currentUser.IsInRole(ApplicationRoles.Production.PLPUUser))
+            return true;
+
+        // Quan sát hội thoại công ty gắn với role Developer, tương thích cả token explicit cũ.
+        if (string.Equals(permission, ApplicationPermissions.InternalMail.ObserveCompanyConversations, StringComparison.OrdinalIgnoreCase))
+            return _currentUser.IsInAnyRole(ApplicationRoleSets.InternalMail.CompanyConversationObservers);
+        if (string.Equals(permission, ApplicationPermissions.InternalMail.SendCompanyMessages, StringComparison.OrdinalIgnoreCase))
+            return _currentUser.IsInAnyRole(ApplicationRoleSets.InternalMail.CompanyMessageSenders);
+
+        // GROUP-STORAGE-TRANSITION: synchronization-api — preserve old Developer tokens; a claim alone cannot grant this maintenance action.
+        if (string.Equals(permission, ApplicationPermissions.InternalMail.SynchronizeGroupStorage, StringComparison.OrdinalIgnoreCase))
+            return _currentUser.IsInAnyRole(ApplicationRoleSets.InternalMail.GroupStorageAdministrators);
+
         if (_currentUser.HasExplicitPermissionSet)
         {
             return _currentUser.Permissions.Contains(

@@ -1,6 +1,6 @@
 ﻿# CRM CustomerCare
 
-Đọc file này khi task liên quan CRM, customer, lead, claim, transfer, interaction, work plan, follow-up task hoặc AI summary.
+Đọc khi sửa CRM CustomerCare: customer, lead, claim, transfer, interaction, work plan, follow-up task hoặc AI summary. Task Quotation chỉ đọc file này nếu thay đổi flow CustomerCare mà Quotation gọi tới.
 
 ## Scope
 

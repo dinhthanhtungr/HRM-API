@@ -1,4 +1,4 @@
-using HRM.Application.Abstractions.Security;
+﻿using HRM.Application.Abstractions.Security;
 using HRM.Application.Features.CRM.Quotations.Dtos;
 using HRM.Application.Features.CRM.Quotations.Services;
 using HRM.Application.Features.Executive.SampleRequestPricingOverview;
@@ -19,6 +19,32 @@ namespace HRM.Application.Tests.Features.Executive;
 
 public sealed class SampleRequestPricingOverviewTests
 {
+    [Theory]
+    [InlineData(100_880, true, false)]
+    [InlineData(101_000, true, false)]
+    [InlineData(101_100, true, true)]
+    [InlineData(99_000, true, false)]
+    [InlineData(101_100, false, false)]
+    public void PriceIncreaseViews_RequireMoreThanOnePercentAndCompleteRealtimeCost(
+        int realtimeCost, bool complete, bool expected)
+    {
+        var approved = new PricingVersionRow
+        {
+            StandardSellingPrice = 100_000m,
+            MaterialCostSnapshot = 100_000m,
+            ManufacturingCost = 0m,
+            ProfitMarginRate = 0m
+        };
+        var source = new ProductPricingSourceOptionDto
+        {
+            CurrentMaterialCost = realtimeCost,
+            IsCurrentMaterialCostComplete = complete
+        };
+
+        Assert.Equal(expected, GetSampleRequestPricingOverviewQueryHandler.HasViewPriceIncrease(
+            approved, source, "VND"));
+    }
+
     [Fact]
     public void MapRecommendedFormula_CalculatesRealtimeStandardPriceFromApprovedPricingInputs()
     {
@@ -436,6 +462,7 @@ public sealed class SampleRequestPricingOverviewTests
     [Theory]
     [InlineData("President", true)]
     [InlineData("Developer", true)]
+    [InlineData("ACCUser", true)]
     [InlineData("SaleUser", false)]
     public void Access_IsLimitedToExecutivePricingManagers(string role, bool expected)
     {
@@ -444,7 +471,8 @@ public sealed class SampleRequestPricingOverviewTests
 
     [Theory]
     [InlineData("Developer", true)]
-    [InlineData("President", true)]
+    [InlineData("President", false)]
+    [InlineData("ACCUser", false)]
     [InlineData("SaleUser", false)]
     public void ExecutiveSampleRequestConversationAccess_IsLimitedToExistingExecutiveRoles(
         string role,
@@ -496,6 +524,26 @@ public sealed class SampleRequestPricingOverviewTests
         Assert.Contains("IS NULL", sql, StringComparison.Ordinal);
         Assert.Contains("ProductId", sql, StringComparison.Ordinal);
         Assert.Contains("CustomerId", sql, StringComparison.Ordinal);
+        Assert.Contains("KH_VIETAUS", sql, StringComparison.Ordinal);
+        Assert.Contains("CompanyId", sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void QuotationReferenceFilter_IncludesInternalCustomerWithoutDroppingCompanyOrSampleLink()
+    {
+        using var dbContext = CreateDbContext();
+        var sql = GetSampleRequestPricingOverviewQueryHandler.ApplyQuotationReferenceFilter(
+                dbContext.SampleRequests.AsNoTracking(),
+                dbContext.QuotationLines.AsNoTracking(),
+                [Guid.NewGuid()])
+            .ToQueryString();
+
+        Assert.Contains("KH_VIETAUS", sql, StringComparison.Ordinal);
+        Assert.Contains("CompanyId", sql, StringComparison.Ordinal);
+        Assert.Contains("CustomerId", sql, StringComparison.Ordinal);
+        Assert.Contains("SampleRequestId", sql, StringComparison.Ordinal);
+        Assert.Contains("ProductId", sql, StringComparison.Ordinal);
+        Assert.Contains("IS NULL", sql, StringComparison.Ordinal);
     }
 
     private static ApplicationDbContext CreateDbContext()

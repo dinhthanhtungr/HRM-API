@@ -5,5 +5,6 @@ namespace HRM.Infrastructure.DatabaseContext.ApplicationDbs;
 
 public partial class ApplicationDbContext
 {
+    public virtual DbSet<PLPUPoInvoiceSummaryRow> PLPUPoInvoiceSummaries { get; set; } = default!;
     public virtual DbSet<ElectricityMonthlyBillRow> ElectricityMonthlyBillRows { get; set; } = default!;
 }

@@ -1,92 +1,62 @@
-# Đối chiếu DeliveryOrders cũ và HRM.api
+# Chuyển nghiệp vụ DeliveryOrders legacy
 
-Nguồn đối chiếu: `F:\Backend\VietausWebAPI.Core\Application\Features\DeliveryOrders`.
-Thư mục này là module trong solution cũ, không phải một project độc lập đủ để copy và chạy.
-Nó phụ thuộc IUnitOfWork/repository, AutoMapper, current user, Warehouse, Timeline,
-formula rules, PDF/Excel renderer và entity ở các thư mục khác.
+Nguồn: hai folder DeliveryOrders trong `F:\Backend`, cùng dependency WarehouseReservationService,
+ProductFormulaRuleHelper và renderer Excel/PDF mà các use case gọi.
+Code runtime dùng database HRM.api, không kết nối hoặc import database legacy.
 
-HRM.api đã có module Dispatch cùng các entity delivery trước lần đối chiếu này.
-Bước một tái sử dụng module đó, thống nhất lượng phân bổ ở chọn đơn/create/update và sửa
-tổng tồn khả dụng nhiều lot; không copy service nguyên khối hoặc tạo bảng delivery thứ hai.
+## Mapping use case
 
-## Bảng chức năng
-
-| Chức năng legacy | Vị trí hiện tại / trạng thái |
+| Legacy | HRM.api |
 | --- | --- |
-| `GetAllAsync` | `Queries/GetDeliveryOrders`: list DTO, paging/filter và company scope. |
-| `GetAsync` | `Queries/GetDeliveryOrderDetail`: detail DTO và visibility cost. |
-| `GetSelectableLinesAsync` | `Queries/GetSelectableDeliveryLines`: PO còn lượng lập phiếu và lot khả dụng. |
-| `CreateAsync` | `Commands/CreateDeliveryOrder`: tạo Pending, validate lượng/lot, lưu transaction. |
-| `UpdateAsync` | `Commands/UpdateDeliveryOrder`: sửa Pending và thay bộ detail/lot active. |
-| `SoftDeleteAsync` | `Commands/CancelDeliveryOrder`: dùng hủy theo lifecycle hiện tại, không sao chép rollback RealQuantity/warehouse của legacy. |
-| `FinishAsync` | Legacy cập nhật **MerchandiseOrder**, không phải DeliveryOrder. Use case tương ứng ở `Features/PLM/SaleOrders/Commands/ConfirmSaleOrderDelivery`; quyền và điều kiện hiện tại khác legacy. |
-| `GetAllDelivererAsync` | `Features/Dispatch/Deliverers/Queries/GetDeliverers`. |
-| `CreateDelivererAsync` | Chưa chuyển. `DelivererInfor` hiện là danh mục không có CompanyId; cần chốt quản trị danh mục trước khi thêm mutation. |
-| `DeliveryOrderPdfService.GenerateAsync` | `Queries/ExportDeliveryOrder` + `DeliveryOrderPdfRenderer`: PDF từng phiếu chỉ đọc, không chuyển side effect của lần in đầu. Có thêm `DeliveryOrderExcelRenderer` cho XLSX từng phiếu. |
-| `BuildRowsAsync`, `BuildDeliveryFinishRowsAsync`, `BuildTransportWorkbookDataAsync` | Chưa chuyển báo cáo kế hoạch/hoàn tất/vận chuyển và Excel renderer. |
+| GetAllAsync / GetAsync | GetDeliveryOrders / GetDeliveryOrderDetail; bổ sung hasPrinted để FE nhận biết đã ghi nhận in. |
+| GetSelectableLinesAsync | GetSelectableDeliveryLines; giữ paging, lượng phân bổ/lot hiện tại; bổ sung trạng thái tạm dừng và filter merchandiseOrderId. |
+| GetAllDelivererAsync | GetDeliverers. |
+| CreateDelivererAsync | CreateDeliverer; danh mục toàn hệ thống, chỉ Admin tạo. |
+| CreateAsync | CreateDeliveryOrder; tự cấp PGH, ghi dòng PO/hàng kèm/người giao, tạo PRQ ExportFinishedGood trong cùng transaction. |
+| UpdateAsync | PATCH phiếu cập nhật note, deliveryPrice, người giao và numOfBags theo ID dòng. Đổi status dùng endpoint lifecycle riêng. |
+| SoftDeleteAsync | DELETE phiếu; IsActive=false, status=Cancelled, deactivate dòng/lot, rollback RealQuantity đã ghi nhận khi in, hủy PRQ/dòng PRQ liên quan. |
+| FinishAsync | FinishDelivery trong Dispatch: chỉ PO active Delivering -> Delivered, ghi EventLog. Giữ endpoint xác nhận của PLM hiện tại cho luồng yêu cầu giao đủ từng dòng. |
+| DeliveryOrderPdfService.GenerateAsync | POST print: trả PDF và ghi nhận lượng PO đúng một lần qua HasPrinted. GET pdf hiện tại vẫn chỉ đọc. |
+| ProductFormulaRuleHelper | DeliveryDocumentFormulaService: batch theo company, phân biệt một thành phần để tô ô quantity trên PDF. |
+| EnsureWarehouseRequestForDOAsync | DeliveryWarehouseRequestService: group theo product/name/lot, tổng quantity/số bao, Pending + ExportFinishedGood, codeFromRequest=PGH. Không reserve/consume tồn. |
+| BuildRowsAsync / ExportDeliveryPlanExcel | ExportDeliveryReport Plan + DeliveryPlanReportQuery + renderer Plan. |
+| BuildDeliveryFinishRowsAsync / ExportDeliveryFinish | ExportDeliveryReport Finish + DeliveryFinishReportQuery + renderer Finish. |
+| BuildTransportWorkbookDataAsync / ExportTransportWorkbook | ExportDeliveryReport Transport + DeliveryTransportReportQuery + renderer Transport. |
+| 5 repository / contracts | DbSet trên IDispatchReadDbContext/IDispatchWriteDbContext, implementation bởi ApplicationDbContext. Không dựng UnitOfWork thứ hai. |
 
-Contract cũ và mới không tương thích hoàn toàn: route/DTO/wrapper khác nhau; create hiện trả GUID,
-FE tải detail sau tạo. Legacy có `LotNoList`; contract mới nhận lots có quantity riêng, hỗ trợ fallback
-đã mô tả trong README. Đọc source không đồng nghĩa đã import dữ liệu lịch sử.
+## Kiến trúc và tương thích
 
-## Clean Architecture và điểm mở rộng
+Controller -> MediatR command/query -> abstraction DbContext/service ở Application.
+EF context và PDF/Excel renderer ở Infrastructure; Domain giữ entity hiện có.
+Service legacy nguyên khối được tách theo use case; không đổi namespace bằng copy cơ học.
+Các mẫu Excel được chuyển từ helper legacy và tách file Plan/Finish/Transport.
 
-```text
-HRM.Api/Controllers/Dispatch/DeliveryOrdersController.cs
-  -> ISender (MediatR)
-HRM.Application/Features/Dispatch/DeliveryOrders/
-  Commands/<Action>/             command và handler riêng
-  Queries/<Action>/              query và handler riêng
-  Queries/DeliveryOrderQuantityQuery.cs  scope và lượng phân bổ dùng chung
-  Dtos/                         contract API
-  DeliveryOrder*Rules.cs         rule thuần: lifecycle, lot, tồn, quyền hiện có
-  DeliveryOrderLotInventoryService.cs    đọc tồn/cost qua abstraction
-HRM.Application/Abstractions/Persistence/Dispatch/
-  IDispatchReadDbContext.cs / IDispatchWriteDbContext.cs
-HRM.Infrastructure/DatabaseContext/
-  ApplicationDbs/ApplicationDbContext.Delivery.cs
-  Configurations/DeliverySchema/
-HRM.Domain/Entities/DeliverySchema/ + Enums/Deliveries/
-```
+Route/wrapper/DTO của project hiện tại được giữ. FE gọi các endpoint bổ sung theo [LEGACY-CONTRACT](LEGACY-CONTRACT.md).
+Create vẫn trả GUID thay vì DTO legacy; FE đọc detail sau tạo. ExternalId request được giữ để tương thích binding,
+nhưng backend luôn sinh PGH. Status create vẫn Pending, audit/company lấy từ current user.
+Lot consumption vẫn là nguồn chuẩn, LotNoList là fallback lịch sử; không quay lại phân bổ lot bằng chuỗi.
+AttachedGoods là hàng kèm, không phải file upload. PUT giữ hàng kèm đã lưu; PATCH có thể cập nhật số bao của chúng.
 
-Application không tham chiếu Infrastructure; implementation EF ở Infrastructure cung cấp
-context qua abstraction. Controller chỉ bind request, gọi use case và trả response.
-Query lượng phân bổ là IQueryable để EF dịch SQL, không tải toàn bộ lịch sử giao về bộ nhớ.
-Đổi rule lượng phải dùng chung cho selectable/create/update và cập nhật test cùng tài liệu.
+## Những điều chỉnh bắt buộc khi chuyển
 
-## Những hành vi không được vô tình mang sang
+- Không sao chép AllowAnonymous, company do FE tùy chọn, query id không scope hoặc exception nội bộ của legacy.
+- Danh mục DelivererInfor không có CompanyId: Admin quản trị toàn hệ thống; không thêm cột hoặc giả lập scope.
+- Side effect in được đưa vào POST; GET file không ghi dữ liệu. HasPrinted được claim atomic trong transaction,
+  lỗi render/ghi DB rollback; retry print không cộng lượng lần nữa.
+- DELETE chỉ trừ lượng khi HasPrinted=true và chỉ trừ dòng PO không phải hàng kèm. Legacy trừ cả phiếu chưa in;
+  giữ lỗi đó sẽ làm mất lượng giao của phiếu khác. Không rollback kho thực tế vì source không consume kho.
+- DELETE và PATCH khóa header; update lượng PO dùng phép tăng/giảm atomic để không ghi đè quantity của phiếu khác.
+  Không tự retry transaction bị database từ chối/deadlock; caller xử lý lỗi và thử lại.
+- PUT lượng/lot chỉ áp dụng Pending chưa in; PRQ đã xử lý không cho sync lại. Phiếu đã in chỉ sửa metadata/số bao
+  bằng PATCH hoặc DELETE để rollback. Cancel hiện tại dành cho phiếu chưa in, cũng hủy PRQ liên quan.
+- Báo cáo Plan nhận diện khách nội bộ theo code KH_VIETAUS hiện hành, thay GUID hard-code của database cũ.
+- Report query project scalar/DTO, không tải cost. Transport có phí giao và dùng quyền manage hiện có.
+  Tên công ty lấy dữ liệu hiện tại; sheet người giao xử lý trùng tên sau sanitize/truncate.
+- Giữ quy tắc bảo mật, kiểm tra tồn/quantity và visibility hiện tại. Không thêm migration/schema/backfill/seed quyền.
 
-PDF legacy không chỉ render: lần in đầu có thể cộng `MerchandiseOrderDetail.RealQuantity`,
-đổi trạng thái dòng/PO, đánh dấu `HasPrinted` và ghi dữ liệu. Nếu chuyển exporter, phải xác định
-riêng command xác nhận/in và cơ chế idempotency/transaction; không giấu mutation vào GET tải file.
-Lượng phân bổ HRM.api đang dựa trên phiếu còn hiệu lực, không dựa trên lần in hoặc RealQuantity.
+## Verification
 
-Legacy soft-delete còn rollback quantity và có phụ thuộc warehouse. Hủy trong HRM.api chỉ đổi
-status; không ghép hai hành vi đó khi chưa có thiết kế thống nhất với kho.
-
-Không thêm schema, seed quyền, backfill hay kết nối database cũ trong lần chuyển bước một.
-Các entity trip/stop/vehicle đã tồn tại không có nghĩa là đã có API xếp chuyến/tuyến hoàn chỉnh.
-
-## Nâng cấp tiếp
-
-1. PDF/XLSX từng phiếu đã có projection DTO ở Application và renderer ở Infrastructure.
-   Nếu cần mẫu ISO/logo giống legacy hoặc ghi nhận lần in, bổ sung contract riêng;
-   chốt command xác nhận nghiệp vụ trước khi triển khai side effect legacy.
-2. Excel: tách query số liệu và renderer; dùng cùng rule lượng, visibility và giới hạn ngày/số dòng.
-3. Kho/chuyến: chốt mốc reserve/consume/release, khóa đồng thời, retry/idempotency và quyền quản trị
-   người giao trước khi thêm transaction hoặc schema.
-4. Dữ liệu cũ: lập mapping ID/company/status/lot, đối chiếu quantity, chạy dry-run trước import.
-   Không suy ra lượng từng lot từ chuỗi nhiều lot; phải có nguồn phân bổ hoặc quy trình xử lý ngoại lệ.
-
-## Verification cho bảo trì
-
-```powershell
-dotnet build HRM.Api\HRM.Api.csproj -p:OutDir=..\artifacts\verify-build\
-dotnet test HRM.Application.Tests\HRM.Application.Tests.csproj --filter FullyQualifiedName~Features.Dispatch.DeliveryOrders -p:OutDir=..\artifacts\verify-tests\
-git diff --check
-```
-
-Test lượng bao phủ Pending/Completed/legacy/canceled, company khác, detail/header inactive,
-attachment, loại chính phiếu khi update và EF PostgreSQL SQL translation không kết nối DB.
-Test tồn bao phủ reserve tổng chưa gắn lot và giới hạn tổng lot/product. Cần chạy checklist
-database thực trong [DISPATCH-FLOW](DISPATCH-FLOW.md) trước triển khai tích hợp FE/kho.
+Build HRM.Api và chạy tests Features.Dispatch. Regression gồm guard quyền/scope/input, SQL translation và không đọc cost,
+group yêu cầu kho theo lot, chia phí theo người giao, xuất ba workbook và tên sheet trùng.
+Các mutation in/xóa cần chạy checklist database thật ở [LEGACY-CONTRACT](LEGACY-CONTRACT.md) để kiểm tra transaction,
+concurrency và dữ liệu lịch sử. Unit/SQL translation test không thay thế kiểm thử PostgreSQL runtime.

@@ -14,18 +14,18 @@ builder.Services.AddPresentation(builder.Configuration, builder.Environment);
 
 var app = builder.Build();
 
+app.UseSwagger();
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwaggerUI(options => options.InjectJavascript("/swagger/swagger-development-auto-login.js"));
+}
+else
+{
+    app.UseSwaggerUI();
+}
+
 if (app.Environment.IsDevelopment() || app.Environment.IsStaging())
 {
-    app.UseSwagger();
-    if (app.Environment.IsDevelopment())
-    {
-        app.UseSwaggerUI(options => options.InjectJavascript("/swagger/swagger-development-auto-login.js"));
-    }
-    else
-    {
-        app.UseSwaggerUI();
-    }
-
     app.MapGet("/", () => Results.Redirect("/swagger"));
 }
 else
@@ -47,6 +47,7 @@ app.UseForwardedHeaders(new ForwardedHeadersOptions
 //app.UseHttpsRedirection();
 app.UseCors("DefaultCors");
 app.UseAuthentication();
+app.UseMiddleware<HRM.Api.Security.DeveloperSampleWorkMiddleware>();
 app.UseAuthorization();
 
 if (app.Environment.IsDevelopment())

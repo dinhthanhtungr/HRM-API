@@ -9,8 +9,7 @@ API quản lý nhân viên, lookup công ty/bộ phận, tài khoản đăng nh�
 - `Developer` có global company scope.
 - Chỉ `Admin`, `Developer` được tạo loại role và cấp/thu hồi role đặc quyền.
 - `President` không nhìn thấy và không được cấp/thu hồi `Admin`, `Developer`, `President`.
-- Chỉ `Developer` nhận số assignment toàn hệ thống trong `activeAssignmentCount`; role khác nhận `0` để không
-  lộ thống kê chéo company.
+- `Developer` nhận activeAssignmentCount toàn hệ thống; HR (`HC_HRUser`, `HCHRUser`) và President nhận số trong company hiện tại. Role khác nhận 0.
 
 ## Lookup
 
@@ -189,6 +188,49 @@ GET /api/v1/employees/roles/lookup
   }
 ]
 ```
+
+### Danh sách tài khoản được cấp role
+
+```http
+GET /api/v1/employees/roles/{roleId}/accounts?pageNumber=1&pageSize=20&keyword=nguyen
+```
+
+HR (`HC_HRUser`, `HCHRUser`), President và Developer đã đăng nhập được gọi; role khác nhận `403`, chưa đăng nhập nhận `401`.
+Developer xem toàn hệ thống. HR/President chỉ xem account liên kết Employee thuộc company hiện tại; thiếu company nhận 403. Không nhận companyId từ client. Scope giống activeAssignmentCount của người gọi. HR/President không xem role đặc quyền Admin/Developer/President, kể cả gọi trực tiếp bằng roleId.
+Chọn role bằng `roleId` từ lookup; không hỗ trợ `roleName`.
+
+`pageNumber` mặc định 1; `pageSize` mặc định 15, tối đa 100; giá trị nhỏ hơn 1 dùng mặc định.
+`keyword` được trim, tối đa 200 ký tự, tìm chuỗi con không phân biệt hoa/thường trong họ tên,
+tên đăng nhập và email. Chuỗi trắng tương đương không tìm kiếm. Không hỗ trợ sort tùy chọn;
+thứ tự cố định theo fullName, userName, userId. Role không tồn tại trả `404`, đầu vào không hợp lệ trả `400`.
+
+```json
+{
+  "items": [{
+    "employeeId": "11111111-1111-1111-1111-111111111111",
+    "userId": "22222222-2222-2222-2222-222222222222",
+    "fullName": "Nguyễn Văn An",
+    "userName": "nvan",
+    "email": "nvan@example.com"
+  }],
+  "totalCount": 10,
+  "pageNumber": 1,
+  "pageSize": 20,
+  "totalPages": 1,
+  "hasPreviousPage": false,
+  "hasNextPage": false
+}
+```
+
+Mỗi item là một assignment có `ApplicationUserRole.IsActive = true` cho role được chọn.
+Active ở đây không kiểm tra Employee.IsActive, ngày nghỉ, lockout hay trạng thái đăng nhập.
+`userId`, `userName`, `email`, `employeeId` lấy từ Identity; `fullName` lấy từ Employee liên kết.
+Account không liên kết Employee chỉ xuất hiện trong scope toàn hệ thống của Developer, với employeeId/fullName null; email/userName có thể null.
+Không fallback fullName sang personName. Không trả password, token hoặc dữ liệu HR khác.
+`totalCount` là số assignment sau tìm kiếm, trước phân trang; không có keyword thì dùng cùng điều kiện
+với activeAssignmentCount. Hai request riêng có thể khác số nếu assignment thay đổi giữa các lần đọc.
+Role không có assignment trả items rỗng và totalCount 0; trang vượt dữ liệu trả items rỗng.
+API chỉ đọc, không tạo migration hay side effect.
 
 ### Tạo loại role
 

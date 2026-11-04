@@ -4,6 +4,7 @@ using HRM.Application.Abstractions.Security;
 using HRM.Application.Features.Dispatch.DeliveryOrders.Dtos;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using HRM.Application.Features.Dispatch.DeliveryOrders.Services;
 
 namespace HRM.Application.Features.Dispatch.DeliveryOrders.Queries.ExportDeliveryOrder;
 
@@ -11,7 +12,7 @@ internal sealed class ExportDeliveryOrderQueryHandler(
     IDispatchReadDbContext db,
     ICurrentUser currentUser,
     IDeliveryOrderPdfRenderer pdf,
-    IDeliveryOrderExcelRenderer excel) : IRequestHandler<ExportDeliveryOrderQuery, DeliveryOrderFileDto?>
+    IDeliveryOrderExcelRenderer excel, DeliveryDocumentFormulaService formulaDisplay) : IRequestHandler<ExportDeliveryOrderQuery, DeliveryOrderFileDto?>
 {
     public async Task<DeliveryOrderFileDto?> Handle(ExportDeliveryOrderQuery request, CancellationToken cancellationToken)
     {
@@ -22,6 +23,7 @@ internal sealed class ExportDeliveryOrderQueryHandler(
         var document = await DeliveryOrderDocumentQuery.Project(db.DeliveryOrders.AsNoTracking(), request.Id, companyId)
             .SingleOrDefaultAsync(cancellationToken);
         if (document is null) return null;
+        if (!request.Excel) await formulaDisplay.EnrichAsync(document, companyId, cancellationToken);
 
         cancellationToken.ThrowIfCancellationRequested();
         // Tên file chỉ dùng GUID server-owned, không lấy tên/mã có ký tự tùy ý từ dữ liệu.

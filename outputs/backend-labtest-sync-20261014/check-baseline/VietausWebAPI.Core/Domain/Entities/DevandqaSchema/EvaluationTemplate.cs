@@ -1,0 +1,38 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using VietausWebAPI.Core.Domain.Entities.AttachmentSchema;
+using VietausWebAPI.Core.Domain.Entities.CompanySchema;
+using VietausWebAPI.Core.Domain.Entities.HrSchema;
+using VietausWebAPI.Core.Domain.Entities.ManufacturingSchema;
+using VietausWebAPI.Core.Domain.Entities.MaterialSchema;
+using VietausWebAPI.Core.Domain.Entities.WarehouseSchema;
+using VietausWebAPI.Core.Domain.Enums.Attachment;
+using VietausWebAPI.Core.Domain.Enums.Devandqa;
+using VietausWebAPI.Core.Domain.Enums.WareHouses;
+
+namespace VietausWebAPI.Core.Domain.Entities.DevandqaSchema;
+
+/// <summary>Mẫu chung theo chức năng và công ty; không bắt buộc gắn với nguyên liệu/sản phẩm.</summary>
+public class EvaluationTemplate
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public string Code { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public EvaluationTemplateType Type { get; set; }
+    public int Version { get; set; } = 1;
+    public EvaluationTemplateStatus Status { get; set; }
+    public bool IsDefault { get; set; }
+    public DateTime? EffectiveFrom { get; set; }
+    public Guid CreatedBy { get; set; }
+    public DateTime CreatedDate { get; set; }
+    public Guid? PublishedBy { get; set; }
+    public DateTime? PublishedDate { get; set; }
+    public Company Company { get; set; } = null!;
+    public Employee CreatedByEmployee { get; set; } = null!;
+    public Employee? PublishedByEmployee { get; set; }
+    public ICollection<EvaluationTemplateItem> Items { get; set; } = new List<EvaluationTemplateItem>();
+}

@@ -36,7 +36,7 @@ internal sealed class GetCustomerByIdQueryHandler
             return OperationResult<CustomerDetailDto>.Fail("CustomerId is invalid.");
         }
 
-        var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+        var scope = await _visibilityService.BuildReadScopeAsync(cancellationToken);
         var leaderGroupIds = scope.LeaderGroupIds.ToArray();
         var restrictAssignmentsToLeaderGroups = !scope.HasFullCustomerView && leaderGroupIds.Length > 0;
 

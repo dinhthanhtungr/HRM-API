@@ -5,5 +5,6 @@ public sealed class InternalMailNotificationLink
 {
     public Guid NotificationId { get; set; }
     public Guid? ConversationId { get; set; }
+    public Guid? MessageId { get; set; }
     public bool HasConversation { get; set; }
 }

@@ -66,7 +66,7 @@ internal sealed class ProductPricingRequestQueryService
                     message.Conversation.RelatedType == InternalMailRelatedType.Quotation &&
                     message.Conversation.RelatedId == requested.QuotationId &&
                     message.SentAt >= requested.RequestedAt));
-        var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+        var scope = await _visibilityService.BuildReadScopeAsync(cancellationToken);
         var visibleQuotations = _visibilityService
             .ApplyQuotationVisibility(
                 _crmDbContext.Quotations.AsNoTracking(),
@@ -118,7 +118,7 @@ internal sealed class ProductPricingRequestQueryService
             return [];
         }
 
-        var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+        var scope = await _visibilityService.BuildReadScopeAsync(cancellationToken);
         var quotationRows = await _visibilityService
             .ApplyQuotationVisibility(
                 _crmDbContext.Quotations.AsNoTracking(),

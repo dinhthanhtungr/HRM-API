@@ -1,0 +1,148 @@
+using HRM.Application.Abstractions.Persistence.Purchasing;
+using HRM.Domain.Enums.Devandqa;
+using HRM.Domain.Enums.WareHouses;
+using Microsoft.EntityFrameworkCore;
+namespace HRM.Application.Features.Reports.PLPU;
+public partial class PLPUPurchaseOverviewReportRepository
+{
+        private IQueryable<PLPUPurchaseReceiptReportDto> BuildReceiptQuery(PLPUPurchaseOverviewQuery query)
+        {
+            var fromDate = query.From?.Date;
+            var toDate = query.To?.Date.AddDays(1);
+            var keyword = query.Keyword?.Trim();
+
+            var q =
+                from po in _context.PurchaseOrders.AsNoTracking()
+                join s in _context.Suppliers.AsNoTracking().Where(x => x.CompanyId == query.CompanyId)
+                    on po.SupplierId equals s.SupplierId into sJoin
+                from s in sJoin.DefaultIfEmpty()
+                join wr in _context.WarehouseRequests.AsNoTracking()
+                    on po.ExternalId equals wr.codeFromRequest
+                join v in _context.WarehouseVouchers.AsNoTracking()
+                    on wr.RequestId equals v.RequestId
+                join vd in _context.WarehouseVoucherDetails.AsNoTracking()
+                    on v.VoucherId equals vd.VoucherId
+                join ledger in _context.WarehouseShelfLedgers.AsNoTracking()
+                    on vd.VoucherDetailId equals ledger.VoucherDetailId
+                where wr.CompanyId == query.CompanyId && v.CompanyId == query.CompanyId && ledger.CompanyId == query.CompanyId
+                      && PurchaseReceiptVoucherTypes.Contains(v.VoucherType)
+                      && ledger.DeltaKg > 0
+                let qcLatest = _context.QCInputByQCs.AsNoTracking()
+                    .Where(qc => qc.VoucherDetailId == vd.VoucherDetailId)
+                    .OrderByDescending(qc => qc.CreatedDate)
+                    .Select(qc => new
+                    {
+                        qc.QCInputByQCId,
+                        qc.ImportWarehouseType,
+                        qc.CreatedDate
+                    })
+                    .FirstOrDefault()
+                select new { po, s, wr, v, vd, ledger, qcLatest };
+
+            q = q.Where(x => (x.po.OrderType ?? "") == SupplierOrderType);
+
+            q = q.Where(x =>
+                EF.Functions.ILike(
+                    x.ledger.ProductCode ?? x.vd.ProductCode ?? "",
+                    IncludedMaterialCodePrefix + "%"));
+
+            foreach (var keyworde in ExcludedMaterialCodeKeywords)
+            {
+                var pattern = "%" + keyworde + "%";
+
+                q = q.Where(x =>
+                    !EF.Functions.ILike(
+                        x.ledger.ProductCode ?? x.vd.ProductCode ?? "",
+                        pattern));
+            }
+
+            q = q.Where(x =>
+                string.IsNullOrEmpty(x.po.ExternalId) ||
+                !EF.Functions.ILike(x.po.ExternalId, "PO%"));
+
+            if (!query.IncludeInactive)
+                q = q.Where(x => x.po.IsActive == true && x.wr.IsActive);
+
+            if (fromDate.HasValue)
+                q = q.Where(x => x.po.CreateDate >= fromDate.Value);
+
+            if (toDate.HasValue)
+                q = q.Where(x => x.po.CreateDate < toDate.Value);
+
+            if (query.CompanyId.HasValue)
+                q = q.Where(x => x.po.CompanyId == query.CompanyId.Value);
+
+            if (query.PurchaseOrderId.HasValue)
+                q = q.Where(x => x.po.PurchaseOrderId == query.PurchaseOrderId.Value);
+
+            if (query.SupplierId.HasValue)
+                q = q.Where(x => x.po.SupplierId == query.SupplierId.Value);
+
+            if (query.MaterialId.HasValue)
+            {
+                q = q.Where(x =>
+                    _context.PurchaseOrderDetails.AsNoTracking().Any(pod =>
+                        pod.PurchaseOrderId == x.po.PurchaseOrderId &&
+                        pod.IsActive &&
+                        pod.MaterialId == query.MaterialId.Value &&
+                        (pod.MaterialExternalIDSnapshot ?? "") ==
+                        (x.ledger.ProductCode ?? x.vd.ProductCode ?? "")
+                    )
+                );
+            }
+
+            if (!string.IsNullOrWhiteSpace(query.OrderType))
+                q = q.Where(x => (x.po.OrderType ?? "") == query.OrderType);
+
+            if (!string.IsNullOrWhiteSpace(query.Status))
+                q = q.Where(x => (x.po.Status ?? "") == query.Status);
+
+            if (!string.IsNullOrWhiteSpace(keyword))
+            {
+                q = q.Where(x =>
+                    (x.po.ExternalId ?? "").Contains(keyword!) ||
+                    (x.ledger.ProductCode ?? x.vd.ProductCode ?? "").Contains(keyword!) ||
+                    (x.vd.ProductName ?? "").Contains(keyword!) ||
+                    (x.ledger.LotNumber ?? x.vd.LotNumber ?? "").Contains(keyword!) ||
+                    (x.s != null && (x.s.SupplierName ?? "").Contains(keyword!)) ||
+                    (x.s != null && (x.s.ExternalId ?? "").Contains(keyword!))
+                );
+            }
+
+            return q.Select(x => new PLPUPurchaseReceiptReportDto
+            {
+                WarehouseRequestId = x.wr.RequestId,
+                CodeFromRequest = x.wr.codeFromRequest ?? string.Empty,
+
+                WarehouseVoucherId = x.v.VoucherId,
+                WarehouseVoucherCode = x.v.VoucherCode ?? string.Empty,
+
+                WarehouseVoucherDetailId = x.ledger.VoucherDetailId ?? x.vd.VoucherDetailId,
+                VoucherType = x.v.VoucherType,
+
+                ReceiptDate = x.ledger.CreatedAt,
+
+                PurchaseOrderId = x.po.PurchaseOrderId,
+                PurchaseOrderDetailId = null,
+
+                POExternalId = x.po.ExternalId ?? string.Empty,
+                LineNo = 0,
+
+                SupplierId = x.po.SupplierId,
+                SupplierName = x.s != null ? (x.s.SupplierName ?? string.Empty) : string.Empty,
+
+                ProductCode = x.ledger.ProductCode ?? x.vd.ProductCode ?? string.Empty,
+                ProductName = x.vd.ProductName ?? string.Empty,
+                LotNumber = x.ledger.LotNumber ?? x.vd.LotNumber ?? string.Empty,
+
+                QtyKg = x.ledger.DeltaKg,
+
+                QCResult = x.qcLatest != null ? x.qcLatest.ImportWarehouseType : null,
+                QCCreatedDate = x.qcLatest != null ? x.qcLatest.CreatedDate : null,
+
+                VoucherDetailType = x.vd.VoucherType
+            });
+        }
+
+
+}

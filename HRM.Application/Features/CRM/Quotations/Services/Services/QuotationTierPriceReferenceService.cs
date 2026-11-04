@@ -5,7 +5,6 @@ namespace HRM.Application.Features.CRM.Quotations.Services;
 
 internal sealed class QuotationTierPriceReferenceService
 {
-    private const string PricingReferenceCurrency = "VND";
 
     private readonly QuotationProductTierPricingResolver _pricingResolver;
 
@@ -30,10 +29,14 @@ internal sealed class QuotationTierPriceReferenceService
             return;
         }
 
+        if (!QuotationPricingCurrencyConverter.TryValidateQuotationCurrency(
+                detail.Currency, detail.ExchangeRate, out var error))
+            throw new InvalidOperationException(error);
+
         var referencesByProduct = await _pricingResolver.ResolveAsync(
             productIds,
             companyId,
-            PricingReferenceCurrency,
+            detail.Currency,
             detail.CustomerId,
             detail.QuotationId,
             visibleQuotations,
@@ -72,9 +75,11 @@ internal sealed class QuotationTierPriceReferenceService
                         MaxQuantity = standard.MaxQuantity,
                         MinInclusive = standard.MinInclusive,
                         MaxInclusive = standard.MaxInclusive,
-                        UnitPrice = standard.UnitPrice ?? 0m,
+                        UnitPrice = QuotationPricingCurrencyConverter.ConvertFromStandardPricing(
+                            standard.UnitPrice ?? 0m, detail.Currency, detail.ExchangeRate),
                         CommissionAmount = 0m,
-                        CustomerUnitPrice = standard.UnitPrice ?? 0m,
+                        CustomerUnitPrice = QuotationPricingCurrencyConverter.ConvertFromStandardPricing(
+                            standard.UnitPrice ?? 0m, detail.Currency, detail.ExchangeRate),
                         SortOrder = standard.SortOrder
                     })
                     .ToArray();

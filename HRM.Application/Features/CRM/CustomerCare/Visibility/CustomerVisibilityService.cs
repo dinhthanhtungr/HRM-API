@@ -1,4 +1,4 @@
-﻿using HRM.Application.Abstractions.Persistence.CRM.CustomerCare;
+using HRM.Application.Abstractions.Persistence.CRM.CustomerCare;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Abstractions.Commons.Time;
 using HRM.Application.Commons.Authorization;
@@ -29,6 +29,16 @@ namespace HRM.Application.Features.CRM.CustomerCare.Visibility
             _dbContext = dbContext;
             _currentUser = currentUser;
             _dateTimeProvider = dateTimeProvider;
+        }
+
+        public async Task<ViewerScope> BuildReadScopeAsync(CancellationToken cancellationToken = default)
+        {
+            var scope = await BuildScopeAsync(cancellationToken);
+            return scope with
+            {
+                HasFullCustomerView = scope.HasFullCustomerView ||
+                    _currentUser.IsInAnyRole(ApplicationRoleSets.CRM.ExecutiveReaders)
+            };
         }
 
         public async Task<ViewerScope> BuildScopeAsync(CancellationToken cancellationToken = default)
@@ -110,7 +120,7 @@ namespace HRM.Application.Features.CRM.CustomerCare.Visibility
             ViewerScope scope)
             => ApplyCustomerVisibilityCore(query, scope, includeInactive: true);
 
-        private IQueryable<Customer> ApplyCustomerVisibilityCore(
+        internal static IQueryable<Customer> ApplyCustomerVisibilityCore(
             IQueryable<Customer> query,
             ViewerScope scope,
             bool includeInactive)
@@ -239,7 +249,7 @@ namespace HRM.Application.Features.CRM.CustomerCare.Visibility
 
 
         // =========================== Helper Methods ===========================
-        private IQueryable<Customer> ExcludeRestrictedCustomer(
+        private static IQueryable<Customer> ExcludeRestrictedCustomer(
             IQueryable<Customer> query)
         {
             query = query.Where(x => x.CustomerId != CustomerVisibilityConstants.RestrictedCustomerId);

@@ -152,3 +152,8 @@ Use `isImage` before rendering an image preview. Non-image files should be rende
 - Use `AttachmentSlot.InternalMail` for files attached to an Internal Mail message; use business slots such as `SampleRequest` only for files attached directly to that business record.
 - Add thumbnails as a separate use case or endpoint if large images become slow.
 - Do not expose `StoragePath` to clients.
+
+
+## Attachment theo chỉ tiêu
+
+Slot EvaluationAttachment=19 chỉ đi qua API evaluation theo entity cha; service attachment chung chặn upload/read/delete slot này. Xem [contract](../DevAndQA/Shared/Evaluations/ATTACHMENT_SAVE_API.md).

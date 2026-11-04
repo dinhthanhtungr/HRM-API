@@ -1,4 +1,4 @@
-﻿# Notifications, SignalR, Web Push
+# Notifications, SignalR, Web Push
 
 Đọc file này khi task liên quan notifications, notification recipients, user states, outbox, SignalR, Web Push hoặc internal mail notification.
 
@@ -21,6 +21,9 @@ Nếu thu hồi người nhận nhầm, ưu tiên set `IsArchived = true`, khôn
 
 ## Đọc Thêm Theo Ngữ Cảnh
 
+- Nếu sửa chuyển đổi bảng nhóm InternalMail, backfill/mapping, cờ GroupStorage, bridge trigger, audit Excel hoặc dọn code tương thích: đọc `.agents/features/notifications-group-storage.md`.
+
+- Nếu kiểm tra hoặc tối ưu tốc độ Notification Hub/InternalMail, đổi tab, feed, unread summary hoặc request FE bị trùng: đọc `.agents/features/notifications-performance.md`.
 - Nếu thêm/sửa topic, `topicCode`, category, catalog hoặc mapping FE: đọc `.agents/features/notifications-topic.md`.
 - Nếu thêm/sửa recipient, role, team, group, owner, sender exclusion hoặc quyền thu hồi người nhận: đọc `.agents/features/notifications-recipient.md`.
 - Nếu thêm/sửa Web Push, VAPID, push payload, public key, subscription hoặc push worker: đọc `.agents/features/notifications-web-push.md`.

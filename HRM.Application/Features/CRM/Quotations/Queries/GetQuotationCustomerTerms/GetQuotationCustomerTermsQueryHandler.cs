@@ -38,7 +38,7 @@ internal sealed class GetQuotationCustomerTermsQueryHandler
             return OperationResult<QuotationCustomerTermsDto>.Fail("CustomerId is required.");
         }
 
-        var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+        var scope = await _visibilityService.BuildReadScopeAsync(cancellationToken);
         var customerIsVisible = await _visibilityService
             .ApplyCustomerVisibility(_dbContext.Customers.AsNoTracking(), scope)
             .AnyAsync(x => x.CustomerId == request.CustomerId, cancellationToken);

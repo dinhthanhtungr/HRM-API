@@ -3,7 +3,7 @@
   Đổi from_date / to_date_exclusive / company_id và selected_mode trong params.
   selected_mode: FormulaSnapshot | WarehouseActual.
 
-  Công thức đúng với ExecutivePnLDeliveryCostResolver:
+  Công thức đúng với DeliveryCostResolver:
   FormulaSnapshot = SUM(FormulaMaterials.quantity * FormulaMaterials.unit_price), item_type = 0.
   WarehouseActual = SUM(OperationMaterialBuffer.AmountCost)
                     / SUM(ProductionOutputReceiptSource.ProducedQtyKg).

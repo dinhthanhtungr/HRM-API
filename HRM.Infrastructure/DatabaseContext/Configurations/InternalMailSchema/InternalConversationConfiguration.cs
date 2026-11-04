@@ -19,6 +19,9 @@ public class InternalConversationConfiguration : IEntityTypeConfiguration<Intern
 
         entity.Property(x => x.CompanyId).HasColumnName("CompanyId").IsRequired();
         entity.Property(x => x.Subject).HasColumnName("Subject").HasColumnType("citext").IsRequired();
+        // GROUP-STORAGE-TRANSITION: legacy-write-shape — preserve persisted int values and both columns.
+        // Only child-group semantics are legacy; root business references still use these mappings permanently.
+        // This marker does not authorize a migration/drop or a conversion to InternalConversationGroupType.
         entity.Property(x => x.RelatedType).HasColumnName("RelatedType").HasConversion<int>();
         entity.Property(x => x.RelatedId).HasColumnName("RelatedId");
         entity.Property(x => x.RelatedExternalId).HasColumnName("RelatedExternalId").HasColumnType("citext");

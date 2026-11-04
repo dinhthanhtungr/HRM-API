@@ -22,6 +22,10 @@ namespace HRM.Infrastructure.DatabaseContext.Configurations.DevandqaSchema
                   .HasDefaultValueSql("gen_random_uuid()");
 
             // Thông tin lô & SP
+            entity.Property(x => x.CompanyId).HasColumnName("company_id");
+            entity.Property(x => x.ProductId).HasColumnName("product_id");
+            entity.Property(x => x.MfgProductionOrderId).HasColumnName("mfg_production_order_id");
+            entity.HasIndex(x => new { x.CompanyId, x.CreateDate });
             entity.Property(x => x.BatchId).HasColumnName("batch_id").HasColumnType("citext");
             entity.Property(x => x.ProductCode).HasColumnName("product_code").HasColumnType("citext");
             entity.Property(x => x.ProductName).HasColumnName("product_name").HasColumnType("citext");

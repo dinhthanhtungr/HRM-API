@@ -15,6 +15,7 @@ namespace HRM.Domain.Enums.Products
         Cancelled = 4,
         Completed = 5,
         PendingSaleConfirmation = 6,
-        Rejected = 7
+        Rejected = 7,
+        Rework = 8
     }
 }

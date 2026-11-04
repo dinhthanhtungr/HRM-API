@@ -20,13 +20,14 @@ Nếu build fail thì sửa tiếp. Nếu build có warning mới do thay đổi
 - Trước khi push, phải kiểm tra remote, branch, status, secret risk và build/test nếu cần.
 - Không commit build artifacts nếu không được yêu cầu.
 
-## Nhánh, Commit Và Push Tự Động
+## Nhánh Và Quy Trình Commit, Push
 
-Áp dụng mặc định khi agent thực hiện xong một feature hoặc bug fix độc lập có thay đổi code. User đã cấp quyền thường trực để agent tự tạo nhánh, commit và push theo quy trình này mà không cần hỏi lại cho từng thao tác Git thông thường.
+Áp dụng mặc định khi agent thực hiện xong một feature hoặc bug fix độc lập có thay đổi code. Quyền tự commit và push theo quy trình này không bao gồm quyền tạo hoặc chuyển nhánh.
 
 ### Khi Bắt Đầu
 
 - Kiểm tra branch hiện tại, remote và toàn bộ working tree trước khi sửa.
+- Trước mỗi lần tạo hoặc chuyển nhánh, phải hỏi user, nêu nhánh hiện tại, nhánh đích và lý do, rồi chờ user đồng ý cho thao tác đó. Không xem việc user yêu cầu sửa code hoặc quyền Git thường trực là đồng ý tạo/chuyển nhánh. Nếu user đã yêu cầu rõ chính thao tác tạo/chuyển nhánh đó thì thực hiện, không hỏi lại.
 - Nếu bắt đầu feature mới từ `main` hoặc `develop`, tạo nhánh `codex/feat-<ten-ngan-gon>`.
 - Với bug fix hoặc refactor độc lập, lần lượt dùng `codex/fix-<ten-ngan-gon>` hoặc `codex/refactor-<ten-ngan-gon>`.
 - Nếu đang ở đúng feature branch thì tiếp tục dùng branch đó, không tạo branch lồng hoặc branch thừa.

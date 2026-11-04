@@ -1,10 +1,12 @@
 using System.Text.Json.Serialization;
+using HRM.Application.Features.CRM.Quotations.Services;
 using HRM.Domain.Enums.CustomerEnum;
 
 namespace HRM.Application.Features.CRM.Quotations.Dtos;
 
 public sealed class CreateQuotationRequest
 {
+    public Guid? IdempotencyKey { get; init; }
     public string? ExternalId { get; init; }
     public Guid CustomerId { get; init; }
     public Guid? ContactId { get; init; }
@@ -61,12 +63,14 @@ public sealed class ReplaceQuotationLinesRequest
 
 public sealed class QuotationLineRequest
 {
+    public Guid? QuotationLineId { get; init; }
     public Guid ProductId { get; init; }
     public Guid? SampleRequestId { get; init; }
-    public Guid? ProductPricingVersionId { get; init; }
+    public Guid? ProductPricingVersionId { get; set; }
     public decimal Quantity { get; init; }
     public string? Unit { get; init; }
-    public QuotationLinePriceMode PriceMode { get; init; } = QuotationLinePriceMode.FormulaCalculatedLocked;
+    public QuotationLinePriceMode PriceMode { get; set; } = QuotationLinePriceMode.FormulaCalculatedLocked;
+    [JsonRequired]
     public decimal UnitPrice { get; init; }
     public decimal DiscountPercent { get; init; }
     public IReadOnlyList<QuotationLinePriceTierRequest> PriceTiers { get; init; } = [];
@@ -82,6 +86,7 @@ public sealed class QuotationLinePriceTierRequest
     public decimal? MaxQuantity { get; init; }
     public bool MinInclusive { get; init; } = true;
     public bool MaxInclusive { get; init; } = true;
+    [JsonRequired]
     public decimal UnitPrice { get; init; }
     public decimal CommissionAmount { get; init; }
     public int SortOrder { get; init; }
@@ -122,6 +127,9 @@ public sealed class QuotationCreateResultDto
 
 public sealed class QuotationTotalsDto
 {
+    public QuotationStatus? Status { get; init; }
+    public bool RequiresSendConfirmation => Status == QuotationStatus.PendingSendConfirmation;
+    public Guid? SendConfirmationMessageId { get; init; }
     public decimal SubTotal { get; init; }
     public decimal DiscountAmount { get; init; }
     public decimal TaxPercent { get; init; }
@@ -132,6 +140,7 @@ public sealed class QuotationTotalsDto
 
 public sealed class QuotationListItemDto
 {
+    public QuotationDisplayStatusDto DisplayStatus => QuotationDisplayStatusResolver.Resolve(Status, [StandardPriceReview]);
     public Guid QuotationId { get; init; }
     public string ExternalId { get; init; } = string.Empty;
     public Guid CustomerId { get; init; }
@@ -152,6 +161,11 @@ public sealed class QuotationListItemDto
 
 public sealed class QuotationDetailDto
 {
+    public QuotationDisplayStatusDto DisplayStatus => QuotationDisplayStatusResolver.Resolve(
+        Status, Lines.Select(x => x.StandardPriceReview));
+    public bool CanConfirmSent { get; set; }
+    public string? ConfirmSentBlockedReasonCode { get; set; }
+    public QuotationPendingSendConfirmationDto? PendingSendConfirmation { get; set; }
     public Guid QuotationId { get; init; }
     public string ExternalId { get; init; } = string.Empty;
     public Guid CustomerId { get; init; }
@@ -185,8 +199,11 @@ public sealed class QuotationDetailDto
     public IReadOnlyList<QuotationStatusHistoryDto> StatusHistories { get; init; } = [];
 }
 
+public sealed record QuotationDisplayStatusDto(string Code, string Tone, string? ReasonCode);
+
 public sealed class QuotationLineDto
 {
+    public bool IsStandardReferenceUnavailable => ProductPricingVersionId.HasValue && !HasApprovedPricingAvailable;
     public Guid QuotationLineId { get; init; }
     public Guid ProductId { get; init; }
     public Guid? SampleRequestId { get; init; }

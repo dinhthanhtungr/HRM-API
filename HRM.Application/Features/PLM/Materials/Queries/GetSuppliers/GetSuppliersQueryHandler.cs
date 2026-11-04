@@ -38,7 +38,8 @@ internal sealed class GetSuppliersQueryHandler : IRequestHandler<GetSuppliersQue
         }
 
         var total = await query.CountAsync(cancellationToken);
-        var items = await query.OrderBy(x => x.SupplierName).ThenBy(x => x.ExternalId).ThenBy(x => x.SupplierId)
+        var items = await query.OrderBy(x => x.CreatedDate == null).ThenByDescending(x => x.CreatedDate)
+            .ThenBy(x => x.SupplierName).ThenBy(x => x.ExternalId).ThenBy(x => x.SupplierId)
             .Skip((request.NormalizedPageNumber - 1) * request.NormalizedPageSize)
             .Take(request.NormalizedPageSize)
             .Select(x => new SupplierSummaryDto
@@ -46,6 +47,13 @@ internal sealed class GetSuppliersQueryHandler : IRequestHandler<GetSuppliersQue
                 SupplierId = x.SupplierId,
                 SupplierCode = x.ExternalId ?? string.Empty,
                 SupplierName = x.SupplierName ?? string.Empty,
+                // AddressLine is the display address used by purchase orders; do not append location fields again.
+                SupplierAddress = x.SupplierAddresses
+                    .Where(a => a.IsActive == true && a.AddressLine != null && a.AddressLine.Trim() != string.Empty)
+                    .OrderByDescending(a => a.IsPrimary == true).ThenBy(a => a.AddressId)
+                    .Select(a => a.AddressLine!.Trim()).FirstOrDefault()
+                    ?? (x.RegistrationAddress == null || x.RegistrationAddress.Trim() == string.Empty
+                        ? null : x.RegistrationAddress.Trim()),
                 Phone = x.Phone,
                 ContactName = x.SupplierContacts.Where(c => c.IsActive == true)
                     .OrderByDescending(c => c.IsPrimary == true).ThenBy(c => c.ContactId)

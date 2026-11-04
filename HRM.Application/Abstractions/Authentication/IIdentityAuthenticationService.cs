@@ -4,6 +4,9 @@ namespace HRM.Application.Abstractions.Authentication;
 
 public interface IIdentityAuthenticationService
 {
+    Task<AuthenticatedUserDto?> ResolveDeveloperSampleWorkUserAsync(
+        Guid actorUserId, Guid companyId, Guid employeeId, CancellationToken cancellationToken = default)
+        => Task.FromResult<AuthenticatedUserDto?>(null);
 
     /// <summary>
     /// Kiểm tra thông tin đăng nhập bằng username hoặc email và password.

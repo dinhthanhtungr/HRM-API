@@ -15,5 +15,13 @@ public sealed class SelectableDeliveryOrderDto
     public string? Status { get; init; }
     public string? Currency { get; init; }
     public string? Note { get; init; }
+    /// <summary>Ngày hứa giao MFG muộn nhất của PO; null khi chưa có ngày trên liên kết hợp lệ.</summary>
+    public DateTime? PromisedDeliveryDate { get; init; }
+    public bool IsDeliveryPaused { get; init; }
+    public DateTime? DeliveryPausedFrom { get; init; }
+    public DateTime? DeliveryPausedTo { get; init; }
+    public string? DeliveryPauseReason { get; init; }
+    public string? DeliveryPauseType { get; init; }
+    public string? DeliveryPausedName { get; init; }
     public IReadOnlyList<SelectableDeliveryOrderLineDto> Lines { get; init; } = Array.Empty<SelectableDeliveryOrderLineDto>();
 }

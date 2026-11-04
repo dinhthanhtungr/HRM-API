@@ -1,32 +1,11 @@
 # Core Rules
 
-Đọc file này khi sửa code trong repo. Đây chỉ là các invariant dùng chung; chi tiết phải đọc từ file chuyên biệt do `AGENTS.md` điều hướng.
+Áp dụng khi sửa code. Invariant an toàn và routing security/documentation/Git nằm ở root `AGENTS.md`.
 
-## Phạm Vi Thay Đổi
-
-- Tìm implementation gần nhất và theo pattern hiện có trước khi tạo abstraction hoặc cấu trúc mới.
-- Sửa đúng phạm vi yêu cầu, không trộn refactor rộng với feature nhỏ.
-- Giữ và làm việc cùng thay đổi có sẵn của user; không tự revert, format toàn repo hoặc sửa file không liên quan.
-- Không tự thay đổi schema/migration hay public contract ngoài phạm vi đã được user duyệt.
-
-## Boundary
-
-- `HRM.Domain`: entity, enum và rule miền thuần.
-- `HRM.Application`: use case, DTO, abstraction và business rule.
-- `HRM.Infrastructure`: EF/persistence và external-service implementation.
-- `HRM.Api`: controller, middleware, auth, hub, worker và DI presentation.
-
-Application không phụ thuộc trực tiếp Infrastructure. Controller chỉ bind request/route, gọi Application và trả response. Quy tắc tổ chức chi tiết nằm ở `.agents/architecture.md`.
-
-## Security Và Contract
-
-- Public API không trả EF entity và không cho client set field server-owned như `CompanyId`, `CreatedBy`, role hoặc privileged status.
-- Dữ liệu user-facing phải giữ company/ownership/capability scope và chống IDOR.
-- Không hard-code/log secret hoặc dữ liệu xác thực nhạy cảm; không dùng raw SQL nối chuỗi.
-- Khi sửa API, EF query, permission hoặc field nhạy cảm, đọc đúng file trong `.agents/security/` trước khi implement.
-
-## Hoàn Tất
-
-- Đọc `.agents/documentation.md` nếu hành vi hoặc contract thay đổi.
-- Đọc `.agents/git-and-build.md` để chạy verification phù hợp và xử lý Git an toàn.
-- Báo file/phạm vi đã đổi, hành vi bị tác động và build/test thực tế đã chạy; không tuyên bố pass nếu chưa chạy.
+- Tìm implementation gần nhất, theo pattern hiện có trước khi tạo abstraction hoặc cấu trúc mới.
+- Không trộn refactor rộng, format toàn repo hoặc sửa file không liên quan với feature nhỏ.
+- Không thêm abstraction nếu pattern hiện tại đã đủ; model/helper riêng một use case đặt gần use case đó. Cấu trúc mới/shared/DI xem `.agents/architecture.md`.
+- Không rải magic string/magic number trong handler/controller; không hard-code label hiển thị ở nhiều API nếu FE có thể map từ enum/code.
+- Khi `PatchHelper` đáp ứng đúng semantics, dùng nó thay vì rải nhiều phép gán `if (request.Field is not null)`. Semantics PATCH/clear và whitelist xem `.agents/security/api-security.md`.
+- Khi thêm/sửa tìm kiếm keyword trên `IQueryable`, tái sử dụng `WhereKeyword`, `KeywordSearchTerm` và `PostgresSearchPattern` trong `HRM.Application/Commons/Searching`; đọc README tại đó để chọn pattern literal và cách dùng expression dịch SQL. Quy tắc tiền tố, field và scope nghiệp vụ đặt trong helper của feature (tham khảo `SelectableDeliveryKeywordSearch`), không đưa vào Commons hoặc sao chép vào nhiều handler. Giữ nguyên contract tìm kiếm và company/active/permission scope; không `Compile`, `Invoke`, `AsEnumerable` hoặc tải dữ liệu về chỉ để lọc keyword.
+- Không tuyên bố verification pass khi chưa chạy; báo kết quả thực tế theo `.agents/git-and-build.md`.

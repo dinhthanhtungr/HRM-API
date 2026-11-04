@@ -45,9 +45,8 @@ internal sealed class GetNotificationHubItemsQueryHandler
             ?? throw new UnauthorizedAccessException("Current user does not have an employee id.");
         var take = Math.Clamp(request.Take, 1, 100);
 
-        var items = request.UrgentOnly
-            ? await LoadUrgentItemsAsync(request, take, companyId, employeeId, cancellationToken)
-            : await LoadItemsAsync(request, take, request.AfterId, request.AfterCreated, companyId, employeeId, cancellationToken);
+        var items = await LoadItemsAsync(request, take, request.AfterId, request.AfterCreated,
+            companyId, employeeId, cancellationToken);
 
         var lastNotification = items.LastOrDefault()?.Notification;
         return new NotificationHubItemsDto
@@ -57,43 +56,6 @@ internal sealed class GetNotificationHubItemsQueryHandler
                 ? NotificationHubCursor.Encode(lastNotification.CreatedDate, lastNotification.Id)
                 : null
         };
-    }
-
-    private async Task<IReadOnlyList<NotificationHubItemDto>> LoadUrgentItemsAsync(
-        GetNotificationHubItemsQuery request,
-        int take,
-        Guid companyId,
-        Guid employeeId,
-        CancellationToken cancellationToken)
-    {
-        // conversationId là metadata JSON tương thích lịch sử, không phải column để lọc SQL.
-        // Duyệt theo keyset feed để không mất item khi tab Gấp phân trang.
-        const int sourceBatchSize = 100;
-        var items = new List<NotificationHubItemDto>(take);
-        var afterId = request.AfterId;
-        var afterCreated = request.AfterCreated;
-
-        while (items.Count < take)
-        {
-            var batch = await LoadItemsAsync(
-                request, sourceBatchSize, afterId, afterCreated, companyId, employeeId, cancellationToken);
-            if (batch.Count == 0)
-            {
-                break;
-            }
-
-            items.AddRange(batch.Where(item => item.ConversationInfo?.IsUrgent == true));
-            if (items.Count >= take || batch.Count < sourceBatchSize)
-            {
-                break;
-            }
-
-            var lastSourceNotification = batch[^1].Notification;
-            afterId = lastSourceNotification.Id;
-            afterCreated = lastSourceNotification.CreatedDate;
-        }
-
-        return items.Take(take).ToArray();
     }
 
     private async Task<IReadOnlyList<NotificationHubItemDto>> LoadItemsAsync(
@@ -108,7 +70,9 @@ internal sealed class GetNotificationHubItemsQueryHandler
         // Reuse feed service để category/event-group, unread visibility, keyset ordering
         // và legacy-data semantics luôn giống endpoint notification hiện hữu.
         var notifications = await _notificationService.GetFeedAsync(
-            take, afterId, afterCreated, request.CategoryCode, request.EventGroupCode, cancellationToken);
+            take, afterId, afterCreated, request.CategoryCode, request.EventGroupCode, cancellationToken,
+            latestForHub: true, unreadOnly: request.UnreadOnly, urgentOnly: request.UrgentOnly,
+            mentionedOnly: request.MentionedOnly);
 
         var conversationInfoById = await LoadConversationInfoAsync(
             notifications.Select(item => item.ConversationId), companyId, employeeId, cancellationToken);
@@ -141,17 +105,9 @@ internal sealed class GetNotificationHubItemsQueryHandler
             return new Dictionary<Guid, NotificationHubConversationInfoDto>();
         }
 
-        // Một query batch cho toàn bộ thread của trang feed. Participant là security boundary.
-        var visibleConversations = _areas.Conversations().Select(c => c.InternalConversationId);
-        var conversations = await _internalMailDbContext.InternalConversationParticipants
-            .AsNoTracking()
-            .Where(p => visibleConversations.Contains(p.InternalConversationId))
-            .Where(participant =>
-                participant.EmployeeId == employeeId &&
-                participant.IsActive &&
-                conversationIds.Contains(participant.InternalConversationId) &&
-                participant.Conversation.CompanyId == companyId &&
-                participant.Conversation.IsActive)
+        // Cùng scope inbox; Developer có thể đọc mà không phải là participant.
+        var conversations = await _areas.InboxConversations().AsNoTracking()
+            .Where(participant => conversationIds.Contains(participant.InternalConversationId))
             .Select(participant => new NotificationHubConversationSnapshot(
                 participant.InternalConversationId,
                 participant.Conversation.Subject,
@@ -160,8 +116,9 @@ internal sealed class GetNotificationHubItemsQueryHandler
                 participant.Conversation.RelatedExternalId,
                 participant.Conversation.Messages.Where(m => m.InternalConversationId == participant.InternalConversationId && !m.IsDeleted).OrderByDescending(m => m.SentAt).ThenByDescending(m => m.InternalMessageId).Select(m => m.SenderEmployee.FullName).FirstOrDefault(),
                 participant.Conversation.Messages.Where(m => m.InternalConversationId == participant.InternalConversationId && !m.IsDeleted).OrderByDescending(m => m.SentAt).ThenByDescending(m => m.InternalMessageId).Select(m => m.Body).FirstOrDefault(),
-                participant.Conversation.Messages.Where(m => m.InternalConversationId == participant.InternalConversationId).Max(m => (DateTime?)m.SentAt) ?? participant.Conversation.CreatedAt,
+                participant.ActivityAt,
                 participant.Conversation.Messages.Count(message => message.InternalConversationId == participant.InternalConversationId &&
+                    (message.PayloadJson == null || !EF.Functions.JsonContains(message.PayloadJson, InternalMailMentions.AudienceMarker)) &&
                     !message.IsDeleted &&
                     message.SenderEmployeeId != employeeId &&
                     message.ReadStates.Any(state => state.EmployeeId == employeeId && !state.IsRead)),
@@ -175,13 +132,14 @@ internal sealed class GetNotificationHubItemsQueryHandler
             .Where(item => conversationIds.Contains(item.ConversationId))
             .ToDictionaryAsync(item => item.ConversationId, item => item.UnreadCount, cancellationToken);
 
-        var areaMetadata = conversations.ToDictionary(c => c.ConversationId, c => new {
-            Area = InternalMailAreaAccessService.AreaOf(c.RelatedType),
-            Group = InternalMailAreaAccessService.IsPrivateArea(c.RelatedType) ? c.RelatedId!.Value : c.ConversationId });
-        var parentIds = conversations.Where(c => InternalMailAreaAccessService.IsPrivateArea(c.RelatedType)).Select(c => c.RelatedId!.Value).ToArray();
+        var groupInfo = await _areas.GroupInfoAsync(conversations.Select(c => c.ConversationId).ToArray(), cancellationToken);
+        var areaMetadata = groupInfo.ToDictionary(g => g.Key, g => new {
+            Area = InternalMailAreaAccessService.AreaOf(g.Value.GroupType), Group = g.Value.RootConversationId });
+        var parentIds = groupInfo.Values.Where(g => g.RootConversationId != g.ConversationId).Select(g => g.RootConversationId).Distinct().ToArray();
         var parents = await _internalMailDbContext.InternalConversations.AsNoTracking().Where(c => c.CompanyId == companyId && parentIds.Contains(c.InternalConversationId))
             .ToDictionaryAsync(c => c.InternalConversationId, cancellationToken);
-        conversations = conversations.Select(c => InternalMailAreaAccessService.IsPrivateArea(c.RelatedType) && parents.TryGetValue(c.RelatedId!.Value, out var parent)
+        conversations = conversations.Select(c => groupInfo[c.ConversationId].RootConversationId != c.ConversationId &&
+            parents.TryGetValue(groupInfo[c.ConversationId].RootConversationId, out var parent)
             ? c with { RelatedType = parent.RelatedType, RelatedId = parent.RelatedId, RelatedExternalId = parent.RelatedExternalId } : c).ToList();
         var sampleRequestInfoById = await _sampleRequestInfoResolver.ResolveAsync(
             conversations
@@ -203,11 +161,15 @@ internal sealed class GetNotificationHubItemsQueryHandler
                     notificationCounts.GetValueOrDefault(conversation.ConversationId)) },
                 sampleRequestInfoById,
                 quotationInfoById));
+        var quickGroups = await _areas.QuickGroupsAsync(conversations.Where(c => c.RelatedType == InternalMailRelatedType.SampleRequest)
+            .Select(c => areaMetadata[c.ConversationId].Group), cancellationToken);
         foreach (var pair in result)
         {
             pair.Value.GroupConversationId = areaMetadata[pair.Key].Group;
             pair.Value.AreaCode = areaMetadata[pair.Key].Area;
+            pair.Value.QuickGroups = quickGroups.GetValueOrDefault(pair.Value.GroupConversationId) ?? [];
         }
+        await _areas.MaskPriceHubPreviewsAsync(result, cancellationToken);
         return result;
     }
 }

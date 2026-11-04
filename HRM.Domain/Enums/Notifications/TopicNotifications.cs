@@ -81,6 +81,13 @@ namespace HRM.Domain.Enums.Notifications
         SampleRequestReferencePriceAvailable = 51,
         SampleRequestCancelled = 52,
         MaterialPurchaseUnavailable = 53,
-        MerchandiseOrderBelowStandardPriceApproved = 54
+        MerchandiseOrderBelowStandardPriceApproved = 54,
+        MerchandiseOrderPromisedDeliveryNotified = 55,
+        QuotationSendConfirmationRequested = 56,
+        DeveloperNotificationTest = 57,
+        SampleRequestMessageReacted = 58,
+        QuotationMessageReacted = 59,
+        InternalMailMessageReacted = 60,
+        SampleRequestCustomerPriceFeedbackRecorded = 61
     }
 }

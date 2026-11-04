@@ -22,7 +22,7 @@ public sealed class DeliveryOrderDocumentTests
     public async Task Export_DeniesBeforeReadingOrRendering(bool authenticated, string role, bool hasCompany)
     {
         var user = new ExportUser(authenticated, role, hasCompany ? Guid.NewGuid() : null);
-        var handler = new ExportDeliveryOrderQueryHandler(null!, user, null!, null!);
+        var handler = new ExportDeliveryOrderQueryHandler(null!, user, null!, null!, null!);
         Assert.Null(await handler.Handle(new ExportDeliveryOrderQuery(Guid.NewGuid()), CancellationToken.None));
     }
 

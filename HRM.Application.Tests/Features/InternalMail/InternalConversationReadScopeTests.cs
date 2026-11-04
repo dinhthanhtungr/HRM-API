@@ -17,6 +17,52 @@ public sealed class InternalConversationReadScopeTests
     private readonly DateTime _cutoff = new(2026, 9, 30, 12, 0, 0);
 
     [Fact]
+    public void CompanyObserver_AcknowledgesLinkedNotificationWithoutMembership()
+    {
+        var message = Message().Message;
+        message.InternalMessageId = Guid.NewGuid();
+        message.Conversation.Participants.Clear();
+        Assert.False(InternalConversationReadScope.ConversationMessages(
+            _companyId, _employeeId, _conversationId, _cutoff).Compile()(message));
+        Assert.True(InternalConversationReadScope.ConversationMessages(
+            _companyId, _employeeId, _conversationId, _cutoff,
+            allowCompanyObserver: true).Compile()(message));
+        Assert.True(InternalConversationReadScope.MatchesMessage(
+            Payload(_conversationId, message.InternalMessageId), _conversationId,
+            new HashSet<Guid> { message.InternalMessageId }));
+        Assert.Empty(message.Conversation.Participants);
+    }
+
+    [Theory]
+    [InlineData("company")]
+    [InlineData("conversation")]
+    [InlineData("inactiveConversation")]
+    [InlineData("deleted")]
+    [InlineData("newMessage")]
+    [InlineData("sameTimeNewerId")]
+    public void CompanyObserver_KeepsTenantConversationAndBoundaryScope(string change)
+    {
+        var message = Message().Message;
+        message.Conversation.Participants.Clear();
+        var boundaryId = Guid.Parse("00000000-0000-0000-0000-000000000002");
+        message.InternalMessageId = boundaryId;
+        var predicate = InternalConversationReadScope.ConversationMessages(
+            _companyId, _employeeId, _conversationId, _cutoff, boundaryId,
+            allowCompanyObserver: true).Compile();
+        Assert.True(predicate(message));
+        switch (change)
+        {
+            case "company": message.Conversation.CompanyId = Guid.NewGuid(); break;
+            case "conversation": message.InternalConversationId = Guid.NewGuid(); break;
+            case "inactiveConversation": message.Conversation.IsActive = false; break;
+            case "deleted": message.IsDeleted = true; break;
+            case "newMessage": message.SentAt = _cutoff.AddTicks(1); break;
+            case "sameTimeNewerId": message.InternalMessageId = Guid.Parse("00000000-0000-0000-0000-000000000003"); break;
+        }
+        Assert.False(predicate(message));
+    }
+
+    [Fact]
     public void ConversationMessages_SelectsMessageWithoutRecipientReadState()
     {
         var message = Message().Message;
@@ -282,6 +328,11 @@ public sealed class InternalConversationReadScopeTests
             _companyId, _employeeId, _conversationId, _cutoff, id)).ToQueryString();
         Assert.Contains("EXISTS", missingStateSnapshot);
         Assert.DoesNotContain("InternalMessageReadStates", missingStateSnapshot);
+        var observerSnapshot = db.InternalMessages.Where(InternalConversationReadScope.ConversationMessages(
+            _companyId, _employeeId, _conversationId, _cutoff, id, allowCompanyObserver: true)).ToQueryString();
+        Assert.DoesNotContain("InternalConversationParticipants", observerSnapshot);
+        Assert.Contains("CompanyId", observerSnapshot);
+        Assert.Contains("SentAt", observerSnapshot);
         Assert.Contains("ORDER BY", notifications);
         Assert.Contains("LIMIT", notifications);
         var boundary = db.InternalMessages.Where(InternalConversationReadScope.Boundary(

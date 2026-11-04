@@ -1,0 +1,175 @@
+diff --git a/VietausWebAPI.Core/Domain/Entities/DevandqaSchema/LabTest.cs b/VietausWebAPI.Core/Domain/Entities/DevandqaSchema/LabTest.cs
+new file mode 100644
+--- /dev/null
++++ b/VietausWebAPI.Core/Domain/Entities/DevandqaSchema/LabTest.cs
+@@ -0,0 +1,29 @@
++using VietausWebAPI.Core.Domain.Entities.CompanySchema;
++using VietausWebAPI.Core.Domain.Entities.HrSchema;
++
++namespace VietausWebAPI.Core.Domain.Entities.DevandqaSchema;
++
++/// <summary>Phiếu kiểm nghiệm mẫu độc lập; không liên kết voucher, tồn kho hoặc QC đầu vào.</summary>
++public class LabTest
++{
++    public Guid Id { get; set; }
++    public Guid CompanyId { get; set; }
++    /// <summary>Mã phiếu do backend sinh, ví dụ NVL_TEST_00001; duy nhất trong công ty.</summary>
++    public string Code { get; set; } = string.Empty;
++    public string SampleName { get; set; } = string.Empty;
++    public DateOnly TestDate { get; set; }
++    public string? Note { get; set; }
++    public Guid? EvaluationTemplateId { get; set; }
++    public string? TemplateCode { get; set; }
++    public string? TemplateName { get; set; }
++    public int? TemplateVersion { get; set; }
++    public Guid CreatedBy { get; set; }
++    public DateTime CreatedDate { get; set; }
++    public Guid? UpdatedBy { get; set; }
++    public DateTime? UpdatedDate { get; set; }
++    public Company Company { get; set; } = null!;
++    public EvaluationTemplate? EvaluationTemplate { get; set; }
++    public Employee CreatedByEmployee { get; set; } = null!;
++    public Employee? UpdatedByEmployee { get; set; }
++    public ICollection<LabTestResult> Results { get; set; } = new List<LabTestResult>();
++}
+diff --git a/VietausWebAPI.Infrastructure/DatabaseContext/Configurations/DevandqaSchema/LabTestConfiguration.cs b/VietausWebAPI.Infrastructure/DatabaseContext/Configurations/DevandqaSchema/LabTestConfiguration.cs
+new file mode 100644
+--- /dev/null
++++ b/VietausWebAPI.Infrastructure/DatabaseContext/Configurations/DevandqaSchema/LabTestConfiguration.cs
+@@ -0,0 +1,35 @@
++using VietausWebAPI.Core.Domain.Entities.DevandqaSchema;
++using Microsoft.EntityFrameworkCore;
++using Microsoft.EntityFrameworkCore.Metadata.Builders;
++
++namespace VietausWebAPI.Infrastructure.DatabaseContext.Configurations.DevandqaSchema;
++
++/// <summary>Phiếu test theo company; mã duy nhất và quan hệ nguồn không cascade delete.</summary>
++public sealed class LabTestConfiguration : IEntityTypeConfiguration<LabTest>
++{
++    public void Configure(EntityTypeBuilder<LabTest> entity)
++    {
++        entity.ToTable("LabTest", "devandqa");
++        entity.HasKey(x => x.Id);
++        entity.Property(x => x.Id).HasColumnName("id").HasDefaultValueSql("gen_random_uuid()");
++        entity.Property(x => x.CompanyId).HasColumnName("companyid");
++        entity.Property(x => x.Code).HasColumnName("code").HasColumnType("citext").HasMaxLength(50).IsRequired();
++        entity.Property(x => x.SampleName).HasColumnName("samplename").HasMaxLength(200).IsRequired();
++        entity.Property(x => x.TestDate).HasColumnName("testdate").HasColumnType("date");
++        entity.Property(x => x.Note).HasColumnName("note").HasColumnType("text");
++        entity.Property(x => x.EvaluationTemplateId).HasColumnName("evaluationtemplateid");
++        entity.Property(x => x.TemplateCode).HasColumnName("templatecode").HasMaxLength(50);
++        entity.Property(x => x.TemplateName).HasColumnName("templatename").HasMaxLength(200);
++        entity.Property(x => x.TemplateVersion).HasColumnName("templateversion");
++        entity.Property(x => x.CreatedBy).HasColumnName("createdby");
++        entity.Property(x => x.CreatedDate).HasColumnName("createddate").HasColumnType("timestamp without time zone");
++        entity.Property(x => x.UpdatedBy).HasColumnName("updatedby");
++        entity.Property(x => x.UpdatedDate).HasColumnName("updateddate").HasColumnType("timestamp without time zone");
++        entity.HasIndex(x => new { x.CompanyId, x.Code }).IsUnique();
++        entity.HasIndex(x => new { x.CompanyId, x.TestDate });
++        entity.HasOne(x => x.Company).WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
++        entity.HasOne(x => x.EvaluationTemplate).WithMany().HasForeignKey(x => x.EvaluationTemplateId).OnDelete(DeleteBehavior.Restrict);
++        entity.HasOne(x => x.CreatedByEmployee).WithMany().HasForeignKey(x => x.CreatedBy).OnDelete(DeleteBehavior.Restrict);
++        entity.HasOne(x => x.UpdatedByEmployee).WithMany().HasForeignKey(x => x.UpdatedBy).OnDelete(DeleteBehavior.Restrict);
++    }
++}
+diff --git a/VietausWebAPI.Core/Domain/Entities/DevandqaSchema/LabTestResult.cs b/VietausWebAPI.Core/Domain/Entities/DevandqaSchema/LabTestResult.cs
+new file mode 100644
+--- /dev/null
++++ b/VietausWebAPI.Core/Domain/Entities/DevandqaSchema/LabTestResult.cs
+@@ -0,0 +1,34 @@
++using VietausWebAPI.Core.Domain.Entities.AttachmentSchema;
++using VietausWebAPI.Core.Domain.Enums.Devandqa;
++
++namespace VietausWebAPI.Core.Domain.Entities.DevandqaSchema;
++
++/// <summary>Kết quả một chỉ tiêu của phiếu test; cấu hình là snapshot, không tự đổi theo danh mục.</summary>
++public class LabTestResult
++{
++    public Guid Id { get; set; }
++    public Guid LabTestId { get; set; }
++    public Guid? EvaluationStandardId { get; set; }
++    /// <summary>ID nguồn tham khảo, không có FK để template có thể thay đổi hoặc bỏ dòng.</summary>
++    public Guid? SourceTemplateItemId { get; set; }
++    public string CriterionCode { get; set; } = string.Empty;
++    public string CriterionName { get; set; } = string.Empty;
++    public string? CriterionNameEn { get; set; }
++    public EvaluationDataType DataType { get; set; } = EvaluationDataType.Text;
++    public string? Unit { get; set; }
++    public Guid? MeasurementMethodId { get; set; }
++    public string? MeasurementMethodCode { get; set; }
++    public string? TestMethod { get; set; }
++    public string? InputConfigJson { get; set; }
++    public string? AcceptanceRuleJson { get; set; }
++    public string? SpecificationText { get; set; }
++    public bool IsRequired { get; set; }
++    public int SortOrder { get; set; }
++    /// <summary>Giá trị đo dạng scalar; kiểu Attachment dùng nhóm tệp, không dùng Value.</summary>
++    public string? Value { get; set; }
++    public Guid? AttachmentCollectionId { get; set; }
++    public LabTest LabTest { get; set; } = null!;
++    public EvaluationStandard? EvaluationStandard { get; set; }
++    public MeasurementMethod? MeasurementMethod { get; set; }
++    public AttachmentCollection? AttachmentCollection { get; set; }
++}
+diff --git a/VietausWebAPI.Infrastructure/DatabaseContext/Configurations/DevandqaSchema/LabTestResultConfiguration.cs b/VietausWebAPI.Infrastructure/DatabaseContext/Configurations/DevandqaSchema/LabTestResultConfiguration.cs
+new file mode 100644
+--- /dev/null
++++ b/VietausWebAPI.Infrastructure/DatabaseContext/Configurations/DevandqaSchema/LabTestResultConfiguration.cs
+@@ -0,0 +1,30 @@
++using VietausWebAPI.Core.Domain.Entities.DevandqaSchema;
++using Microsoft.EntityFrameworkCore;
++using Microsoft.EntityFrameworkCore.Metadata.Builders;
++
++namespace VietausWebAPI.Infrastructure.DatabaseContext.Configurations.DevandqaSchema;
++
++/// <summary>Mỗi chỉ tiêu một dòng snapshot; tệp thuộc riêng kết quả và không cascade delete.</summary>
++public sealed class LabTestResultConfiguration : IEntityTypeConfiguration<LabTestResult>
++{
++    public void Configure(EntityTypeBuilder<LabTestResult> entity)
++    {
++        entity.ToTable("LabTestResult", "devandqa", table => table.HasCheckConstraint(
++            "ck_labtestresult_snapshot",
++            "criterioncode <> '' AND criterionname <> '' AND datatype BETWEEN 1 AND 8 AND sortorder >= 0"));
++        entity.HasKey(x => x.Id);
++        entity.Property(x => x.Id).HasColumnName("id").HasDefaultValueSql("gen_random_uuid()");
++        entity.Property(x => x.LabTestId).HasColumnName("labtestid");
++        entity.Property(x => x.EvaluationStandardId).HasColumnName("evaluationstandardid");
++        entity.Property(x => x.SourceTemplateItemId).HasColumnName("sourcetemplateitemid");
++        EvaluationSnapshotConfiguration.Configure(entity);
++        entity.Property(x => x.Value).HasColumnName("value").HasColumnType("text");
++        entity.Property(x => x.AttachmentCollectionId).HasColumnName("attachmentcollectionid");
++        entity.HasIndex(x => new { x.LabTestId, x.CriterionCode }).IsUnique();
++        entity.HasIndex(x => new { x.LabTestId, x.EvaluationStandardId }).IsUnique();
++        entity.HasOne(x => x.LabTest).WithMany(x => x.Results).HasForeignKey(x => x.LabTestId).OnDelete(DeleteBehavior.Restrict);
++        entity.HasOne(x => x.EvaluationStandard).WithMany().HasForeignKey(x => x.EvaluationStandardId).OnDelete(DeleteBehavior.Restrict);
++        entity.HasOne(x => x.MeasurementMethod).WithMany().HasForeignKey(x => x.MeasurementMethodId).OnDelete(DeleteBehavior.Restrict);
++        entity.HasOne(x => x.AttachmentCollection).WithMany().HasForeignKey(x => x.AttachmentCollectionId).OnDelete(DeleteBehavior.Restrict);
++    }
++}
+diff --git a/VietausWebAPI.Core/Domain/Enums/Devandqa/EvaluationDataType.cs b/VietausWebAPI.Core/Domain/Enums/Devandqa/EvaluationDataType.cs
+--- a/VietausWebAPI.Core/Domain/Enums/Devandqa/EvaluationDataType.cs
++++ b/VietausWebAPI.Core/Domain/Enums/Devandqa/EvaluationDataType.cs
+@@ -14,6 +14,7 @@
+     Boolean = 4,
+     Date = 5,
+     SingleSelect = 6,
+-    MultiSelect = 7
++    MultiSelect = 7,
++    Attachment = 8
+ }
+ 
+diff --git a/VietausWebAPI.Infrastructure/DatabaseContext/ApplicationDbs/ApplicationDbContext.LabTests.cs b/VietausWebAPI.Infrastructure/DatabaseContext/ApplicationDbs/ApplicationDbContext.LabTests.cs
+new file mode 100644
+--- /dev/null
++++ b/VietausWebAPI.Infrastructure/DatabaseContext/ApplicationDbs/ApplicationDbContext.LabTests.cs
+@@ -0,0 +1,10 @@
++using VietausWebAPI.Core.Domain.Entities.DevandqaSchema;
++using Microsoft.EntityFrameworkCore;
++
++namespace VietausWebAPI.Infrastructure.DatabaseContext.ApplicationDbs;
++
++public partial class ApplicationDbContext
++{
++    public DbSet<LabTest> LabTests { get; set; } = default!;
++    public DbSet<LabTestResult> LabTestResults { get; set; } = default!;
++}

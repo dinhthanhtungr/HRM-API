@@ -1,6 +1,7 @@
 using HRM.Application.Abstractions.Identity;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Features.Employees.Dtos;
+using HRM.Application.Commons.Authorization;
 using MediatR;
 
 namespace HRM.Application.Features.Employees.Administration.GetEmployeeRoleLookup;
@@ -25,7 +26,7 @@ internal sealed class GetEmployeeRoleLookupQueryHandler
         GetEmployeeRoleLookupQuery request,
         CancellationToken cancellationToken)
     {
-        if (!EmployeeAdministrationRules.CanManageEmployees(_currentUser))
+        if (!EmployeeAdministrationRules.CanViewEmployees(_currentUser) && !EmployeeRoleAccountAccess.CanView(_currentUser))
         {
             return EmployeeAdministrationResult<IReadOnlyList<EmployeeRoleLookupDto>>.Fail(
                 EmployeeAdministrationError.Forbidden,
@@ -34,9 +35,12 @@ internal sealed class GetEmployeeRoleLookupQueryHandler
 
         var canManagePrivilegedRoles =
             EmployeeAdministrationRules.CanManageRoleTypes(_currentUser);
-        var canViewGlobalAssignmentCounts =
+        var global =
             EmployeeAdministrationRules.CanManageAllCompanies(_currentUser);
-        var roles = await _identityService.GetRolesAsync(cancellationToken);
+        var canViewAssignmentCounts = EmployeeRoleAccountAccess.CanView(_currentUser) &&
+            (global || _currentUser.CompanyId.HasValue);
+        var roles = await _identityService.GetRolesAsync(cancellationToken,
+            global ? null : _currentUser.CompanyId ?? Guid.Empty);
 
         var result = roles
             .Where(role =>
@@ -47,7 +51,7 @@ internal sealed class GetEmployeeRoleLookupQueryHandler
                 RoleId = role.RoleId,
                 Name = role.Name,
                 IsPrivileged = EmployeeAdministrationRules.IsPrivilegedRole(role.Name),
-                ActiveAssignmentCount = canViewGlobalAssignmentCounts
+                ActiveAssignmentCount = canViewAssignmentCounts
                     ? role.ActiveAssignmentCount
                     : 0
             })

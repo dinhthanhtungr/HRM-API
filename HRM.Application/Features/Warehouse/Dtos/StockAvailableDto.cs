@@ -16,6 +16,10 @@ public sealed class StockAvailableDto
 
     public decimal TotalOnHandKg { get; init; }
 
+    public decimal PhysicalOnHandKg { get; init; }
+
+    public decimal InactiveShelfOnHandKg { get; init; }
+
     public decimal ReservedOpenAllKg { get; set; }
 
     public decimal AvailableKg { get; set; }
@@ -34,6 +38,13 @@ public sealed class StockAvailableDetailDto
     public string CompanyName { get; init; } = string.Empty;
 
     public decimal OnHandKg { get; init; }
+
+    public bool ShelfIsActive { get; init; }
+
+    // Shelf eligibility only; each mutation must still validate its own stock type and capability.
+    public bool CanUse { get; init; }
+
+    public string? UnavailableReason { get; init; }
 }
 
 public sealed class ReservedVaCodeDto

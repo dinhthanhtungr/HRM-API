@@ -91,7 +91,7 @@ internal sealed class GetQuotationPricingQueueQueryHandler
         }
 
         var quotationIds = requestedAtByQuotation.Keys.ToArray();
-        var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+        var scope = await _visibilityService.BuildReadScopeAsync(cancellationToken);
         var quotationQuery = _visibilityService.ApplyQuotationVisibility(
                 _crmDbContext.Quotations.AsNoTracking(),
                 _crmDbContext.Customers.AsNoTracking(),

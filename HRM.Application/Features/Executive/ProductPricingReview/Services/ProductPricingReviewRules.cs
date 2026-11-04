@@ -29,11 +29,20 @@ internal static class ProductPricingReviewRules
         => status is not null && EligibleVuFormulaStatuses.Contains(status);
 
     public static OperationResult<(Guid CompanyId, Guid EmployeeId)> GetContext(ICurrentUser currentUser)
+        => GetContext(currentUser, readOnly: false);
+
+    public static OperationResult<(Guid CompanyId, Guid EmployeeId)> GetReadContext(ICurrentUser currentUser)
+        => GetContext(currentUser, readOnly: true);
+
+    private static OperationResult<(Guid CompanyId, Guid EmployeeId)> GetContext(ICurrentUser currentUser, bool readOnly)
     {
-        if (!ProductPricingAccessRules.CanManage(currentUser))
+        if (!currentUser.IsAuthenticated || !(readOnly
+                ? ProductPricingAccessRules.CanViewManagementData(currentUser)
+                : ProductPricingAccessRules.CanManage(currentUser)))
         {
             return OperationResult<(Guid, Guid)>.Fail(
-                "Only President or Developer can access executive product pricing review.");
+                readOnly ? "Only President, Developer or ACCUser can view executive product pricing review."
+                    : "Only President or Developer can manage executive product pricing review.");
         }
 
         if (currentUser.CompanyId is not { } companyId || companyId == Guid.Empty ||

@@ -7,6 +7,7 @@ namespace HRM.Application.Features.PLM.Formulas.Dtos.Commons
 {
     public class FormulaMaterialInformationDto
     {
+        public string? StockCode { get; set; }
         public Guid? FormulaMaterialId { get; set; }
         public int LineNo { get; set; }
 

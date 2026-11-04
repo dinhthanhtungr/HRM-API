@@ -1,0 +1,298 @@
+{
+  "auditedAtUtc": "2026-10-31T06:55:31.9385602+00:00",
+  "environment": "Development",
+  "configurationSource": "API settings \u002B environment file \u002B Development user secrets \u002B local launch profile \u002B process environment; running process command-line overrides not inspected",
+  "readOnly": true,
+  "isolation": "repeatable read",
+  "outcome": "rolled back",
+  "metrics": [
+    {
+      "section": "guard",
+      "isolation": "repeatable read",
+      "read_only": "on",
+      "server_major": 17,
+      "new_table_exists": false
+    },
+    {
+      "rows": [
+        {
+          "type": 5,
+          "total": 835,
+          "active": 835,
+          "companies": 1
+        },
+        {
+          "type": 12,
+          "total": 662,
+          "active": 662,
+          "companies": 1
+        },
+        {
+          "type": 17,
+          "total": 88,
+          "active": 88,
+          "companies": 1
+        },
+        {
+          "type": 18,
+          "total": 88,
+          "active": 88,
+          "companies": 1
+        }
+      ],
+      "section": "types"
+    },
+    {
+      "section": "child_integrity",
+      "children": 176,
+      "self_parent": 0,
+      "cross_company": 0,
+      "missing_parent": 0,
+      "parent_is_child": 0,
+      "custom_empty_name": 0,
+      "custom_name_over_100": 0,
+      "active_child_inactive_parent": 0
+    },
+    {
+      "rows": [
+        {
+          "total": 88,
+          "root_type": 5,
+          "child_type": 17
+        },
+        {
+          "total": 88,
+          "root_type": 5,
+          "child_type": 18
+        }
+      ],
+      "section": "parent_types"
+    },
+    {
+      "section": "duplicate_defaults",
+      "active_sets": 0,
+      "historical_sets": 0,
+      "max_historical_per_type": 1
+    },
+    {
+      "section": "sample_coverage",
+      "sample_roots": 835,
+      "without_pricing": 747,
+      "without_technical": 747
+    },
+    {
+      "section": "mapping_baseline",
+      "messages": 2718,
+      "attachments": 9,
+      "read_states": 57538,
+      "participants": 18507,
+      "deleted_messages": 3,
+      "muted_participants": 8809,
+      "active_participants": 18507,
+      "mapped_conversations": 1011,
+      "archived_participants": 0,
+      "unread_message_states": 33273
+    },
+    {
+      "rows": [
+        {
+          "type": 5,
+          "empty": 0,
+          "groups": 835,
+          "inactive": 0,
+          "custom_no_owner": 0,
+          "no_active_members": 0,
+          "wrong_last_message": 0
+        },
+        {
+          "type": 17,
+          "empty": 87,
+          "groups": 88,
+          "inactive": 0,
+          "custom_no_owner": 0,
+          "no_active_members": 0,
+          "wrong_last_message": 0
+        },
+        {
+          "type": 18,
+          "empty": 88,
+          "groups": 88,
+          "inactive": 0,
+          "custom_no_owner": 0,
+          "no_active_members": 0,
+          "wrong_last_message": 0
+        }
+      ],
+      "section": "group_lifecycle"
+    },
+    {
+      "section": "forward_sources",
+      "references": 0,
+      "cross_company": 0,
+      "missing_source": 0,
+      "missing_message": 0
+    },
+    {
+      "section": "notification_links",
+      "unresolved": 0,
+      "mapped_user_states": 47213,
+      "linked_notifications": 4199,
+      "mapped_notifications": 2641,
+      "mapped_unread_states": 5223
+    },
+    {
+      "rows": [
+        {
+          "definition": "FOREIGN KEY (\u0022InternalConversationId\u0022) REFERENCES \u0022InternalMail\u0022.\u0022InternalConversations\u0022(\u0022InternalConversationId\u0022) ON DELETE CASCADE",
+          "table_name": "InternalConversationParticipants",
+          "constraint_name": "FK_InternalConversationParticipants_Conversation"
+        },
+        {
+          "definition": "FOREIGN KEY (\u0022EmployeeId\u0022) REFERENCES hr.\u0022Employees\u0022(\u0022EmployeeID\u0022) ON DELETE RESTRICT",
+          "table_name": "InternalConversationParticipants",
+          "constraint_name": "FK_InternalConversationParticipants_Employee"
+        },
+        {
+          "definition": "PRIMARY KEY (\u0022InternalConversationId\u0022, \u0022EmployeeId\u0022)",
+          "table_name": "InternalConversationParticipants",
+          "constraint_name": "PK_InternalConversationParticipants_Conversation_Employee"
+        },
+        {
+          "definition": "FOREIGN KEY (\u0022CompanyId\u0022) REFERENCES company.\u0022Companies\u0022(\u0022companyId\u0022) ON DELETE RESTRICT",
+          "table_name": "InternalConversations",
+          "constraint_name": "FK_InternalConversations_Company"
+        },
+        {
+          "definition": "FOREIGN KEY (\u0022CreatedBy\u0022) REFERENCES hr.\u0022Employees\u0022(\u0022EmployeeID\u0022) ON DELETE RESTRICT",
+          "table_name": "InternalConversations",
+          "constraint_name": "FK_InternalConversations_CreatedBy"
+        },
+        {
+          "definition": "FOREIGN KEY (\u0022DeletedByEmployeeId\u0022) REFERENCES hr.\u0022Employees\u0022(\u0022EmployeeID\u0022) ON DELETE RESTRICT",
+          "table_name": "InternalConversations",
+          "constraint_name": "FK_InternalConversations_DeletedByEmployee"
+        },
+        {
+          "definition": "FOREIGN KEY (\u0022LastMessageId\u0022) REFERENCES \u0022InternalMail\u0022.\u0022InternalMessages\u0022(\u0022InternalMessageId\u0022) ON DELETE SET NULL",
+          "table_name": "InternalConversations",
+          "constraint_name": "FK_InternalConversations_LastMessage"
+        },
+        {
+          "definition": "PRIMARY KEY (\u0022InternalConversationId\u0022)",
+          "table_name": "InternalConversations",
+          "constraint_name": "PK_InternalConversations_Id"
+        },
+        {
+          "definition": "FOREIGN KEY (\u0022EmployeeId\u0022) REFERENCES hr.\u0022Employees\u0022(\u0022EmployeeID\u0022) ON DELETE RESTRICT",
+          "table_name": "InternalMessageReadStates",
+          "constraint_name": "FK_InternalMessageReadStates_Employee"
+        },
+        {
+          "definition": "FOREIGN KEY (\u0022InternalMessageId\u0022) REFERENCES \u0022InternalMail\u0022.\u0022InternalMessages\u0022(\u0022InternalMessageId\u0022) ON DELETE CASCADE",
+          "table_name": "InternalMessageReadStates",
+          "constraint_name": "FK_InternalMessageReadStates_Message"
+        },
+        {
+          "definition": "PRIMARY KEY (\u0022InternalMessageId\u0022, \u0022EmployeeId\u0022)",
+          "table_name": "InternalMessageReadStates",
+          "constraint_name": "PK_InternalMessageReadStates_Message_Employee"
+        },
+        {
+          "definition": "FOREIGN KEY (\u0022InternalMessageId\u0022) REFERENCES \u0022InternalMail\u0022.\u0022InternalMessages\u0022(\u0022InternalMessageId\u0022) ON DELETE CASCADE",
+          "table_name": "InternalMessageReferences",
+          "constraint_name": "FK_InternalMessageReferences_Message"
+        },
+        {
+          "definition": "PRIMARY KEY (\u0022InternalMessageReferenceId\u0022)",
+          "table_name": "InternalMessageReferences",
+          "constraint_name": "PK_InternalMessageReferences_Id"
+        },
+        {
+          "definition": "FOREIGN KEY (\u0022InternalConversationId\u0022) REFERENCES \u0022InternalMail\u0022.\u0022InternalConversations\u0022(\u0022InternalConversationId\u0022) ON DELETE CASCADE",
+          "table_name": "InternalMessages",
+          "constraint_name": "FK_InternalMessages_Conversation"
+        },
+        {
+          "definition": "FOREIGN KEY (\u0022DeletedByEmployeeId\u0022) REFERENCES hr.\u0022Employees\u0022(\u0022EmployeeID\u0022) ON DELETE RESTRICT",
+          "table_name": "InternalMessages",
+          "constraint_name": "FK_InternalMessages_DeletedByEmployee"
+        },
+        {
+          "definition": "FOREIGN KEY (\u0022EditedByEmployeeId\u0022) REFERENCES hr.\u0022Employees\u0022(\u0022EmployeeID\u0022) ON DELETE RESTRICT",
+          "table_name": "InternalMessages",
+          "constraint_name": "FK_InternalMessages_EditedByEmployee"
+        },
+        {
+          "definition": "FOREIGN KEY (\u0022ReplyToMessageId\u0022) REFERENCES \u0022InternalMail\u0022.\u0022InternalMessages\u0022(\u0022InternalMessageId\u0022) ON DELETE RESTRICT",
+          "table_name": "InternalMessages",
+          "constraint_name": "FK_InternalMessages_ReplyToMessage"
+        },
+        {
+          "definition": "FOREIGN KEY (\u0022SenderEmployeeId\u0022) REFERENCES hr.\u0022Employees\u0022(\u0022EmployeeID\u0022) ON DELETE RESTRICT",
+          "table_name": "InternalMessages",
+          "constraint_name": "FK_InternalMessages_SenderEmployee"
+        },
+        {
+          "definition": "PRIMARY KEY (\u0022InternalMessageId\u0022)",
+          "table_name": "InternalMessages",
+          "constraint_name": "PK_InternalMessages_Id"
+        }
+      ],
+      "section": "constraints"
+    },
+    {
+      "rows": [
+        {
+          "indexdef": "CREATE INDEX \u0022IX_InternalConversations_Company_Active_LastMessageAt\u0022 ON \u0022InternalMail\u0022.\u0022InternalConversations\u0022 USING btree (\u0022CompanyId\u0022, \u0022IsActive\u0022, \u0022LastMessageAt\u0022)",
+          "indexname": "IX_InternalConversations_Company_Active_LastMessageAt",
+          "tablename": "InternalConversations"
+        },
+        {
+          "indexdef": "CREATE INDEX \u0022IX_InternalConversations_Company_Related\u0022 ON \u0022InternalMail\u0022.\u0022InternalConversations\u0022 USING btree (\u0022CompanyId\u0022, \u0022RelatedType\u0022, \u0022RelatedId\u0022)",
+          "indexname": "IX_InternalConversations_Company_Related",
+          "tablename": "InternalConversations"
+        },
+        {
+          "indexdef": "CREATE INDEX \u0022IX_InternalConversations_CreatedBy\u0022 ON \u0022InternalMail\u0022.\u0022InternalConversations\u0022 USING btree (\u0022CreatedBy\u0022)",
+          "indexname": "IX_InternalConversations_CreatedBy",
+          "tablename": "InternalConversations"
+        },
+        {
+          "indexdef": "CREATE INDEX \u0022IX_InternalConversations_DeletedByEmployeeId\u0022 ON \u0022InternalMail\u0022.\u0022InternalConversations\u0022 USING btree (\u0022DeletedByEmployeeId\u0022)",
+          "indexname": "IX_InternalConversations_DeletedByEmployeeId",
+          "tablename": "InternalConversations"
+        },
+        {
+          "indexdef": "CREATE INDEX \u0022IX_InternalConversations_LastMessage\u0022 ON \u0022InternalMail\u0022.\u0022InternalConversations\u0022 USING btree (\u0022LastMessageId\u0022)",
+          "indexname": "IX_InternalConversations_LastMessage",
+          "tablename": "InternalConversations"
+        },
+        {
+          "indexdef": "CREATE UNIQUE INDEX \u0022PK_InternalConversations_Id\u0022 ON \u0022InternalMail\u0022.\u0022InternalConversations\u0022 USING btree (\u0022InternalConversationId\u0022)",
+          "indexname": "PK_InternalConversations_Id",
+          "tablename": "InternalConversations"
+        }
+      ],
+      "section": "indexes"
+    },
+    {
+      "rows": [],
+      "section": "triggers"
+    },
+    {
+      "section": "membership_scope",
+      "cross_company_members": 0,
+      "max_custom_name_length": 0,
+      "cross_conversation_replies": 0,
+      "invalid_conversation_reference_type": 0
+    },
+    {
+      "section": "schema_security",
+      "conversation_rls": false,
+      "conversation_forced_rls": false,
+      "unvalidated_constraints": 0,
+      "current_role_can_create_in_schema": true,
+      "current_role_can_write_conversations": true
+    }
+  ]
+}

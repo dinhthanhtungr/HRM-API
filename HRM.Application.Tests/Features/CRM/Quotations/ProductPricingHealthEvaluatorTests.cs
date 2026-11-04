@@ -19,7 +19,9 @@ public sealed class ProductPricingHealthEvaluatorTests
                 MissingMaterialPriceCount = 1
             },
             draft: null,
-            approved: ApprovedPricing(Now.AddDays(-45)),
+            // Keep approval current so this case isolates the missing-price warning.
+            // An expired approval independently requires reapproval before warning classification.
+            approved: ApprovedPricing(Now.AddDays(-15)),
             now: Now,
             options: new QuotationFeatureOptions
             {
@@ -28,7 +30,7 @@ public sealed class ProductPricingHealthEvaluatorTests
 
         Assert.Equal(ProductPricingHealthStatus.MissingMaterialPrice, result.Status);
         Assert.False(result.RequiresPricingAction);
-        Assert.Equal(Now.AddDays(-15), result.PricingReviewDueDate);
+        Assert.Equal(Now.AddDays(15), result.PricingReviewDueDate);
     }
 
     [Fact]

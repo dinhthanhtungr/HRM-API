@@ -47,6 +47,21 @@ internal sealed class GeminiRateLimitService : IGeminiRateLimitService
         }
     }
 
+    /// <summary>Trả kết quả cấp quota, khác với snapshot quota còn lại sau khi consume.</summary>
+    public bool TryAcquire(string model)
+    {
+        var now = DateTime.Now;
+        var bucket = GetBucket(model, now);
+        lock (bucket.SyncRoot)
+        {
+            ResetExpiredWindows(bucket, now);
+            if (!BuildInfo(bucket, model, now).CanRequest) return false;
+            bucket.MinuteUsed++;
+            bucket.DayUsed++;
+            return true;
+        }
+    }
+
     private GeminiRateLimitBucket GetBucket(string model, DateTime now)
     {
         var key = NormalizeModel(model);

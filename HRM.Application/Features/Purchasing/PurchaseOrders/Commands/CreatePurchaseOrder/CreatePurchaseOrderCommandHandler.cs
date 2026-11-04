@@ -42,13 +42,16 @@ internal sealed class CreatePurchaseOrderCommandHandler
         CreatePurchaseOrderCommand command,
         CancellationToken cancellationToken)
     {
-        if (!PurchaseOrderAccess.CanManage(_permissionService))
+        if (!_currentUser.IsAuthenticated || !PurchaseOrderAccess.CanManage(_permissionService))
             return OperationResult<PurchaseOrderDetailDto>.Fail("Bạn không có quyền tạo đơn mua hàng.");
 
         var validationError = Validate(command.Request);
         if (validationError is not null)
             return OperationResult<PurchaseOrderDetailDto>.Fail(validationError);
 
+        if (_currentUser.CompanyId is null || _currentUser.CompanyId == Guid.Empty ||
+            _currentUser.EmployeeId is null || _currentUser.EmployeeId == Guid.Empty)
+            return OperationResult<PurchaseOrderDetailDto>.Fail("Không xác định được công ty hoặc nhân viên hiện tại.");
         var companyId = PurchaseOrderAccess.RequireCompanyId(_currentUser);
         var employeeId = PurchaseOrderAccess.RequireEmployeeId(_currentUser);
         var request = command.Request;
@@ -74,9 +77,10 @@ internal sealed class CreatePurchaseOrderCommandHandler
             return OperationResult<PurchaseOrderDetailDto>.Fail("Một hoặc nhiều SaleOrder không tồn tại hoặc không thuộc công ty hiện tại.");
 
         var employee = await _dbContext.Employees.AsNoTracking()
-            .Where(x => x.EmployeeId == employeeId)
+            .Where(x => x.EmployeeId == employeeId && x.CompanyId == companyId && x.IsActive)
             .Select(x => new EmployeeSnapshot(x.ExternalId, x.FullName, x.PhoneNumber, x.Email))
             .FirstOrDefaultAsync(cancellationToken);
+        if (employee is null) return OperationResult<PurchaseOrderDetailDto>.Fail("Nhân viên không thuộc công ty hiện tại.");
         var supplierPrices = await _dbContext.MaterialsSuppliers
             .Where(x => x.SupplierId == supplier.SupplierId && materialIds.Contains(x.MaterialId))
             .ToDictionaryAsync(x => x.MaterialId, cancellationToken);
@@ -84,29 +88,38 @@ internal sealed class CreatePurchaseOrderCommandHandler
         await using var transaction = await _dbContext.BeginTransactionAsync(cancellationToken);
         var now = _dateTimeProvider.Now;
         var purchaseOrderId = Guid.CreateVersion7();
-        var subtotal = request.Items.Sum(x => x.Quantity * x.UnitPriceAgreed);
-        var totalPrice = subtotal + decimal.Round(subtotal * (request.Vat ?? 0) / 100m, 6, MidpointRounding.AwayFromZero);
+        var details = BuildDetails(request.Items, materials, supplierPrices, purchaseOrderId);
+        var totalPrice = PurchaseOrderTotals.Calculate(details.Sum(x => x.TotalPriceAgreed ?? 0m), request.Vat);
         var snapshot = CreateSnapshot(request, supplier, employee, totalPrice);
         var purchaseOrder = new PurchaseOrder
         {
             PurchaseOrderId = purchaseOrderId,
             ExternalId = await _externalIdService.GenerateMonthlyCodeAsync(companyId, DocumentPrefix.DDH.ToString(), cancellationToken),
-            OrderType = Normalize(request.OrderType), SupplierId = supplier.SupplierId,
-            Comment = Normalize(request.Comment), PLPUComment = Normalize(request.PlpuComment),
-            RequestDeliveryDate = request.RequestDeliveryDate, Status = PurchaseOrderStatus.Pending,
-            CompanyId = companyId, CreateDate = now, CreatedBy = employeeId,
-            UpdatedDate = now, UpdatedBy = employeeId,
-            PurchaseOrderSnapshotId = snapshot.PurchaseOrderSnapshotId, IsActive = true
+            OrderType = Normalize(request.OrderType),
+            SupplierId = supplier.SupplierId,
+            Comment = Normalize(request.Comment),
+            PLPUComment = Normalize(request.PlpuComment),
+            RequestDeliveryDate = request.RequestDeliveryDate,
+            RealDeliveryDate = null, // Client date is accepted for compatibility, but IQC owns the value.
+            Status = PurchaseOrderStatus.Pending,
+            CompanyId = companyId,
+            CreateDate = now,
+            CreatedBy = employeeId,
+            UpdatedDate = now,
+            UpdatedBy = employeeId,
+            PurchaseOrderSnapshotId = snapshot.PurchaseOrderSnapshotId,
+            IsActive = true
         };
 
-        var details = BuildDetails(request.Items, materials, supplierPrices, purchaseOrderId);
         await _dbContext.PurchaseOrderSnapshots.AddAsync(snapshot, cancellationToken);
         await _dbContext.PurchaseOrders.AddAsync(purchaseOrder, cancellationToken);
         await _dbContext.PurchaseOrderDetails.AddRangeAsync(details, cancellationToken);
         await _dbContext.PurchaseOrderLinks.AddRangeAsync(merchandiseOrderIds.Select(id => new PurchaseOrderLink
         {
-            PurchaseOrderLinkId = Guid.CreateVersion7(), PurchaseOrderId = purchaseOrderId,
-            MerchandiseOrderId = id, IsActive = true
+            PurchaseOrderLinkId = Guid.CreateVersion7(),
+            PurchaseOrderId = purchaseOrderId,
+            MerchandiseOrderId = id,
+            IsActive = true
         }), cancellationToken);
         await SyncSupplierPricesAsync(request.Items, supplierPrices, supplier.SupplierId, employeeId, now, cancellationToken);
         await _dbContext.SaveChangesAsync(cancellationToken);
@@ -115,7 +128,12 @@ internal sealed class CreatePurchaseOrderCommandHandler
         var dto = PurchaseOrderDtoMapper.Map(
             purchaseOrder, supplier.SupplierName, snapshot,
             details.Select(PurchaseOrderDtoMapper.MapLine).ToList(),
-            string.Join(", ", merchandiseOrders.Select(x => x.ExternalId)));
+            string.Join(", ", merchandiseOrders.Select(x => x.ExternalId)),
+            merchandiseOrders.OrderBy(x => x.ExternalId).Select(x => new PurchaseOrderMerchandiseOrderDto
+            {
+                MerchandiseOrderId = x.MerchandiseOrderId,
+                ExternalId = x.ExternalId
+            }).ToList());
         return OperationResult<PurchaseOrderDetailDto>.Ok(dto, "Tạo đơn mua hàng thành công.");
     }
 
@@ -143,13 +161,21 @@ internal sealed class CreatePurchaseOrderCommandHandler
             supplierPrices.TryGetValue(item.MaterialId, out var price);
             return new PurchaseOrderDetail
             {
-                PurchaseOrderDetailId = Guid.CreateVersion7(), PurchaseOrderId = purchaseOrderId,
-                LineNo = lineNo++, MaterialId = item.MaterialId,
-                MaterialExternalIDSnapshot = material.ExternalId, MaterialNameSnapshot = material.Name,
-                Package = Normalize(item.Package) ?? material.Package, RequestQuantity = item.Quantity,
-                BaseCostSnapshot = price?.CurrentPrice, BaseDateSnapshot = price?.UpdatedDate ?? price?.CreateDate,
-                UnitPriceAgreed = item.UnitPriceAgreed, TotalPriceAgreed = item.Quantity * item.UnitPriceAgreed,
-                DeliveryDate = item.DeliveryDate, Note = Normalize(item.Note), IsActive = true
+                PurchaseOrderDetailId = Guid.CreateVersion7(),
+                PurchaseOrderId = purchaseOrderId,
+                LineNo = lineNo++,
+                MaterialId = item.MaterialId,
+                MaterialExternalIDSnapshot = material.ExternalId,
+                MaterialNameSnapshot = material.Name,
+                Package = Normalize(item.Package) ?? material.Package,
+                RequestQuantity = item.Quantity,
+                BaseCostSnapshot = price?.CurrentPrice,
+                BaseDateSnapshot = price?.UpdatedDate ?? price?.CreateDate,
+                UnitPriceAgreed = item.UnitPriceAgreed,
+                TotalPriceAgreed = decimal.Round(item.Quantity * item.UnitPriceAgreed!.Value, 6, MidpointRounding.AwayFromZero),
+                DeliveryDate = item.DeliveryDate,
+                Note = Normalize(item.Note),
+                IsActive = true
             };
         }).ToList();
     }
@@ -168,9 +194,15 @@ internal sealed class CreatePurchaseOrderCommandHandler
             {
                 link = new MaterialsSupplier
                 {
-                    MaterialsSuppliersId = Guid.CreateVersion7(), SupplierId = supplierId,
-                    MaterialId = item.MaterialId, CurrentPrice = item.UnitPriceAgreed, Currency = "VND",
-                    CreateDate = now, CreatedBy = employeeId, IsActive = true, IsPreferred = false
+                    MaterialsSuppliersId = Guid.CreateVersion7(),
+                    SupplierId = supplierId,
+                    MaterialId = item.MaterialId,
+                    CurrentPrice = item.UnitPriceAgreed,
+                    Currency = "VND",
+                    CreateDate = now,
+                    CreatedBy = employeeId,
+                    IsActive = true,
+                    IsPreferred = false
                 };
                 await _dbContext.MaterialsSuppliers.AddAsync(link, ct);
                 await _dbContext.PriceHistories.AddAsync(CreatePriceHistory(link.MaterialsSuppliersId, null, employeeId, now), ct);
@@ -188,8 +220,12 @@ internal sealed class CreatePurchaseOrderCommandHandler
 
     private static PriceHistory CreatePriceHistory(Guid linkId, decimal? oldPrice, Guid userId, DateTime now) => new()
     {
-        PriceHistoryId = Guid.CreateVersion7(), MaterialsSuppliersId = linkId, OldPrice = oldPrice,
-        Currency = "VND", CreateDate = now, CreatedBy = userId
+        PriceHistoryId = Guid.CreateVersion7(),
+        MaterialsSuppliersId = linkId,
+        OldPrice = oldPrice,
+        Currency = "VND",
+        CreateDate = now,
+        CreatedBy = userId
     };
 
     private static PurchaseOrderSnapshot CreateSnapshot(CreatePurchaseOrderRequest request, SupplierSnapshot supplier, EmployeeSnapshot? employee, decimal totalPrice) => new()
@@ -197,20 +233,28 @@ internal sealed class CreatePurchaseOrderCommandHandler
         PurchaseOrderSnapshotId = Guid.CreateVersion7(),
         EmployeeExternalIdSnapshot = employee?.ExternalId ?? string.Empty,
         EmployeeFullNameSnapshot = employee?.FullName ?? string.Empty,
-        PhoneNumberSnapshot = employee?.PhoneNumber, EmailSnapshot = employee?.Email,
-        SupplierExternalIdSnapshot = supplier.ExternalId, SupplierNameSnapshot = supplier.SupplierName,
-        SupplierContactSnapshot = supplier.PrimaryContact, SupplierPhoneNumberSnapshot = supplier.Phone,
+        PhoneNumberSnapshot = employee?.PhoneNumber,
+        EmailSnapshot = employee?.Email,
+        SupplierExternalIdSnapshot = supplier.ExternalId,
+        SupplierNameSnapshot = supplier.SupplierName,
+        SupplierContactSnapshot = supplier.PrimaryContact,
+        SupplierPhoneNumberSnapshot = supplier.Phone,
         SupplierAddressSnapshot = supplier.PrimaryAddress ?? supplier.RegistrationAddress,
-        TotalPrice = totalPrice, DeliveryAddress = Normalize(request.DeliveryAddress),
-        PaymentTypes = Normalize(request.PaymentTypes), Vat = request.Vat
+        TotalPrice = totalPrice,
+        DeliveryAddress = Normalize(request.DeliveryAddress),
+        PaymentTypes = Normalize(request.PaymentTypes),
+        Vat = request.Vat
     };
 
     private static string? Validate(CreatePurchaseOrderRequest request)
     {
+        if (!PurchaseOrderEditRules.ValidOrderType(request.OrderType)) return "Loại đơn phải là NCC, KH hoặc NB.";
+        if (!request.RequestDeliveryDate.HasValue) return "Ngày giao yêu cầu là bắt buộc.";
+        if (request.MerchandiseOrderIds is null || request.MerchandiseOrderIds.Any(x => x == Guid.Empty)) return "Mã đơn bán liên kết không hợp lệ.";
         if (request.SupplierId == Guid.Empty) return "Nhà cung cấp là bắt buộc.";
-        if (request.Items.Count == 0) return "PO phải có ít nhất một dòng vật tư.";
+        if (request.Items is null || request.Items.Count == 0) return "PO phải có ít nhất một dòng vật tư.";
         if (request.Vat is < 0 or > 100) return "VAT phải nằm trong khoảng 0-100.";
-        if (request.Items.Any(x => x.MaterialId == Guid.Empty || x.Quantity <= 0 || x.UnitPriceAgreed < 0)) return "Dòng vật tư có mã, số lượng hoặc đơn giá không hợp lệ.";
+        if (request.Items.Any(x => x is null || x.MaterialId == Guid.Empty || x.Quantity <= 0 || !x.UnitPriceAgreed.HasValue || x.UnitPriceAgreed < 0)) return "Dòng vật tư có mã, số lượng hoặc đơn giá không hợp lệ.";
         return request.Items.Select(x => x.MaterialId).Distinct().Count() == request.Items.Count ? null : "Không được trùng vật tư trong một PO.";
     }
 

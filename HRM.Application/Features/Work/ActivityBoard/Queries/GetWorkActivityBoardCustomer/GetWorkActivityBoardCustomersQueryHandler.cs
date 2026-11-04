@@ -1,9 +1,11 @@
 using HRM.Application.Abstractions.Persistence.CRM.CustomerCare;
 using HRM.Application.Abstractions.Security;
+using HRM.Application.Commons.Authorization;
 using HRM.Application.Commons.Models;
 using HRM.Application.Commons.Pagination;
 using HRM.Application.Features.CRM.CustomerCare.Visibility;
 using HRM.Application.Features.Work.ActivityBoard.Dtos;
+using HRM.Domain.Entities.CustomerSchema;
 using HRM.Domain.Enums.CustomerEnum;
 using HRM.Domain.Enums.WorkTaskEnums;
 using MediatR;
@@ -38,7 +40,7 @@ internal sealed class GetWorkActivityBoardCustomersQueryHandler
         }
 
         var request = query.Request;
-        var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+        var scope = await _visibilityService.BuildReadScopeAsync(cancellationToken);
         var pageNumber = request.NormalizedPageNumber;
         var pageSize = request.NormalizedPageSize;
         var activityTypes = request.ActivityTypes?.Count > 0
@@ -58,128 +60,9 @@ internal sealed class GetWorkActivityBoardCustomersQueryHandler
                 EF.Functions.ILike(customer.CustomerName, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter));
         }
 
-        var customerRows = customers
-            .Select(customer => new CustomerPageRow
-            {
-                CustomerId = customer.CustomerId,
-                ExternalId = customer.ExternalId,
-                CustomerName = customer.CustomerName,
-                IsLead = customer.IsLead,
-                HasLeaderClaimAccess = customer.CustomerClaims.Any(claim =>
-                    claim.IsActive &&
-                    claim.Type == ClaimType.Work &&
-                    claim.ExpiresAt > scope.Now &&
-                    scope.LeaderGroupIds.Contains(claim.GroupId)),
-                HasOpenTask = includeFollowUpTasks && _dbContext.WorkTasks
-                    .AsNoTracking()
-                    .Any(task =>
-                        task.CompanyId == scope.CompanyId &&
-                        (request.IncludeInactive || task.IsActive) &&
-                        task.Status != WorkTaskStatus.Done &&
-                        task.Status != WorkTaskStatus.Canceled &&
-                        (!request.OnlyMine ||
-                         task.CreatedBy == scope.EmployeeId ||
-                         task.AssignedToEmployeeId == scope.EmployeeId ||
-                         task.Assignees.Any(assignee =>
-                             assignee.EmployeeId == scope.EmployeeId &&
-                             assignee.IsActive)) &&
-                        task.References.Any(reference =>
-                            (reference.ReferenceType == WorkReferenceType.Customer &&
-                             reference.ReferenceId == customer.CustomerId) ||
-                            (reference.ReferenceType == WorkReferenceType.CustomerInteraction &&
-                             _dbContext.CustomerInteractions.Any(interaction =>
-                                 interaction.CompanyId == scope.CompanyId &&
-                                 interaction.Id == reference.ReferenceId &&
-                                 interaction.CustomerId == customer.CustomerId))) &&
-                        (!customer.IsLead ||
-                         scope.HasFullCustomerView ||
-                         customer.CustomerClaims.Any(claim =>
-                             claim.IsActive &&
-                             claim.Type == ClaimType.Work &&
-                             claim.ExpiresAt > scope.Now &&
-                             scope.LeaderGroupIds.Contains(claim.GroupId)) ||
-                         task.CreatedBy == scope.EmployeeId ||
-                         task.AssignedToEmployeeId == scope.EmployeeId ||
-                         task.Assignees.Any(assignee =>
-                             assignee.EmployeeId == scope.EmployeeId &&
-                             assignee.IsActive))),
-                HasActivity =
-                    includeFollowUpTasks && _dbContext.WorkTasks.AsNoTracking().Any(task =>
-                        task.CompanyId == scope.CompanyId &&
-                        (request.IncludeInactive || task.IsActive) &&
-                        (request.IncludeCompleted ||
-                         task.Status != WorkTaskStatus.Done &&
-                         task.Status != WorkTaskStatus.Canceled) &&
-                        (!request.OnlyMine ||
-                         task.CreatedBy == scope.EmployeeId ||
-                         task.AssignedToEmployeeId == scope.EmployeeId ||
-                         task.Assignees.Any(assignee =>
-                             assignee.EmployeeId == scope.EmployeeId &&
-                             assignee.IsActive)) &&
-                        task.References.Any(reference =>
-                            (reference.ReferenceType == WorkReferenceType.Customer &&
-                             reference.ReferenceId == customer.CustomerId) ||
-                            (reference.ReferenceType == WorkReferenceType.CustomerInteraction &&
-                             _dbContext.CustomerInteractions.Any(interaction =>
-                                 interaction.CompanyId == scope.CompanyId &&
-                                 interaction.Id == reference.ReferenceId &&
-                                 interaction.CustomerId == customer.CustomerId))) &&
-                        (!customer.IsLead ||
-                         scope.HasFullCustomerView ||
-                         customer.CustomerClaims.Any(claim =>
-                             claim.IsActive &&
-                             claim.Type == ClaimType.Work &&
-                             claim.ExpiresAt > scope.Now &&
-                             scope.LeaderGroupIds.Contains(claim.GroupId)) ||
-                         task.CreatedBy == scope.EmployeeId ||
-                         task.AssignedToEmployeeId == scope.EmployeeId ||
-                         task.Assignees.Any(assignee =>
-                             assignee.EmployeeId == scope.EmployeeId &&
-                             assignee.IsActive))) ||
-                    includeWorkPlans && _dbContext.WorkPlans.AsNoTracking().Any(plan =>
-                        plan.CompanyId == scope.CompanyId &&
-                        (request.IncludeInactive || plan.IsActive) &&
-                        (request.IncludeCompleted ||
-                         plan.Status != WorkPlanStatus.Completed &&
-                         plan.Status != WorkPlanStatus.Canceled) &&
-                        (!request.OnlyMine ||
-                         plan.CreatedBy == scope.EmployeeId ||
-                         plan.AssignedToEmployeeId == scope.EmployeeId ||
-                         plan.Assignees.Any(assignee =>
-                             assignee.EmployeeId == scope.EmployeeId &&
-                             assignee.IsActive)) &&
-                        plan.References.Any(reference =>
-                            reference.ReferenceType == WorkReferenceType.Customer &&
-                            reference.ReferenceId == customer.CustomerId) &&
-                        (!customer.IsLead ||
-                         scope.HasFullCustomerView ||
-                         customer.CustomerClaims.Any(claim =>
-                             claim.IsActive &&
-                             claim.Type == ClaimType.Work &&
-                             claim.ExpiresAt > scope.Now &&
-                             scope.LeaderGroupIds.Contains(claim.GroupId)) ||
-                         plan.CreatedBy == scope.EmployeeId ||
-                         plan.AssignedToEmployeeId == scope.EmployeeId ||
-                         plan.Assignees.Any(assignee =>
-                             assignee.EmployeeId == scope.EmployeeId &&
-                             assignee.IsActive))) ||
-                    includeInteractions && _dbContext.CustomerInteractions.AsNoTracking().Any(interaction =>
-                        interaction.CompanyId == scope.CompanyId &&
-                        interaction.CustomerId == customer.CustomerId &&
-                        (request.IncludeInactive || interaction.IsActive) &&
-                        (!request.OnlyMine ||
-                         interaction.CreatedBy == scope.EmployeeId ||
-                         interaction.AssignedSaleEmployeeId == scope.EmployeeId) &&
-                        (!customer.IsLead ||
-                         scope.HasFullCustomerView ||
-                         customer.CustomerClaims.Any(claim =>
-                             claim.IsActive &&
-                             claim.Type == ClaimType.Work &&
-                             claim.ExpiresAt > scope.Now &&
-                             scope.LeaderGroupIds.Contains(claim.GroupId)) ||
-                         interaction.CreatedBy == scope.EmployeeId ||
-                         interaction.AssignedSaleEmployeeId == scope.EmployeeId))
-            });
+        var customerRows = BuildCustomerRows(
+            _dbContext, customers, scope, request,
+            includeFollowUpTasks, includeWorkPlans, includeInteractions);
 
         if (request.OnlyHasActivity)
         {
@@ -355,6 +238,105 @@ internal sealed class GetWorkActivityBoardCustomersQueryHandler
                 pageSize));
     }
 
+    // Build activity sets independently of each customer so PostgreSQL can use joins
+    // instead of repeatedly traversing task references and interactions per customer.
+    internal static IQueryable<CustomerPageRow> BuildCustomerRows(
+        ICRMReadDbContext db,
+        IQueryable<Customer> customers,
+        ViewerScope scope,
+        WorkActivityBoardCustomerListQueryDto request,
+        bool includeTasks,
+        bool includePlans,
+        bool includeInteractions)
+    {
+        var tasks = db.WorkTasks.AsNoTracking().Where(task =>
+            includeTasks && task.CompanyId == scope.CompanyId &&
+            (request.IncludeInactive || task.IsActive));
+        var taskLinks = db.WorkTaskReferences.AsNoTracking()
+            .Where(reference => reference.ReferenceType == WorkReferenceType.Customer)
+            .Select(reference => new { reference.WorkTaskId, CustomerId = reference.ReferenceId })
+            .Concat(
+                from reference in db.WorkTaskReferences.AsNoTracking()
+                join interaction in db.CustomerInteractions.AsNoTracking()
+                    on reference.ReferenceId equals interaction.Id
+                where reference.ReferenceType == WorkReferenceType.CustomerInteraction &&
+                      interaction.CompanyId == scope.CompanyId
+                select new { reference.WorkTaskId, interaction.CustomerId });
+
+        var taskActivity =
+            from link in taskLinks
+            join task in tasks on link.WorkTaskId equals task.Id
+            select new
+            {
+                link.CustomerId,
+                IsOpen = task.Status != WorkTaskStatus.Done && task.Status != WorkTaskStatus.Canceled,
+                IsMine = task.CreatedBy == scope.EmployeeId ||
+                         task.AssignedToEmployeeId == scope.EmployeeId ||
+                         task.Assignees.Any(a => a.EmployeeId == scope.EmployeeId && a.IsActive)
+            };
+        var openTasks = taskActivity.Where(activity => activity.IsOpen);
+        var visibleTasks = taskActivity.Where(activity => request.IncludeCompleted || activity.IsOpen);
+
+        var planActivity =
+            from reference in db.WorkPlanReferences.AsNoTracking()
+            join plan in db.WorkPlans.AsNoTracking() on reference.WorkPlanId equals plan.Id
+            where includePlans && reference.ReferenceType == WorkReferenceType.Customer &&
+                  plan.CompanyId == scope.CompanyId &&
+                  (request.IncludeInactive || plan.IsActive) &&
+                  (request.IncludeCompleted ||
+                   plan.Status != WorkPlanStatus.Completed && plan.Status != WorkPlanStatus.Canceled)
+            select new
+            {
+                CustomerId = reference.ReferenceId,
+                IsMine = plan.CreatedBy == scope.EmployeeId ||
+                         plan.AssignedToEmployeeId == scope.EmployeeId ||
+                         plan.Assignees.Any(a => a.EmployeeId == scope.EmployeeId && a.IsActive)
+            };
+        var interactionActivity = db.CustomerInteractions.AsNoTracking()
+            .Where(interaction => includeInteractions && interaction.CompanyId == scope.CompanyId &&
+                                  (request.IncludeInactive || interaction.IsActive))
+            .Select(interaction => new
+            {
+                interaction.CustomerId,
+                IsMine = interaction.CreatedBy == scope.EmployeeId ||
+                         interaction.AssignedSaleEmployeeId == scope.EmployeeId
+            });
+
+        var activityCustomerIds = visibleTasks.Select(a => a.CustomerId)
+            .Concat(planActivity.Select(a => a.CustomerId))
+            .Concat(interactionActivity.Select(a => a.CustomerId));
+        var mineActivityCustomerIds = visibleTasks.Where(a => a.IsMine).Select(a => a.CustomerId)
+            .Concat(planActivity.Where(a => a.IsMine).Select(a => a.CustomerId))
+            .Concat(interactionActivity.Where(a => a.IsMine).Select(a => a.CustomerId));
+        var openTaskCustomerIds = openTasks.Select(a => a.CustomerId);
+        var mineOpenTaskCustomerIds = openTasks.Where(a => a.IsMine).Select(a => a.CustomerId);
+
+        var customerAccess = customers.Select(customer => new
+        {
+            Customer = customer,
+            HasLeaderClaimAccess = customer.CustomerClaims.Any(claim =>
+                claim.IsActive && claim.Type == ClaimType.Work && claim.ExpiresAt > scope.Now &&
+                scope.LeaderGroupIds.Contains(claim.GroupId))
+        });
+
+        return customerAccess.Select(row => new CustomerPageRow
+        {
+            CustomerId = row.Customer.CustomerId,
+            ExternalId = row.Customer.ExternalId,
+            CustomerName = row.Customer.CustomerName,
+            IsLead = row.Customer.IsLead,
+            HasLeaderClaimAccess = row.HasLeaderClaimAccess,
+            HasActivity = !request.OnlyMine &&
+                          (!row.Customer.IsLead || scope.HasFullCustomerView || row.HasLeaderClaimAccess)
+                ? activityCustomerIds.Contains(row.Customer.CustomerId)
+                : mineActivityCustomerIds.Contains(row.Customer.CustomerId),
+            HasOpenTask = !request.OnlyMine &&
+                          (!row.Customer.IsLead || scope.HasFullCustomerView || row.HasLeaderClaimAccess)
+                ? openTaskCustomerIds.Contains(row.Customer.CustomerId)
+                : mineOpenTaskCustomerIds.Contains(row.Customer.CustomerId)
+        });
+    }
+
     private static WorkActivityBoardCustomerSummaryDto BuildSummary(
         CustomerPageRow customer,
         IReadOnlyList<TaskActivityRow> allTasks,
@@ -451,7 +433,7 @@ internal sealed class GetWorkActivityBoardCustomersQueryHandler
             .DefaultIfEmpty()
             .Max();
 
-    private sealed class CustomerPageRow
+    internal sealed class CustomerPageRow
     {
         public Guid CustomerId { get; set; }
         public string ExternalId { get; set; } = string.Empty;

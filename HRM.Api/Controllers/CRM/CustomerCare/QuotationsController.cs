@@ -1,3 +1,6 @@
+using HRM.Application.Features.CRM.Quotations.Commands.ConfirmQuotationSent;
+using HRM.Application.Features.CRM.Quotations.Commands.DeleteQuotation;
+using HRM.Application.Features.CRM.Quotations.Commands.WithdrawSendConfirmation;
 using HRM.Application.Commons.Concurrency;
 using HRM.Application.Features.CRM.Quotations.Commands.CreateQuotation;
 using HRM.Application.Features.CRM.Quotations.Commands.SaveQuotation;
@@ -64,7 +67,15 @@ public sealed class QuotationsController : ControllerBase
                 nameof(GetQuotationById),
                 new { quotationId = result.Data.QuotationId },
                 result)
-            : BadRequest(result);
+            : result is QuotationCreateConflictFailure ? Conflict(result) : BadRequest(result);
+    }
+
+    [HttpDelete("{quotationId:guid}")]
+    public async Task<IActionResult> DeleteQuotation(
+        Guid quotationId, [FromQuery] DateTime? expectedUpdatedDate, CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new DeleteQuotationCommand(quotationId, expectedUpdatedDate), cancellationToken);
+        return result.Success ? NoContent() : MutationFailure(result);
     }
 
     [HttpPut("{quotationId:guid}/save")]
@@ -135,6 +146,22 @@ public sealed class QuotationsController : ControllerBase
             new MarkQuotationSentCommand(quotationId, request ?? new MarkQuotationSentRequest()),
             cancellationToken);
         return result.Success ? NoContent() : MutationFailure(result);
+    }
+
+    [HttpPost("{quotationId:guid}/confirm-sent")]
+    public async Task<IActionResult> ConfirmQuotationSent(
+        Guid quotationId, [FromBody] ConfirmQuotationSentRequest request, CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new ConfirmQuotationSentCommand(quotationId, request), cancellationToken);
+        return result.Success ? NoContent() : MutationFailure(result);
+    }
+
+    [HttpPost("{quotationId:guid}/withdraw-send-confirmation")]
+    public async Task<IActionResult> WithdrawSendConfirmation(
+        Guid quotationId, [FromBody] WithdrawQuotationPricingRequest request, CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new WithdrawSendConfirmationCommand(quotationId, request), cancellationToken);
+        return result.Success ? Ok(result.Data) : MutationFailure(result);
     }
 
     [HttpPost("{quotationId:guid}/request")]
@@ -404,7 +431,17 @@ public sealed class QuotationsController : ControllerBase
     }
 
     private ActionResult MutationFailure(HRM.Application.Commons.Models.OperationResult result)
-        => OptimisticConcurrencyHelper.IsConflictMessage(result.Message)
-            ? Conflict(result)
-            : BadRequest(result);
+    {
+        if (result is QuotationStandardReferenceFailure)
+            return Conflict(result);
+        if (result is QuotationConfirmationFailure failure)
+            return failure.Code switch
+            {
+                QuotationConfirmationErrors.Forbidden => StatusCode(403, failure),
+                QuotationConfirmationErrors.NotFound => NotFound(failure),
+                QuotationConfirmationErrors.TokenRequired or QuotationConfirmationErrors.InvalidRequest => BadRequest(failure),
+                _ => Conflict(failure)
+            };
+        return OptimisticConcurrencyHelper.IsConflictMessage(result.Message) ? Conflict(result) : BadRequest(result);
+    }
 }

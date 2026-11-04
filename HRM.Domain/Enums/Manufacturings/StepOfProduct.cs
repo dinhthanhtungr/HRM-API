@@ -14,8 +14,11 @@ namespace HRM.Domain.Enums.Manufacturings
         HT_GH = 3,             // Trộn Recolor
         BN_GH = 4,             // Nghiền
         CT_MD_GH = 5,          // Trộn => Đùn
-        CT_MD_HT_GH = 6,       // Trộn => Đùn => Trộn Recolor
-        CT_BN_MD_GH = 7,       // Trộn => Nghiền => Đùn
-        CT_BN_MD_HT_GH = 8,    // Trộn => Nghiền => Đùn => Trộn Recolor
+        MDTS_GH = 6,           // Đùn tái sinh
+        BTS_GH = 7,            // Băm gia công
+        CT_MD_HT_GH = 8,       // Trộn => Đùn => Hoàn thiện
+        MD_HT_GH = 9,          // Đùn => Hoàn thiện
+        CT_HT_GH = 10,         // Trộn => Hoàn thiện (chia phần)
+        CT_MDTS_GH = 11,       // Trộn => Đùn tái sinh
     }
 }

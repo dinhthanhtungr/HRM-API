@@ -41,7 +41,7 @@ internal sealed class GetCustomerProductStockQueryHandler
                 "CustomerId hoặc ProductId không hợp lệ.");
         }
 
-        var scope = await _customerVisibilityService.BuildScopeAsync(cancellationToken);
+        var scope = await _customerVisibilityService.BuildReadScopeAsync(cancellationToken);
         var canAccessCustomer = await _customerVisibilityService
             .ApplyCustomerVisibility(
                 _saleOrderDbContext.Customers.AsNoTracking(),

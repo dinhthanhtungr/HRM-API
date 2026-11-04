@@ -2,6 +2,8 @@ namespace HRM.Application.Features.DevAndQA.ProductInspections.Dtos;
 
 public sealed class ProductInspectionWriteRequest
 {
+    /// <summary>Lệnh sản xuất lấy từ coa-sources; bắt buộc khi tạo không có ProductStandardId.</summary>
+    public Guid? MfgProductionOrderId { get; set; }
     public Guid? ProductStandardId { get; set; }
     public string? BatchId { get; set; }
     public int? Weight { get; set; }
@@ -59,6 +61,9 @@ public sealed class ProductInspectionWriteRequest
 
 public class ProductInspectionDetailDto
 {
+    public Guid? ProductId { get; set; }
+    public Guid? MfgProductionOrderId { get; set; }
+    public ProductInspectionPdfSpecificationsDto? Specifications { get; set; }
     public Guid Id { get; set; }
     public string? ExternalId { get; set; }
     public Guid? ProductStandardId { get; set; }
@@ -135,6 +140,7 @@ public sealed class ProductInspectionSummaryDto
 
 public sealed class ProductCoaSourceDto
 {
+    public ProductInspectionPdfSpecificationsDto? Specifications { get; set; }
     public Guid MfgProductionOrderId { get; set; }
     public Guid? ProductStandardId { get; set; }
     public string? BatchId { get; set; }
@@ -163,7 +169,6 @@ public sealed class ProductInspectionPdfFileDto
 public sealed class ProductInspectionPdfDocumentDto : ProductInspectionDetailDto
 {
     public string? BagType { get; set; }
-    public ProductInspectionPdfSpecificationsDto? Specifications { get; set; }
 }
 
 public sealed class ProductInspectionPdfSpecificationsDto

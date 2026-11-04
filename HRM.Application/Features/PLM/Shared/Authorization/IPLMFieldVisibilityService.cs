@@ -8,6 +8,7 @@ namespace HRM.Application.Features.PLM.Shared.Authorization
 {
     public interface IPLMFieldVisibilityService
     {
+        bool CanViewManufacturingDefectiveLots() => false;
         /// <summary>
         /// Kiểm tra có được xem giá không
         /// </summary>

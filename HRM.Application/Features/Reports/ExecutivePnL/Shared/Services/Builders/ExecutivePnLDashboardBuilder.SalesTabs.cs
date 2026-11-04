@@ -16,7 +16,7 @@ namespace HRM.Application.Features.Reports.ExecutivePnL.Shared.Services.Builders
         //{
         //    var periods = BuildPeriods(months, periodType);
         //    var visibleRows = BuildVisibleSalesRows(rows, periods);
-        //    var saleTotals = BuildTopSaleTotals(rows, topN);
+        //    var saleTotals = BuildTopSaleTotals(rows.Where(row => periods.Any(period => period.Contains(row.Year, row.Month))).ToList(), topN);
 
         //    return new ExecutivePnLDashboardTabDto
         //    {
@@ -38,13 +38,14 @@ namespace HRM.Application.Features.Reports.ExecutivePnL.Shared.Services.Builders
             IReadOnlyList<DateTime> months,
             IReadOnlyList<ExecutivePnLSalesMonthlyMetricRow> rows,
             int topN,
-            ExecutivePnLDashboardPeriodType periodType = ExecutivePnLDashboardPeriodType.Month)
+            ExecutivePnLDashboardPeriodType periodType = ExecutivePnLDashboardPeriodType.Month,
+            bool canViewProfit = true)
         {
             var periods = BuildPeriods(months, periodType);
             var visibleRows = BuildVisibleSalesRows(rows, periods);
-            var saleTotals = BuildTopSaleTotals(rows, topN);
+            var saleTotals = BuildTopSaleTotals(rows.Where(row => periods.Any(period => period.Contains(row.Year, row.Month))).ToList(), topN);
 
-            return new ExecutivePnLAnalysisTabDto
+            var tab = new ExecutivePnLAnalysisTabDto
             {
                 Code = "BY_SALES",
                 Title = "Theo sale",
@@ -61,6 +62,16 @@ namespace HRM.Application.Features.Reports.ExecutivePnL.Shared.Services.Builders
                     BuildSalesDetailGrowthChart(periods, visibleRows),
                 }
             };
+            if (!canViewProfit)
+            {
+                tab.Metrics.RemoveAll(metric => metric.Key != "revenue");
+                foreach (var line in tab.Sections.SelectMany(section => section.Lines))
+                    foreach (var key in line.MetricValues.Keys.Where(key => key != "revenue").ToArray())
+                        line.MetricValues.Remove(key);
+                foreach (var chart in tab.Charts)
+                    chart.Series.RemoveAll(series => series.Key != "revenue" && series.Key != "revenueGrowthPercent");
+            }
+            return tab;
         }
 
         /// <summary>
@@ -521,7 +532,7 @@ namespace HRM.Application.Features.Reports.ExecutivePnL.Shared.Services.Builders
         /// </summary>
         private static decimal CalculateMarginPercent(decimal revenue, decimal profit)
         {
-            return revenue == 0 ? 0 : Math.Round(profit / revenue * 100, 2);
+            return HRM.Application.Commons.Reporting.SalesMetrics.ReportMetricRules.MarginPercent(revenue, profit);
         }
 
         /// <summary>

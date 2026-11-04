@@ -1,12 +1,14 @@
 # Sample Request Pricing Overview
 
+ACCUser được đọc Overview và Merchandise Order Price History như President, gồm phạm vi khách hàng toàn công ty qua BuildReadScopeAsync. Company/employee context vẫn bắt buộc. Quyền mở trao đổi Sample Request dùng cùng nhóm reader điều hành; khu vực riêng tiếp tục bắt buộc membership.
+
 ## API
 
 `GET /api/v1/executive/sample-request-pricing-overview`
 
 API chỉ đọc dành cho màn hình tổng hợp của President. Mỗi item luôn đại diện cho một
 `SampleRequest`; hai yêu cầu mẫu dùng chung Product vẫn là hai item độc lập. Endpoint yêu cầu policy
-`Executive.ViewSampleRequestPricingOverview`, hiện chỉ nhận role `President` hoặc `Developer`, đồng thời
+`Executive.ViewSampleRequestPricingOverview`, nhận role `President`, `Developer` hoặc `ACCUser`, đồng thời
 handler kiểm tra lại role, `CompanyId` và `EmployeeId` từ authenticated context.
 
 Query hỗ trợ `pageNumber`, `pageSize` (mặc định 12, tối đa 100), `keyword`, `sampleStatuses` hoặc
@@ -26,6 +28,10 @@ mới fallback sang tìm `ILIKE` đầy đủ để giữ nguyên khả năng t�
 `searchType` thu hẹp keyword vào đúng nguồn định danh, dùng `prefix match` để người dùng có thể gõ dần:
 
 - `quotation`: chỉ tìm `Quotation.ExternalId` (`BBG...`), rồi lấy Sample Request qua Quotation Line.
+  Cho phép mẫu của đúng khách hàng báo giá hoặc mẫu nội bộ VietAus (`KH_VIETAUS`) cùng company.
+  Dòng và báo giá phải active, cùng company; vẫn phải liên kết đúng `SampleRequestId`, hoặc
+  khớp `ProductId` khi dòng không gắn mẫu. Rule này áp dụng cả nhánh keyword tổng hợp (`All`);
+  không mở mẫu riêng của khách hàng khác hoặc mẫu khác company.
 - `customer`: chỉ tìm `Customer.ExternalId` (`KH_...`).
 - `sampleRequest`: chỉ tìm `SampleRequest.ExternalId` (`TP_...`).
 - `product`: chỉ tìm `Product.Code` hoặc `Product.ColourCode` (`TL...`).
@@ -41,7 +47,25 @@ value để tương thích client hiện tại:
 - `All`: không lọc pricing; giữ toàn bộ danh sách Sample Request mà user được phép xem.
 - `NeedsPricing`: Product cần BGD xử lý giá: đã có quotation request định giá nhưng chưa có Approved pricing
   version, Sale gửi request mới hơn lần Approved gần nhất, hoặc đã có giá chuẩn nhưng đang `PendingReapproval`.
-  `PendingReapproval` còn xảy ra khi lần duyệt giá gần nhất đã quá `ApprovedPricingReviewAfterDays`, hoặc Lab xác
+  Ngoài ra, Sample Request có yêu cầu báo giá Lab đã gửi cho BGĐ chưa được giải quyết cũng vào danh sách,
+  kể cả Product chưa có giá chuẩn Approved và Sale chưa gửi yêu cầu định giá CRM. Nguồn là message chưa xóa
+  trong conversation active, cùng company, `RelatedType = SampleRequest`, `RelatedId` đúng Sample Request;
+  payload phải có `contentType = SampleRequestPriceQuoteRequested` và
+  `priceQuoteRequest.formulaSelectionSource = LabConfirmed`. Không suy ra yêu cầu chỉ từ notification,
+  nội dung body hoặc một lần lưu công thức. Message đã có từ trước được nhận diện trực tiếp, không cần backfill.
+  Yêu cầu Lab còn chờ nếu chưa có bản giá Approved active cùng Product/currency, hoặc
+  `message.SentAt > ApprovedAt ?? UpdatedDate ?? CreatedDate` của bản Approved mới nhất.
+  Duyệt giá bằng hoặc sau `SentAt` giải quyết yêu cầu đó; Lab gửi yêu cầu mới sau lần duyệt sẽ vào hàng chờ lại.
+  Nhánh này gắn đúng mẫu có message, không kéo các mẫu khác chỉ vì dùng chung Product; duyệt giá Product
+  giải quyết các yêu cầu Lab của Product gửi trước/bằng mốc duyệt. Các nguyên nhân chờ khác vẫn xét độc lập.
+  Lý do quá hạn `ApprovedPricingReviewAfterDays` chỉ đưa Product vào `NeedsPricing` khi bản Approved mới nhất
+  đã quá hạn, giá bán tính lại từ source Approved tăng **trên 1%** so với giá chuẩn đã duyệt và Product đã có đơn bán
+  hàng `Merchandise` active trong phạm vi company/customer của người gọi, với dòng Product active và trạng thái
+  `Approved`, `Processing`, `Delivering`, `Delivered` hoặc `Completed`. Giá tính lại dùng cùng rule với
+  `MaterialCostChanged`; đúng 1%, chưa có đơn hợp lệ hoặc thiếu giá realtime đầy đủ thì không khớp lý do quá hạn.
+  Sale vẫn có thể gửi yêu cầu định giá mới; yêu cầu mới hơn lần Approved gần nhất được tính như trên.
+  Các cờ quá hạn và attention source trong response vẫn phản ánh tình trạng giá hiện có khi Product khớp do
+  nguyên nhân khác. `PendingReapproval` được tính vào view khi Lab xác
   nhận Formula active mới sau mốc `ApprovedAt ?? UpdatedDate ?? CreatedDate` của bản giá chuẩn mới nhất, hoặc chi
   phí NVL realtime của source Approved tăng ít nhất `MaterialCostChangeThresholdPercent`. Có
   `recommendedFormula` hoặc thay đổi cấu thành công thức không tự làm Product khớp `NeedsPricing`; FE dùng riêng
@@ -52,14 +76,20 @@ value để tương thích client hiện tại:
 - `Draft`: Product có Draft pricing version active bằng currency đang chọn.
 - `Approved`: Product có Approved pricing version active bằng currency đang chọn.
 - `MaterialCostChanged`: Formula/VA đã lưu trên bản giá `Approved` mới nhất có chi phí NVL realtime tăng so với
-  `MaterialCostSnapshot` của chính bản Approved đó. View này không áp dụng ngưỡng 5%; mọi mức tăng dương đều khớp.
+  `MaterialCostSnapshot` của chính bản Approved đó và giá bán tính lại tăng **trên 1%** so với giá chuẩn Approved.
+  Đúng 1%, dưới 1%, giá giảm, thiếu giá realtime đầy đủ hoặc không tính được giá bán thì không khớp.
+  Giá bán tính lại dùng chi phí NVL realtime của source Approved, chi phí sản xuất và biên lợi nhuận của bản Approved,
+  theo calculator và quy tắc làm tròn VND hiện có. View này không áp dụng ngưỡng duyệt lại 5%.
   `NeedsPricing` vẫn chỉ coi biến động NVL là nguyên nhân cần xử lý khi mức tăng đạt
   `MaterialCostChangeThresholdPercent`.
 - `ProductionMaterialCostChanged`: VA `Checking` được chọn ở lệnh sản xuất mới nhất của Product có chi phí NVL
   realtime tăng ít nhất ngưỡng trên so với `MaterialCostSnapshot` của bản Approved mới nhất. Không có VA sản xuất
   `Checking`, snapshot bằng 0, thiếu giá realtime, hoặc chi phí không tăng thì không khớp.
 - `FormulaChanged`: Product có `pricing.recommendedFormula` khác cấu thành source của giá Approved hiện hành:
-  thêm/bớt item, đổi quantity hoặc đổi unit. Chỉ thay giá realtime trên cùng cấu thành không khớp filter này.
+  thêm/bớt item, đổi quantity hoặc đổi unit, đồng thời giá bán tính lại của candidate tăng **trên 1%** so với giá chuẩn
+  Approved. Candidate dùng chi phí NVL realtime đầy đủ, chi phí sản xuất và biên lợi nhuận của bản Approved như
+  `recommendedFormula.realtimeStandardSellingPrice`; không tính được giá hoặc mức tăng không vượt 1% thì không khớp.
+  Chỉ thay giá realtime trên cùng cấu thành không khớp filter này.
   Product bắt buộc phải có `ProductPricingVersion` active, `Approved`, đúng company/currency và có Formula/VA source
   làm baseline; Product chưa có giá chuẩn không khớp filter này và được xử lý ở luồng định giá lần đầu.
 
@@ -282,6 +312,9 @@ gần nhất là `CreateDate desc`, sau đó order id và line id desc để có
   xếp tất cả candidate theo `candidateAt desc`, rồi `sourceId desc` khi trùng mốc; không ưu tiên VU hay VA theo loại:
   VU active đã gửi mẫu dùng `Formula.SentDate` (`candidateDateSource=SentDate`); VA `Checking` được chọn trong
   lệnh sản xuất active dùng `MfgProductionOrder.CreatedDate` (`ProductionOrderCreatedDate`).
+  Trước khi chọn ứng viên mới nhất, loại VA có thành phần active Product/ProductFailure trùng ColourCode
+  hiện tại của sản phẩm đang định giá (trim, không phân biệt hoa/thường, bỏ qua mã rỗng).
+  VA có mã thành phần khác và VU giữ nguyên rule. Không đổi nguồn đã lưu, giá duyệt hay giá khách.
   `ProductStandardFormula` không tham gia chọn recommendation; không có candidate VU hoặc VA sản xuất thì field là `null`.
 - Khi đã có Formula/VA gắn với giá chuẩn Approved, candidate chỉ được trả thành `recommendedFormula` nếu cấu thành
   khác công thức chuẩn: thêm/bớt item, thay quantity hoặc thay unit. Nếu cùng source hoặc cấu thành giống nhau thì
@@ -327,7 +360,8 @@ NVL và giá realtime của nguồn đó. API không còn tải NVL/giá của m
 Giá NVL giảm hoặc tăng dưới ngưỡng không trả status này. Khi cần lọc toàn bộ dữ liệu, FE dùng
 `view=MaterialCostChanged` hoặc `view=ProductionMaterialCostChanged`, không tự lọc item của một trang.
 Hai view cost-change và view `FormulaChanged` có batch resolver riêng để lọc chính xác trước pagination.
-`NeedsPricing` chỉ chạy batch cost-change theo ngưỡng và không chạy so sánh cấu thành công thức. `All`, `Draft`
+`NeedsPricing` chạy batch cost-change theo ngưỡng duyệt lại, đồng thời kiểm tra giá bán tăng trên 1% cho nhóm
+quá hạn có đơn hàng hợp lệ; không chạy so sánh cấu thành công thức. `All`, `Draft`
 và `Approved` giữ SQL paging fast path; FE dùng `FormulaChanged` khi cần danh sách đổi cấu thành.
 
 Trong Executive Pricing Review, thiếu giá realtime của NVL không chặn Preview, tạo Draft hoặc Duyệt và áp dụng.
@@ -345,3 +379,12 @@ không tự tạo vì repo chưa có migration được user duyệt và cần t
 ## NVL của công thức nguồn giá chuẩn thay đổi sau xác nhận
 
 Khi Lab lưu thay đổi NVL/định lượng của Formula `Approved` đang là nguồn của giá chuẩn VND Approved hiện hành, backend ghi lại `CheckBy`/`CheckDate` như một lần xác nhận lại công thức và gửi đúng luồng yêu cầu duyệt lại giá chuẩn. Vì `CheckDate` mới lớn hơn lần duyệt giá gần nhất, Sample Request của Product khớp `view=NeedsPricing`; `pricingAttentionSources` có `LabFormulaConfirmed`. Duyệt giá mới sau mốc này sẽ giải quyết yêu cầu theo rule hiện có. Đây là trường hợp tái xác nhận tường minh trong luồng lưu công thức; chỉ có candidate `recommendedFormula` hoặc lưu NVL không đổi vẫn không đủ để vào queue này.
+
+## Workflow event và thời điểm cần duyệt giá
+
+NeedsPricing đọc LabFormulaConfirmed từ SampleRequestWorkflowEvent ngay sau khi nghiệp vụ được lưu,
+không phải đợi worker gửi tin nhắn. Với sự kiện mới, RequestedAt dùng RecordedAt của sự kiện;
+message được worker gửi hoặc retry muộn không tạo yêu cầu duyệt lại giả sau khi BGD đã duyệt giá.
+Message đã liên kết sự kiện được loại khỏi nhánh legacy để không tính đôi. Message cũ chưa có
+sự kiện vẫn dùng SentAt theo contract trước đây. Scope CompanyId/SampleRequestId và các nguyên nhân
+NeedsPricing khác giữ nguyên. Không có thay đổi quyền, payload giá hoặc snapshot báo giá.

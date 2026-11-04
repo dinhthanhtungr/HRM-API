@@ -29,9 +29,7 @@ internal sealed class GetProductInspectionsQueryHandler
 
         var query = _dbContext.ProductInspections
             .AsNoTracking()
-            .Where(x => x.ProductStandardId.HasValue &&
-                _dbContext.ProductStandards.Any(s =>
-                    s.Id == x.ProductStandardId.Value && s.CompanyId == companyId));
+            .ForCompany(_dbContext, companyId);
 
         if (request.NormalizedKeyword is { } keyword)
         {

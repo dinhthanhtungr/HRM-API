@@ -1,6 +1,6 @@
 ﻿# Auth, JWT, Cookie, CORS
 
-Đọc file này khi task đụng authentication, authorization policy, JWT, cookie, CORS, SignalR token hoặc current user.
+Đọc khi sửa authentication, authorization policy, JWT, cookie, CORS, SignalR token hoặc cơ chế resolve current user/claims. Chỉ sử dụng current user để lọc company/employee không kích hoạt file này; đọc `api-security.md` theo router root.
 
 ## JWT
 

@@ -99,7 +99,7 @@ internal sealed class GetProductPricingWorkbenchDetailQueryHandler
 
         if (!canManagePricing)
         {
-            var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+            var scope = await _visibilityService.BuildReadScopeAsync(cancellationToken);
             var visibleCustomerIds = _visibilityService
                 .ApplyCustomerVisibility(_dbContext.Customers.AsNoTracking(), scope)
                 .Select(customer => customer.CustomerId);

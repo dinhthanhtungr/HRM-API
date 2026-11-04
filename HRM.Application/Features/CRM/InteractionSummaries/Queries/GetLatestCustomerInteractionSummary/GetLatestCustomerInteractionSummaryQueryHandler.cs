@@ -36,7 +36,7 @@ internal sealed class GetLatestCustomerInteractionSummaryQueryHandler
         if (request.Month is < 1 or > 12)
             return OperationResult<CustomerInteractionAiSummaryDto>.Fail("Summary month is invalid.");
 
-        var scope = await _accessService.BuildScopeAsync(cancellationToken);
+        var scope = await _accessService.BuildReadScopeAsync(cancellationToken);
         if (!await _accessService.VisibleCustomers(scope).AnyAsync(x => x.CustomerId == request.CustomerId, cancellationToken))
             return OperationResult<CustomerInteractionAiSummaryDto>.Fail("Customer was not found.");
 

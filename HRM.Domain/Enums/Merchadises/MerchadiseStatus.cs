@@ -16,7 +16,8 @@ namespace HRM.Domain.Enums.Merchadises
         Delivered = 5,    // Đã giao hàng
         Paused = 6,       // Tạm dừng
         Cancelled = 7,    // Hủy
-        Completed = 8     // Hoàn thành
+        Completed = 8,    // Hoàn thành
+        WaitingForStandardSample = 9
 
     }
 }

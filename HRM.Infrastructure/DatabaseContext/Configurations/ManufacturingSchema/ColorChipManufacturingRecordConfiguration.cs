@@ -19,6 +19,10 @@ namespace HRM.Infrastructure.DatabaseContext.Configurations.ManufacturingSchema
             b.Property(x => x.ColorChipMfgRecordId)
                 .HasColumnName("color_chip_mfg_record_id")
                 .HasDefaultValueSql("gen_random_uuid()");
+            // Existing mappings verified against the legacy configuration.
+            b.Property(x => x.ColorCode).HasColumnName("color_code").HasMaxLength(255);
+            b.Property(x => x.ProductName).HasColumnName("product_name").HasMaxLength(255);
+            b.Property(x => x.UsageRate).HasColumnName("usage_rate").HasPrecision(5, 2);
 
             // =========================================================
             // 1. Classification / Business Type

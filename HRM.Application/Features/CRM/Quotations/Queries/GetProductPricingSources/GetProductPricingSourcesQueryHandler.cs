@@ -30,7 +30,7 @@ internal sealed class GetProductPricingSourcesQueryHandler
         GetProductPricingSourcesQuery request,
         CancellationToken cancellationToken)
     {
-        if (!ProductPricingAccessRules.CanManage(_currentUser))
+        if (!ProductPricingAccessRules.CanViewManagementData(_currentUser))
         {
             return OperationResult<IReadOnlyList<ProductPricingSourceOptionDto>>.Fail(
                 "Only President or Developer can view product pricing sources.");

@@ -43,7 +43,7 @@ internal sealed class ProductPricingReviewMaterialReader
         if (normalizedCurrency is null)
             return OperationResult<PricingReviewSupplierPricesDto>.Fail("Only VND is supported.");
 
-        var companyId = ProductPricingReviewRules.GetContext(_currentUser).Data.CompanyId;
+        var companyId = ProductPricingReviewRules.GetReadContext(_currentUser).Data.CompanyId;
         var allSupplierPrices = await _dbContext.MaterialsSuppliers.AsNoTracking()
             .Where(x => x.MaterialId == materialId && x.IsActive == true &&
                         x.Supplier.CompanyId == companyId && x.Supplier.IsActive == true)
@@ -120,7 +120,7 @@ internal sealed class ProductPricingReviewMaterialReader
         if (normalizedCurrency is null)
             return OperationResult<PagedResult<PricingReviewMaterialPriceHistoryDto>>.Fail("Only VND is supported.");
 
-        var companyId = ProductPricingReviewRules.GetContext(_currentUser).Data.CompanyId;
+        var companyId = ProductPricingReviewRules.GetReadContext(_currentUser).Data.CompanyId;
         var query = _dbContext.PriceHistories.AsNoTracking()
             .Where(x => x.MaterialsSuppliers.MaterialId == materialId &&
                         x.MaterialsSuppliers.Supplier.CompanyId == companyId &&
@@ -161,7 +161,7 @@ internal sealed class ProductPricingReviewMaterialReader
         Guid materialId,
         CancellationToken cancellationToken)
     {
-        var context = ProductPricingReviewRules.GetContext(_currentUser);
+        var context = ProductPricingReviewRules.GetReadContext(_currentUser);
         if (!context.Success)
             return OperationResult<MaterialAccessRow>.Fail(context.Message!);
         if (productId == Guid.Empty || materialId == Guid.Empty)

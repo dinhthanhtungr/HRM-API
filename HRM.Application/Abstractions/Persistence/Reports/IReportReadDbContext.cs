@@ -17,6 +17,7 @@ namespace HRM.Application.Abstractions.Persistence.Reports
 {
     public interface IReportReadDbContext
     {
+        DbSet<PLPUPoInvoiceSummaryRow> PLPUPoInvoiceSummaries { get; }
         // ==================== Order ====================
         DbSet<MerchandiseOrder> MerchandiseOrders { get; }
         DbSet<MerchandiseOrderDetail> MerchandiseOrderDetails { get; }

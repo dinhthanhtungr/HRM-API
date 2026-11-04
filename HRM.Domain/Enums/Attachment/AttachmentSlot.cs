@@ -23,5 +23,7 @@ public enum AttachmentSlot
     MaterialCertificate = 15,
     MaterialOther = 16,
     PrintLabelTemplate = 17,
-    PrintLabelLogo = 18
+    PrintLabelLogo = 18,
+    /// <summary>File chỉ tiêu đánh giá; phải truy cập qua phiếu/danh mục cha.</summary>
+    EvaluationAttachment = 19
 }

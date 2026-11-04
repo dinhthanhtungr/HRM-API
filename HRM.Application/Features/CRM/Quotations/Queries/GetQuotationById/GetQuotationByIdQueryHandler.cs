@@ -1,4 +1,4 @@
-﻿using HRM.Application.Abstractions.Persistence.CRM.CustomerCare;
+using HRM.Application.Abstractions.Persistence.CRM.CustomerCare;
 using HRM.Application.Commons.Models;
 using HRM.Application.Features.CRM.CustomerCare.Visibility;
 using HRM.Application.Features.CRM.Quotations.Dtos;
@@ -24,17 +24,23 @@ namespace HRM.Application.Features.CRM.Quotations.Queries.GetQuotationById
         private readonly ICustomerVisibilityService _visibilityService;
         private readonly QuotationTierPriceReferenceService _tierPriceReferenceService;
         private readonly ProductStandardPriceReviewQueryService _standardPriceReviewQueryService;
+        private readonly QuotationSendService _sendService;
+        private readonly ProductPricingRequestQueryService _pricingRequestQueryService;
 
         public GetQuotationByIdQueryHandler(
             ICRMReadDbContext dbContext,
             ICustomerVisibilityService visibilityService,
             QuotationTierPriceReferenceService tierPriceReferenceService,
-            ProductStandardPriceReviewQueryService standardPriceReviewQueryService)
+            ProductStandardPriceReviewQueryService standardPriceReviewQueryService,
+            QuotationSendService sendService,
+            ProductPricingRequestQueryService pricingRequestQueryService)
         {
+            _pricingRequestQueryService = pricingRequestQueryService;
             _dbContext = dbContext;
             _visibilityService = visibilityService;
             _tierPriceReferenceService = tierPriceReferenceService;
             _standardPriceReviewQueryService = standardPriceReviewQueryService;
+            _sendService = sendService;
         }
 
         public async Task<OperationResult<QuotationDetailDto>> Handle(
@@ -46,7 +52,7 @@ namespace HRM.Application.Features.CRM.Quotations.Queries.GetQuotationById
                 return OperationResult<QuotationDetailDto>.Fail("QuotationId is invalid.");
             }
 
-            var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+            var scope = await _visibilityService.BuildReadScopeAsync(cancellationToken);
             var detail = await _visibilityService
                 .ApplyQuotationVisibility(
                     _dbContext.Quotations.AsNoTracking(),
@@ -185,10 +191,19 @@ namespace HRM.Application.Features.CRM.Quotations.Queries.GetQuotationById
                 scope.CompanyId,
                 detail.Lines.Select(x => x.ProductId).Distinct().ToArray(),
                 cancellationToken);
+            var pricingRequests = detail.Lines.Count == 0
+                ? Array.Empty<ProductPricingRequestRow>()
+                : await _pricingRequestQueryService.LoadAsync(
+                    scope.CompanyId, detail.Lines.Select(x => x.ProductId).Distinct().ToArray(), cancellationToken);
+            var requestedAtByProduct = pricingRequests.Where(x => x.QuotationId == detail.QuotationId)
+                .GroupBy(x => x.ProductId)
+                .ToDictionary(x => x.Key, x => (DateTime?)x.Max(y => y.RequestedAt));
             foreach (var line in detail.Lines)
             {
+                var state = standardPriceStates.GetValueOrDefault(line.ProductId);
                 line.StandardPriceReview = ToStandardPriceReview(
-                    standardPriceStates.GetValueOrDefault(line.ProductId));
+                    state is null ? null : ProductStandardPriceStateResolver.ApplySaleRequest(
+                        state, requestedAtByProduct.GetValueOrDefault(line.ProductId)));
             }
 
             var visibleQuotations = _visibilityService.ApplyQuotationVisibility(
@@ -201,6 +216,7 @@ namespace HRM.Application.Features.CRM.Quotations.Queries.GetQuotationById
                 visibleQuotations,
                 cancellationToken);
 
+            await _sendService.EnrichConfirmationAsync(detail, scope.CompanyId, cancellationToken);
             return OperationResult<QuotationDetailDto>.Ok(detail);
         }
 

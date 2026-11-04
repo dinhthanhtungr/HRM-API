@@ -59,6 +59,10 @@ internal sealed class CreateFormulaCommandHandler
                 request.ProductId.Value,
                 cancellationToken);
 
+            if (string.IsNullOrWhiteSpace(product.ColourCode) || string.IsNullOrWhiteSpace(product.Name))
+                return OperationResult<FormulaWriteResultDto>.Fail(
+                    "Product colour code and product name are required before creating a formula.");
+
             var now = DateTime.Now;
             var formula = new Formula
             {

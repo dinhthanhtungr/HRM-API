@@ -10,6 +10,7 @@ using HRM.Domain.Entities.HrSchema;
 using HRM.Domain.Entities.InternalMailSchema;
 using HRM.Domain.Entities.ManufacturingSchema;
 using HRM.Domain.Entities.MROSchema;
+using HRM.Domain.Entities.Notifications;
 using HRM.Domain.Entities.MaterialSchema;
 using HRM.Domain.Entities.OrderSchema;
 using HRM.Domain.Entities.PrintectSchema;
@@ -92,6 +93,8 @@ namespace HRM.Application.Abstractions.Persistence.PLM
         DbSet<Product> Products { get; }
         DbSet<SampleRequest> SampleRequests { get; }
         DbSet<SampleRequestSampleTrial> SampleRequestSampleTrials { get; }
+        DbSet<SampleRequestWorkflowEvent> SampleRequestWorkflowEvents { get; }
+        DbSet<OutboxMessage> OutboxMessages { get; }
         DbSet<InternalConversation> InternalConversations { get; }
         DbSet<InternalConversationParticipant> InternalConversationParticipants { get; }
         DbSet<InternalMessage> InternalMessages { get; }

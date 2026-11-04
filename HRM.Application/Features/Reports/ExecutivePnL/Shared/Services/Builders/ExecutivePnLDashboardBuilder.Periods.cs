@@ -116,7 +116,7 @@ namespace HRM.Application.Features.Reports.ExecutivePnL.Shared.Services.Builders
                 return current == 0 ? 0 : 100;
             }
 
-            return Math.Round((current - previous) / previous * 100, 2);
+            return HRM.Application.Commons.Reporting.SalesMetrics.ReportMetricRules.GrowthPercent(current, previous) ?? 0m;
         }
 
         /// <summary>

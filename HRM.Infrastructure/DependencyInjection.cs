@@ -14,6 +14,7 @@ using HRM.Application.Abstractions.Notifications;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using HRM.Infrastructure.Services.Geminis.Materials;
 
 namespace HRM.Infrastructure;
 
@@ -26,6 +27,11 @@ public static class DependencyInjection
             .AddAuthenticationServices(configuration);
 
         services.AddScoped<IExternalIdService, ExternalIdServicePostgres>();
+        // GROUP-STORAGE-TRANSITION: synchronization-api — live write-through is owned by DbContext, not these temporary services.
+        services.AddScoped<HRM.Application.Features.InternalMail.GroupStorage.IGroupStorageSynchronization,
+            HRM.Infrastructure.Services.InternalMail.GroupStorageSynchronization>();
+        services.AddScoped<HRM.Application.Features.InternalMail.GroupStorage.IGroupStorageSyncExcelRenderer,
+            HRM.Infrastructure.Documents.Excels.GroupStorageSyncExcelRenderer>();
         services.Configure<StorageOptions>(options =>
         {
             var section = configuration.GetSection("Storage");
@@ -93,6 +99,7 @@ public static class DependencyInjection
                 provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<GeminiOptions>>());
         });
 
+        services.AddTdsExtraction(configuration);
         return services;
     }
 }

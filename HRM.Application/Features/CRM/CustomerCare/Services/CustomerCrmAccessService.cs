@@ -28,6 +28,9 @@ internal sealed class CustomerCrmAccessService
     public Task<ViewerScope> BuildScopeAsync(CancellationToken cancellationToken)
         => _visibilityService.BuildScopeAsync(cancellationToken);
 
+    public Task<ViewerScope> BuildReadScopeAsync(CancellationToken cancellationToken)
+        => _visibilityService.BuildReadScopeAsync(cancellationToken);
+
     /// <summary>
     /// Áp dụng company và customer visibility scope vào nguồn Customer read-only.
     /// </summary>

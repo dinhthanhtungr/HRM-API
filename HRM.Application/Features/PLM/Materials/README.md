@@ -4,6 +4,11 @@
 GET /api/v1/plm/formulas/item-lookup
 ```
 
+`stockCode` là mã tra tồn kho riêng: Material dùng ExternalId, Product dùng
+ColourCode. `externalId` của Product vẫn là mã TP để hiển thị. Các API đọc
+formula/material hiện hành cũng trả `stockCode` để sao chép công thức không dùng
+mã TP làm mã kho. Không thay đổi quyền, scope hoặc dữ liệu lưu.
+
 Endpoint tráº£ danh sÃ¡ch phÃ¢n trang dÃ¹ng khi thÃªm dÃ²ng vÃ o cÃ´ng thá»©c. Query há»— trá»£ `pageNumber`, `pageSize`,
 `keyword`, `itemType` (`Material`, `Product`, `MaterialFailure`, `ProductFailure`) vÃ  `categoryId`.
 `MaterialFailure` Ä‘Æ°á»£c tra nhÆ° `Material`, `ProductFailure` Ä‘Æ°á»£c tra nhÆ° `Product`.
@@ -397,3 +402,38 @@ Policy `PLM.MaterialReplacement.View` cho Lab, PLPU và nhóm quản lý giá/NC
 `PLM.MaterialReplacement.Manage` chỉ cho nhóm PLPU/Kế hoạch, Purchasing, Admin, Developer và President ghi hoặc xem
 danh sách quản trị. Tất cả query/write lấy company và employee từ current user, không nhận company từ FE; sai ID hoặc
 khác company trả danh sách rỗng (read) hoặc `404` (write).
+
+## Địa chỉ NCC trong danh sách dùng cho form mua hàng
+
+`GET /api/v1/plm/material-suppliers/suppliers` yêu cầu đăng nhập, chỉ trả NCC active thuộc công ty hiện tại.
+Bộ lọc, thứ tự và phân trang giữ nguyên. Mỗi item bổ sung `supplierAddress: string | null`.
+
+Nguồn địa chỉ là `SupplierAddress.AddressLine`, cùng field địa chỉ hiển thị dùng trong chi tiết đơn mua hàng;
+không ghép thêm City/District/Province/Country vào AddressLine để tránh lặp địa chỉ đã lưu đầy đủ.
+Chỉ xét địa chỉ active có AddressLine không rỗng, ưu tiên IsPrimary=true, sau đó AddressId tăng dần
+(bao gồm trường hợp nhiều địa chỉ chính hoặc không có địa chỉ chính). Nếu không có địa chỉ hợp lệ,
+fallback RegistrationAddress như khi tạo snapshot đơn mua hàng. Chuỗi được trim; không có địa chỉ trả null.
+Đây là địa chỉ NCC hiện tại; địa chỉ trên đơn đã lưu vẫn ưu tiên snapshot lịch sử của đơn.
+
+Ví dụ response (dữ liệu minh họa):
+
+```json
+{
+  "items": [{
+    "supplierId": "00000000-0000-0000-0000-000000000001",
+    "supplierCode": "NCC_1011",
+    "supplierName": "Công ty ABC",
+    "supplierAddress": "123 Nguyễn Văn Linh, TP. Hồ Chí Minh, Việt Nam",
+    "phone": null,
+    "contactName": null,
+    "contactPhone": null,
+    "latestOrderDate": null
+  }],
+  "totalCount": 1,
+  "pageNumber": 1,
+  "pageSize": 20,
+  "totalPages": 1,
+  "hasPreviousPage": false,
+  "hasNextPage": false
+}
+```

@@ -6,6 +6,7 @@ using HRM.Application.Commons.Models;
 using HRM.Domain.Enums.InternalMailEnums;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using HRM.Application.Features.InternalMail.Services;
 
 namespace HRM.Application.Features.InternalMail.Commands.RemoveParticipant;
 
@@ -38,6 +39,12 @@ internal sealed class RemoveInternalConversationParticipantCommandHandler
             return OperationResult.Fail("Conversation, employee or current user is invalid.");
         }
 
+        await using var transaction = await _dbContext.BeginTransactionAsync(cancellationToken);
+        var scope = await _dbContext.InternalConversations.AsNoTracking().SingleOrDefaultAsync(c =>
+            c.InternalConversationId == request.ConversationId && c.CompanyId == companyId && c.IsActive, cancellationToken);
+        if (scope is null) return OperationResult.Fail("Conversation was not found.");
+        await _dbContext.LockInternalConversationAsync(companyId.Value,
+            InternalMailAreaAccessService.IsPrivateArea(scope.RelatedType) ? scope.RelatedId!.Value : scope.InternalConversationId, cancellationToken);
         var actorIsOwner = await _dbContext.InternalConversationParticipants
             .AsNoTracking()
             .AnyAsync(x =>
@@ -52,7 +59,7 @@ internal sealed class RemoveInternalConversationParticipantCommandHandler
             ApplicationRoleSets.Notifications.ConversationParticipantManagers);
         var privateArea = await _dbContext.InternalConversations.AnyAsync(c => c.InternalConversationId == request.ConversationId &&
             c.CompanyId == companyId.Value && (c.RelatedType == InternalMailRelatedType.ConversationTechnical ||
-            c.RelatedType == InternalMailRelatedType.ConversationPricing), cancellationToken);
+            c.RelatedType == InternalMailRelatedType.ConversationPricing || c.RelatedType == InternalMailRelatedType.ConversationCustom), cancellationToken);
         if (privateArea) canManageParticipants = false;
         if (!actorIsOwner && !canManageParticipants)
         {
@@ -78,6 +85,7 @@ internal sealed class RemoveInternalConversationParticipantCommandHandler
         target.DeletedAt = _dateTimeProvider.Now;
         target.DeletedByEmployeeId = actorId.Value;
         await _dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return OperationResult.Ok();
     }
 }

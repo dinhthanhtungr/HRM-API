@@ -13,6 +13,7 @@ namespace HRM.Application.Abstractions.Persistence.Executive;
 public interface IExecutiveReadDbContext
 {
     DbSet<SampleRequest> SampleRequests { get; }
+    DbSet<SampleRequestWorkflowEvent> SampleRequestWorkflowEvents { get; }
     DbSet<Customer> Customers { get; }
     DbSet<QuotationLine> QuotationLines { get; }
     DbSet<ProductPricingVersion> ProductPricingVersions { get; }

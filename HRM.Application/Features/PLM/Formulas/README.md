@@ -1,5 +1,32 @@
 # Giá công thức
 
+Luồng Formula gắn Sample Request tuân thủ [quy trình mẫu và theo dõi giá](../SampleRequests/WORKFLOW.md).
+Contract phân nhánh được mô tả tại [legacy/chip/kg](../SampleRequests/CHIP_SAMPLE_FLOW.md).
+Chip có phản hồi thực sự mở Formula Rework; kg đã gửi luôn khóa thành phần. VU Completed sau chip
+có thể gửi kg đúng điều kiện trên hồ sơ còn mở. UpdatedDate hiện có làm concurrency token, không thêm migration.
+POST/PUT công thức Draft không tự tạo Trial. Giá không chặn chip/legacy; gửi kg hiện hành cần khách đồng ý giá đúng VU;
+hồ sơ cũ giữ nguyên, không bắt xác nhận lại.
+Gửi mẫu dùng Draft phù hợp hoặc tạo Trial tiếp theo, chuyển thẳng WaitingCustomerFeedback;
+không tạo nút Sale nhận mẫu. Sample Request không tự gắn FormulaId khi gửi; chỉ gắn khi khách duyệt.
+
+Status/status-transition so sánh expectedUpdatedDate theo độ chính xác microsecond của PostgreSQL,
+để timestamp trả về từ lần ghi trước không gây lỗi concurrency giả do phần tick dưới microsecond.
+Thay đổi từ một microsecond trở lên vẫn bị từ chối khi client dùng timestamp cũ.
+
+## Xác nhận công thức cho công việc Lab
+
+PATCH status/POST status-transition chỉ xác nhận `Approved` từ `Draft` hoặc `Approved`.
+Không đưa công thức đã gửi/kết thúc/hủy về Approved để vượt khóa sửa thành phần; lần làm lại
+dùng công thức mới hoặc sao chép. Công thức Approved vẫn được sửa bình thường theo quyền hiện có.
+
+PATCH status `Approved` có `sampleRequestId` kiểm tra hồ sơ còn mở trong đúng company,
+customer visibility và Product trước khi lưu. Sự kiện `LabFormulaConfirmed` liên kết chính
+xác Sample Request–Formula, lưu cùng snapshot để báo cáo Lab không phụ thuộc notification
+gửi thành công. Không đổi Sample Request thành Completed. Chi tiết nguồn dữ liệu cũ và
+quy tắc mở lại việc nằm tại [Công việc Lab](../SampleRequests/LAB_WORK.md).
+
+ACCUser được xem chi tiết công thức, NVL, giá, phiên bản, BOM và export như President. ViewFormulaDetail dùng ProductTechnicalViewers; quyền sửa vẫn dùng ProductTechnicalEditors/FormulaManagers hiện có. Dữ liệu và reference vẫn được scope theo công ty; claim kỹ thuật mới cần seed rồi login/refresh với token dùng permission DB.
+
 ## So sánh hai công thức
 
 ```http
@@ -170,6 +197,11 @@ nhóm `FormulaMaterialViewers` và `FormulaPriceViewers`, nên không đủ mộ
 ## API ghi công thức
 
 Khi Lab chuyển một Formula sang `Approved` lần đầu và request có `sampleRequestId`, backend gửi message `SampleRequestPriceQuoteRequested` trong conversation của Sample Request với title **Yêu cầu xác nhận lại giá chuẩn**. President active cùng company được thêm vào conversation để xử lý giá; notification Báo giá được gửi tới mọi participant active của conversation. Participant đã mute vẫn xem được thread/Hub nhưng không nhận realtime/Web Push. Payload chứa Formula vừa xác nhận và action `Executive.OpenProductPricingReview`; link mở Executive Pricing Review đúng Product/Sample Request/VU. Đây là trigger của luồng rà soát giá chuẩn, không phải yêu cầu báo giá của Sale; Sale không thể tạo hoặc xóa trạng thái `PendingReapproval` bằng message yêu cầu báo giá.
+
+Yêu cầu Lab đã lưu trong conversation còn đưa đúng Sample Request vào Executive Overview `view=NeedsPricing`,
+kể cả chưa có giá chuẩn Approved. Khi bản giá Approved mới nhất của Product/currency được duyệt bằng hoặc
+sau `SentAt` của message, yêu cầu đó hết chờ; Lab gửi yêu cầu mới sau lần duyệt sẽ chờ lại.
+Chi tiết nguồn message và điều kiện lọc xem [Sample Request Pricing Overview](../../Executive/SampleRequestPricingOverview/README.md).
 
 Các API ghi công thức nằm dưới:
 
@@ -643,4 +675,4 @@ Backend so sánh `itemType`, `itemId`, `quantity` ở độ chính xác 10 chữ
 
 Lần lưu đủ điều kiện cập nhật `CheckBy`/`CheckDate` như một lần Lab xác nhận lại thành phần, cùng transaction với Formula và FormulaVersion. Giá chuẩn Approved và snapshot giá cũ được giữ nguyên. Vì bộ lọc Executive Sample Request Pricing Overview `view=NeedsPricing` so sánh `CheckDate` với lần Approved giá gần nhất, sản phẩm xuất hiện trong danh sách yêu cầu cập nhật giá chuẩn và có attention source `LabFormulaConfirmed` cho tới khi BGD duyệt giá mới. Không cần FE gọi thêm requote API sau khi lưu.
 
-Sau khi lưu thành công, backend gửi message **Yêu cầu xác nhận lại giá chuẩn** theo đúng topic, payload `LabConfirmed`, action `Executive.OpenProductPricingReview`, recipient và quy tắc mute của lần xác nhận đầu. Nội dung nêu Lab đã thay đổi NVL. API status dùng `sampleRequestId` nếu có; PUT ưu tiên Sample Request active cùng company/Product đang gắn Formula, rồi bản mới nhất của Product nếu chưa có liên kết. Mỗi lần lưu gửi một yêu cầu vào conversation đã chọn. Sample Request nội bộ tiếp tục no-op theo `SampleRequestMessageRules`. Nếu không có Sample Request/President hoặc gửi thông báo thất bại, dữ liệu đã lưu vẫn thành công và response message nêu rõ phần thông báo chưa gửi được.
+Trước khi lưu snapshot, backend ghi sự kiện `LabFormulaConfirmed` và workflow outbox cùng transaction. Worker gửi message **Yêu cầu xác nhận lại giá chuẩn** theo đúng topic, payload `LabConfirmed`, action `Executive.OpenProductPricingReview`, recipient và quy tắc mute của lần xác nhận đầu. Nội dung nêu Lab đã thay đổi NVL. API status dùng `sampleRequestId` nếu có; PUT ưu tiên Sample Request active cùng company/Product đang gắn Formula, rồi bản mới nhất của Product nếu chưa có liên kết. Mỗi lần thay đổi đủ điều kiện ghi một yêu cầu vào conversation đã chọn; vừa xác nhận vừa sửa NVL trong cùng action không tạo hai sự kiện/job. Sample Request nội bộ tiếp tục no-op theo `SampleRequestMessageRules`. Nếu không có Sample Request, dữ liệu vẫn lưu và response nêu không thể enqueue thông báo. Nếu thiếu President hoặc gửi lỗi, job được giữ để retry; FE xem trạng thái trên lịch sử sự kiện, không cần lưu lại công thức.

@@ -6,6 +6,7 @@ namespace HRM.Application.Features.Notifications.Dtos;
 public sealed class NotificationUnreadSummaryDto
 {
     public int TotalUnread { get; set; }
+    public int UnreadMentionCount { get; set; }
 
     public IReadOnlyList<NotificationCategoryUnreadCountDto> Categories { get; set; }
         = Array.Empty<NotificationCategoryUnreadCountDto>();

@@ -9,7 +9,7 @@ public sealed class QuotationWorkflowRulesTests
     public void Draft_AllowsPricingRequestAndSending()
     {
         Assert.True(QuotationWorkflowRules.CanRequestPricing(QuotationStatus.Draft));
-        Assert.False(QuotationWorkflowRules.CanEditCustomerPricing(QuotationStatus.Draft));
+        Assert.True(QuotationWorkflowRules.CanEditCustomerPricing(QuotationStatus.Draft));
         Assert.False(QuotationWorkflowRules.CanWithdrawPricingRequest(QuotationStatus.Draft));
         Assert.True(QuotationWorkflowRules.CanMarkSent(QuotationStatus.Draft));
     }

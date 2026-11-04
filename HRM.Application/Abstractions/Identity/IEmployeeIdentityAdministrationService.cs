@@ -1,3 +1,6 @@
+using HRM.Application.Commons.Pagination;
+using HRM.Application.Features.Employees.Dtos;
+
 namespace HRM.Application.Abstractions.Identity;
 
 public sealed record EmployeeIdentityAccount(
@@ -34,12 +37,16 @@ public sealed record IdentityAdministrationResult<T>(
 
 public interface IEmployeeIdentityAdministrationService
 {
+    Task<PagedResult<EmployeeRoleAccountDto>?> GetRoleAccountsAsync(
+        Guid roleId, int pageNumber, int pageSize, string? keyword,
+        CancellationToken cancellationToken = default, Guid? companyId = null);
+
     Task<EmployeeIdentityAccount?> GetAccountAsync(
         Guid employeeId,
         CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<EmployeeIdentityRole>> GetRolesAsync(
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default, Guid? companyId = null);
 
     Task<IdentityAdministrationResult<EmployeeIdentityAccount>> CreateAccountAsync(
         Guid employeeId,

@@ -105,7 +105,7 @@ public sealed class MaterialsController : ControllerBase
     /// active trong công ty hiện tại. API chỉ đọc metadata, không import file.
     /// </summary>
     [HttpGet("document-import/preview")]
-    [Authorize(Roles = RoleSets.Admins)]
+    [Authorize(Roles = HRM.Application.Commons.Authorization.ApplicationRoleSets.CRM.DirectorReaderRolesCsv)]
     public async Task<IActionResult> PreviewDocumentImport(
         CancellationToken cancellationToken)
     {
@@ -148,7 +148,7 @@ public sealed class MaterialsController : ControllerBase
     /// Lấy tiến độ và tổng hợp kết quả của background job import tài liệu NVL.
     /// </summary>
     [HttpGet("document-import/jobs/{jobId:guid}")]
-    [Authorize(Roles = RoleSets.Admins)]
+    [Authorize(Roles = HRM.Application.Commons.Authorization.ApplicationRoleSets.CRM.DirectorReaderRolesCsv)]
     public async Task<IActionResult> GetDocumentImportJob(
         Guid jobId,
         CancellationToken cancellationToken)
@@ -163,7 +163,7 @@ public sealed class MaterialsController : ControllerBase
     /// Lấy các file cần kiểm tra tay hoặc bị lỗi trong một job import.
     /// </summary>
     [HttpGet("document-import/jobs/{jobId:guid}/exceptions")]
-    [Authorize(Roles = RoleSets.Admins)]
+    [Authorize(Roles = HRM.Application.Commons.Authorization.ApplicationRoleSets.CRM.DirectorReaderRolesCsv)]
     public async Task<IActionResult> GetDocumentImportJobExceptions(
         Guid jobId,
         CancellationToken cancellationToken)

@@ -32,7 +32,7 @@ internal sealed class GetDashboardDrilldownQueryHandler
         CancellationToken cancellationToken)
     {
         var dateRange = ResolveDateRange(request);
-        var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+        var scope = await _visibilityService.BuildReadScopeAsync(cancellationToken);
 
         if (PLMRules.IsProductionOrderSource(request.NormalizedSource))
         {

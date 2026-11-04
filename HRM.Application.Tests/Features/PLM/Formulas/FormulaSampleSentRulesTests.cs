@@ -8,6 +8,22 @@ namespace HRM.Application.Tests.Features.PLM.Formulas;
 
 public sealed class FormulaSampleSentRulesTests
 {
+    [Theory]
+    [InlineData("Draft", true)]
+    [InlineData("Approved", true)]
+    [InlineData("approved", true)]
+    [InlineData("SampleSent", false)]
+    [InlineData("Completed", false)]
+    [InlineData("Cancelled", false)]
+    [InlineData("Rejected", false)]
+    [InlineData("PendingSaleConfirmation", false)]
+    [InlineData("Unknown", false)]
+    [InlineData(null, false)]
+    public void CanConfirmFromStatus_DoesNotReopenDeliveredOrTerminalFormula(string? status, bool expected)
+    {
+        Assert.Equal(expected, FormulaSampleSentRules.CanConfirmFromStatus(status));
+    }
+
     [Fact]
     public void ValidateRequest_RejectsNegativeQuantityWhenSendingSample()
     {
@@ -69,7 +85,8 @@ public sealed class FormulaSampleSentRulesTests
 
         Assert.Equal(formulaId, trial.FormulaId);
         Assert.Equal("VU260400089", trial.BatchNo);
-        Assert.Equal(SampleTrialStatus.SampleSent, trial.Status);
+        Assert.Equal(SampleTrialStatus.WaitingCustomerFeedback, trial.Status);
+        Assert.Null(trial.RequestReceivedDate);
         Assert.Equal(100m, trial.DeliveredSampleQuantityKg);
         Assert.Equal(now, trial.SentDate);
         Assert.Equal(employeeId, trial.SentByEmployeeId);

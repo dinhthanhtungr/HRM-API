@@ -7,11 +7,13 @@ public enum TimelineCreatedScope
     Merchandise = 0,
     Manufacturing = 1,
     Delivery = 2,
-    Requisition = 3
+    Requisition = 3,
+    ExpectedDate = 4,
 }
 
 public sealed class SaleOrderTimelineCardDto
 {
+    public int WaitingForStandardSampleCount { get; init; }
     public Guid MerchandiseOrderId { get; init; }
     public string ExternalId { get; init; } = string.Empty;
     public string PONo { get; init; } = string.Empty;
@@ -40,6 +42,10 @@ public sealed class SaleOrderTimelineCardDto
 
 public sealed class SaleOrderTimelineDetailRowDto
 {
+    public string SaleOrderDetailStatus { get; init; } = string.Empty;
+    public bool CanConfirmStandardSample { get; init; }
+    public decimal ImportedQuantity { get; init; }
+    public string? WarehouseStatus { get; init; }
     public Guid MerchandiseOrderDetailId { get; init; }
     public string ExternalId { get; init; } = string.Empty;
     public string ColourCode { get; init; } = string.Empty;

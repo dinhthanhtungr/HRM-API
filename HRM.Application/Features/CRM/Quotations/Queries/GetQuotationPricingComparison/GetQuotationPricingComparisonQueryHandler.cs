@@ -41,7 +41,7 @@ internal sealed class GetQuotationPricingComparisonQueryHandler
                 "QuotationId is invalid.");
         }
 
-        var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+        var scope = await _visibilityService.BuildReadScopeAsync(cancellationToken);
         var quotation = await _visibilityService
             .ApplyQuotationVisibility(
                 _dbContext.Quotations.AsNoTracking(),
@@ -55,6 +55,7 @@ internal sealed class GetQuotationPricingComparisonQueryHandler
             {
                 QuotationId = x.QuotationId,
                 Currency = x.Currency,
+                ExchangeRate = x.ExchangeRate,
                 Lines = x.Lines
                     .Where(line => line.IsActive)
                     .OrderBy(line => line.SortOrder)
@@ -100,6 +101,9 @@ internal sealed class GetQuotationPricingComparisonQueryHandler
                 "Quotation was not found or is outside your visibility scope.");
         }
 
+        if (!QuotationPricingCurrencyConverter.TryValidateQuotationCurrency(
+                quotation.Currency, quotation.ExchangeRate, out var error))
+            return OperationResult<QuotationPricingComparisonDto>.Fail(error!);
         var productIds = quotation.Lines.Select(x => x.ProductId).Distinct().ToArray();
         var approvedRows = await _dbContext.ProductPricingVersions
             .AsNoTracking()
@@ -108,7 +112,7 @@ internal sealed class GetQuotationPricingComparisonQueryHandler
             .Where(x =>
                 productIds.Contains(x.ProductId) &&
                 x.CompanyId == scope.CompanyId &&
-                x.Currency == quotation.Currency &&
+                x.Currency == ProductPricingSourceRules.StandardPricingCurrency &&
                 x.Status == ProductPricingStatus.Approved &&
                 x.IsActive)
             .OrderByDescending(x => x.Version)
@@ -119,13 +123,13 @@ internal sealed class GetQuotationPricingComparisonQueryHandler
         var realtimePricingByProductId = await _pricingResolver.ResolveAsync(
             productIds,
             scope.CompanyId,
-            quotation.Currency,
+            ProductPricingSourceRules.StandardPricingCurrency,
             cancellationToken);
         var lines = quotation.Lines
             .Select(line => BuildLineComparison(
                 line,
                 currentPricingByProductId.GetValueOrDefault(line.ProductId),
-                realtimePricingByProductId.GetValueOrDefault(line.ProductId)))
+                realtimePricingByProductId.GetValueOrDefault(line.ProductId), quotation.Currency, quotation.ExchangeRate))
             .ToList();
 
         return OperationResult<QuotationPricingComparisonDto>.Ok(
@@ -140,7 +144,7 @@ internal sealed class GetQuotationPricingComparisonQueryHandler
     private static QuotationLinePricingComparisonDto BuildLineComparison(
         PricingComparisonLine line,
         HRM.Domain.Entities.CustomerSchema.ProductPricingVersion? approved,
-        QuotationCurrentProductPricing? current)
+        QuotationCurrentProductPricing? current, string currency, decimal exchangeRate)
     {
         var currentTiers = current?.Pricing?.SuggestedPriceTiers
             .OrderBy(x => x.SortOrder)
@@ -192,14 +196,14 @@ internal sealed class GetQuotationPricingComparisonQueryHandler
             MissingMaterialPriceCount = current?.RealtimeMaterialCost.MissingPriceCount ?? 0,
             CurrentPriceTiers = currentTiers,
             HasDifference = isComplete
-                ? HasTierDifference(line.PriceTiers, currentTiers)
+                ? HasTierDifference(line.PriceTiers, currentTiers, currency, exchangeRate)
                 : null
         };
     }
 
     private static bool HasTierDifference(
         IReadOnlyCollection<QuotationLinePriceTierDto> savedTiers,
-        IReadOnlyCollection<QuotationCurrentPriceTierDto> currentTiers)
+        IReadOnlyCollection<QuotationCurrentPriceTierDto> currentTiers, string currency, decimal exchangeRate)
     {
         if (savedTiers.Count != currentTiers.Count)
         {
@@ -217,7 +221,9 @@ internal sealed class GetQuotationPricingComparisonQueryHandler
                 saved.MaxQuantity != current.MaxQuantity ||
                 saved.MinInclusive != current.MinInclusive ||
                 saved.MaxInclusive != current.MaxInclusive ||
-                saved.UnitPrice != current.UnitPrice ||
+                saved.UnitPrice != (current.UnitPrice.HasValue
+                    ? QuotationPricingCurrencyConverter.ConvertFromStandardPricing(current.UnitPrice.Value, currency, exchangeRate)
+                    : null) ||
                 saved.SortOrder != current.SortOrder)
             {
                 return true;
@@ -231,6 +237,7 @@ internal sealed class GetQuotationPricingComparisonQueryHandler
     {
         public Guid QuotationId { get; init; }
         public string Currency { get; init; } = string.Empty;
+        public decimal ExchangeRate { get; init; }
         public IReadOnlyList<PricingComparisonLine> Lines { get; init; } = [];
     }
 

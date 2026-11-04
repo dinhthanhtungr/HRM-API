@@ -36,6 +36,8 @@ public sealed class NotificationHubController : ControllerBase
         [FromQuery] string? categoryCode = null,
         [FromQuery] string? eventGroupCode = null,
         [FromQuery] bool urgentOnly = false,
+        [FromQuery] bool unreadOnly = false,
+        [FromQuery] bool mentionedOnly = false,
         [FromQuery] int take = 20,
         [FromQuery] string? cursor = null,
         CancellationToken cancellationToken = default)
@@ -66,6 +68,8 @@ public sealed class NotificationHubController : ControllerBase
             CategoryCode = categoryCode,
             EventGroupCode = eventGroupCode,
             UrgentOnly = urgentOnly,
+            UnreadOnly = unreadOnly,
+            MentionedOnly = mentionedOnly,
             Take = take,
             AfterCreated = string.IsNullOrWhiteSpace(cursor) ? null : afterCreated,
             AfterId = string.IsNullOrWhiteSpace(cursor) ? null : afterId

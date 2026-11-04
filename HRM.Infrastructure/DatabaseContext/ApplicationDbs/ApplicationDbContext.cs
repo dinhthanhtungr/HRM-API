@@ -151,6 +151,8 @@ namespace HRM.Infrastructure.DatabaseContext.ApplicationDbs
             modelBuilder.Entity<Formula>(entity =>
             {
                 entity.ToTable("Formulas", "SampleRequests");
+                // Existing timestamp column: optimistic locking requires no schema migration.
+                entity.Property(e => e.UpdatedDate).IsConcurrencyToken();
                 entity.HasKey(e => e.FormulaId).HasName("PK__Formulas__227429A55C6F1195");
 
                 // ===== Columns (đặt HasColumnName y như property) =====
@@ -452,6 +454,7 @@ namespace HRM.Infrastructure.DatabaseContext.ApplicationDbs
 
                 entity.Property(e => e.LabReceivedDate).HasColumnName("LabReceivedDate");
                 entity.Property(e => e.LabReceivedByEmployeeId).HasColumnName("LabReceivedByEmployeeId");
+                entity.Property(e => e.UpdatedDate).IsConcurrencyToken();
 
                 entity.Property(e => e.RequestTestSampleDate).HasColumnName("RequestTestSampleDate");
 

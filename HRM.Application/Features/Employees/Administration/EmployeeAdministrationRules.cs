@@ -8,6 +8,10 @@ internal static class EmployeeAdministrationRules
 {
     public const int MaximumRoleNameLength = 64;
 
+    public static bool CanViewEmployees(ICurrentUser currentUser)
+        => currentUser.IsAuthenticated && currentUser.IsInAnyRole(
+            ApplicationRoleSets.EmployeeAdministration.EmployeeViewers);
+
     public static bool CanManageEmployees(ICurrentUser currentUser)
         => currentUser.IsAuthenticated && currentUser.IsInAnyRole(
             ApplicationRoleSets.EmployeeAdministration.EmployeeManagers);

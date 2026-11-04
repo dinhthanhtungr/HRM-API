@@ -75,3 +75,10 @@ Thư mục `Services` gom các class hỗ trợ nghiệp vụ báo giá/định 
 - Nếu đổi rule/flow có thể ảnh hưởng FE hoặc notification, cập nhật luôn:
   - `HRM.Application/Features/CRM/Quotations/README.md`
   - hoặc tài liệu liên quan theo phạm vi ảnh hưởng.
+
+
+- `Services/QuotationSendService*.cs`: shared send workflow for mark-sent/confirm-sent; one transaction covers
+  quotation, thread message, notification and outbox. Reasons stay only in message Body.
+- `Rules/QuotationSendPriceComparison.cs`: pure interval comparison against the approved effective standard with higher-adjacent-price gap fallback
+  and highest-approved-price fallback outside the table,
+  separate from Sale realtime pricing-comparison. Request snapshot/action state use existing message PayloadJson.

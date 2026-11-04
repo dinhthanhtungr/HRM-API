@@ -4,5 +4,6 @@ namespace HRM.Application.Abstractions.Documents;
 
 public interface IPurchaseOrderExcelRenderer
 {
+    byte[] RenderList(IReadOnlyList<PurchaseOrderExcelRow> rows);
     byte[] Render(PurchaseOrderDetailDto purchaseOrder);
 }

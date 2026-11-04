@@ -26,7 +26,7 @@ internal sealed class GetDashboardSummaryQueryHandler
         GetDashboardSummaryQuery request,
         CancellationToken cancellationToken)
     {
-        var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+        var scope = await _visibilityService.BuildReadScopeAsync(cancellationToken);
         var includeInternalCustomer = PLMRules.ShouldIncludeInternalCustomer(scope);
         var customerQuery = _dbContext.Customers.AsNoTracking();
         var visibleCustomerIds = _visibilityService.ApplyCustomerVisibility(customerQuery, scope)

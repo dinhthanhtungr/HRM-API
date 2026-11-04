@@ -1,4 +1,4 @@
-using HRM.Domain.Enums.Notifications;
+﻿using HRM.Domain.Enums.Notifications;
 
 namespace HRM.Application.Features.Notifications.Dtos;
 
@@ -8,6 +8,11 @@ namespace HRM.Application.Features.Notifications.Dtos;
 /// </summary>
 public sealed class PublishNotificationRequest
 {
+    // Server-owned audience policy; company Developer monitoring is always added. No public controller accepts this DTO.
+    public bool UseExactAudience { get; set; }
+    // Chỉ luồng chat người dùng bật cờ này; mute vẫn được kiểm tra lại khi dispatch.
+    public bool KeepMutedPrivateChatUnread { get; set; }
+    public IReadOnlyCollection<Guid>? MentionedEmployeeIds { get; set; }
     public Guid? CompanyId { get; set; }
 
     public Guid? CreatedBy { get; set; }

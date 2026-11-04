@@ -27,7 +27,9 @@ using HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestSummar
 using HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestDailyWork;
 using HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestDailySuggestions;
 using HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestPeriodReport;
+using HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestAdminSummary;
 using MediatR;
+using HRM.Application.Features.PLM.SampleRequests.Commands.DeactivateSampleRequest;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -38,6 +40,22 @@ namespace HRM.Api.Controllers.PLM;
 [Route("api/v1/plm/sample-requests")]
 public sealed class SampleRequestsController : ControllerBase
 {
+    [HttpGet("{sampleRequestId:guid}/workflow-events")]
+    public async Task<IActionResult> GetWorkflowEvents(Guid sampleRequestId, [FromQuery] int pageNumber = 1,
+        [FromQuery] int pageSize = 20, CancellationToken cancellationToken = default)
+    {
+        var result = await _sender.Send(new HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestWorkflowEvents.GetSampleRequestWorkflowEventsQuery(
+            sampleRequestId, pageNumber, pageSize), cancellationToken);
+        return result is null ? NotFound() : Ok(result);
+    }
+
+    [HttpPost("{sampleRequestId:guid}/workflow-events/{eventId:guid}/retry-notification")]
+    public async Task<IActionResult> RetryWorkflowNotification(Guid sampleRequestId, Guid eventId, CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new HRM.Application.Features.PLM.SampleRequests.Commands.RetryWorkflowNotification.RetrySampleRequestWorkflowNotificationCommand(
+            sampleRequestId, eventId), cancellationToken);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
     private readonly ISender _sender;
     private readonly ICurrentUser _currentUser;
 
@@ -47,7 +65,78 @@ public sealed class SampleRequestsController : ControllerBase
         _currentUser = currentUser;
     }
 
-    /// <summary>Việc cần làm và cần theo dõi trong ngày; không thay đổi luồng Trial cũ.</summary>
+    /// <summary>Ghi nhận hoặc thu hồi xác nhận giá của khách cho yêu cầu Thẻ màu mới.</summary>
+    [HttpPost("{sampleRequestId:guid}/customer-price-confirmation")]
+    public async Task<IActionResult> ConfirmCustomerPrice(Guid sampleRequestId,
+        [FromBody] HRM.Application.Features.PLM.SampleRequests.Commands.ConfirmCustomerPrice.ConfirmCustomerPriceCommand command,
+        CancellationToken cancellationToken)
+    {
+        command.SampleRequestId = sampleRequestId;
+        return Ok(await _sender.Send(command, cancellationToken));
+    }
+
+    [HttpGet("{sampleRequestId:guid}/workflow")]
+    public async Task<IActionResult> GetWorkflow(Guid sampleRequestId, CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestWorkflow.GetSampleRequestWorkflowQuery(sampleRequestId), cancellationToken);
+        return result is null ? NotFound() : Ok(result);
+    }
+
+    [HttpPost("{sampleRequestId:guid}/workflow/actions")]
+    public async Task<IActionResult> ApplyWorkflowAction(Guid sampleRequestId,
+        [FromBody] HRM.Application.Features.PLM.SampleRequests.Commands.ApplyFlowAction.ApplySampleFlowActionCommand command,
+        CancellationToken ct)
+    {
+        command.SampleRequestId = sampleRequestId;
+        var result = await _sender.Send(command, ct);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    [HttpPost("{sampleRequestId:guid}/customer-feedback-note")]
+    public async Task<IActionResult> RecordCustomerFeedbackNote(Guid sampleRequestId,
+        [FromBody] HRM.Application.Features.PLM.SampleRequests.Commands.RecordCustomerFeedbackNote.RecordCustomerFeedbackNoteCommand command,
+        CancellationToken ct)
+    {
+        command.SampleRequestId = sampleRequestId;
+        var result = await _sender.Send(command, ct);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    [HttpPost("{sampleRequestId:guid}/legacy-work-tracking")]
+    public async Task<IActionResult> SetLegacyWorkTracking(Guid sampleRequestId,
+        [FromBody] HRM.Application.Features.PLM.SampleRequests.Commands.SetLegacyWorkTracking.SetLegacyWorkTrackingCommand command,
+        CancellationToken ct)
+    {
+        command.SampleRequestId = sampleRequestId;
+        var result = await _sender.Send(command, ct);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    [HttpGet("{sampleRequestId:guid}/sample-trials/{trialId:guid}/feedback-revisions")]
+    public async Task<IActionResult> GetFeedbackRevisions(Guid sampleRequestId, Guid trialId,
+        [FromQuery] int pageNumber = 1, CancellationToken ct = default)
+    {
+        if (pageNumber < 1 || pageNumber > 100000) return BadRequest("Invalid page number.");
+        var result = await _sender.Send(new HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleTrialFeedbackRevisions
+            .GetSampleTrialFeedbackRevisionsQuery(sampleRequestId, trialId, pageNumber), ct);
+        return result is null ? NotFound() : Ok(result);
+    }
+
+    [HttpPost("{sampleRequestId:guid}/sample-trials/{trialId:guid}/feedback-correction")]
+    public async Task<IActionResult> CorrectFeedback(Guid sampleRequestId, Guid trialId,
+        [FromBody] HRM.Application.Features.PLM.SampleRequests.Commands.CorrectSampleTrialFeedback.CorrectSampleTrialFeedbackCommand command,
+        CancellationToken ct)
+    {
+        command.SampleRequestId = sampleRequestId;
+        command.TrialId = trialId;
+        var result = await _sender.Send(command, ct);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    [HttpGet("reports/lab-teams")]
+    public async Task<IActionResult> GetLabTeams(CancellationToken ct)
+        => Ok(await _sender.Send(new HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleLabTeams.GetSampleLabTeamsQuery(), ct));
+
     [HttpGet("reports/daily")]
     public async Task<IActionResult> GetDailyWork(
         [FromQuery] GetSampleRequestDailyWorkQuery query,
@@ -59,8 +148,12 @@ public sealed class SampleRequestsController : ControllerBase
         }
         if (!Enum.IsDefined(query.View))
         {
-            return BadRequest("view must be today or all.");
+            return BadRequest("view must be today, delay, all, tracking, salePending or saleToday.");
         }
+        if ((query.Audience.HasValue && !Enum.IsDefined(query.Audience.Value)) || !Enum.IsDefined(query.Bucket))
+            return BadRequest("audience or bucket is invalid.");
+        if (query.LabTeam.HasValue && (!Enum.IsDefined(query.LabTeam.Value) || query.Audience is not (SampleRequestWorkAudience.Lab or SampleRequestWorkAudience.LabAdmin)))
+            return BadRequest("labTeam requires the Lab audience and a valid team filter.");
         if (query.Keyword?.Length > 80)
         {
             return BadRequest("keyword must be at most 80 characters.");
@@ -77,7 +170,7 @@ public sealed class SampleRequestsController : ControllerBase
         if (query.Date == DateOnly.MaxValue)
             return BadRequest("date is out of supported range.");
         if (!Enum.IsDefined(query.View))
-            return BadRequest("view must be today or all.");
+            return BadRequest("view must be today, delay or all.");
         if (string.IsNullOrWhiteSpace(query.Q))
             return BadRequest("q must contain at least 2 characters.");
 
@@ -99,6 +192,25 @@ public sealed class SampleRequestsController : ControllerBase
 
         return Ok(await _sender.Send(query, cancellationToken));
     }
+
+    [HttpGet("reports/admin-summary")]
+    public async Task<IActionResult> GetAdminSummary([FromQuery] GetSampleRequestAdminSummaryQuery query, CancellationToken ct)
+    {
+        if (!IsValidReportPeriod(query.FromDate, query.ToDate))
+            return BadRequest("fromDate/toDate must form a valid period of at most 367 days.");
+        return Ok(await _sender.Send(query, ct));
+    }
+
+    [HttpGet("reports/admin-details")]
+    public async Task<IActionResult> GetAdminDetails([FromQuery] GetSampleRequestAdminDetailsQuery query, CancellationToken ct)
+    {
+        if (!IsValidReportPeriod(query.FromDate, query.ToDate) || !Enum.IsDefined(query.Metric) || query.Keyword?.Length > 80)
+            return BadRequest("Invalid report period, metric or keyword.");
+        return Ok(await _sender.Send(query, ct));
+    }
+
+    private static bool IsValidReportPeriod(DateOnly from, DateOnly to)
+        => from != default && to != default && to >= from && to != DateOnly.MaxValue && to.DayNumber - from.DayNumber <= 366;
 
     [HttpGet("summary")]
     public async Task<IActionResult> GetSummary(
@@ -359,6 +471,16 @@ public sealed class SampleRequestsController : ControllerBase
             result);
     }
 
+    [HttpPost("{sampleRequestId:guid}/deactivate")]
+    public async Task<IActionResult> Deactivate(Guid sampleRequestId, CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new DeactivateSampleRequestCommand
+        {
+            SampleRequestId = sampleRequestId
+        }, cancellationToken);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
     [HttpPatch("{sampleRequestId:guid}")]
     public async Task<IActionResult> Patch(
         Guid sampleRequestId,
@@ -396,6 +518,7 @@ public sealed class SampleRequestsController : ControllerBase
         CancellationToken cancellationToken)
     {
         command.SampleRequestId = sampleRequestId;
+        command.RequireExistingConversationSendAccess = true;
 
         var result = await _sender.Send(command, cancellationToken);
 

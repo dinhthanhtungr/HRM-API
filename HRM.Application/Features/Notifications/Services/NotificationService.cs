@@ -17,26 +17,32 @@ namespace HRM.Application.Features.Notifications.Services;
 /// Lưu notification cho inbox API và đưa một gói SignalR nhỏ vào OutboxMessage.
 /// Target user/role được resolve thành các dòng EmployeeId trong NotificationUserState.
 /// </summary>
-internal sealed class NotificationService : INotificationService
+internal sealed partial class NotificationService : INotificationService, IInternalMessageReactionNotifications
 {
     private readonly INotificationDbContext _dbContext;
     private readonly ICurrentUser _currentUser;
     private readonly IWebPushSender _webPushSender;
     private readonly INotificationInboxArchiver _inboxArchiver;
     private readonly InternalMailAreaAccessService _areas;
+    private readonly NotificationFeedConversationInfoResolver _feedConversationInfo;
+    private readonly HRM.Application.Abstractions.Persistence.InternalMail.IInternalMailDbContext? _reactionDb;
 
     public NotificationService(
         INotificationDbContext dbContext,
         ICurrentUser currentUser,
         IWebPushSender webPushSender,
         INotificationInboxArchiver inboxArchiver,
-        InternalMailAreaAccessService areas)
+        InternalMailAreaAccessService areas,
+        NotificationFeedConversationInfoResolver feedConversationInfo,
+        HRM.Application.Abstractions.Persistence.InternalMail.IInternalMailDbContext? reactionDb = null)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
         _webPushSender = webPushSender;
         _inboxArchiver = inboxArchiver;
         _areas = areas;
+        _feedConversationInfo = feedConversationInfo;
+        _reactionDb = reactionDb;
     }
 
     public async Task<Guid> PublishAsync(
@@ -65,7 +71,7 @@ internal sealed class NotificationService : INotificationService
         var now = DateTime.Now;
         var isPrivateArea = request.ConversationId.HasValue && await _dbContext.InternalConversations.AnyAsync(c =>
             c.InternalConversationId == request.ConversationId && c.CompanyId == companyId &&
-            (c.RelatedType == InternalMailRelatedType.ConversationTechnical || c.RelatedType == InternalMailRelatedType.ConversationPricing), cancellationToken);
+            (c.RelatedType == InternalMailRelatedType.ConversationTechnical || c.RelatedType == InternalMailRelatedType.ConversationPricing || c.RelatedType == InternalMailRelatedType.ConversationCustom), cancellationToken);
         var notification = new Notification
         {
             Id = Guid.CreateVersion7(),
@@ -83,7 +89,16 @@ internal sealed class NotificationService : INotificationService
 
         await _dbContext.Notifications.AddAsync(notification, cancellationToken);
 
-        var developerEmployeeIds = isPrivateArea ? Array.Empty<Guid>() : await ResolveActiveDeveloperEmployeeIdsAsync(companyId, cancellationToken);
+        // Developer receives every newly published company event without becoming a participant.
+        // Never attach observers to a foreign/inactive conversation supplied by a producer.
+        var validObserverScope = !request.ConversationId.HasValue || await _dbContext.InternalConversations.AnyAsync(c =>
+            c.InternalConversationId == request.ConversationId && c.CompanyId == companyId && c.IsActive &&
+            (!isPrivateArea || _dbContext.InternalConversations.Any(parent => parent.InternalConversationId == c.RelatedId &&
+                parent.CompanyId == companyId && parent.IsActive)), cancellationToken);
+        var developerEmployeeIds = validObserverScope
+            ? await ResolveActiveDeveloperEmployeeIdsAsync(companyId, cancellationToken) : [];
+        if (request.Topic == TopicNotifications.SampleRequestCustomerPriceFeedbackRecorded)
+            developerEmployeeIds = await _areas.PricingCapableEmployeesAsync(companyId, developerEmployeeIds, cancellationToken);
         var targetUserIds = NormalizeIds(request.TargetUserIds)
             .Concat(developerEmployeeIds)
             .Distinct()
@@ -93,13 +108,6 @@ internal sealed class NotificationService : INotificationService
             .ToArray();
         var targetRoles = NormalizeRoles(request.TargetRoles);
         var targetTeamIds = NormalizeIds(request.TargetTeamIds);
-
-        await EnsureDeveloperConversationParticipantsAsync(
-            request.ConversationId,
-            companyId,
-            developerEmployeeIds,
-            now,
-            cancellationToken);
 
         // Recipient lưu lại ý định gửi ban đầu để audit/debug.
         // Việc user có thấy trong inbox hay không được quyết định bởi NotificationUserState bên dưới.
@@ -159,8 +167,11 @@ internal sealed class NotificationService : INotificationService
             .ToHashSetAsync(cancellationToken);
         if (isPrivateArea)
             allowedRecipients.IntersectWith(await _dbContext.InternalConversationParticipants
-                .Where(p => p.InternalConversationId == request.ConversationId && p.IsActive && !p.IsMuted)
+                .Where(p => p.InternalConversationId == request.ConversationId && p.IsActive &&
+                    (request.KeepMutedPrivateChatUnread || !p.IsMuted ||
+                        (request.MentionedEmployeeIds != null && request.MentionedEmployeeIds.Contains(p.EmployeeId))))
                 .Select(p => p.EmployeeId).ToArrayAsync(cancellationToken));
+        allowedRecipients.UnionWith(developerEmployeeIds);
         resolvedEmployeeIds.IntersectWith(allowedRecipients);
         resolvedSilentEmployeeIds.IntersectWith(allowedRecipients);
         var resolvedSilentEmployeeIdSet = resolvedSilentEmployeeIds
@@ -255,91 +266,58 @@ internal sealed class NotificationService : INotificationService
             .ToListAsync(cancellationToken);
     }
 
-    /// <summary>
-    /// Notification co conversation phai cap quyen participant cho Developer cung company;
-    /// neu khong, FE co the hien notification nhung API doc/mark-read cua thread lai bi tu choi.
-    /// </summary>
-    private async Task EnsureDeveloperConversationParticipantsAsync(
-        Guid? conversationId,
-        Guid companyId,
-        IReadOnlyCollection<Guid> developerEmployeeIds,
-        DateTime now,
-        CancellationToken cancellationToken)
-    {
-        if (conversationId is not { } validConversationId ||
-            validConversationId == Guid.Empty ||
-            developerEmployeeIds.Count == 0)
-        {
-            return;
-        }
-
-        var conversationExists = await _dbContext.InternalConversations
-            .AsNoTracking()
-            .AnyAsync(
-                conversation =>
-                    conversation.InternalConversationId == validConversationId &&
-                    conversation.CompanyId == companyId &&
-                    conversation.IsActive,
-                cancellationToken);
-        if (!conversationExists)
-        {
-            return;
-        }
-
-        var participants = await _dbContext.InternalConversationParticipants
-            .Where(participant =>
-                participant.InternalConversationId == validConversationId &&
-                developerEmployeeIds.Contains(participant.EmployeeId))
-            .ToListAsync(cancellationToken);
-
-        foreach (var participant in participants.Where(participant => !participant.IsActive))
-        {
-            participant.IsActive = true;
-            participant.DeletedAt = null;
-            participant.DeletedByEmployeeId = null;
-            participant.IsArchived = false;
-            participant.ArchivedAt = null;
-            participant.Role = InternalConversationParticipantRole.Watcher;
-            participant.IsMuted = false;
-            participant.JoinedAt = now;
-        }
-
-        var existingEmployeeIds = participants
-            .Select(participant => participant.EmployeeId)
-            .ToHashSet();
-        foreach (var developerEmployeeId in developerEmployeeIds.Where(existingEmployeeIds.Add))
-        {
-            await _dbContext.InternalConversationParticipants.AddAsync(
-                new InternalConversationParticipant
-                {
-                    InternalConversationId = validConversationId,
-                    EmployeeId = developerEmployeeId,
-                    Role = InternalConversationParticipantRole.Watcher,
-                    JoinedAt = now,
-                    IsArchived = false,
-                    IsMuted = false
-                },
-                cancellationToken);
-        }
-    }
-
     public async Task<IReadOnlyList<NotificationDto>> GetFeedAsync(
         int take = 20,
         Guid? afterId = null,
         DateTime? afterCreated = null,
         string? categoryCode = null,
         string? eventGroupCode = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool latestForHub = false,
+        bool unreadOnly = false,
+        bool urgentOnly = false,
+        bool mentionedOnly = false)
     {
         var companyId = GetCurrentCompanyId();
         var employeeId = GetCurrentEmployeeId();
         var normalizedTake = Math.Clamp(take, 1, 100);
 
-        var query = _areas.Notifications(_dbContext.Notifications)
-            .AsNoTracking()
-            .Where(x =>
-                x.CompanyId == companyId &&
-                x.UserStates.Any(state => state.UserId == employeeId && !state.IsArchived))
+        var inbox = _dbContext.Notifications.AsNoTracking().Where(x =>
+            x.CompanyId == companyId &&
+            x.UserStates.Any(state => state.UserId == employeeId && !state.IsArchived));
+        var reactionTopics = InternalMailPersonalActivity.ReactionTopics;
+        // Reactions belong to the personal inbox, never the general timeline or its latest-event winner.
+        if (!mentionedOnly) inbox = inbox.Where(n => !reactionTopics.Contains(n.Topic));
+        // Resolve the authorized urgent inbox once. Inlining this predicate in
+        // every latest-event subquery repeats the JSON link and access queries.
+        if (urgentOnly)
+        {
+            var urgentIds = await _areas.UrgentHubEvents(inbox)
+                .Select(notification => notification.Id).ToArrayAsync(cancellationToken);
+            if (urgentIds.Length == 0) return [];
+            inbox = inbox.Where(notification => urgentIds.Contains(notification.Id));
+        }
+        var visible = _areas.Notifications(inbox);
+        if (mentionedOnly)
+        {
+            visible = _areas.MentionedHubEvents(visible);
+            inbox = visible;
+        }
+        if (unreadOnly)
+        {
+            // Resolve unread eligibility once instead of nesting the unread message,
+            // JSON link and access subqueries inside the latest-event query.
+            // Keep the full inbox below: a read latest event may represent a
+            // conversation whose older notification/message is still unread.
+            var unreadIds = await _areas.UnreadHubEvents(visible, inbox)
+                .Select(notification => notification.Id)
+                .ToArrayAsync(cancellationToken);
+            if (unreadIds.Length == 0) return [];
+            visible = visible.Where(notification => unreadIds.Contains(notification.Id));
+        }
+        if ((latestForHub || unreadOnly || mentionedOnly) && NotificationTopicCatalog.NormalizeCode(categoryCode) != NotificationCategoryCodes.LegacyData)
+            visible = _areas.LatestHubEvents(visible, inbox, NotificationTopicCatalog.NormalizeCode(eventGroupCode));
+        var query = visible
             .Select(x => new NotificationDto
             {
                 Id = x.Id,
@@ -397,9 +375,27 @@ internal sealed class NotificationService : INotificationService
         {
             NotificationPayloadPresentation.Apply(item);
         }
+        await EnrichReactionNotificationsAsync(items, cancellationToken);
 
         await ApplyConversationTitlesAsync(items, companyId, employeeId, cancellationToken);
 
+        // Hub items đã enrich theo chính trang kết quả; không chạy lại cùng phần metadata ở feed nền.
+        if (!latestForHub)
+        {
+            var info = await _feedConversationInfo.ResolveAsync(
+                items.Select(item => item.ConversationId).OfType<Guid>(), companyId, cancellationToken);
+            foreach (var item in items)
+                if (item.ConversationId is { } id)
+                {
+                    item.SampleRequestInfo = info.SampleRequests.GetValueOrDefault(id);
+                    item.QuotationInfo = info.Quotations.GetValueOrDefault(id);
+                }
+        }
+
+        if (mentionedOnly)
+            await ApplyPersonalActivityAsync(items, employeeId, cancellationToken);
+
+        await _areas.MaskPriceNotificationsAsync(items, cancellationToken);
         return items;
     }
 
@@ -452,7 +448,8 @@ internal sealed class NotificationService : INotificationService
         var companyId = GetCurrentCompanyId();
         var employeeId = GetCurrentEmployeeId();
 
-        return await _areas.States()
+        var reactionTopics = InternalMailPersonalActivity.ReactionTopics;
+        return await _areas.States().Where(s => !reactionTopics.Contains(s.Notification.Topic))
             .AsNoTracking()
             .CountAsync(x =>
                 x.UserId == employeeId &&
@@ -468,7 +465,10 @@ internal sealed class NotificationService : INotificationService
         var companyId = GetCurrentCompanyId();
         var employeeId = GetCurrentEmployeeId();
 
-        var topicCounts = await _areas.States()
+        var reactionTopics = InternalMailPersonalActivity.ReactionTopics;
+        var personalReactionCount = await _areas.States().CountAsync(s => !s.IsRead && !s.IsArchived &&
+            reactionTopics.Contains(s.Notification.Topic), cancellationToken);
+        var topicCounts = await _areas.States().Where(s => !reactionTopics.Contains(s.Notification.Topic))
             .AsNoTracking()
             .Where(x =>
                 x.UserId == employeeId &&
@@ -511,6 +511,8 @@ internal sealed class NotificationService : INotificationService
         return new NotificationUnreadSummaryDto
         {
             TotalUnread = topicCounts.Sum(x => x.UnreadCount),
+            UnreadMentionCount = personalReactionCount + await _areas.MentionedMessages().CountAsync(
+                m => m.ReadStates.Any(s => s.EmployeeId == employeeId && !s.IsRead), cancellationToken),
             Categories = NotificationTopicCatalog.GetCategoryCodes()
                 .Select(categoryCode => new NotificationCategoryUnreadCountDto
                 {
@@ -566,6 +568,8 @@ internal sealed class NotificationService : INotificationService
         if (result is not null)
         {
             NotificationPayloadPresentation.Apply(result);
+            await EnrichReactionNotificationsAsync([result], cancellationToken);
+            await _areas.MaskPriceNotificationsAsync([result], cancellationToken);
         }
 
         return result;

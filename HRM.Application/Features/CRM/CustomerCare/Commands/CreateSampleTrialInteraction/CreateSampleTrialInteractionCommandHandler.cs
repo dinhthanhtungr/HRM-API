@@ -1,4 +1,5 @@
 using HRM.Application.Abstractions.Commons.Time;
+using HRM.Application.Abstractions.Security;
 using HRM.Application.Abstractions.Persistence.CRM.CustomerCare;
 using HRM.Application.Commons.Authorization;
 using HRM.Application.Commons.Concurrency;
@@ -10,6 +11,7 @@ using HRM.Application.Features.PLM.SampleRequests.Commands.SendSampleRequestMess
 using HRM.Application.Features.PLM.SampleRequests.DataChangeRequests;
 using HRM.Application.Features.PLM.SampleRequests.Rules;
 using HRM.Application.Features.PLM.SampleRequests.SampleTrials;
+using HRM.Application.Features.PLM.SampleRequests.Services.Workflow;
 using HRM.Domain.Entities.CustomerSchema;
 using HRM.Domain.Entities.SampleRequestSchema;
 using HRM.Domain.Enums.Products;
@@ -41,19 +43,23 @@ internal sealed class CreateSampleTrialInteractionCommandHandler
     private readonly CustomerCrmAccessService _accessService;
     private readonly IDateTimeProvider _dateTimeProvider;
     private readonly ISender _sender;
+    private readonly ICurrentUser _currentUser;
+    private readonly ICurrentUserPermissionService _permissions;
 
     public CreateSampleTrialInteractionCommandHandler(
         ICRMReadDbContext readDbContext,
         ICRMWriteDbContext writeDbContext,
         CustomerCrmAccessService accessService,
         IDateTimeProvider dateTimeProvider,
-        ISender sender)
+        ISender sender, ICurrentUser currentUser, ICurrentUserPermissionService permissions)
     {
         _readDbContext = readDbContext;
         _writeDbContext = writeDbContext;
         _accessService = accessService;
         _dateTimeProvider = dateTimeProvider;
         _sender = sender;
+        _currentUser = currentUser;
+        _permissions = permissions;
     }
 
     public async Task<OperationResult<Guid>> Handle(
@@ -115,16 +121,6 @@ internal sealed class CreateSampleTrialInteractionCommandHandler
             return OperationResult<Guid>.Fail("Contact does not belong to this customer.");
         }
 
-        var employee = await _accessService.ResolveEmployeeAsync(
-            scope,
-            request.AssignedSaleEmployeeId,
-            defaultToCurrent: true,
-            cancellationToken);
-        if (!employee.IsAllowed || !employee.EmployeeId.HasValue)
-        {
-            return OperationResult<Guid>.Fail("Assigned sale employee is outside your scope.");
-        }
-
         var trial = await GetSampleTrialForUpdateAsync(
             request.SampleRequestSampleTrialId,
             customer.CustomerId,
@@ -133,6 +129,21 @@ internal sealed class CreateSampleTrialInteractionCommandHandler
         if (trial is null)
         {
             return OperationResult<Guid>.Fail("Sample trial was not found or is outside this customer.");
+        }
+
+        if (!SampleSaleWorkflowAccess.CanActFor(_currentUser, _permissions, trial.SampleRequest.ManagerBy, scope) ||
+            !await _readDbContext.Employees.AsNoTracking().AnyAsync(x => x.CompanyId == scope.CompanyId &&
+                x.EmployeeId == scope.EmployeeId && x.IsActive, cancellationToken))
+            return OperationResult<Guid>.Fail("Sample trial is outside your managed Sale workflow scope.");
+        var actingForAnotherSale = trial.SampleRequest.ManagerBy != scope.EmployeeId;
+        var employee = await _accessService.ResolveEmployeeAsync(
+            scope,
+            request.AssignedSaleEmployeeId ?? (actingForAnotherSale ? trial.SampleRequest.ManagerBy : null),
+            defaultToCurrent: true,
+            cancellationToken);
+        if (!employee.IsAllowed || !employee.EmployeeId.HasValue)
+        {
+            return OperationResult<Guid>.Fail("Assigned sale employee is outside your scope.");
         }
 
         if (request.IdempotencyKey.HasValue)
@@ -234,6 +245,15 @@ internal sealed class CreateSampleTrialInteractionCommandHandler
             interactionAt,
             scope.EmployeeId,
             now);
+        var workflowEvent = SampleRequestWorkflowEvents.Create(trial.SampleRequestId, scope.CompanyId,
+            scope.EmployeeId, now, SampleRequestWorkflowEvents.FeedbackRecorded,
+            trial.CustomerReplyDate ?? interactionAt, replyNote ?? request.Content,
+            trial.FormulaId, trial.SampleRequestSampleTrialId);
+        // Cùng Id với interaction bảo đảm replay của idempotency key không phát sinh sự kiện/thông báo khác.
+        workflowEvent.Id = interactionId;
+        _writeDbContext.SampleRequestWorkflowEvents.Add(workflowEvent);
+        SampleRequestWorkflowNotificationQueue.Queue(_writeDbContext.OutboxMessages, workflowEvent,
+            BuildCustomerFeedbackMessage(trial, replyStatus!, replyNote, request.Content));
         await SampleRequestDataChangeAuditHelper.AddStatusTransitionAuditIfChangedAsync(
             _writeDbContext.AuditLogs,
             trial.SampleRequest,
@@ -245,7 +265,7 @@ internal sealed class CreateSampleTrialInteractionCommandHandler
         customer.LastContactDate = !customer.LastContactDate.HasValue || interactionAt > customer.LastContactDate
             ? interactionAt
             : customer.LastContactDate;
-        customer.CurrentSaleId = employee.EmployeeId;
+        if (!actingForAnotherSale) customer.CurrentSaleId = employee.EmployeeId;
 
         if (request.NextFollowUpDate.HasValue)
         {
@@ -267,19 +287,6 @@ internal sealed class CreateSampleTrialInteractionCommandHandler
         try
         {
             await _writeDbContext.SaveChangesAsync(cancellationToken);
-
-            var messageResult = await SendCustomerFeedbackMessageAsync(
-                trial,
-                replyStatus!,
-                replyNote,
-                request.Content,
-                cancellationToken);
-            if (!messageResult.Success)
-            {
-                return OperationResult<Guid>.Ok(
-                    interactionId,
-                    $"Recorded customer feedback successfully, but could not send notification: {messageResult.Message}");
-            }
 
             return OperationResult<Guid>.Ok(interactionId);
         }
@@ -344,11 +351,11 @@ internal sealed class CreateSampleTrialInteractionCommandHandler
         CancellationToken cancellationToken)
     {
         var visibleCustomerIds = _accessService.VisibleCustomers(scope).Select(x => x.CustomerId);
-        return await _writeDbContext.Customers.FirstOrDefaultAsync(x =>
+        return await _writeDbContext.Customers.Where(x =>
             x.CustomerId == customerId &&
             x.CompanyId == companyId &&
             x.IsActive == true &&
-            visibleCustomerIds.Contains(x.CustomerId), cancellationToken);
+            visibleCustomerIds.Contains(x.CustomerId)).AsTracking().FirstOrDefaultAsync(cancellationToken);
     }
 
     private Task<bool> ContactBelongsToCustomerAsync(Guid contactId, Guid customerId, CancellationToken cancellationToken)
@@ -381,6 +388,22 @@ internal sealed class CreateSampleTrialInteractionCommandHandler
         CancellationToken cancellationToken)
     {
         var normalizedStatus = replyStatus.Trim().ToUpperInvariant();
+        var targetStatus = normalizedStatus switch
+        {
+            ApprovedReplyStatus => SampleTrialStatus.Approved,
+            FailedReplyStatus => SampleTrialStatus.Failed,
+            CancelledReplyStatus => SampleTrialStatus.Cancelled,
+            WaitingReplyStatus => SampleTrialStatus.WaitingCustomerFeedback,
+            _ => SampleTrialStatus.PriceQuote
+        };
+        var validationError = SampleTrialFeedbackRules.Validate(trial.SampleRequest.Status, trial.Status, targetStatus);
+        if (validationError is not null)
+            return validationError;
+        if (SampleFlowRules.IsModernChip(trial.SampleRequest, trial) &&
+            targetStatus is SampleTrialStatus.Approved or SampleTrialStatus.Failed &&
+            await _writeDbContext.SampleRequestSampleTrials.AnyAsync(x => x.IsActive && x.FormulaId == trial.FormulaId &&
+                x.SampleRequest.CompanyId == trial.SampleRequest.CompanyId && x.DeliveredSampleQuantityKg > 0 && x.SentDate != null, cancellationToken))
+            return "This formula has already been sent in kg and cannot be reopened by chip feedback.";
         if (normalizedStatus == ApprovedReplyStatus)
         {
             var approvalValidationError = SampleRequestSampleTrialApprovalRules.Validate(
@@ -416,10 +439,14 @@ internal sealed class CreateSampleTrialInteractionCommandHandler
             }
 
             trial.Status = SampleTrialStatus.Failed;
-            trial.Formula.Status = FormulaStatus.Rejected.ToString();
-            trial.Formula.UpdatedBy = employeeId;
-            trial.Formula.UpdatedDate = now;
-            SampleRequestStatusTransitionRules.MarkCustomerFailed(trial.SampleRequest);
+            if (SampleFlowRules.IsModernChip(trial.SampleRequest, trial))
+            {
+                SampleFlowRules.ApplyChipReply(trial.SampleRequest, trial, targetStatus, employeeId, now);
+                return null;
+            }
+            // Feedback belongs to this delivery, not every delivery sharing its formula.
+            if (SampleTrialFeedbackRules.CanReopen(trial.SampleRequest.Status))
+                SampleRequestStatusTransitionRules.MarkCustomerFailed(trial.SampleRequest);
             trial.SampleRequest.UpdatedBy = employeeId;
             trial.SampleRequest.UpdatedDate = now;
             return null;
@@ -455,12 +482,11 @@ internal sealed class CreateSampleTrialInteractionCommandHandler
         return null;
     }
 
-    private Task<OperationResult<SendInternalMessageResultDto>> SendCustomerFeedbackMessageAsync(
+    private static SendSampleRequestMessageCommand BuildCustomerFeedbackMessage(
         SampleRequestSampleTrial trial,
         string customerReplyStatus,
         string? customerReplyNote,
-        string interactionContent,
-        CancellationToken cancellationToken)
+        string interactionContent)
     {
         var sampleRequestExternalId = trial.SampleRequestExternalIdSnapshot ?? trial.SampleRequest.ExternalId;
         var formulaExternalId = trial.Formula?.ExternalId ?? trial.BatchNo ?? "--";
@@ -475,7 +501,7 @@ internal sealed class CreateSampleTrialInteractionCommandHandler
         };
         var detail = TruncateMessageDetail(customerReplyNote ?? interactionContent);
 
-        return _sender.Send(new SendSampleRequestMessageCommand
+        return new SendSampleRequestMessageCommand
         {
             SampleRequestId = trial.SampleRequestId,
             Type = SampleRequestNotificationType.GeneralMessage,
@@ -488,7 +514,7 @@ internal sealed class CreateSampleTrialInteractionCommandHandler
             TitleOverride = trial.Status == SampleTrialStatus.Cancelled
                 ? "Yêu cầu phối mẫu đã hủy"
                 : "Phản hồi khách hàng về mẫu đã gửi"
-        }, cancellationToken);
+        };
     }
 
     private static string? TruncateMessageDetail(string? value)

@@ -1,3 +1,5 @@
+using HRM.Application.Features.Purchasing.PurchaseOrders.Queries.GetPurchaseOrderReceiptProgress;
+using HRM.Application.Features.Purchasing.PurchaseOrders.Queries.ExportPurchaseOrdersExcel;
 using HRM.Application.Commons.Authorization;
 using HRM.Application.Features.Purchasing.PurchaseOrders.Commands.CancelPurchaseOrder;
 using HRM.Application.Features.Purchasing.PurchaseOrders.Commands.CompletePurchaseOrder;
@@ -27,10 +29,28 @@ public sealed class PurchaseOrdersController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetList([FromQuery] GetPurchaseOrdersQuery query, CancellationToken ct) => Ok(await _sender.Send(query, ct));
 
-    [HttpGet("{purchaseOrderId:guid}")]
-    public async Task<IActionResult> GetById(Guid purchaseOrderId, CancellationToken ct)
+    [HttpGet("export-excel")]
+    public async Task<IActionResult> ExportList([FromQuery] GetPurchaseOrdersQuery query, CancellationToken ct)
     {
-        var result = await _sender.Send(new GetPurchaseOrderByIdQuery(purchaseOrderId), ct);
+        var result = await _sender.Send(new ExportPurchaseOrdersExcelQuery(query), ct);
+        return File(result.Content, result.ContentType, result.FileName);
+    }
+
+    /// <summary>Chi tiết PO; includeInactive=true đọc cả đơn, dòng và liên kết lịch sử để xem/copy.</summary>
+    [HttpGet("{purchaseOrderId:guid}")]
+    [ProducesResponseType(typeof(PurchaseOrderDetailDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetById(Guid purchaseOrderId, CancellationToken ct, [FromQuery] bool includeInactive = false)
+    {
+        var result = await _sender.Send(new GetPurchaseOrderByIdQuery(purchaseOrderId) { IncludeInactive = includeInactive }, ct);
+        return result is null ? NotFound(new { message = "Không tìm thấy PO." }) : Ok(result);
+    }
+
+    /// <summary>Tiến độ phiếu nhập/QC/ghi sổ theo nguồn ĐĐH, chỉ đọc, không tạo yêu cầu kho.</summary>
+    [HttpGet("{purchaseOrderId:guid}/receipt-progress")]
+    [ProducesResponseType(typeof(PurchaseOrderReceiptProgressDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetReceiptProgress(Guid purchaseOrderId, CancellationToken ct, [FromQuery] bool includeInactive = false)
+    {
+        var result = await _sender.Send(new GetPurchaseOrderReceiptProgressQuery(purchaseOrderId, includeInactive), ct);
         return result is null ? NotFound(new { message = "Không tìm thấy PO." }) : Ok(result);
     }
 

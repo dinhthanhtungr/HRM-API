@@ -1,7 +1,7 @@
 using HRM.Application.Commons.Reporting;
 using Microsoft.EntityFrameworkCore;
 using HRM.Application.Features.Reports.ExecutivePnL.Queries.GetExecutivePnLReport.Models;
-using HRM.Application.Features.Reports.ExecutivePnL.Shared.Services.Costing;
+using HRM.Application.Commons.Reporting.Costing;
 
 namespace HRM.Application.Features.Reports.ExecutivePnL.Queries.GetExecutivePnLReport.Services;
 
@@ -68,7 +68,7 @@ internal sealed partial class ExecutivePnLActualReader
                 filter.CompanyId)
             .ToListAsync(cancellationToken);
 
-        var costSources = await ExecutivePnLDeliveryCostResolver.LoadAsync(
+        var costSources = await DeliveryCostResolver.LoadAsync(
             _dbContext,
             deliveryRows,
             filter.CompanyId,
@@ -83,7 +83,7 @@ internal sealed partial class ExecutivePnLActualReader
                 continue;
             }
 
-            actual.CostOfSales += ExecutivePnLDeliveryCostResolver.ResolveAmount(row, costSources);
+            actual.CostOfSales += DeliveryCostResolver.ResolveAmount(row, costSources);
         }
     }
 }

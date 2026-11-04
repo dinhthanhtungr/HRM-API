@@ -29,6 +29,7 @@ public sealed class NotificationHubItemDto
 /// </summary>
 public sealed class NotificationHubConversationInfoDto
 {
+    public IReadOnlyList<InternalMailQuickGroupDto> QuickGroups { get; set; } = Array.Empty<InternalMailQuickGroupDto>();
     public Guid GroupConversationId { get; set; }
     public string AreaCode { get; set; } = "general";
     public string? DisplayTitle { get; set; }

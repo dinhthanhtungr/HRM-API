@@ -54,7 +54,7 @@ internal sealed class GetCustomerPurchaseHealthQueryHandler
             return OperationResult<CustomerPurchaseHealthReportDto>.Fail(lastPurchaseRange.Error!);
         }
 
-        var scope = await _accessService.BuildScopeAsync(cancellationToken);
+        var scope = await _accessService.BuildReadScopeAsync(cancellationToken);
         var employee = await _accessService.ResolveEmployeeAsync(
             scope,
             query.AssignedSaleEmployeeId,

@@ -1,3 +1,7 @@
+using HRM.Application.Features.CRM.Quotations.Dtos;
+using HRM.Application.Commons.Authorization;
+using HRM.Application.Features.CRM.Quotations.Services;
+using HRM.Domain.Enums.CustomerEnum;
 using HRM.Application.Abstractions.Persistence.InternalMail;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Pagination;
@@ -11,22 +15,23 @@ namespace HRM.Application.Features.InternalMail.Queries.GetMessages;
 internal sealed class GetInternalMessagesQueryHandler
     : IRequestHandler<GetInternalMessagesQuery, PagedResult<InternalMessageDto>?>
 {
+    private readonly ICurrentUserPermissionService _permissions;
     private const int MaxReplyPreviewLength = 300;
     private readonly IInternalMailDbContext _dbContext;
     private readonly ICurrentUser _currentUser;
     private readonly InternalMailAreaAccessService _areas;
-    private readonly IInternalConversationAccessService _conversationAccessService;
+    private readonly InternalMessageReactionReader? _reactions;
 
     public GetInternalMessagesQueryHandler(
         IInternalMailDbContext dbContext,
         ICurrentUser currentUser,
-        IInternalConversationAccessService conversationAccessService,
-        InternalMailAreaAccessService areas)
+        InternalMailAreaAccessService areas, ICurrentUserPermissionService permissions, InternalMessageReactionReader? reactions = null)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
         _areas = areas;
-        _conversationAccessService = conversationAccessService;
+        _permissions = permissions;
+        _reactions = reactions;
     }
 
     public async Task<PagedResult<InternalMessageDto>?> Handle(
@@ -40,19 +45,23 @@ internal sealed class GetInternalMessagesQueryHandler
             return null;
         }
 
-        var canRead = await _conversationAccessService.CanReadAsync(request.ConversationId, cancellationToken);
-
-        if (!canRead)
-        {
-            return null;
-        }
-
         var visibleIds = _areas.Messages().Select(m => m.InternalMessageId);
         var messageQuery = _areas.Messages(request.AreaCode)
             .AsNoTracking()
             .Where(x => x.InternalConversationId == request.ConversationId);
 
-        var totalCount = await messageQuery.CountAsync(cancellationToken);
+        // Preserve the authorized conversation check, including empty/wrong-area pages,
+        // while counting messages in the same database round trip.
+        var access = await _areas.Conversations()
+            .Where(c => c.InternalConversationId == request.ConversationId)
+            .Select(c => new { TotalCount = messageQuery.Count() })
+            .FirstOrDefaultAsync(cancellationToken);
+        if (access is null)
+        {
+            return null;
+        }
+
+        var totalCount = access.TotalCount;
         var pageNumber = request.NormalizedPageNumber;
         var pageSize = request.NormalizedPageSize;
 
@@ -64,7 +73,7 @@ internal sealed class GetInternalMessagesQueryHandler
             .Select(x => new InternalMessageDto
             {
                 MessageId = x.InternalMessageId,
-                AreaCode = x.Conversation.RelatedType == HRM.Domain.Enums.InternalMailEnums.InternalMailRelatedType.ConversationTechnical ? "technical" : x.Conversation.RelatedType == HRM.Domain.Enums.InternalMailEnums.InternalMailRelatedType.ConversationPricing ? "pricing" : "general",
+                AreaCode = InternalMailAreaAccessService.AreaOf(x.Conversation.RelatedType),
                 ConversationId = x.InternalConversationId,
                 SenderEmployeeId = x.SenderEmployeeId,
                 SenderName = x.SenderEmployee.FullName,
@@ -100,6 +109,52 @@ internal sealed class GetInternalMessagesQueryHandler
                     .FirstOrDefault()
             })
             .ToListAsync(cancellationToken);
+
+        var confirmationMessages = items.Select(x => new { Message = x, Payload = QuotationSendService.ReadPayload(x.PayloadJson) })
+            .Where(x => x.Payload is not null).ToArray();
+        if (!_permissions.HasPermission(ApplicationPermissions.Quotations.ConfirmSent))
+        {
+            foreach (var item in confirmationMessages)
+                item.Message.ConfirmSentBlockedReasonCode = QuotationConfirmationErrors.Forbidden;
+        }
+        else if (confirmationMessages.Length > 0)
+        {
+            var quotationIds = confirmationMessages.Select(x => x.Payload!.QuotationId).Distinct().ToArray();
+            var awaiting = await _dbContext.Quotations.AsNoTracking()
+                .Include(x => x.Lines).ThenInclude(x => x.PriceTiers).Include(x => x.Terms)
+                .Where(x => quotationIds.Contains(x.QuotationId) && x.CompanyId == companyId && x.IsActive
+                    && x.Status == QuotationStatus.PendingSendConfirmation)
+                .ToArrayAsync(cancellationToken);
+            var actionMessages = await _dbContext.InternalMessages.AsNoTracking()
+                .Where(x => !x.IsDeleted && x.MessageType == HRM.Domain.Enums.InternalMailEnums.InternalMessageType.Action
+                    && x.PayloadJson != null && x.Conversation.CompanyId == companyId && x.Conversation.IsActive
+                    && x.Conversation.RelatedType == HRM.Domain.Enums.InternalMailEnums.InternalMailRelatedType.Quotation
+                    && quotationIds.Contains(x.Conversation.RelatedId!.Value))
+                .Select(x => new { x.InternalMessageId, x.InternalConversationId, x.Conversation.RelatedId, x.PayloadJson })
+                .ToArrayAsync(cancellationToken);
+            var pending = actionMessages.Select(x => new { Message = x, Payload = QuotationSendService.ReadPayload(x.PayloadJson) })
+                .Where(x => x.Payload?.Status == QuotationSendConfirmationPayload.PendingStatus).ToArray();
+            foreach (var item in confirmationMessages)
+            {
+                var payload = item.Payload!;
+                var quotation = awaiting.FirstOrDefault(x => x.QuotationId == payload.QuotationId);
+                var candidates = pending.Where(x => x.Message.RelatedId == payload.QuotationId).ToArray();
+                var current = candidates.Length == 1 ? candidates[0] : null;
+                var reason = item.Message.IsDeleted || payload.Status != QuotationSendConfirmationPayload.PendingStatus
+                    ? QuotationConfirmationErrors.RequestOutdated
+                    : quotation is null ? QuotationConfirmationErrors.NotPending
+                    : candidates.Length == 0 ? QuotationConfirmationErrors.NoPendingRequest
+                    : candidates.Length > 1 ? QuotationConfirmationErrors.AmbiguousRequests
+                    : current!.Message.InternalMessageId != item.Message.MessageId
+                        || payload.RequestMessageId != item.Message.MessageId
+                        || payload.ConversationId != item.Message.ConversationId
+                        || current.Message.InternalConversationId != payload.ConversationId
+                        ? QuotationConfirmationErrors.RequestOutdated
+                        : QuotationConfirmationCommercialRules.BlockedReason(quotation, payload);
+                item.Message.ConfirmSentBlockedReasonCode = reason;
+                item.Message.CanConfirmSent = reason is null;
+            }
+        }
 
         var messageIds = items.Select(x => x.MessageId).ToArray();
         if (messageIds.Length > 0)
@@ -158,6 +213,8 @@ internal sealed class GetInternalMessagesQueryHandler
             }
         }
 
+        if (_reactions is not null) await _reactions.AttachAsync(items, cancellationToken);
+        await _areas.MaskPriceMessagesAsync(items, cancellationToken);
         return new PagedResult<InternalMessageDto>(items, totalCount, pageNumber, pageSize);
     }
 }

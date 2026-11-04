@@ -1,47 +1,122 @@
-# Khu vực trao đổi theo người tham gia
+﻿# Nhóm trao đổi trong hồ sơ
 
-## Phạm vi và lưu trữ
+## Lưu trữ và phạm vi
 
-Ba khu vực: `general` (Chung, gồm mẫu và phản hồi), `technical` (Kỹ thuật), `pricing` (Báo giá). Conversation gốc là Chung. Mỗi khu vực riêng là một conversation con, có participant, message, read state, mute/archive riêng. FE nhóm chúng dưới một dòng hồ sơ bằng `groupConversationId`.
+Một yêu cầu phối mẫu giữ một dòng inbox theo `groupConversationId`. Chung là conversation gốc;
+Kỹ thuật, Giá và nhóm tùy chỉnh là các conversation con, mỗi nhóm có thành viên, tin, file,
+read-state, mute và archive riêng. Lịch sử và publisher nghiệp vụ cũ giữ ở Chung.
 
-Không thêm entity, bảng, cột, migration, claim hoặc role mới. Bổ sung `InternalMailRelatedType.ConversationTechnical = 17` và `ConversationPricing = 18`; `RelatedId` của chúng trỏ về conversation gốc. `InternalMailAreaAccessService.AreaOf` ánh xạ sang mã khu vực. DTO trả `relatedType/relatedId` nghiệp vụ của gốc để FE vẫn nhận diện hồ sơ; chỉ entity conversation con dùng liên kết parent.
+Luồng runtime hiện tại vẫn tái sử dụng conversation/participant/message và RelatedType lưu int:
+17 = ConversationTechnical, 18 = ConversationPricing, 19 = ConversationCustom;
+RelatedId của nhóm con trỏ về gốc. Loại 20 = ConversationForwardSource chỉ dùng trên
+InternalMessageReference, trỏ về conversation nguồn của bản chuyển tiếp.
 
-Lịch sử, file nghiệp vụ và publisher tự động hiện hành vẫn ở Chung. Không tự phân loại hoặc chuyển tin cũ sang khu vực riêng; không backfill hoặc đánh dấu đọc hàng loạt. Tin mới do người dùng gửi ở tab riêng nằm trong conversation của tab đó. Đây là chia nhóm trao đổi thủ công, không tự động che các thông báo nghiệp vụ vốn đang gửi ở Chung.
+Đợt 2 bổ sung model bảng nhóm và bộ đọc để đối chiếu, chưa chuyển endpoint sang nguồn mới và chưa áp dụng SQL
+vào DB đang dùng. Bảng mới chỉ được tạo bằng script thủ công có guard và backfill đã được duyệt;
+xem [group storage phase 2](design/group-storage/PHASE2.md). Không tạo lại thành viên, tin nhắn hoặc badge.
 
-## Quyền và người nhận
+## Quyền
 
-- Active participant đọc toàn bộ lịch sử và gửi trong chính khu vực đó, không phụ thuộc Sale/Lab. Chủ khu vực quản lý mời/gỡ người. Người được mời không tự vào Chung hoặc khu vực khác.
-- Chỉ chủ conversation gốc tạo khu vực; người tạo trở thành Owner của khu vực mới. Chủ gốc không tự đọc khu vực đã tồn tại nếu không còn là thành viên khu vực đó. Tạo lại trả khu vực hiện có nếu người gọi được vào, không ghi đè danh sách người nhận.
-- Company, conversation/parent active, ownership và IDOR được kiểm tra tại BE. Role President/Developer không mở được khu vực riêng khi không có membership. Ngoại lệ executive và quản lý participant của conversation gốc vẫn theo contract cũ.
-- Luật leader active nhóm `QAQC.RD` không xem hồ sơ màu PIG/CMB/PHM/PBM/PDM tiếp tục áp dụng cả conversation con; role bổ sung không vượt qua luật này.
-- NotificationService chỉ nhận thành viên active cùng company của khu vực riêng, không auto-add Developer. Sender và mute được loại theo send flow; silent recipients giữ semantics đã đọc/không push hiện hành. Thu hồi membership chặn đọc/tìm kiếm/file/feed/unread ở request tiếp theo, không thu hồi bản nội dung người nhận đã tải trước đó.
-- Mời vào khu vực cho xem lịch sử; chuyển tiếp chỉ sao chép body/file của tin được chọn, không thêm membership, không sao chép reply chain hay action payload. Bản sao độc lập với tin nguồn; không cấp quyền mở hồ sơ/duyệt giá tại module nghiệp vụ.
+### Lựa chọn nhanh trong inbox
 
-File chat qua API attachment dùng chung cũng lọc bằng `InternalMailAreaAccessService.Attachments`, kể cả URL nội dung và list collection. Không tải được file chat mồ côi/thuộc tin bị xóa hoặc khu vực không được mời. Upload/xóa file chat phải qua message endpoint; generic upload từ chối collection chat và generic delete không sửa file chat. File nghiệp vụ không gắn tin giữ contract hiện hành.
+`GET /api/v1/internal-mail/conversations` trả `quickGroups` trên từng item; `GET /api/v1/notification-hub/items`
+trả cùng field trong `conversationInfo`. Ví dụ: `"quickGroups": [{"code":"technical","conversationId":null}]`.
+Danh sách chỉ gồm Kỹ thuật/Giá được current user phép mở hoặc đủ điều kiện default khi nhóm chưa tồn tại.
+ID khác null là nhóm đã lưu và hiện được phép đọc; null là preview chưa ghi DB, bấm mới gọi ensure-defaults
+rồi đọc lại detail để lấy ID được phép truy cập. `[]` nghĩa không có lựa chọn nhanh; không suy ra quyền từ role ở FE.
+Nhóm đã tồn tại nhưng không có quyền không được thay bằng preview; membership bị gỡ không được tái kích hoạt.
+Đây chỉ là metadata điều hướng, không chứa nội dung, participant, giá hoặc unread giả. Detail giữ unread canonical.
+Query chạy theo lô root ID của trang: hai lượt lấy root/child, tối đa hai lượt bổ sung role/group hiện tại nếu
+còn nhóm cần preview; không query theo từng dòng, không load tin nhắn hay ghi dữ liệu trong GET/hover.
+Scope company/active và quyền đọc dùng `InternalMailAreaAccessService.Conversations`; default preview dùng
+role sets và phân loại leader hiện hành. Endpoint mở/gửi vẫn kiểm tra lại quyền khi dữ liệu danh sách đã cũ.
+Triển khai/restart BE trước FE; refresh inbox để nhận metadata mới.
+
+- Chung giữ contract hiện có.
+- Developer có quyền hệ thống `internal-mail.company-conversations.observe`, đọc mọi conversation active cùng company
+  (Internal/Quotation/Sample Request và nhóm con có parent active), kể cả không có membership. Quyền gắn với role Developer,
+  hỗ trợ token explicit cũ; claim đơn lẻ không cấp cho role khác. Không tạo participant hay cấp quyền mời từ quyền đọc.
+  Chỉ Developer có capability riêng `internal-mail.company-messages.send`: gửi vào mọi nhóm active được phép đọc cùng
+  company, không cần membership; API gửi và `areas[].canSend` dùng chung rule. Không tự thêm thành viên hoặc cấp quyền quản lý.
+  Với người không phải Developer, BE loại role Developer active khỏi participants/candidates/readerGroup và số thành viên
+  ở mọi khu vực; Developer thấy danh sách đầy đủ. Tác giả và nội dung tin Dev gửi vẫn hiện bình thường.
+- Chỉ Developer được bypass membership trong Chung/Kỹ thuật/Giá/custom của công ty. President phải có participant
+  active trong nhóm, không dùng claim observe/send cũ để vượt membership. Default members President vẫn theo rule hiện tại.
+- Giá mặc định gồm SaleUser/SaleAdmin active trong Chung và President active cùng company.
+- Kỹ thuật gồm LabUser, President active cùng company và leader active của group theo
+  SampleRequestRecipientRules.ResolveDefaultLeaderGroupTypes: RD/màu theo danh mục sản phẩm.
+  Luật loại leader RD khỏi hồ sơ màu hiện hành vẫn áp dụng.
+- POST ensure-defaults tạo nhóm còn thiếu và thêm default member chưa có participant.
+  Không kích hoạt lại người đã bị gỡ hoặc sửa invitation/mute/archive đã lưu.
+  Đổi role về sau không tự xóa membership đã cấp.
+- Developer có capability `internal-mail.pricing-group.observe` được đọc Giá của Sample Request
+  cùng company, không cần participant và không tự được mời. Developer gửi bằng capability công ty riêng ở trên; capability quan sát này giữ cho token cũ;
+  quyền xem mọi nhóm ở trên là capability riêng.
+  Không thêm Dev vào participant qua defaults hoặc lời mời Giá, kể cả Dev có thêm role Sale/President.
+  Tên/ID Dev trong participant, ứng viên mời, gợi ý
+  mention và metadata người tạo ở mọi khu vực được che với người không phải Developer; CreatedBy = Guid.Empty,
+  CreatedByName = null khi người tạo là Dev. Tin Dev chủ động gửi bằng membership thật vẫn hiện tác giả.
+- Chỉ trả tab trong areas nếu BE cho phép đọc. Company, conversation/parent active và membership
+  áp dụng cho detail/messages/search/context/file/feed/unread, không dựa vào ẩn tab ở FE.
+- Thành viên active có thể mời người từ Chung, không gán Owner. Nhóm chứa tin chuyển tiếp còn
+  yêu cầu người mời và người mới có quyền nguồn. Người mới đọc được lịch sử nhóm.
+  Gỡ người ở nhóm riêng vẫn dành cho Owner; quyền mời và quyền gỡ là hai cờ riêng.
+- Ngoài Sample Request, create-area cũ vẫn yêu cầu chủ gốc; không áp defaults phối mẫu.
 
 ## API
 
-Base: `/api/v1/internal-mail` (giữ `[Authorize]`).
+Base `/api/v1/internal-mail`, giữ Authorize; endpoint cũ dùng ID thật từng nhóm.
 
-| API | Contract |
+| Method/route | Contract |
 | --- | --- |
-| POST `/conversations/{id}/areas` | `{ "areaCode": "technical", "employeeIds": ["..."] }`; pricing tương tự. Danh sách trống tạo khu vực chỉ có chủ để mời sau. |
-| GET `/conversations/{id}` | Thêm `groupConversationId`, `areaCode`, `canManageParticipants`, `areas: [{code, conversationId, canSend, unreadCount, canCreate}]`. Chỉ trả khu vực được phép; khu vực chưa tạo có thể có ID null và canCreate=true cho chủ gốc. |
-| POST `/messages/{messageId}/forward` | `{ "targetConversationId": "..." }`; phải đọc được nguồn, gửi được đích, cùng hồ sơ và khác conversation. Body lấy từ DB, file sao chép qua storage; giữ giới hạn upload hiện hành. |
-| GET messages/search/context/attachments | Dùng **conversationId thực của khu vực**, `areaCode` tùy chọn; không dùng ID gốc cộng area để truy cập con. |
-| POST messages/read | Dùng ID khu vực thực; areaCode nếu gửi phải khớp. Read giữ boundary message và snapshot ID, chỉ cập nhật khu vực đang đọc. |
-| participants/preferences | Endpoint hiện hành với ID khu vực; chủ khu vực mời/gỡ thành viên, mỗi người tự mute/archive. |
+| POST conversations/{id}/areas/ensure-defaults | Tạo/đồng bộ hai nhóm mặc định Sample Request; không nhận danh sách quyền từ FE. |
+| GET conversations/{id} | groupConversationId, areaCode, canInviteParticipants, canManageParticipants và areas. |
+| GET conversations/{id}/participants/candidates | Người được mời vào nhóm riêng, lọc membership gốc, nguồn chuyển tiếp, active/company và Dev ẩn. Không có quyền trả 404. |
+| POST conversations/{id}/participants | Thêm Member/Watcher; system message @Họ tên đã được thêm vào nhóm và notification. Thêm trùng không phát lại. |
+| POST conversations/{id}/groups/forward | {name, employeeIds, messageIds}: tên 1–100 ký tự, 1–20 tin cùng nguồn, 2–50 người gồm người tạo. Trả area mới. |
+| POST messages/{id}/forward | {targetConversationId}: cùng hồ sơ, khác nhóm, mọi người ở đích phải có quyền nguồn. |
 
-List và Hub conversation info thêm `groupConversationId`, `areaCode`. Tổng của dòng FE cộng unread từng conversation truy cập được; mỗi conversation đối soát message/notification bằng logic cũ, tránh đếm đôi. Area code suy ra từ loại conversation, không thêm cột trên message/notification. Không thay đổi numeric TopicNotifications, topicCode/category hoặc NotificationTopicCatalog. Generic send/forward vẫn qua `SendInternalMessageCommandHandler` → `INotificationService.PublishAsync`; business publisher cũ giữ luồng Chung.
+Ví dụ area:
 
-Payload chat giữ conversationId/messageId/business reference/urgent/attachmentCount; forward thêm `isForwarded: true`, không mang link nguồn hoặc action payload. Body/file có thể nhạy cảm và chỉ được tải qua API kiểm tra membership. SignalR chỉ gửi notificationId; Web Push dùng nội dung chung. Outbox dùng employee đã resolve, giao với audience hiện tại trước dispatch; không bổ sung silent watcher bằng role broadcast.
+```json
+{"code":"custom","conversationId":"uuid","name":"Thử nghiệm nguyên liệu","canSend":true,"unreadCount":2,"canCreate":false}
+```
+
+Name là Subject lưu của nhóm; FE dùng i18n cho ba mã mặc định, name cho custom.
+ConversationId là đích gửi/đọc; groupConversationId là khóa gộp inbox. Detail nhóm con trả
+relatedType/relatedId nghiệp vụ của gốc để header hồ sơ và action giữ nguyên.
+Người không có quyền không nhận area hoặc unread của nhóm đó. Unread mỗi nhóm đối soát
+message/notification bằng max, không cộng hai bản biểu diễn cùng sự kiện.
+
+## Chuyển tiếp và thông báo
+
+Sao chép body/file từ DB, giữ tên người gửi trong forwardedSenderName, đặt isForwarded.
+Không sao chép action payload/reply chain hoặc nhận body/quyền nguồn từ client.
+References giữ mọi conversation nguồn qua nhiều lần forward; mời thêm người phải thỏa các nguồn.
+Đồng bộ default members cũng lọc theo nguồn đã forward để không tự mở rộng người xem bản sao.
+Tin từ nhóm riêng chỉ chuyển sang Kỹ thuật/custom; mọi đích vẫn kiểm tra membership nguồn.
+Chỉ Developer được quan sát mọi nhóm trong công ty, gồm nhóm riêng;
+quyền quan sát không dùng để cấp membership hay vượt kiểm tra forward cho người khác.
+Bản sao đã nhận không bị thu hồi khi nguồn về sau bị gỡ thành viên hoặc xóa tin.
+Forward và thay đổi membership khóa conversation gốc để kiểm tra audience trong transaction.
+
+Tin nhóm con báo thành viên active theo mute/sender/@tag hiện hành; Developer active cùng công ty luôn được bổ sung vào inbox/outbox, không cần membership và không chịu mute/sender exclusion. Không tạo membership Dev.
+Chung giữ audience nghiệp vụ riêng. Thêm người dùng topic InternalMailMessageCreated,
+contentType InternalMailMembersAdded, addedEmployeeIds và mentions; người mới nhận thông báo
+kể cả mute. Nội dung/membership commit cùng transaction qua PublishAsync/outbox.
+SignalR chỉ báo ID, Web Push giữ nội dung chung. Notification/@Tôi mở conversationId/messageId thật.
 
 ## Triển khai và kiểm chứng
 
-Triển khai/restart BE rồi cập nhật/reload FE. Không chạy SQL, migration hoặc refresh claim. FE cũ vẫn đọc/gửi Chung khi bỏ areaCode; để dùng ba khu vực cần FE mới. Không triển khai lại BE cũ sau khi tạo khu vực con vì code cũ không hiểu loại 17/18 và các ràng buộc khu vực.
+Build/restart BE trước FE. Không rollback BE về bản không hiểu loại 19/20 sau khi tạo nhóm mới.
+Observer có fallback tập trung ApplicationPermissionRoleSets. Với token explicit permission,
+chạy seed-pricing-observer-permission.sql trên Identity hiện có rồi login/refresh;
+baseline seed/rollback đã đồng bộ. Script không tự chạy và không đổi schema.
+Quyền xem mọi nhóm dùng `seed-sample-group-observer-permission.sql` cho Developer. Script cũng dọn claim bypass cũ của President; runtime role gate chặn claim cũ ngay sau restart API.
+Quyền quan sát toàn công ty của Developer gắn trực tiếp với role tại resolver capability tập trung, không phụ thuộc claim mới
+trong token explicit cũ. `seed-company-observer-permission.sql` và baseline seed/rollback chỉ đồng bộ metadata claim/catalog;
+không tự chạy script. Thay đổi role vẫn cần refresh/login để cập nhật JWT.
 
-Regression: người Sale được mời kỹ thuật và người Lab được mời giá đều đọc được; President/Developer không được mời thì không đọc; parent owner không thừa kế quyền con; thu hồi membership, sai company/parent inactive đều bị chặn. Provider tests kiểm tra SQL PostgreSQL dịch được và model không thêm cột; không thay thế kiểm thử DB/runtime. FE tests kiểm tra payload area/create/forward, nhóm conversation, badge và read boundary.
-
-Kiểm thử thủ công sau restart: chủ gốc tạo Kỹ thuật, mời A; tạo Báo giá, mời B; A không đọc/tải file Báo giá bằng ID trực tiếp; forward một tin từ Kỹ thuật sang Báo giá chỉ hiện bản sao; gỡ B chặn truy cập và unread của B. Đọc hết một khu vực không xóa unread khu vực còn lại. Kiểm tra lại push queue sau revoke và mẫu màu với leader RD.
-
-Kiểm chứng ngày 2026-10-04: build API qua, 0 warning/error; 162 test notification FE qua và Next production build/TypeScript qua. 57 test BE tập trung qua. Test project khi biên dịch lại bị chặn bởi hai file ngoài phạm vi: `QuotationSnapshotRegressionTests.cs` (argument quantity/fieldPath không khớp factory) và `ManufacturingLossProfileApplicationResolverTests.cs` (property Code không còn tồn tại). Lượt test tập trung dùng MSBuild target tạm trong `artifacts/verify-tests` để loại đúng hai file, không sửa project hoặc test ngoài phạm vi. Không coi lượt test incremental trước đó là full-project compile pass. Lint FE không có error, còn 6 warning unused của code có sẵn. Chưa thực hiện thao tác tạo khu vực/gửi tin trên DB thật trong phiên sửa code.
+Regression: defaults Sale/President/RD/màu, company/parent active, custom membership/revoke,
+Dev ẩn, forward không mở rộng nguồn, mời trùng, unread độc lập và cancellation/deep link FE.
+Build/unit/provider tests không thay thế kiểm tra nhiều tài khoản trên API đã restart.

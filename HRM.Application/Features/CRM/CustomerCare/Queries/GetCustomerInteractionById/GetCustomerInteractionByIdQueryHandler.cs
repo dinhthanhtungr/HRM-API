@@ -25,7 +25,7 @@ internal sealed class GetCustomerInteractionByIdQueryHandler
         GetCustomerInteractionByIdQuery request,
         CancellationToken cancellationToken)
     {
-        var scope = await _accessService.BuildScopeAsync(cancellationToken);
+        var scope = await _accessService.BuildReadScopeAsync(cancellationToken);
         var visibleCustomerIds = _accessService.VisibleCustomers(scope).Select(x => x.CustomerId);
 
         var dto = await ProjectInteractions()

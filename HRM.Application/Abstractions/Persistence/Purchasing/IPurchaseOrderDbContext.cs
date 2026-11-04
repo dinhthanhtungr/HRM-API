@@ -1,3 +1,4 @@
+using HRM.Domain.Entities.AttachmentSchema;
 using HRM.Domain.Entities.HrSchema;
 using HRM.Domain.Entities.DevandqaSchema;
 using HRM.Domain.Entities.MaterialSchema;
@@ -10,6 +11,9 @@ namespace HRM.Application.Abstractions.Persistence.Purchasing;
 
 public interface IPurchaseOrderDbContext
 {
+    DbSet<PurchaseOrderDocument> PurchaseOrderDocuments { get; }
+    DbSet<AttachmentCollection> AttachmentCollections { get; }
+    DbSet<AttachmentModel> AttachmentModels { get; }
     DbSet<PurchaseOrder> PurchaseOrders { get; }
     DbSet<PurchaseOrderDetail> PurchaseOrderDetails { get; }
     DbSet<PurchaseOrderSnapshot> PurchaseOrderSnapshots { get; }
@@ -27,5 +31,6 @@ public interface IPurchaseOrderDbContext
     DbSet<WarehouseShelfLedger> WarehouseShelfLedgers { get; }
     DbSet<QCInputByQC> QCInputByQCs { get; }
     Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default);
+    Task LockPurchaseOrderAsync(Guid purchaseOrderId, Guid companyId, CancellationToken cancellationToken = default);
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

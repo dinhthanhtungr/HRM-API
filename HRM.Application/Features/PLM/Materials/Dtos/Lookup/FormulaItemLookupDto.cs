@@ -16,6 +16,7 @@ public sealed class FormulaItemLookupDto
     public ItemType ItemType { get; init; }
 
     public string? ExternalId { get; init; }
+    public string? StockCode { get; init; }
     public string? CustomCode { get; init; }
     public string Name { get; init; } = string.Empty;
     public string Label { get; init; } = string.Empty;

@@ -38,7 +38,7 @@ namespace HRM.Application.Features.Employees.Queries.GetEmployeeById
                 query = query.Where(employee => employee.CompanyId == companyId);
             }
 
-            if (!EmployeeAdministrationRules.CanManageEmployees(_currentUser))
+            if (!EmployeeAdministrationRules.CanViewEmployees(_currentUser))
             {
                 var employeeId = _currentUser.EmployeeId
                     ?? throw new UnauthorizedAccessException("Current user has no EmployeeId.");

@@ -48,7 +48,7 @@ internal sealed class CustomerCrmWorkService : ICustomerCrmWorkService
         CustomerFollowUpTaskQuery query,
         CancellationToken cancellationToken = default)
     {
-        var scope = await _accessService.BuildScopeAsync(cancellationToken);
+        var scope = await _accessService.BuildReadScopeAsync(cancellationToken);
         var source = BuildVisibleTaskQuery(scope)
             .Where(x => x.AssignedToEmployeeId == scope.EmployeeId ||
                         x.Assignees.Any(a => a.EmployeeId == scope.EmployeeId && a.IsActive));
@@ -63,7 +63,7 @@ internal sealed class CustomerCrmWorkService : ICustomerCrmWorkService
         Guid taskId,
         CancellationToken cancellationToken = default)
     {
-        var scope = await _accessService.BuildScopeAsync(cancellationToken);
+        var scope = await _accessService.BuildReadScopeAsync(cancellationToken);
         var task = await ProjectTasks(BuildVisibleTaskQuery(scope), _dateTimeProvider.Now.Date)
             .FirstOrDefaultAsync(x => x.WorkTaskId == taskId, cancellationToken);
         return task is null
@@ -79,7 +79,7 @@ internal sealed class CustomerCrmWorkService : ICustomerCrmWorkService
         CustomerFollowUpTaskQuery query,
         CancellationToken cancellationToken = default)
     {
-        var scope = await _accessService.BuildScopeAsync(cancellationToken);
+        var scope = await _accessService.BuildReadScopeAsync(cancellationToken);
         if (!await _accessService.VisibleCustomers(scope).AnyAsync(x => x.CustomerId == customerId, cancellationToken))
         {
             return OperationResult<PagedResult<CustomerFollowUpTaskDto>>.Fail("Customer was not found.");
@@ -109,7 +109,7 @@ internal sealed class CustomerCrmWorkService : ICustomerCrmWorkService
         Guid taskId,
         CancellationToken cancellationToken = default)
     {
-        var scope = await _accessService.BuildScopeAsync(cancellationToken);
+        var scope = await _accessService.BuildReadScopeAsync(cancellationToken);
         if (!await BuildVisibleTaskQuery(scope).AnyAsync(x => x.Id == taskId, cancellationToken))
         {
             return OperationResult<IReadOnlyList<CustomerFollowUpTaskAssigneeDto>>.Fail("Task was not found.");
@@ -127,7 +127,7 @@ internal sealed class CustomerCrmWorkService : ICustomerCrmWorkService
         CustomerWorkPlanQuery query,
         CancellationToken cancellationToken = default)
     {
-        var scope = await _accessService.BuildScopeAsync(cancellationToken);
+        var scope = await _accessService.BuildReadScopeAsync(cancellationToken);
         if (!await _accessService.VisibleCustomers(scope).AnyAsync(x => x.CustomerId == customerId, cancellationToken))
             return OperationResult<PagedResult<CustomerWorkPlanDto>>.Fail("Customer was not found.");
         var source = _readDbContext.WorkPlans.AsNoTracking().Where(x =>
@@ -155,7 +155,7 @@ internal sealed class CustomerCrmWorkService : ICustomerCrmWorkService
     /// </summary>
     public async Task<OperationResult<CustomerWorkPlanDto>> GetPlanAsync(Guid planId, CancellationToken cancellationToken = default)
     {
-        var scope = await _accessService.BuildScopeAsync(cancellationToken);
+        var scope = await _accessService.BuildReadScopeAsync(cancellationToken);
         var visibleIds = _accessService.VisibleCustomers(scope).Select(x => x.CustomerId);
         var plan = await ProjectPlans(_readDbContext.WorkPlans.AsNoTracking().Where(x =>
             x.Id == planId && x.CompanyId == scope.CompanyId &&

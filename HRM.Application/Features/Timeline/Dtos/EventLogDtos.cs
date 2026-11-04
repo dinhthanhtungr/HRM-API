@@ -21,6 +21,8 @@ public sealed class EventLogCreateRequest
 
 public sealed class TimelineItemDto
 {
+    public decimal? ImportedQuantity { get; init; }
+    public decimal? ReceiptQuantity { get; init; }
     public string? SourceType { get; init; }
     public Guid SourceId { get; init; }
     public string SourceCode { get; init; } = string.Empty;

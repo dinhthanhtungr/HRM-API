@@ -1,18 +1,13 @@
 # Notification Final Report Rules
 
-Đọc file này trước khi trả lời cuối nếu task có tạo/sửa notification topic, publish flow, payload, recipient rule, SignalR/Web Push hoặc outbox worker.
+Áp dụng khi sửa topic, publish flow, payload, recipient, SignalR/Web Push hoặc outbox. Dùng nội dung đã có trong context; không cần đọc lại trước mỗi câu trả lời cuối.
 
-Câu trả lời cuối phải nói rõ:
+Báo ngắn hành vi nghiệp vụ và tác động FE/API, không chỉ trả đường dẫn file. Chỉ trình bày các nhóm chịu tác động:
 
-- Đã thêm/sửa topic nào, enum nào, numeric value nào, `topicCode` nào và category nào.
-- Mapping nằm ở file/catalog nào.
-- Notification được publish từ handler/service nào và đi qua `INotificationService.PublishAsync` ra sao.
-- Recipient được resolve theo employee/user/role/team nào.
-- Role nào là global, role nào bị giới hạn theo group/team/department.
-- Có loại trừ current user/sender, inactive employee, wrong company hoặc muted participant không.
-- Payload chứa gì và vì sao không chứa dữ liệu nhạy cảm.
-- SignalR/Web Push có thay đổi gì không; nếu không thay đổi cũng nói rõ.
-- README/WEB_PUSH docs đã cập nhật hay vì sao không cần cập nhật.
-- Build/test đã chạy và kết quả.
+- Topic/mapping: enum, numeric value, topicCode, category và catalog.
+- Publish: handler/service phát sự kiện và đường đi qua `INotificationService.PublishAsync`.
+- Recipient/quyền: employee/user/role/team, global hay group/team/department, company/active/sender/muted exclusions.
+- Payload: dữ liệu gửi và cách tránh lộ dữ liệu nhạy cảm.
+- Transport: thay đổi SignalR/Web Push/outbox; nêu phần giữ nguyên khi cần làm rõ tác động của thay đổi.
 
-Không được chỉ trả mỗi đường dẫn file khi task có tạo/sửa notification; phải mô tả hành vi nghiệp vụ và tác động FE/API.
+Luôn báo tài liệu cập nhật hoặc lý do không cần, build/test thực tế và blocker. Không liệt kê mọi thành phần không đổi.

@@ -4,6 +4,7 @@ using HRM.Domain.Entities.CustomerSchema;
 using HRM.Domain.Entities.HrSchema;
 using HRM.Domain.Entities.SampleRequestSchema;
 using HRM.Domain.Entities.MaterialSchema;
+using HRM.Domain.Entities.Notifications;
 using HRM.Domain.Entities.WorkTaskSchema;
 using Microsoft.EntityFrameworkCore;
 
@@ -36,6 +37,8 @@ public interface ICRMWriteDbContext
     DbSet<Formula> Formulas { get; }
     DbSet<SampleRequest> SampleRequests { get; }
     DbSet<SampleRequestSampleTrial> SampleRequestSampleTrials { get; }
+    DbSet<SampleRequestWorkflowEvent> SampleRequestWorkflowEvents { get; }
+    DbSet<OutboxMessage> OutboxMessages { get; }
 
     void ClearTrackedChanges();
 

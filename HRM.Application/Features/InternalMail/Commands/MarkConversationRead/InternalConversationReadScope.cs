@@ -21,7 +21,7 @@ internal static class InternalConversationReadScope
     // Bao gồm cả message đã đọc để sửa notification bị sót khi mở lại thread.
     public static Expression<Func<InternalMessage, bool>> ConversationMessages(
         Guid companyId, Guid employeeId, Guid conversationId, DateTime readThrough,
-        Guid? throughMessageId = null) => message =>
+        Guid? throughMessageId = null, bool allowCompanyObserver = false) => message =>
             message.InternalConversationId == conversationId &&
             !message.IsDeleted &&
             (message.SentAt < readThrough ||
@@ -29,8 +29,8 @@ internal static class InternalConversationReadScope
                     (!throughMessageId.HasValue || message.InternalMessageId.CompareTo(throughMessageId.Value) <= 0))) &&
             message.Conversation.CompanyId == companyId &&
             message.Conversation.IsActive &&
-            message.Conversation.Participants.Any(participant =>
-                participant.EmployeeId == employeeId && participant.IsActive);
+            (allowCompanyObserver || message.Conversation.Participants.Any(participant =>
+                participant.EmployeeId == employeeId && participant.IsActive));
 
     public static Expression<Func<InternalMessageReadState, bool>> Messages(
         Guid companyId, Guid employeeId, Guid conversationId, DateTime readThrough,

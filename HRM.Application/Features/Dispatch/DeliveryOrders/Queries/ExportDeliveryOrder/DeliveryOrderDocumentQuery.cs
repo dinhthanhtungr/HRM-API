@@ -15,11 +15,15 @@ internal static class DeliveryOrderDocumentQuery
                 CompanyName = x.Company.Name,
                 CompanyAddress = x.Company.Address,
                 CustomerName = x.Customer.CustomerName,
+                CustomerAddress = x.Customer.RegistrationAddress,
+                PaymentDeadline = x.PaymentDeadline,
+                MerchandiseOrderExternalIds = string.Join(", ", x.DeliveryOrderPOs.Where(p => p.IsActive &&
+                    p.MerchandiseOrder.CompanyId == companyId).Select(p => p.MerchandiseOrder.ExternalId).Distinct()),
                 Status = x.Status,
                 CreatedDate = x.CreatedDate,
                 Receiver = x.Receiver,
                 DeliveryAddress = x.DeliveryAddress,
-                Phone = x.PhoneSnapshot,
+                Phone = x.PhoneSnapshot != null && x.PhoneSnapshot.Trim() != "" ? x.PhoneSnapshot : x.Customer.Phone,
                 TaxNumber = x.TaxNumber,
                 PaymentType = x.PaymentType,
                 Note = x.Note,
@@ -29,6 +33,8 @@ internal static class DeliveryOrderDocumentQuery
                     .ThenBy(d => d.ProductExternalIdSnapShot).ThenBy(d => d.Id)
                     .Select(d => new DeliveryOrderDocumentLineDto
                     {
+                        MerchandiseOrderDetailId = d.MerchandiseOrderDetailId,
+                        ProductId = d.ProductId,
                         ProductCode = d.ProductExternalIdSnapShot,
                         ProductName = d.ProductNameSnapShot,
                         PONo = d.PONo,

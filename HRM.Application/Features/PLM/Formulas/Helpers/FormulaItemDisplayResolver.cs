@@ -101,19 +101,22 @@ internal static class FormulaItemDisplayResolver
         var isMaterial = IsMaterial(source.ItemType);
         if (!currentData.TryGetValue(new FormulaItemDisplayKey(isMaterial, source.ItemId), out var current))
         {
-            return new FormulaItemDisplay(source.NameSnapshot, source.ExternalIdSnapshot);
+            return new FormulaItemDisplay(source.NameSnapshot, source.ExternalIdSnapshot,
+                isMaterial ? source.ExternalIdSnapshot : null);
         }
 
         if (isMaterial)
         {
             return new FormulaItemDisplay(
                 FirstNotBlank(current.Name, source.NameSnapshot),
+                FirstNotBlank(current.ExternalId, source.ExternalIdSnapshot),
                 FirstNotBlank(current.ExternalId, source.ExternalIdSnapshot));
         }
 
         return new FormulaItemDisplay(
             FormatProductName(current.ColourCode, current.Name, source.NameSnapshot),
-            FirstNotBlank(current.ExternalId, source.ExternalIdSnapshot));
+            FirstNotBlank(current.ExternalId, source.ExternalIdSnapshot),
+            TrimToNull(current.ColourCode));
     }
 
     private static bool IsMaterial(ItemType itemType)
@@ -154,4 +157,4 @@ internal sealed record FormulaItemCurrentData(
     string? ExternalId,
     string? ColourCode);
 
-internal sealed record FormulaItemDisplay(string? Name, string? ExternalId);
+internal sealed record FormulaItemDisplay(string? Name, string? ExternalId, string? StockCode = null);

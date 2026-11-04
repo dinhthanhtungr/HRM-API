@@ -35,7 +35,7 @@ internal sealed class GetSaleOrderCustomerContextQueryHandler
             return null;
         }
 
-        var scope = await _customerVisibilityService.BuildScopeAsync(cancellationToken);
+        var scope = await _customerVisibilityService.BuildReadScopeAsync(cancellationToken);
         var cancelledStatus = MerchadiseStatus.Cancelled.ToString();
         var visibleCustomerIds = _customerVisibilityService.ApplyCustomerVisibility(
             _dbContext.Customers.AsNoTracking(),

@@ -1,7 +1,9 @@
 using HRM.Application.Abstractions.Persistence.Dispatch;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Pagination;
+using HRM.Application.Commons.Rules;
 using HRM.Application.Features.Dispatch.DeliveryOrders.Dtos;
+using HRM.Application.Features.Dispatch.DeliveryOrders.Queries.GetDeliveryPlan;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -52,6 +54,11 @@ internal sealed class GetSelectableDeliveryLinesQueryHandler
         var lineBaseQuery =
             _dbContext.MerchandiseOrderDetails
                 .AsNoTracking()
+                .Where(detail =>
+                    (detail.MerchandiseOrder.CustomerExternalIdSnapshot == null ||
+                     detail.MerchandiseOrder.CustomerExternalIdSnapshot.Trim().ToUpper() != InternalCustomerRules.InternalCustomerExternalId) &&
+                    (detail.MerchandiseOrder.Customer == null || detail.MerchandiseOrder.Customer.ExternalId == null ||
+                     detail.MerchandiseOrder.Customer.ExternalId.Trim().ToUpper() != InternalCustomerRules.InternalCustomerExternalId))
                 .GroupJoin(
                     deliveredQuantityQuery,
                     detail => detail.MerchandiseOrderDetailId,
@@ -64,17 +71,16 @@ internal sealed class GetSelectableDeliveryLinesQueryHandler
                             .Select(x => x.DeliveredQuantity)
                             .FirstOrDefault()
                     })
-                .Select(x => new
+                .Select(x => new SelectableDeliveryLineSource
                 {
-                    x.Order,
-                    x.Detail,
-                    x.DeliveredQuantity,
+                    Order = x.Order,
+                    Detail = x.Detail,
+                    DeliveredQuantity = x.DeliveredQuantity,
                     RemainingQuantity = x.Detail.ExpectedQuantity - x.DeliveredQuantity
                 })
                 .Where(x =>
                     x.Detail.IsActive &&
-                    x.Order.CompanyId == companyId &&
-                    x.RemainingQuantity > 0m);
+                    x.Order.CompanyId == companyId);
 
         if (request.CustomerId is { } customerId && customerId != Guid.Empty)
         {
@@ -82,19 +88,10 @@ internal sealed class GetSelectableDeliveryLinesQueryHandler
         }
 
         lineBaseQuery = lineBaseQuery.Where(x => x.Order.IsActive);
+        if (request.MerchandiseOrderId is { } selectedOrderId && selectedOrderId != Guid.Empty)
+            lineBaseQuery = lineBaseQuery.Where(x => x.Order.MerchandiseOrderId == selectedOrderId);
 
-        if (!string.IsNullOrWhiteSpace(request.NormalizedKeyword))
-        {
-            var keyword = request.NormalizedKeyword;
-            lineBaseQuery = lineBaseQuery.Where(x =>
-                EF.Functions.ILike(x.Order.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
-                EF.Functions.ILike(x.Order.PONo, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
-                EF.Functions.ILike(x.Order.CustomerNameSnapshot, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
-                EF.Functions.ILike(x.Order.PhoneSnapshot, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
-                EF.Functions.ILike(x.Detail.ProductExternalIdSnapshot, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
-                EF.Functions.ILike(x.Detail.ProductNameSnapshot, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
-                EF.Functions.ILike((x.Detail.Comment ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter));
-        }
+        lineBaseQuery = SelectableDeliveryKeywordSearch.Apply(lineBaseQuery, request.Keyword, companyId);
 
         var orderQuery = lineBaseQuery
             .Select(x => x.Order)
@@ -125,12 +122,22 @@ internal sealed class GetSelectableDeliveryLinesQueryHandler
                 order.Status,
                 order.Currency,
                 order.Note
+                ,order.IsDeliveryPaused, order.DeliveryPausedFrom, order.DeliveryPausedTo,
+                order.DeliveryPauseReason, order.DeliveryPauseType,
+                DeliveryPausedName = order.DeliveryPausedByNavigation != null && order.DeliveryPausedByNavigation.CompanyId == companyId
+                    ? order.DeliveryPausedByNavigation.FullName : null
             })
             .ToListAsync(cancellationToken);
 
         var orderIds = pageOrders
             .Select(x => x.MerchandiseOrderId)
             .ToArray();
+
+        var promisedDates = await DeliveryPlanSourceQuery.ActiveLinks(_dbContext.MfgOrderPOs.AsNoTracking(), companyId)
+            .Where(x => orderIds.Contains(x.Detail.MerchandiseOrderId))
+            .GroupBy(x => x.Detail.MerchandiseOrderId)
+            .Select(g => new { OrderId = g.Key, Date = g.Max(x => x.ProductionOrder.ExpectedDate) })
+            .ToDictionaryAsync(x => x.OrderId, x => x.Date, cancellationToken);
 
         var pageLines = await lineBaseQuery
             .Where(x => orderIds.Contains(x.Order.MerchandiseOrderId))
@@ -145,6 +152,12 @@ internal sealed class GetSelectableDeliveryLinesQueryHandler
                 ProductExternalId = x.Detail.ProductExternalIdSnapshot,
                 ProductName = x.Detail.ProductNameSnapshot,
                 Note = x.Detail.Comment,
+                BagWeightKg = x.Detail.Product.IsActive && x.Detail.Product.CompanyId == companyId
+                    ? x.Detail.Product.SampleRequests.Where(sr => sr.CompanyId == companyId && sr.IsActive &&
+                        sr.CustomerId == x.Order.CustomerId)
+                        .OrderByDescending(sr => sr.CreatedDate).ThenByDescending(sr => sr.SampleRequestId)
+                        .Select(sr => sr.BagWeight > 0 ? (int?)sr.BagWeight : null).FirstOrDefault()
+                    : null,
                 OrderedQuantity = x.Detail.ExpectedQuantity,
                 x.DeliveredQuantity,
                 x.RemainingQuantity
@@ -168,7 +181,7 @@ internal sealed class GetSelectableDeliveryLinesQueryHandler
                     {
                         LotNo = x.LotNo,
                         LotKey = x.LotNo,
-                        StockType = "FinishedGood",
+                        StockType = x.StockType.ToString(),
                         Quantity = Math.Min(x.AvailableQuantity, x.ProductAvailableQuantity),
                         Bags = null
                     })
@@ -193,6 +206,7 @@ internal sealed class GetSelectableDeliveryLinesQueryHandler
                             ProductId = line.ProductId,
                             ProductExternalId = line.ProductExternalId,
                             ProductName = line.ProductName,
+                            BagWeightKg = line.BagWeightKg ?? 25,
                             PONo = line.PONo,
                             Note = line.Note,
                             OrderedQuantity = line.OrderedQuantity,
@@ -220,6 +234,10 @@ internal sealed class GetSelectableDeliveryLinesQueryHandler
                 Status = order.Status,
                 Currency = order.Currency,
                 Note = order.Note,
+                PromisedDeliveryDate = promisedDates.GetValueOrDefault(order.MerchandiseOrderId),
+                IsDeliveryPaused = order.IsDeliveryPaused, DeliveryPausedFrom = order.DeliveryPausedFrom,
+                DeliveryPausedTo = order.DeliveryPausedTo, DeliveryPauseReason = order.DeliveryPauseReason,
+                DeliveryPauseType = order.DeliveryPauseType, DeliveryPausedName = order.DeliveryPausedName,
                 Lines = linesByOrder.TryGetValue(order.MerchandiseOrderId, out var lines)
                     ? lines
                     : Array.Empty<SelectableDeliveryOrderLineDto>()

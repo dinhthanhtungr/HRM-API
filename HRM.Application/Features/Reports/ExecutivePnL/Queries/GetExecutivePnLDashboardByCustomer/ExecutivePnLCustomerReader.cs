@@ -2,7 +2,7 @@ using HRM.Application.Abstractions.Persistence.Reports;
 using HRM.Application.Commons.Reporting;
 using HRM.Application.Features.Reports.ExecutivePnL.Queries.GetExecutivePnLReport.Services;
 using HRM.Application.Features.Reports.ExecutivePnL.Shared.Models;
-using HRM.Application.Features.Reports.ExecutivePnL.Shared.Services.Costing;
+using HRM.Application.Commons.Reporting.Costing;
 using Microsoft.EntityFrameworkCore;
 
 namespace HRM.Application.Features.Reports.ExecutivePnL.Queries.GetExecutivePnLDashboardByCustomer;
@@ -28,7 +28,7 @@ internal sealed class ExecutivePnLCustomerReader
                 filter.CompanyId)
             .ToListAsync(cancellationToken);
 
-        var costSources = await ExecutivePnLDeliveryCostResolver.LoadAsync(
+        var costSources = await DeliveryCostResolver.LoadAsync(
             _dbContext,
             revenueLines,
             filter.CompanyId,
@@ -45,7 +45,7 @@ internal sealed class ExecutivePnLCustomerReader
                 Key = g.Key.Key.ToString(),
                 Label = g.Key.Label,
                 Revenue = g.Sum(x => x.RevenueAmountVnd),
-                CostOfSales = g.Sum(x => ExecutivePnLDeliveryCostResolver.ResolveAmount(x, costSources))
+                CostOfSales = g.Sum(x => DeliveryCostResolver.ResolveAmount(x, costSources))
             })
             .OrderByDescending(x => x.Revenue)
             .Take(topN)

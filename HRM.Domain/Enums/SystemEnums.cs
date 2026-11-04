@@ -130,6 +130,8 @@ namespace Shared.Enums
     /// </summary>
     public static class PurchaseOrderStatus
     {
+        /// <summary>IQC yêu cầu đổi hàng của đơn đặt hàng liên quan.</summary>
+        public const string ExchangeRequested = "ExchangeRequested";
         public const string Pending = "Pending";
         public const string InProgress = "InProgress";
         public const string Completed = "Completed";

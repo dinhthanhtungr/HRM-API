@@ -1,5 +1,17 @@
 # Executive PnL Report
 
+ACCUser được xem phạm vi phân bổ sale/customer như President; filter salePersonId/saleGroupId vẫn giới hạn kết quả trong company hiện hành. Quy tắc tính doanh thu/cost và danh sách role của nhân viên được phân bổ doanh số giữ nguyên.
+
+Nguồn doanh thu, attribution sale và cost được tập trung tại [Commons Reporting](../../../../../Commons/Reporting/README.md). Sales Header dùng cùng nguồn và đối soát với P&L by-sales trên cùng phạm vi. CompanyId query chỉ được bằng company của current user; bỏ CompanyId thì dùng current company.
+
+Dashboard `by-sales` cho Developer/President/ACCUser và SaleUser/SaleAdmin/ACUser
+truy cập. Ba role đầu xem toàn company; sale dùng customer visibility CRM (assignment,
+group admin, Work claim, quyền customer view bổ sung). SaleGroup/SalePerson chỉ thu hẹp.
+Không lọc sale/group thì customer hợp lệ thiếu attribution vào UNASSIGNED.
+Capability `reports.sales-profit.view` kiểm soát giá vốn/lợi nhuận: thiếu quyền thì
+omit metric/series nhạy cảm khỏi by-sales, không đọc nguồn cost. Header dùng null.
+Chi tiết và source-of-truth mapping: [Commons Reporting](../../../../../Commons/Reporting/README.md).
+
 ## 1. Mục đích
 
 Feature `GetExecutivePnLReport` dùng để lấy dữ liệu báo cáo P&L theo tháng.
@@ -20,8 +32,8 @@ Toàn bộ chỉ số doanh số của P&L tổng, Customer, Trend, Sales, Produ
 active có liên kết Merchandise Order Detail, loại khách nội bộ `KH_VIETAUS`, loại delivery trạng thái `Canceled`
 và quy đổi về VND theo currency/tỷ giá của Merchandise Order liên kết.
 
-Giá vốn dùng công tắc nội bộ `ExecutivePnLCostSourcePolicy.Current`, không nhận từ query/API để mọi người
-xem cùng một nguồn tính trong cùng thời điểm. Mặc định `FormulaSnapshot` lấy toàn bộ snapshot NVL trên công thức VU đã chọn ở dòng sales order:
+Giá vốn dùng công tắc nội bộ `ReportCostSourcePolicy.Current`, không nhận từ query/API để mọi người
+xem cùng một nguồn tính trong cùng thời điểm. Hiện tại dùng `InventoryWeightedAverage`; fallback `FormulaSnapshot` lấy toàn bộ snapshot NVL trên công thức VU đã chọn ở dòng sales order:
 `số lượng giao * tổng (FormulaMaterials.Quantity * FormulaMaterials.UnitPrice)` với các dòng
 `itemType = Material`. Nếu công thức không có snapshot NVL, report mới dùng snapshot legacy của lô giao hoặc
 `BaseCostSnapshot`.

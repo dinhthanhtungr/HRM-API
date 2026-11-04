@@ -4,6 +4,7 @@ using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Pagination;
 using HRM.Application.Features.PLM.SaleOrders.Dtos;
 using HRM.Application.Features.PLM.SaleOrders.Services;
+using HRM.Domain.Enums.Merchadises;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -107,6 +108,8 @@ internal sealed class GetSaleOrdersQueryHandler
             .Take(request.NormalizedPageSize)
             .Select(x => new SaleOrderListItemDto
             {
+                WaitingForStandardSampleCount = x.MerchandiseOrderDetails.Count(d => d.IsActive
+                    && d.Status == nameof(MerchadiseStatus.WaitingForStandardSample)),
                 MerchandiseOrderId = x.MerchandiseOrderId,
                 ExternalId = x.ExternalId,
                 CustomerId = x.CustomerId,

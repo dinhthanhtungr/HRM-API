@@ -2,8 +2,8 @@ using HRM.Application.Abstractions.Persistence.Reports;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Reporting;
 using HRM.Application.Features.Reports.ExecutivePnL.Shared.Models;
-using HRM.Application.Features.Reports.ExecutivePnL.Shared.Services.Costing;
-using HRM.Application.Features.Reports.ExecutivePnL.Shared.Services.SalesAttribution;
+using HRM.Application.Commons.Reporting.Costing;
+using HRM.Application.Commons.Reporting.SalesAttribution;
 using Microsoft.EntityFrameworkCore;
 
 namespace HRM.Application.Features.Reports.ExecutivePnL.Queries.GetExecutivePnLDashboardBySales;
@@ -11,12 +11,12 @@ namespace HRM.Application.Features.Reports.ExecutivePnL.Queries.GetExecutivePnLD
 internal sealed class ExecutivePnLSalesReader
 {
     private readonly IReportReadDbContext _dbContext;
-    private readonly ExecutivePnLSalesAttributionScopeResolver _salesScopeResolver;
+    private readonly SalesAttributionScopeResolver _salesScopeResolver;
 
     public ExecutivePnLSalesReader(IReportReadDbContext dbContext, ICurrentUser currentUser)
     {
         _dbContext = dbContext;
-        _salesScopeResolver = new ExecutivePnLSalesAttributionScopeResolver(dbContext, currentUser);
+        _salesScopeResolver = new SalesAttributionScopeResolver(dbContext, currentUser);
     }
 
     /// <summary>
@@ -24,13 +24,13 @@ internal sealed class ExecutivePnLSalesReader
     /// </summary>
     public async Task<List<ExecutivePnLSalesMonthlyMetricRow>> ReadMonthlyAsync(
         ExecutivePnLSaleFilter filter,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default, bool canViewProfit = true)
     {
         var revenueLines = await DeliveryRevenueQuery.Create(
                 _dbContext.DeliveryOrderDetails.AsNoTracking(),
                 filter.FromMonth,
                 filter.RangeEnd,
-                filter.CompanyId)
+                filter.CompanyId, includeCosts: canViewProfit, includeDisplayFields: false)
             .ToListAsync(cancellationToken);
 
         var customerIds = revenueLines
@@ -43,13 +43,14 @@ internal sealed class ExecutivePnLSalesReader
             customerIds,
             filter.SaleGroup,
             filter.SalePerson,
-            cancellationToken);
+            cancellationToken, includeUnassignedCompanyCustomers: true);
 
-        var costSources = await ExecutivePnLDeliveryCostResolver.LoadAsync(
+        revenueLines = revenueLines.Where(x => salesScope.TryGetAttribution(x.CustomerId, out _)).ToList();
+        var costSources = canViewProfit ? await DeliveryCostResolver.LoadAsync(
             _dbContext,
             revenueLines,
             filter.CompanyId,
-            cancellationToken);
+            cancellationToken) : null;
 
         var rows = revenueLines
             .Where(x => salesScope.TryGetAttribution(x.CustomerId, out _))
@@ -57,7 +58,7 @@ internal sealed class ExecutivePnLSalesReader
             {
                 salesScope.TryGetAttribution(x.CustomerId, out var attribution);
 
-                var costOfSales = ExecutivePnLDeliveryCostResolver.ResolveAmount(x, costSources);
+                var costOfSales = costSources is null ? 0m : DeliveryCostResolver.ResolveAmount(x, costSources);
 
                 return new ExecutivePnLSalesMonthlyMetricRow
                 {

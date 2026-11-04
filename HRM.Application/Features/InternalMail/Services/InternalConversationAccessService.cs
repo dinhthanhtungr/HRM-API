@@ -1,4 +1,4 @@
-using HRM.Application.Abstractions.Persistence.InternalMail;
+﻿using HRM.Application.Abstractions.Persistence.InternalMail;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Authorization;
 using HRM.Domain.Enums.InternalMailEnums;
@@ -34,17 +34,12 @@ internal sealed class InternalConversationAccessService : IInternalConversationA
             return Task.FromResult(false);
         }
 
-        var canReadExecutiveSampleRequest = CanReadExecutiveSampleRequestConversations;
         return _areas.Conversations()
             .AsNoTracking()
             .AnyAsync(conversation =>
                 conversation.InternalConversationId == conversationId &&
                 conversation.CompanyId == companyId.Value &&
-                conversation.IsActive &&
-                (conversation.Participants.Any(participant =>
-                     participant.EmployeeId == employeeId.Value && participant.IsActive) ||
-                 (canReadExecutiveSampleRequest &&
-                  conversation.RelatedType == InternalMailRelatedType.SampleRequest)),
+                conversation.IsActive,
                 cancellationToken);
     }
 }
@@ -55,5 +50,5 @@ internal static class InternalConversationAccessRules
         currentUser.IsAuthenticated &&
         currentUser.CompanyId.HasValue &&
         currentUser.EmployeeId.HasValue &&
-        ApplicationRoleSets.Notifications.ConversationParticipantManagers.Any(currentUser.IsInRole);
+        ApplicationRoleSets.InternalMail.CompanyConversationObservers.Any(currentUser.IsInRole);
 }

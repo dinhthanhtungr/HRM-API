@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using System.Text.Json;
 using HRM.Domain.Enums.Notifications;
 
 namespace HRM.Application.Features.Notifications.Dtos;
@@ -52,6 +53,8 @@ internal static class NotificationPayloadComposer
             root["messageId"] = request.MessageId.Value;
         }
 
+        if (request.MentionedEmployeeIds is { Count: > 0 })
+            root["deliveryMentionEmployeeIds"] = JsonSerializer.SerializeToNode(request.MentionedEmployeeIds);
         return root.ToJsonString();
     }
 }

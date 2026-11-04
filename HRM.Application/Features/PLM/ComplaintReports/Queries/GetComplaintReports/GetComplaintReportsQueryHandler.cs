@@ -27,7 +27,7 @@ internal sealed class GetComplaintReportsQueryHandler
         GetComplaintReportsQuery request,
         CancellationToken cancellationToken)
     {
-        var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+        var scope = await _visibilityService.BuildReadScopeAsync(cancellationToken);
         var visibleCustomers = _visibilityService.ApplyCustomerVisibility(
             _dbContext.Customers.AsNoTracking(),
             scope);

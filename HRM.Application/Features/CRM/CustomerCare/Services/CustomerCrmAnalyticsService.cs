@@ -43,7 +43,7 @@ internal sealed class CustomerCrmAnalyticsService : ICustomerCrmAnalyticsService
         CustomerCrmCalendarQuery query,
         CancellationToken cancellationToken = default)
     {
-        var scope = await _accessService.BuildScopeAsync(cancellationToken);
+        var scope = await _accessService.BuildReadScopeAsync(cancellationToken);
         var range = ResolveCalendarRange(query, _dateTimeProvider.Now);
 
         if (!range.IsValid)
@@ -368,7 +368,7 @@ internal sealed class CustomerCrmAnalyticsService : ICustomerCrmAnalyticsService
         CustomerCrmActivityHeaderQuery query,
         CancellationToken cancellationToken = default)
     {
-        var scope = await _accessService.BuildScopeAsync(cancellationToken);
+        var scope = await _accessService.BuildReadScopeAsync(cancellationToken);
         var employee = await _accessService.ResolveEmployeeAsync(scope, query.AssignedSaleEmployeeId, query.OnlyMine, cancellationToken);
         if (!employee.IsAllowed) return OperationResult<PagedResult<CustomerCrmActivityHeaderDto>>.Fail("Employee is outside your scope.");
         var group = await ResolveGroupMemberEmployeeIdsAsync(scope, query.GroupId, cancellationToken);
@@ -462,7 +462,7 @@ internal sealed class CustomerCrmAnalyticsService : ICustomerCrmAnalyticsService
     /// </summary>
     public async Task<OperationResult<SaleCrmDashboardDto>> GetSaleDashboardAsync(CancellationToken cancellationToken = default)
     {
-        var scope = await _accessService.BuildScopeAsync(cancellationToken);
+        var scope = await _accessService.BuildReadScopeAsync(cancellationToken);
         var visibleIds = _accessService.VisibleCustomers(scope).Select(x => x.CustomerId);
         var tasks = VisibleTasks(scope.CompanyId, visibleIds).Where(x =>
             x.AssignedToEmployeeId == scope.EmployeeId || x.Assignees.Any(a => a.EmployeeId == scope.EmployeeId && a.IsActive));
@@ -496,7 +496,7 @@ internal sealed class CustomerCrmAnalyticsService : ICustomerCrmAnalyticsService
 
     private async Task<OperationResult<TeamCrmDashboardDto>> GetTeamDashboardAsync(CancellationToken cancellationToken)
     {
-        var scope = await _accessService.BuildScopeAsync(cancellationToken);
+        var scope = await _accessService.BuildReadScopeAsync(cancellationToken);
         var visibleCustomers = _accessService.VisibleCustomers(scope);
         var visibleIds = visibleCustomers.Select(x => x.CustomerId);
         var tasks = VisibleTasks(scope.CompanyId, visibleIds);
@@ -524,7 +524,7 @@ internal sealed class CustomerCrmAnalyticsService : ICustomerCrmAnalyticsService
         CustomerActivityCalendarReportQuery query,
         CancellationToken cancellationToken = default)
     {
-        var scope = await _accessService.BuildScopeAsync(cancellationToken);
+        var scope = await _accessService.BuildReadScopeAsync(cancellationToken);
         var range = ResolveReportRange(query, _dateTimeProvider.Now);
         var now = scope.Now;
         var leaderGroupIds = scope.LeaderGroupIds.ToArray();

@@ -193,6 +193,7 @@ internal sealed class GetFormulaByIdQueryHandler
                 currentItemData);
             material.ItemName = display.Name;
             material.ItemExternalId = display.ExternalId;
+            material.StockCode = display.StockCode;
         }
 
         IReadOnlyDictionary<Guid, IReadOnlyList<FormulaMaterialSupplierPriceDto>> supplierPricesByMaterial =

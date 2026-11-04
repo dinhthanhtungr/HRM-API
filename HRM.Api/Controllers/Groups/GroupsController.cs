@@ -91,6 +91,17 @@ public sealed class GroupsController : ControllerBase
         return ToActionResult(result);
     }
 
+    /// <summary>
+    /// Gỡ liên kết thành viên (kể cả leader), không xóa nhân viên. Không được gỡ leader cuối cùng.
+    /// </summary>
+    /// <param name="groupId">GUID nhóm thuộc công ty hiện tại.</param>
+    /// <param name="employeeId">GUID employeeId từ GET members, không phải memberId hay mã nhân viên.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    [ProducesResponseType(typeof(HRM.Application.Features.Groups.Dtos.GroupMemberDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     [HttpDelete("{groupId:guid}/members/{employeeId:guid}")]
     public async Task<IActionResult> RemoveGroupMember(
         [FromRoute] Guid groupId,

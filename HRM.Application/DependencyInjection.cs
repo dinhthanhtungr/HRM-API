@@ -1,3 +1,7 @@
+using HRM.Application.Features.PLM.Manufacturing.Services.Adjustments;
+using HRM.Application.Features.PLM.Manufacturing.Services.ColorChips;
+using HRM.Application.Features.PLM.Manufacturing.Services.Formulas;
+using HRM.Application.Features.PLM.Manufacturing.Services.Notifications;
 using HRM.Application.Commons.Concurrency;
 using HRM.Application.Commons.Pricing.Services;
 using HRM.Application.Abstractions.Commons.Pricing;
@@ -41,11 +45,42 @@ public static class DependencyInjection
         QuestPDF.Settings.License = LicenseType.Community;
 
         services.AddMediatR(typeof(DependencyInjection).Assembly);
+        services.AddScoped<HRM.Application.Features.PLM.SampleRequests.Services.SampleWorkPreviewSession>();
+        services.AddTransient(typeof(MediatR.IPipelineBehavior<,>), typeof(HRM.Application.Features.PLM.SampleRequests.Services.SampleWorkPreviewReadOnlyBehavior<,>));
+        services.AddScoped<HRM.Application.Features.Reports.PLPU.IPLPUPurchaseOverviewReportRepository, HRM.Application.Features.Reports.PLPU.PLPUPurchaseOverviewReportRepository>();
+        services.AddScoped<HRM.Application.Features.Reports.PLPU.PLPUPurchaseOverviewReportService>();
+        services.AddScoped<HRM.Application.Features.Reports.PLPU.PLPUAccountingHeaderReader>();
+        services.AddScoped<HRM.Application.Features.Reports.PLPU.FinishPLPUReportRepository>();
+        services.AddScoped<HRM.Application.Features.DevAndQA.Shared.Evaluations.Attachments.EvaluationFileOwnerResolver>();
+        services.AddScoped<HRM.Application.Features.DevAndQA.Shared.Evaluations.Attachments.IEvaluationFileSaveService,
+            HRM.Application.Features.DevAndQA.Shared.Evaluations.Attachments.EvaluationFileSaveService>();
+        services.AddScoped<HRM.Application.Features.DevAndQA.IQC.Services.IqcWriter>();
+        services.AddScoped<HRM.Application.Features.DevAndQA.IQC.Services.EvaluationStandards.EvaluationStandardService>();
+        services.AddScoped<HRM.Application.Features.DevAndQA.Shared.Evaluations.Services.EvaluationAccessService>();
+        services.AddScoped<HRM.Application.Features.DevAndQA.IQC.Services.Evaluations.IqcEvaluationService>();
+        services.AddScoped<HRM.Application.Features.DevAndQA.IQC.Services.Evaluations.IqcResultCatalogSyncService>();
+        services.AddScoped<HRM.Application.Features.DevAndQA.CoaCertificates.Services.CoaCertificateService>();
+        services.AddScoped<HRM.Application.Features.DevAndQA.EvaluationTemplates.Services.EvaluationTemplateService>();
+        services.AddScoped<HRM.Application.Features.DevAndQA.MeasurementMethods.Services.MeasurementMethodService>();
+        // Tạm dừng LabTest: services.AddScoped<HRM.Application.Features.DevAndQA.LabTests.Services.LabTestService>();
+        // Tạm dừng LabTest: services.AddScoped<HRM.Application.Features.DevAndQA.LabTests.Services.MaterialTestGridService>();
+        services.AddScoped<HRM.Application.Features.DevAndQA.IQC.Services.Evaluations.IqcEvaluationHistoryReader>();
+        services.AddScoped<HRM.Application.Features.DevAndQA.IQC.Services.Attachments.IIqcAttachmentService, HRM.Application.Features.DevAndQA.IQC.Services.Attachments.IqcAttachmentService>();
         services.AddScoped<IAttachmentService, AttachmentService>();
+        services.AddScoped<HRM.Application.Features.Purchasing.Catalog.Services.IMaterialAttachmentService,
+            HRM.Application.Features.Purchasing.Catalog.Services.MaterialAttachmentService>();
         services.AddScoped<InternalConversationSampleRequestInfoResolver>();
         services.AddScoped<InternalConversationQuotationInfoResolver>();
         services.AddScoped<IInternalConversationAccessService, InternalConversationAccessService>();
         services.AddScoped<InternalMailAreaAccessService>();
+        services.AddScoped<InternalMessageReactionReader>();
+        services.AddOptions<InternalMailReactionOptions>();
+        services.AddScoped<HRM.Application.Features.InternalMail.DefaultMembership.DefaultMembershipPolicyService>();
+        services.AddScoped<HRM.Application.Features.InternalMail.GroupStorage.PresidentMembershipBackfill>();
+        // GROUP-STORAGE-TRANSITION: switch — remove registration when the rollout/rollback flag is retired.
+        services.AddOptions<InternalMailGroupStorageOptions>();
+        // GROUP-STORAGE-TRANSITION: comparison-reader — phase-2 comparison helper, not the canonical runtime group query.
+        services.AddScoped<InternalConversationGroupReader>();
         services.AddScoped<ISampleRequestAttachmentService, SampleRequestAttachmentService>();
         services.AddScoped<ICustomerVisibilityService, CustomerVisibilityService>();
         services.AddScoped<IWarehouseStockVisibilityService, WarehouseStockVisibilityService>();
@@ -62,6 +97,8 @@ public static class DependencyInjection
         services.AddScoped<QuotationLineBuilder>();
         services.AddScoped<QuotationHeaderUpdateService>();
         services.AddScoped<QuotationAtomicSaveService>();
+        services.AddScoped<QuotationStandardReferenceSaveService>();
+        services.AddScoped<QuotationSendService>();
         services.AddScoped<QuotationLinesReplaceService>();
         services.AddScoped<QuotationCustomerPriceUpdateService>();
         services.AddScoped<QuotationCurrentPricingResolver>();
@@ -102,18 +139,36 @@ public static class DependencyInjection
             HRM.Application.Features.MRO.Equipment.Services.EquipmentManagementService>();
         services.AddScoped<IPricingVisibilityService, PricingVisibilityService>();
         services.AddScoped<INotificationService, NotificationService>();
+        services.AddScoped<IInternalMessageReactionNotifications>(provider =>
+            (IInternalMessageReactionNotifications)provider.GetRequiredService<INotificationService>());
+        services.AddScoped<NotificationFeedConversationInfoResolver>();
         services.AddScoped<IEventLogWriter, EventLogWriter>();
         services.AddScoped<IMessageRecipientResolver, SampleRequestMessageRecipientResolver>();
         services.AddScoped<SampleRequestRecipientResolver>();
+        services.AddScoped<HRM.Application.Features.PLM.SampleRequests.Services.Workflow.SilentWatcherReconciliationService>();
+        services.AddScoped<SampleRequestLabTeamScope>();
+        services.AddScoped<SampleRequestNotificationAudienceResolver>();
+        services.AddScoped<HRM.Application.Features.InternalMail.Services.InternalMailMentionResolver>();
         services.AddScoped<SampleRequestConversationSubjectService>();
         services.AddScoped<FormulaWriteService>();
+        services.AddScoped<HRM.Application.Features.PLM.SampleRequests.Services.Workflow.LegacySampleDeliveryService>();
         services.AddScoped<FormulaVersionService>();
         services.AddScoped<FormulaPricingReviewService>();
         services.AddScoped<FormulaListQueryService>();
         services.AddScoped<SaleOrderLeadConversionService>();
         services.AddScoped<SaleOrderCreationService>();
         services.AddScoped<SaleOrderManufacturingService>();
+        services.AddScoped<HRM.Application.Features.PLM.ProductionOrders.Services.ProductionOrderReferenceValidator>();
+        services.AddScoped<HRM.Application.Features.PLM.ProductionOrders.Services.ProductionOrderReservationService>();
+        services.AddScoped<HRM.Application.Features.PLM.Manufacturing.Services.Formulas.ManufacturingFormulaInputResolver>();
+        services.AddScoped<HRM.Application.Features.PLM.Manufacturing.Services.Adjustments.ManufacturingAdjustmentInputResolver>();
+        services.AddScoped<HRM.Application.Features.PLM.Manufacturing.Services.Adjustments.ManufacturingAdjustmentService>();
+        services.AddScoped<HRM.Application.Features.PLM.Manufacturing.Services.Adjustments.ManufacturingAdjustmentDocumentService>();
+        services.AddScoped<HRM.Application.Features.PLM.Manufacturing.Services.ColorChips.ManufacturingColorChipService>();
+        services.AddScoped<HRM.Application.Features.PLM.Manufacturing.Services.Formulas.ManufacturingFormulaReadService>();
+        services.AddScoped<HRM.Application.Features.PLM.Manufacturing.Services.Notifications.ManufacturingWorkflowNotifier>();
         services.AddScoped<SaleOrderApprovalService>();
+        services.AddScoped<SaleOrderStandardSampleService>();
         services.AddScoped<ComplaintInteractionWriter>();
         services.AddScoped<ComplaintReceptionResolver>();
         services.AddScoped<ComplaintHandlingOrderService>();
@@ -125,8 +180,17 @@ public static class DependencyInjection
         services.AddScoped<ManufacturingBomStructureService>();
         services.AddScoped<ManufacturingLossProfileWriteService>();
         services.AddScoped<DeliveryOrderLotInventoryService>();
+        services.AddScoped<HRM.Application.Features.Dispatch.DeliveryOrders.Services.DeliveryOrderFulfillmentService>();
+        services.AddScoped<HRM.Application.Features.Dispatch.DeliveryOrders.Queries.GetDeliveryPlan.DeliveryPlanReadModel>();
+        services.AddScoped<HRM.Application.Features.Dispatch.DeliveryOrders.Services.DeliveryWarehouseRequestService>();
+        services.AddScoped<HRM.Application.Features.Dispatch.DeliveryOrders.Services.DeliveryAttachedGoodsService>();
+        services.AddScoped<HRM.Application.Features.Dispatch.DeliveryOrders.Services.DeliveryDocumentFormulaService>();
         services.AddScoped<PurchaseOrderWorkflowService>();
+        services.AddScoped<PurchaseOrderPrintService>();
+        services.AddScoped<HRM.Application.Features.Purchasing.Catalog.Services.IPurchasingCatalogService, HRM.Application.Features.Purchasing.Catalog.Services.PurchasingCatalogService>();
         services.AddScoped<PurchaseOrderReceiptReader>();
+        services.AddScoped<PurchaseOrderListExportService>();
+        services.AddScoped<HRM.Application.Features.Purchasing.PurchaseOrders.Documents.IPurchaseOrderDocumentService, HRM.Application.Features.Purchasing.PurchaseOrders.Documents.PurchaseOrderDocumentService>();
 
         return services;
     }

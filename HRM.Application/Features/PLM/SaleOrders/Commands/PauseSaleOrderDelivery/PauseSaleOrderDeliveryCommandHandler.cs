@@ -13,6 +13,8 @@ using HRM.Domain.Enums.Notifications;
 using HRM.Domain.Security.Rules.Roles;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using HRM.Application.Commons.Authorization;
+using HRM.Application.Features.CRM.CustomerCare.Visibility;
 
 namespace HRM.Application.Features.PLM.SaleOrders.Commands.PauseSaleOrderDelivery;
 
@@ -29,34 +31,50 @@ internal sealed class PauseSaleOrderDeliveryCommandHandler
     private readonly ICurrentUser _currentUser;
     private readonly IDateTimeProvider _dateTimeProvider;
     private readonly INotificationService _notificationService;
+    private readonly ICustomerVisibilityService _visibility;
 
     public PauseSaleOrderDeliveryCommandHandler(
         ISaleOrderDbContext dbContext,
         ICurrentUser currentUser,
         IDateTimeProvider dateTimeProvider,
-        INotificationService notificationService)
+        INotificationService notificationService,
+        ICustomerVisibilityService visibility)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
         _dateTimeProvider = dateTimeProvider;
         _notificationService = notificationService;
+        _visibility = visibility;
     }
 
     public async Task<OperationResult<PauseSaleOrderDeliveryDto>> Handle(
         PauseSaleOrderDeliveryCommand command,
         CancellationToken cancellationToken)
     {
+        if (!_currentUser.IsAuthenticated || !_currentUser.IsInAnyRole(ApplicationRoleSets.SaleOrderDelivery.Pausers))
+            return OperationResult<PauseSaleOrderDeliveryDto>.Fail("Bạn không có quyền tạm dừng giao hàng.");
         var employeeId = SaleOrderCurrentUserGuard.RequireEmployeeId(_currentUser);
         var companyId = SaleOrderCurrentUserGuard.RequireCompanyId(_currentUser);
         var request = command.Request;
 
         await using var transaction = await _dbContext.BeginTransactionAsync(cancellationToken);
-        var order = await _dbContext.MerchandiseOrders
+        var orders = _dbContext.MerchandiseOrders.AsQueryable();
+        if (!_currentUser.IsInAnyRole(ApplicationRoleSets.SaleOrderDelivery.CompanyPausers))
+        {
+            // Dùng đúng phạm vi danh sách timeline: Sale được tạm dừng đơn mình được xem.
+            var scope = await _visibility.BuildReadScopeAsync(cancellationToken);
+            if (scope.CompanyId != companyId || scope.EmployeeId != employeeId)
+                return OperationResult<PauseSaleOrderDeliveryDto>.Fail("Phạm vi khách hàng không hợp lệ.");
+            orders = _visibility.ApplyMerchandiseOrderVisibility(orders, _dbContext.Customers.AsNoTracking(), scope);
+        }
+        var order = await orders
             .FirstOrDefaultAsync(x => x.CompanyId == companyId && x.MerchandiseOrderId == request.MerchandiseOrderId && x.IsActive, cancellationToken);
         if (order is null)
         {
             return OperationResult<PauseSaleOrderDeliveryDto>.Fail("Không tìm thấy đơn hàng.");
         }
+        if (new[] { "Cancelled", "Canceled", "Delivered", "Completed" }.Contains(order.Status, StringComparer.OrdinalIgnoreCase))
+            return OperationResult<PauseSaleOrderDeliveryDto>.Fail("Đơn đã hủy hoặc giao xong, không thể tạm dừng/mở lại.");
 
         // A payment hold can only be released by management. Enforce this here so a Sale user cannot bypass the UI.
         if (request.IsDeliveryPaused is false &&
@@ -109,7 +127,7 @@ internal sealed class PauseSaleOrderDeliveryCommandHandler
 
     private bool IsSaleWithoutDebtReleasePermission()
     {
-        return _currentUser.IsInRole(AppRoles.SaleUser)
+        return _currentUser.IsInAnyRole(ApplicationRoleSets.SaleOrderDelivery.SalesPausers)
             && !_currentUser.IsInRole(AppRoles.President)
             && !_currentUser.IsInRole(AppRoles.Developer);
     }

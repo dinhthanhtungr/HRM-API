@@ -7,6 +7,7 @@ using HRM.Domain.Enums.Logs;
 using HRM.Domain.Enums.Merchadises;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using static QuestPDF.Helpers.Colors;
 
 namespace HRM.Application.Features.Timeline.Queries.GetSaleOrderTimeline;
 
@@ -35,7 +36,7 @@ internal sealed class GetSaleOrderTimelineQueryHandler
         GetSaleOrderTimelineQuery request,
         CancellationToken cancellationToken)
     {
-        var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+        var scope = await _visibilityService.BuildReadScopeAsync(cancellationToken);
         var query = _visibilityService.ApplyMerchandiseOrderVisibility(
             _dbContext.MerchandiseOrders.AsNoTracking(),
             _dbContext.Customers.AsNoTracking(),
@@ -138,6 +139,8 @@ internal sealed class GetSaleOrderTimelineQueryHandler
             .Take(request.NormalizedPageSize)
             .Select(x => new SaleOrderTimelineCardDto
             {
+                WaitingForStandardSampleCount = x.MerchandiseOrderDetails.Count(d => d.IsActive
+                    && d.Status == nameof(MerchadiseStatus.WaitingForStandardSample)),
                 MerchandiseOrderId = x.MerchandiseOrderId,
                 ExternalId = x.ExternalId,
                 PONo = x.PONo,
@@ -234,15 +237,25 @@ internal sealed class GetSaleOrderTimelineQueryHandler
                 link.ProductionOrder.IsActive &&
                 (!from.HasValue || link.ProductionOrder.CreatedDate >= from.Value) &&
                 (!toExclusive.HasValue || link.ProductionOrder.CreatedDate < toExclusive.Value))),
+
             TimelineCreatedScope.Delivery => query.Where(order => order.DeliveryOrderPOs.Any(link =>
                 link.IsActive &&
                 link.DeliveryOrder.IsActive &&
                 (!from.HasValue || link.DeliveryOrder.CreatedDate >= from.Value) &&
                 (!toExclusive.HasValue || link.DeliveryOrder.CreatedDate < toExclusive.Value))),
+
             TimelineCreatedScope.Requisition => query.Where(order => order.MerchandiseOrderDetails.Any(detail =>
                 detail.IsActive &&
                 (!from.HasValue || detail.DeliveryRequestDate >= from.Value) &&
                 (!toExclusive.HasValue || detail.DeliveryRequestDate < toExclusive.Value))),
+
+            TimelineCreatedScope.ExpectedDate => query.Where(order => _dbContext.MfgOrderPOs.Any(detail =>
+                detail.IsActive &&
+                detail.Detail.IsActive &&
+                detail.Detail.MerchandiseOrderId == order.MerchandiseOrderId &&
+                (!from.HasValue || detail.ProductionOrder.ExpectedDate >= from.Value) &&
+                (!toExclusive.HasValue || detail.ProductionOrder.ExpectedDate < toExclusive.Value))),
+
             _ => query.Where(order =>
                 (!from.HasValue || order.CreateDate >= from.Value) &&
                 (!toExclusive.HasValue || order.CreateDate < toExclusive.Value))

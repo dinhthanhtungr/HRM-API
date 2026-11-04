@@ -68,7 +68,9 @@ Customer summary tính task có `WorkTaskReference` trực tiếp tới customer
 - Feature này chỉ đọc dữ liệu summary cho panel khách hàng.
 - Customer list summary được tính theo scope hiện tại và dùng để hiển thị panel trái, không thay thế
   API danh sách khách hàng CRM đầy đủ.
-- Việc lọc `onlyHasActivity=true` dùng các truy vấn `EXISTS` trên task, plan và interaction. Với tập dữ
+- Việc lọc `onlyHasActivity=true` dùng tập customer ID từ task, plan và interaction ngay trong SQL.
+  Task reference trực tiếp và reference qua interaction được tách thành hai nhánh join, gom bằng
+  `UNION ALL` rồi kiểm tra membership; không tải tập ID về bộ nhớ trước khi phân trang. Với tập dữ
   liệu rất lớn cần theo dõi query plan và các index reference/customer để quyết định có cần read model
   tổng hợp riêng hay không.
 

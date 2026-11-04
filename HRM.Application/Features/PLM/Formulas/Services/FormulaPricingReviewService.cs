@@ -6,6 +6,8 @@ using HRM.Application.Features.InternalMail.Dtos;
 using HRM.Application.Features.PLM.Formulas.Dtos.Commons;
 using HRM.Application.Features.PLM.SampleRequests.Commands.SendSampleRequestMessage;
 using HRM.Application.Features.PLM.SampleRequests.PriceQuoteRequests;
+using HRM.Application.Features.PLM.SampleRequests.Rules;
+using HRM.Application.Features.PLM.SampleRequests.Services.Workflow;
 using HRM.Domain.Entities.SampleRequestSchema;
 using HRM.Domain.Enums.CustomerEnum;
 using HRM.Domain.Enums.Formulas;
@@ -65,12 +67,15 @@ internal sealed class FormulaPricingReviewService
         return approvedSource == formula.FormulaId;
     }
 
-    public async Task<OperationResult<SendInternalMessageResultDto>> SendMaterialChangeAsync(
-        Formula formula, Guid companyId, Guid? sampleRequestId, CancellationToken cancellationToken)
+    public async Task<bool> QueueMaterialChangeAsync(
+        Formula formula, Guid companyId, Guid employeeId, DateTime now,
+        Guid? sampleRequestId, CancellationToken cancellationToken)
     {
         var targets = _dbContext.SampleRequests.AsNoTracking()
             .Where(x => x.CompanyId == companyId && x.ProductId == formula.ProductId && x.IsActive);
-        var targetId = sampleRequestId ?? await targets
+        if (sampleRequestId.HasValue)
+            targets = targets.Where(x => x.SampleRequestId == sampleRequestId.Value);
+        var targetId = await targets
             .OrderByDescending(x => x.FormulaId == formula.FormulaId)
             .ThenByDescending(x => x.CreatedDate)
             .ThenByDescending(x => x.SampleRequestId)
@@ -78,11 +83,15 @@ internal sealed class FormulaPricingReviewService
             .FirstOrDefaultAsync(cancellationToken);
         if (!targetId.HasValue)
         {
-            return OperationResult<SendInternalMessageResultDto>.Fail("No active sample request was found for the formula product.");
+            return false;
         }
 
-        return await SendAsync(targetId.Value, formula.ProductId, companyId, formula.FormulaId,
-            formula.ExternalId, formula.Name, materialsChanged: true, cancellationToken);
+        var evt = SampleRequestWorkflowEvents.Create(targetId.Value, companyId, employeeId, now,
+            SampleRequestWorkflowEvents.FormulaConfirmed, now,
+            "Lab đã thay đổi NVL/định lượng của công thức đang là nguồn giá chuẩn; cần duyệt lại giá.", formula.FormulaId);
+        _dbContext.SampleRequestWorkflowEvents.Add(evt);
+        SampleRequestWorkflowNotificationQueue.Queue(_dbContext, evt, materialsChanged: true);
+        return true;
     }
     public async Task<OperationResult<SendInternalMessageResultDto>> SendAsync(
         Guid sampleRequestId,
@@ -92,7 +101,8 @@ internal sealed class FormulaPricingReviewService
         string formulaExternalId,
         string formulaName,
         bool materialsChanged,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Guid? workflowEventId = null)
     {
         var sampleRequest = await _dbContext.SampleRequests
             .AsNoTracking()
@@ -164,6 +174,7 @@ internal sealed class FormulaPricingReviewService
 
         return await _sender.Send(new SendSampleRequestMessageCommand
         {
+            WorkflowEventId = workflowEventId,
             SampleRequestId = sampleRequest.SampleRequestId,
             Type = SampleRequestNotificationType.PriceQuoteRequest,
             Message = materialsChanged

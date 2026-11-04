@@ -10,20 +10,11 @@
 - Refresh price là hành động rõ ràng, không âm thầm đổi giá line đã gửi nếu rule không cho phép.
 - Mark sent phải cập nhật status/history theo pattern hiện có.
 
-## Notification Và Recipient
+## Đọc Thêm Theo Phạm Vi
 
-- Mọi notification liên quan báo giá CRM phải có category `Quotation` và topicCode namespace `crm.quotation...`.
-- Khi cần topic báo giá mới, append enum ở cuối `TopicNotifications` với explicit numeric value kế tiếp và thêm mapping vào
-  `NotificationTopicCatalog`; không đổi số, rename, reorder hoặc tái sử dụng topic cũ.
-- `mark-sent` hiện publish `QuotationSent` (`crm.quotation.sent`, category `Quotation`) từ
-  `MarkQuotationSentCommandHandler` qua `INotificationService.PublishAsync`.
-- Recipient của `QuotationSent` không được lấy bằng role `Leader` global. Rule đúng là:
-  `sale group leaders của quotation.SaleEmployeeId + President/Developer active cùng company - sender employee`.
-- Sale group leader = employee active có `MemberInGroup.IsAdmin = true` trong group sale `CMR` hoặc `CMR.*`.
-- Rule sale group leader dùng service `ISaleGroupRecipientResolver`; không viết lại query recipient riêng trong từng quotation handler nếu service đã đáp ứng.
-- Conversation báo giá phải có `RelatedType = Quotation`, `RelatedId = quotationId`, `RelatedExternalId = quotationExternalId`.
-- Payload notification/thread báo giá nên có `conversationId`, `messageId`, `relatedType`/`quotationId`, mã báo giá và id liên quan tối thiểu để FE gom feed với conversation.
-- Khi sửa notification báo giá, câu trả lời cuối phải nói rõ topic/topicCode/category, nơi publish, recipient rule, role global/group-scoped, payload và SignalR/Web Push có đổi hay không.
+- Publish/recipient/topic/payload/conversation, mark-sent hoặc side effect message/notification: `quotations-notifications.md`.
+- Formula/pricing lookup, options/workbench, drawer/workspace/version, tiers hoặc nguồn giá/snapshot: `quotations-pricing.md`.
+- CustomerCare chịu tác động: `crm.md`. Resolve/display/search Formula hoặc Sample Request chịu tác động: `plm.md`.
 
 ## Security
 
@@ -31,25 +22,7 @@
 - Không cho FE set `CompanyId`, `SaleEmployeeId`, created/updated fields hoặc status đặc quyền trực tiếp.
 - Validate line count, quantity, unit price, discount/tax percent, product active và cùng company.
 
-## Dropdown Formula/Pricing
-
-- Nếu sale cần chọn công thức và xem giá gần nhất, tạo endpoint lookup/options riêng cho báo giá thay vì dùng lại sample request lookup.
-- Dropdown chỉ là preview; BE vẫn phải validate lại formula/product/company và lưu snapshot khi tạo/cập nhật báo giá.
-- Giá/label trả về nên là contract rõ ràng; status/type/source nên là enum/code ổn định nếu FE có thể tự map.
-
 ## Documentation
 
-Nếu đổi API/DTO/rule/status/side effect của báo giá, cập nhật `HRM.Application/Features/CRM/Quotations/README.md`.
-
-Với response định giá (`product-pricing-options`, `product-pricing-workbench`, pricing drawer/workspace,
-pricing version và quotation price tiers), README bắt buộc ghi rõ:
-
-- Giá/cost nào là realtime, snapshot đã lưu, giá hiệu lực hay giá hệ thống gợi ý.
-- `pricingStatus`, `isSystemCalculatedDraft`, version id và `isStored` kết hợp thế nào để biết đã có record DB hay chưa.
-- `currentMaterialCost`, `storedMaterialCostSnapshot`, chênh lệch, ba giá hiệu lực và nguồn công thức được resolve ra sao.
-- `selectedSource`, `draftPricing`, `approvedPricing`, `displayPriceTiers`, history và related quotations đại diện cho gì.
-- Ngày cập nhật thuộc Formula/MFG Formula, ProductPricingVersion hay Quotation; không gọi chung là "ngày cập nhật giá" nếu nguồn khác nhau.
-- Field nào Sale được xem, field nào chỉ President/Developer được xem hoặc sửa.
-
-Phải có ít nhất một payload mẫu đại diện và giải thích `null`/danh sách rỗng. Không chỉ chép DTO hoặc JSON vào README.
+Nếu đổi API/DTO/rule/status/side effect của báo giá, cập nhật `HRM.Application/Features/CRM/Quotations/README.md` theo mục liên quan và scope/quyền/invariant chung. Chi tiết response định giá nằm ở `quotations-pricing.md`.
 

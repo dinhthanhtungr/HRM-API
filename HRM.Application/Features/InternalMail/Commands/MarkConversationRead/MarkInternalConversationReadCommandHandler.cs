@@ -46,7 +46,6 @@ internal sealed class MarkInternalConversationReadCommandHandler
 
         // Giờ xử lý dùng cho audit; khi có ID mốc, thứ tự message lấy từ dữ liệu đã lưu.
         var readThrough = _dateTimeProvider.Now;
-        await using var transaction = await _dbContext.BeginTransactionAsync(cancellationToken);
         var participants = _dbContext.InternalConversationParticipants
             .Where(x =>
                 x.InternalConversationId == request.ConversationId &&
@@ -54,10 +53,9 @@ internal sealed class MarkInternalConversationReadCommandHandler
                 x.IsActive &&
                 x.Conversation.CompanyId == companyId.Value &&
                 x.Conversation.IsActive);
-        if (!await participants.AnyAsync(cancellationToken))
-        {
-            return OperationResult.Fail("Conversation was not found.");
-        }
+        var isParticipant = await participants.AnyAsync(cancellationToken);
+        // Conversations() đã xác thực quyền đọc (participant hoặc observer đúng phạm vi).
+        // Mọi reader hợp lệ có thể acknowledge inbox của chính mình, không cần cấp membership.
 
         var messageReadThrough = readThrough;
         if (request.ThroughMessageId.HasValue)
@@ -78,22 +76,27 @@ internal sealed class MarkInternalConversationReadCommandHandler
         var messageScope = _areas.Messages(request.AreaCode)
             .Where(InternalConversationReadScope.ConversationMessages(
                 companyId.Value, employeeId.Value, request.ConversationId,
-                messageReadThrough, request.ThroughMessageId));
+                messageReadThrough, request.ThroughMessageId,
+                allowCompanyObserver: _areas.CanObserveCompanyConversations));
         var messageIds = await messageScope.AsNoTracking()
             .Select(message => message.InternalMessageId)
             .ToArrayAsync(cancellationToken);
 
+        await using var transaction = await _dbContext.BeginTransactionAsync(cancellationToken);
+        // Observer không có membership: chỉ acknowledge inbox của chính họ, không tạo reader/member mới.
         // Snapshot ID ngăn message xuất hiện giữa các query bị đánh dấu ngoài ý muốn.
-        await _dbContext.UpsertInternalMessageReadStatesAsync(
-            companyId.Value, employeeId.Value, request.ConversationId, messageIds, readThrough, cancellationToken);
+        if (isParticipant)
+            await _dbContext.UpsertInternalMessageReadStatesAsync(
+                companyId.Value, employeeId.Value, request.ConversationId, messageIds, readThrough, cancellationToken);
         await MarkNotificationsReadAsync(
             companyId.Value, employeeId.Value, request.ConversationId,
             readThrough, request.ThroughMessageId.HasValue, messageIds.ToHashSet(), request.AreaCode, cancellationToken);
 
         // Request cũ hoàn tất sau request mới không được kéo LastReadAt lùi lại.
-        await participants
-            .Where(participant => participant.LastReadAt == null || participant.LastReadAt < messageReadThrough)
-            .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.LastReadAt, messageReadThrough), cancellationToken);
+        if (isParticipant)
+            await participants
+                .Where(participant => participant.LastReadAt == null || participant.LastReadAt < messageReadThrough)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.LastReadAt, messageReadThrough), cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return OperationResult.Ok();
     }
@@ -103,15 +106,17 @@ internal sealed class MarkInternalConversationReadCommandHandler
         IReadOnlySet<Guid> messageIds, string? areaCode, CancellationToken cancellationToken)
     {
         const int batchSize = 200;
+        var conversationNotificationIds = _dbContext.QueryInternalMailNotificationLinks(companyId)
+            .Where(link => link.ConversationId == conversationId).Select(link => link.NotificationId);
         var scope = _areas.States()
+            .Where(state => conversationNotificationIds.Contains(state.NotificationId))
             // Mốc ID đã giới hạn tập message. Không loại notification của chúng vì đồng hồ lệch.
             .Where(InternalConversationReadScope.Notifications(
                 companyId, employeeId, hasMessageBoundary ? null : readThrough));
         DateTime? afterCreated = null;
         Guid? afterId = null;
 
-        // conversationId/messageId nằm trong JSON lịch sử. Duyệt có giới hạn theo batch,
-        // không tìm chuỗi trên jsonb, không chỉ xử lý trang notification FE đang hiển thị.
+        // SQL limits batches to this conversation; retain the legacy parser for message/boundary semantics.
         while (true)
         {
             var query = scope.AsNoTracking();

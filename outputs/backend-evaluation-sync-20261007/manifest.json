@@ -1,0 +1,194 @@
+[
+  {
+    "path": "VietausWebAPI.Core/Domain/Entities/DevandqaSchema/MeasurementMethod.cs",
+    "action": "add",
+    "source_sha256": null,
+    "package_sha256": "0f3eeae070d614ebd1f7fdcdc97230b808169ba6c5999f2f77fe14313bbd0b2f"
+  },
+  {
+    "path": "VietausWebAPI.Infrastructure/DatabaseContext/Configurations/DevandqaSchema/MeasurementMethodConfiguration.cs",
+    "action": "add",
+    "source_sha256": null,
+    "package_sha256": "b825d67aa5aca9fc22c54904bdbd93dfc35fa4081159a925825bd457d5534754"
+  },
+  {
+    "path": "VietausWebAPI.Core/Domain/Entities/DevandqaSchema/EvaluationStandard.cs",
+    "action": "update",
+    "source_sha256": "c17786860571d242456376e57546366f82bf99cadc9c901b01f86692c67c7cc8",
+    "package_sha256": "703c935d874d44588040937b0bc9ff9b326e4940ae24386fe180331dda645cf3"
+  },
+  {
+    "path": "VietausWebAPI.Infrastructure/DatabaseContext/Configurations/DevandqaSchema/EvaluationStandardConfiguration.cs",
+    "action": "update",
+    "source_sha256": "5ef59cdb1b48830fb2fd6ce8d3dce5206815dcb0dcdfe11893c4621762c0636b",
+    "package_sha256": "894e106691089b4c010b217e765452b70a993cdfa88bbcf3bff8a8677badf90d"
+  },
+  {
+    "path": "VietausWebAPI.Core/Domain/Entities/DevandqaSchema/EvaluationTemplate.cs",
+    "action": "add",
+    "source_sha256": null,
+    "package_sha256": "e6068f789a5c507e8e79fa19649b3817f4e7f4f16f4831bcaf1c9d8f1b8621ed"
+  },
+  {
+    "path": "VietausWebAPI.Infrastructure/DatabaseContext/Configurations/DevandqaSchema/EvaluationTemplateConfiguration.cs",
+    "action": "add",
+    "source_sha256": null,
+    "package_sha256": "681536b618db9104e93da33ebccd84f42e7075eee3e5ab0c0d9e82817c0d2a67"
+  },
+  {
+    "path": "VietausWebAPI.Core/Domain/Entities/DevandqaSchema/EvaluationTemplateItem.cs",
+    "action": "add",
+    "source_sha256": null,
+    "package_sha256": "7aa5b9de4ff445faacda10fc71c8c32112dd74325c32e511c8aa68409b222628"
+  },
+  {
+    "path": "VietausWebAPI.Infrastructure/DatabaseContext/Configurations/DevandqaSchema/EvaluationTemplateItemConfiguration.cs",
+    "action": "add",
+    "source_sha256": null,
+    "package_sha256": "69d87c6728cb228a4f45d3d70873cffd690e1de7c41d043277de5aec1cc217e7"
+  },
+  {
+    "path": "VietausWebAPI.Core/Domain/Entities/DevandqaSchema/IqcSpecification.cs",
+    "action": "update",
+    "source_sha256": "8ad95fca1b6aca4697dbe8739ece30f3a993f6f89edda31e8bfd03b4684a4b6f",
+    "package_sha256": "3adbeaaba13e135ac98083c12a118543c92cbee8bc760babbebf6c7340cb667a"
+  },
+  {
+    "path": "VietausWebAPI.Infrastructure/DatabaseContext/Configurations/DevandqaSchema/IqcSpecificationConfiguration.cs",
+    "action": "update",
+    "source_sha256": "ecf77f0a1368ed8ccc4808effce7d47ad90ab652aaef5237dd33bdc0f63c2088",
+    "package_sha256": "f4e5b7f215c1364c948b9f36a36a9b41c01ae21c40630b0b125dfcf012625a82"
+  },
+  {
+    "path": "VietausWebAPI.Core/Domain/Entities/DevandqaSchema/IqcSpecificationItem.cs",
+    "action": "update",
+    "source_sha256": "53a6aaba73fee80f02c8811cd9c316f54472574311a24e34a049fa3b4d8671d6",
+    "package_sha256": "705478289f83baa65d3c03b320e0a64e9cc7ecc25eb30e304ed3f6f1c8c51257"
+  },
+  {
+    "path": "VietausWebAPI.Infrastructure/DatabaseContext/Configurations/DevandqaSchema/IqcSpecificationItemConfiguration.cs",
+    "action": "update",
+    "source_sha256": "9c5a8bd656b61a631f549338ee450ab6f0764ad6f1c5b7ecb032465a2f22b2b0",
+    "package_sha256": "e25bd796f6b2f8c96468f68f50658595732779d3a744315166e62836ca19ac50"
+  },
+  {
+    "path": "VietausWebAPI.Core/Domain/Entities/DevandqaSchema/IqcInspectionEvaluation.cs",
+    "action": "update",
+    "source_sha256": "1cac91bc16eedf084e9af9a9d7d1050f78235cb7caa72ed76c7c3b374b823d3c",
+    "package_sha256": "ca5c7f1e17fe1bc320509996cf3f2b91eb3b08f183a2b169cc6cbb68aea2caa1"
+  },
+  {
+    "path": "VietausWebAPI.Infrastructure/DatabaseContext/Configurations/DevandqaSchema/IqcInspectionEvaluationConfiguration.cs",
+    "action": "update",
+    "source_sha256": "90b6a90baabc95bed2965d67392bd0f3bd40f6a1cda707978434b192ce598354",
+    "package_sha256": "dcb69566094cbde6da7902acda9edb5afcec50ec362fd7649e1114536945cf48"
+  },
+  {
+    "path": "VietausWebAPI.Core/Domain/Entities/DevandqaSchema/IqcInspectionResult.cs",
+    "action": "update",
+    "source_sha256": "f86f77ab36c358d5280835e575b6744fadd006d88a70b9e6defc32dc636e8489",
+    "package_sha256": "9615bbc3996abf61a5b8c6d4d302c845969bdd130b9aa82c2dae09d4dc6e9019"
+  },
+  {
+    "path": "VietausWebAPI.Infrastructure/DatabaseContext/Configurations/DevandqaSchema/IqcInspectionResultConfiguration.cs",
+    "action": "update",
+    "source_sha256": "6767fe640a4b086d063254508f57855c5f3e2df8f2c69dd7a11e17140e815eea",
+    "package_sha256": "8a602e7405181e61969051108ecef8b5935a9d8fb5db08ae60d731d6a1cc514b"
+  },
+  {
+    "path": "VietausWebAPI.Core/Domain/Entities/DevandqaSchema/CoaSpecification.cs",
+    "action": "update",
+    "source_sha256": "538960b051464cc249581f44ffb37ab8bb187110c6f6ac10d15f8a3d0b1a02f5",
+    "package_sha256": "64c819bf531c05320d3d5dd0f611da4e1d4ede34379307dbfac5ae86aae4afb6"
+  },
+  {
+    "path": "VietausWebAPI.Infrastructure/DatabaseContext/Configurations/DevandqaSchema/CoaSpecificationConfiguration.cs",
+    "action": "update",
+    "source_sha256": "224db6f43f4a69c7e8c118b4237532bb6250fc811b53c36dcdf248cb66345320",
+    "package_sha256": "87a103d5d3748a2c9c3e0072f68bc78719d6fe21afaba1e951bb7eee100769f9"
+  },
+  {
+    "path": "VietausWebAPI.Core/Domain/Entities/DevandqaSchema/CoaSpecificationItem.cs",
+    "action": "update",
+    "source_sha256": "85ac40e497c063f2bab155af6103d17e17b104e4ba8897552544f19c362a266a",
+    "package_sha256": "9c25128e0f37b7b230f612dc3f8278908ea59e2a0198fe28c7aca3b66b6ab9bd"
+  },
+  {
+    "path": "VietausWebAPI.Infrastructure/DatabaseContext/Configurations/DevandqaSchema/CoaSpecificationItemConfiguration.cs",
+    "action": "update",
+    "source_sha256": "2f11df5cf0ff4854a8571983b50a0a34a5271233470a81d8523fdd3f16f141ee",
+    "package_sha256": "1f4f01b0d9e079f227b7eb5c0aed49a1f48d32ea1638754f3aa1af685a461a69"
+  },
+  {
+    "path": "VietausWebAPI.Core/Domain/Entities/DevandqaSchema/CoaCertificate.cs",
+    "action": "update",
+    "source_sha256": "ac7ec86cc4817b7d9cc12a77573f2ccd4661d18b5e4aa901d8abc045d9e3cf58",
+    "package_sha256": "6fb862554c453e8b0185671efb1c177576c9d5da69614e35808b11d54cce751b"
+  },
+  {
+    "path": "VietausWebAPI.Infrastructure/DatabaseContext/Configurations/DevandqaSchema/CoaCertificateConfiguration.cs",
+    "action": "update",
+    "source_sha256": "24f6996aec173077ecfed7b881407706c9438d410bdb2321cc6fa3fa593cde1d",
+    "package_sha256": "fc652f16fa3efe6f25e094b8a32b955773e47034d0d4ae4fc5fdbada3f38d481"
+  },
+  {
+    "path": "VietausWebAPI.Core/Domain/Entities/DevandqaSchema/CoaCertificateResult.cs",
+    "action": "update",
+    "source_sha256": "ea38a4075a3018aaf17769c7f0cd19b50e30b8a8810713a5ac5abe6437e0493c",
+    "package_sha256": "41cc7d60cbc27ed8076f29982736d9097e5b1cbc06ef074ba6793871729c3567"
+  },
+  {
+    "path": "VietausWebAPI.Infrastructure/DatabaseContext/Configurations/DevandqaSchema/CoaCertificateResultConfiguration.cs",
+    "action": "update",
+    "source_sha256": "f278f17eb93f4a4210a8759d8c3de5b9c8e994590584f5fd6d2119fe4fba33f2",
+    "package_sha256": "49f1a816d07f97e455a74867ac092406fa5c4e3660f48108df991ec792488ef3"
+  },
+  {
+    "path": "VietausWebAPI.Infrastructure/DatabaseContext/Configurations/DevandqaSchema/EvaluationSnapshotConfiguration.cs",
+    "action": "add",
+    "source_sha256": null,
+    "package_sha256": "383d7cbec99865d77f4830bb388a149cbfb96f09eb3c638acbf1ac992d47229c"
+  },
+  {
+    "path": "VietausWebAPI.Core/Domain/Enums/Devandqa/EvaluationTemplateType.cs",
+    "action": "add",
+    "source_sha256": null,
+    "package_sha256": "b7fc252d14b2b357f00ae589d7a28a042149d2ea95c322444100f1d2bcba05dc"
+  },
+  {
+    "path": "VietausWebAPI.Core/Domain/Enums/Devandqa/EvaluationTemplateStatus.cs",
+    "action": "add",
+    "source_sha256": null,
+    "package_sha256": "1fe84b1815347093dff9ada8523017b847f8f96ff6af7d8c5b43feda6bf18925"
+  },
+  {
+    "path": "VietausWebAPI.Infrastructure/DatabaseContext/ApplicationDbs/ApplicationDbContext.EvaluationTemplates.cs",
+    "action": "add",
+    "source_sha256": null,
+    "package_sha256": "5f0ddbe93e84ef7b0be09a18c3a45d898f53c3c617c947f2b5d98b37e8e73d6a"
+  },
+  {
+    "path": "VietausWebAPI.Infrastructure/DatabaseContext/DeploymentScripts/20261007_AddEvaluationStandardDefaults.sql",
+    "action": "add",
+    "source_sha256": null,
+    "package_sha256": "add09cc1f2341d08ec758620fbbab018e5be9355ef78f6692933b065d3788810"
+  },
+  {
+    "path": "VietausWebAPI.Infrastructure/DatabaseContext/DeploymentScripts/20261007_AddEvaluationStandardDefaults.rollback.sql",
+    "action": "add",
+    "source_sha256": null,
+    "package_sha256": "31d5dc0f7fa4ccb8e21f2d889ca9430289e4754e34a18c87984c4a15d5657865"
+  },
+  {
+    "path": "VietausWebAPI.Infrastructure/DatabaseContext/DeploymentScripts/20261007_AddEvaluationTemplates.sql",
+    "action": "add",
+    "source_sha256": null,
+    "package_sha256": "cf01af21db8545c26cd6c89cc4741c1f994dd09f114003ea3789ee92a5feca47"
+  },
+  {
+    "path": "VietausWebAPI.Infrastructure/DatabaseContext/DeploymentScripts/20261007_AddEvaluationTemplates.rollback.sql",
+    "action": "add",
+    "source_sha256": null,
+    "package_sha256": "a555c8277a8698d8da83c97b011be11a7aaa699540f701ba3498d3ff20060a37"
+  }
+]

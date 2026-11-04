@@ -19,8 +19,16 @@ public enum InternalMailRelatedType
     Product = 14,
     Supplier = 15,
     Internal = 16,
-    // Child threads: RelatedId points to the existing parent conversation, not a business record.
+    // GROUP-STORAGE-TRANSITION: legacy-enum-values — 17/18/19 are persisted legacy child-group discriminators.
+    // New structure uses InternalConversationGroup.GroupType + RootConversationId; keep these values during compatibility.
+    // Never renumber/reuse them or cast them directly to InternalConversationGroupType (Technical there is 1, not 17).
+    // Retire readers/writers only after full cutover and review of stored data, payloads and historical consumers.
+    // RelatedId on these child threads points to the parent conversation, not a business record.
     ConversationTechnical = 17,
     ConversationPricing = 18,
+    ConversationCustom = 19,
+    // Permanent message reference, NOT a legacy group discriminator: retain 20 when removing group compatibility.
+    // RelatedId points to the source conversation of a forwarded copy.
+    ConversationForwardSource = 20,
     Other = 9999
 }

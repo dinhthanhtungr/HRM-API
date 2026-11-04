@@ -2,6 +2,8 @@ namespace HRM.Application.Features.Dispatch.DeliveryOrders.Dtos;
 
 public sealed class SelectableDeliveryOrderLineDto
 {
+    /// <summary>Kg/bao từ yêu cầu mẫu active mới nhất của product/khách trên PO; mặc định 25 nếu thiếu hoặc không dương.</summary>
+    public int? BagWeightKg { get; init; }
     public Guid MerchandiseOrderDetailId { get; init; }
     public Guid ProductId { get; init; }
     public string ProductExternalId { get; init; } = string.Empty;

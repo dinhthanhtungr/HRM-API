@@ -10,7 +10,7 @@ using Microsoft.Extensions.Options;
 
 namespace HRM.Infrastructure.Authentication;
 
-public sealed class IdentityAuthenticationService(
+public sealed partial class IdentityAuthenticationService(
     UserManager<ApplicationUser> userManager ,
     ApplicationDbContext dbContext,
     ILogger<IdentityAuthenticationService> logger,

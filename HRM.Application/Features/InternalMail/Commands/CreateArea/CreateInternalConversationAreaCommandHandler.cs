@@ -22,10 +22,12 @@ internal sealed class CreateInternalConversationAreaCommandHandler(
             return OperationResult<InternalMailAreaDto>.Fail("Invalid conversation area.");
         var source = await access.Conversations().FirstOrDefaultAsync(c => c.InternalConversationId == request.ConversationId, ct);
         if (source is null) return OperationResult<InternalMailAreaDto>.Fail("Conversation was not found.");
-        var rootId = InternalMailAreaAccessService.IsPrivateArea(source.RelatedType) ? source.RelatedId!.Value : source.InternalConversationId;
+        var rootId = await access.RootIdAsync(source.InternalConversationId, ct);
         var root = await access.Conversations().FirstOrDefaultAsync(c => c.InternalConversationId == rootId &&
             c.Participants.Any(p => p.EmployeeId == user.EmployeeId && p.IsActive && p.Role == InternalConversationParticipantRole.Owner), ct);
         if (root is null) return OperationResult<InternalMailAreaDto>.Fail("Only the parent conversation owner can create an area.");
+        if (root.RelatedType == InternalMailRelatedType.SampleRequest)
+            return OperationResult<InternalMailAreaDto>.Fail("Use the default sample request groups.");
         var type = request.AreaCode == InternalMailAreas.Technical ? InternalMailRelatedType.ConversationTechnical : InternalMailRelatedType.ConversationPricing;
         var members = (request.EmployeeIds ?? []).Where(id => id != Guid.Empty).Append(user.EmployeeId.Value).Distinct().ToArray();
         var eligible = await access.Recipients(user.CompanyId.Value, null, rootId).Where(id => members.Contains(id)).ToArrayAsync(ct);
@@ -37,8 +39,7 @@ internal sealed class CreateInternalConversationAreaCommandHandler(
         if (!await access.Conversations().AnyAsync(c => c.InternalConversationId == rootId &&
             c.Participants.Any(p => p.EmployeeId == user.EmployeeId && p.IsActive && p.Role == InternalConversationParticipantRole.Owner), ct))
             return OperationResult<InternalMailAreaDto>.Fail("Conversation was not found or ownership changed.");
-        var existing = await db.InternalConversations.FirstOrDefaultAsync(c => c.CompanyId == user.CompanyId &&
-            c.RelatedId == rootId && c.RelatedType == type && c.IsActive, ct);
+        var existing = await access.GroupChildren(rootId, type).FirstOrDefaultAsync(ct);
         if (existing is not null)
         {
             if (!await access.Conversations().AnyAsync(c => c.InternalConversationId == existing.InternalConversationId, ct))
@@ -46,6 +47,7 @@ internal sealed class CreateInternalConversationAreaCommandHandler(
             return OperationResult<InternalMailAreaDto>.Ok(new InternalMailAreaDto(request.AreaCode, existing.InternalConversationId, true, 0));
         }
         var now = clock.Now;
+        // GROUP-STORAGE-TRANSITION: legacy-write-shape — these fields feed the atomic application writer, not a DB trigger.
         var child = new InternalConversation
         {
             InternalConversationId = Guid.CreateVersion7(), CompanyId = user.CompanyId.Value,

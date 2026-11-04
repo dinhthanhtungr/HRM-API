@@ -25,7 +25,7 @@ namespace HRM.Application.Features.PLM.Dashboard.Queries.GetDashboardTaskBreakdo
             GetDashboardTaskBreakdownQuery request,
             CancellationToken cancellationToken)
         {
-            var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+            var scope = await _visibilityService.BuildReadScopeAsync(cancellationToken);
             var includeInternalCustomer = PLMRules.ShouldIncludeInternalCustomer(scope);
             var customerQuery = _dbContext.Customers.AsNoTracking();
 

@@ -32,7 +32,7 @@ internal sealed class GetCustomerTransferTargetEmployeesQueryHandler
         GetCustomerTransferTargetEmployeesQuery request,
         CancellationToken cancellationToken)
     {
-        var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+        var scope = await _visibilityService.BuildReadScopeAsync(cancellationToken);
         if (!CustomerTransferRules.CanTransfer(scope))
         {
             return OperationResult<PagedResult<CustomerTransferEmployeeOptionDto>>.Fail(

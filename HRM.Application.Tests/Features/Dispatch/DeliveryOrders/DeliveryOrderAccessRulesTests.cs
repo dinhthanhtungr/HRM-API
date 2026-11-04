@@ -5,14 +5,38 @@ namespace HRM.Application.Tests.Features.Dispatch.DeliveryOrders;
 
 public sealed class DeliveryOrderAccessRulesTests
 {
-    [Fact]
-    public void DispatchUser_CanReadManageAndCancel()
+    [Theory]
+    [InlineData("DispatchUser")]
+    [InlineData("PLPUUser")]
+    public void DispatchManager_CanReadManageAndCancel(string role)
     {
-        var user = CreateUser("DispatchUser");
+        var user = CreateUser(role);
 
         Assert.True(DeliveryOrderAccessRules.CanRead(user));
         Assert.True(DeliveryOrderAccessRules.CanManage(user));
         Assert.True(DeliveryOrderAccessRules.CanCancel(user));
+    }
+
+    [Theory]
+    [InlineData("User")]
+    [InlineData("PLPUNotify")]
+    [InlineData("ManufactureUser")]
+    public void UnrelatedRole_HasNoDeliveryPermission(string role)
+    {
+        var user = CreateUser(role);
+        Assert.False(DeliveryOrderAccessRules.CanRead(user));
+        Assert.False(DeliveryOrderAccessRules.CanManage(user));
+        Assert.False(DeliveryOrderAccessRules.CanCancel(user));
+    }
+
+    [Theory]
+    [InlineData(DeliveryOrderAccessRules.ReadRoles)]
+    [InlineData(DeliveryOrderAccessRules.ManageRoles)]
+    [InlineData(DeliveryOrderAccessRules.CancelRoles)]
+    public void ControllerRoleSets_IncludeBothDispatchManagers(string roles)
+    {
+        Assert.Contains("PLPUUser", roles.Split(','));
+        Assert.Contains("DispatchUser", roles.Split(','));
     }
 
     [Fact]

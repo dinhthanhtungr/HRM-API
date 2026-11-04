@@ -8,6 +8,7 @@ namespace HRM.Application.Features.InternalMail.Dtos;
 /// </summary>
 public sealed class InternalConversationListItemDto
 {
+    public IReadOnlyList<InternalMailQuickGroupDto> QuickGroups { get; set; } = Array.Empty<InternalMailQuickGroupDto>();
     public Guid GroupConversationId { get; set; }
     public string AreaCode { get; set; } = "general";
     public Guid ConversationId { get; set; }
@@ -51,6 +52,7 @@ public sealed class InternalConversationDetailDto
     public Guid GroupConversationId { get; set; }
     public string AreaCode { get; set; } = "general";
     public bool? CanManageParticipants { get; set; }
+    public bool? CanInviteParticipants { get; set; }
     public IReadOnlyList<InternalMailAreaDto> Areas { get; set; } = Array.Empty<InternalMailAreaDto>();
     public Guid ConversationId { get; set; }
     public string Subject { get; set; } = string.Empty;
@@ -86,6 +88,8 @@ public sealed class InternalConversationDetailDto
 
 public sealed class InternalConversationParticipantDto
 {
+    public bool IsLeader { get; set; }
+    public InternalConversationReaderGroupDto? ReaderGroup { get; set; }
     public Guid EmployeeId { get; set; }
     public string EmployeeName { get; set; } = string.Empty;
 
@@ -94,6 +98,8 @@ public sealed class InternalConversationParticipantDto
 
     public DateTime JoinedAt { get; set; }
 }
+
+public sealed record InternalConversationReaderGroupDto(Guid GroupId, string GroupType, Guid? LeaderEmployeeId);
 
 /// <summary>
 /// Metadata hien thi dong bo cho conversation bam vao Sample Request.

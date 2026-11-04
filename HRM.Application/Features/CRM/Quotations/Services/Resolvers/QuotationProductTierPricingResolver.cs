@@ -48,12 +48,12 @@ internal sealed class QuotationProductTierPricingResolver
         var approvedByProduct = await _approvedPricingReader.LoadAsync(
             normalizedProductIds,
             companyId,
-            currency,
+            ProductPricingSourceRules.StandardPricingCurrency,
             cancellationToken);
         var systemByProduct = await _systemPricingResolver.ResolveAsync(
             normalizedProductIds,
             companyId,
-            currency,
+            ProductPricingSourceRules.StandardPricingCurrency,
             cancellationToken);
         var comparisonsByProduct = await _comparisonQueryService.LoadVisibleAsync(
             approvedByProduct.Values

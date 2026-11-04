@@ -1,3 +1,4 @@
+using HRM.Application.Commons.Reporting;
 using HRM.Application.Abstractions.Persistence.Reports;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Features.Reports.ExecutivePnL.Queries.GetExecutivePnLReport.Models;
@@ -28,7 +29,7 @@ namespace HRM.Application.Features.Reports.ExecutivePnL.Queries.GetExecutivePnLD
 
 
             var filter = ExecutivePnLDashboardFilterFactory.CreateProductTypeFilter(
-                query.CompanyId,
+                ReportCompanyScope.Resolve(_currentUser, query.CompanyId),
                 query.BusinessUnit,
                 query.Currency,
                 GetComparisonFromMonth(period.FromMonth, query.PeriodType),

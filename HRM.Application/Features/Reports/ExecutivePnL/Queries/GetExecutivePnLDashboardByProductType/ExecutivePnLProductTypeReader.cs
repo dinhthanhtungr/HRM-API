@@ -2,8 +2,8 @@ using HRM.Application.Abstractions.Persistence.Reports;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Reporting;
 using HRM.Application.Features.Reports.ExecutivePnL.Shared.Models;
-using HRM.Application.Features.Reports.ExecutivePnL.Shared.Services.Costing;
-using HRM.Application.Features.Reports.ExecutivePnL.Shared.Services.SalesAttribution;
+using HRM.Application.Commons.Reporting.Costing;
+using HRM.Application.Commons.Reporting.SalesAttribution;
 using Microsoft.EntityFrameworkCore;
 
 namespace HRM.Application.Features.Reports.ExecutivePnL.Queries.GetExecutivePnLDashboardByProductType;
@@ -11,12 +11,12 @@ namespace HRM.Application.Features.Reports.ExecutivePnL.Queries.GetExecutivePnLD
 internal sealed class ExecutivePnLProductTypeReader
 {
     private readonly IReportReadDbContext _dbContext;
-    private readonly ExecutivePnLSalesAttributionScopeResolver _salesScopeResolver;
+    private readonly SalesAttributionScopeResolver _salesScopeResolver;
 
     public ExecutivePnLProductTypeReader(IReportReadDbContext dbContext, ICurrentUser currentUser)
     {
         _dbContext = dbContext;
-        _salesScopeResolver = new ExecutivePnLSalesAttributionScopeResolver(dbContext, currentUser);
+        _salesScopeResolver = new SalesAttributionScopeResolver(dbContext, currentUser);
     }
 
     public async Task<List<ExecutivePnLProductTypeMonthlyMetricRow>> ReadMonthlyAsync(
@@ -42,7 +42,7 @@ internal sealed class ExecutivePnLProductTypeReader
             filter.SalePerson,
             cancellationToken);
 
-        var costSources = await ExecutivePnLDeliveryCostResolver.LoadAsync(
+        var costSources = await DeliveryCostResolver.LoadAsync(
             _dbContext,
             revenueLines,
             filter.CompanyId,
@@ -54,7 +54,7 @@ internal sealed class ExecutivePnLProductTypeReader
             {
                 salesScope.TryGetAttribution(x.CustomerId, out var attribution);
 
-                var costOfSales = ExecutivePnLDeliveryCostResolver.ResolveAmount(x, costSources);
+                var costOfSales = DeliveryCostResolver.ResolveAmount(x, costSources);
 
                 return new ExecutivePnLProductTypeMonthlyMetricRow
                 {

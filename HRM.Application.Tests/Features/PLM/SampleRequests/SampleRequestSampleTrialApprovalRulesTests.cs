@@ -8,6 +8,14 @@ namespace HRM.Application.Tests.Features.PLM.SampleRequests;
 public sealed class SampleRequestSampleTrialApprovalRulesTests
 {
     [Fact]
+    public void MissingTrialIsOptionalOnlyForExplicitLegacySelection()
+    {
+        var formulaId = Guid.NewGuid();
+        Assert.Null(SampleRequestSampleTrialApprovalRules.Validate(null, formulaId, allowMissingLegacyTrial: true));
+        Assert.NotNull(SampleRequestSampleTrialApprovalRules.Validate(null, formulaId));
+    }
+
+    [Fact]
     public void Validate_RejectsFormulaThatDoesNotMatchLatestPendingTrial()
     {
         var sentFormula = CreateFormula();
@@ -34,7 +42,9 @@ public sealed class SampleRequestSampleTrialApprovalRulesTests
         {
             SampleRequestId = trial.SampleRequestId,
             ProductId = selectedFormula.ProductId,
-            Status = SampleRequestStatus.SampleSent.ToString()
+            Status = SampleRequestStatus.SampleSent.ToString(),
+            UpdatedDate = now.AddHours(-1),
+            UpdatedBy = Guid.NewGuid()
         };
 
         SampleRequestSampleTrialApprovalRules.ApplyApproved(
@@ -54,6 +64,8 @@ public sealed class SampleRequestSampleTrialApprovalRulesTests
         Assert.False(otherFormula.IsSelect);
         Assert.Equal(selectedFormula.FormulaId, sampleRequest.FormulaId);
         Assert.Equal(SampleRequestStatus.Completed.ToString(), sampleRequest.Status);
+        Assert.Equal(now, sampleRequest.UpdatedDate);
+        Assert.Equal(employeeId, sampleRequest.UpdatedBy);
     }
 
     private static Formula CreateFormula()

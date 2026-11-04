@@ -29,7 +29,8 @@ internal sealed class QuotationLineBuilder
         string currency,
         decimal exchangeRate,
         IReadOnlyList<QuotationLineRequest> requests,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlySet<Guid>? retainedStandardReferences = null)
     {
         if (requests.Count > QuotationRules.MaximumLineCount)
         {
@@ -91,7 +92,8 @@ internal sealed class QuotationLineBuilder
             .ToArray();
         if (manualRequests.Length > 0)
         {
-            if (manualRequests.Any(x => x.ProductPricingVersionId.HasValue))
+            if (manualRequests.Any(x => x.ProductPricingVersionId.HasValue &&
+                retainedStandardReferences?.Contains(x.ProductPricingVersionId.Value) != true))
             {
                 return OperationResult<IReadOnlyList<QuotationLine>>.Fail(
                     "Manual authorized pricing cannot reference a standard pricing version.");
@@ -110,8 +112,8 @@ internal sealed class QuotationLineBuilder
                 pricingVersionIds.Contains(x.ProductPricingVersionId) &&
                 x.CompanyId == companyId &&
                 x.Currency == ProductPricingSourceRules.StandardPricingCurrency &&
-                x.Status == HRM.Domain.Enums.CustomerEnum.ProductPricingStatus.Approved &&
-                x.IsActive)
+                ((x.Status == HRM.Domain.Enums.CustomerEnum.ProductPricingStatus.Approved && x.IsActive) ||
+                 (retainedStandardReferences != null && retainedStandardReferences.Contains(x.ProductPricingVersionId))))
             .ToDictionaryAsync(x => x.ProductPricingVersionId, cancellationToken);
 
         if (pricingVersions.Count != pricingVersionIds.Length || requests.Any(request =>
@@ -166,7 +168,8 @@ internal sealed class QuotationLineBuilder
             var productName = QuotationRules.TrimToNull(product.Name);
             var unit = QuotationRules.TrimToNull(request.Unit) ?? QuotationRules.TrimToNull(product.Unit);
             var quotationLineId = Guid.CreateVersion7();
-            var standardSellingPrice = request.ProductPricingVersionId.HasValue
+            var standardSellingPrice = request.ProductPricingVersionId.HasValue &&
+                retainedStandardReferences?.Contains(request.ProductPricingVersionId.Value) != true
                 ? QuotationPricingCurrencyConverter.ConvertFromStandardPricing(
                     pricingVersions[request.ProductPricingVersionId.Value].StandardSellingPrice!.Value,
                     currency,

@@ -19,6 +19,9 @@ internal sealed class SampleRequestThreadMessagePayload
     public Guid? MessageId { get; set; }
 
     public Guid? SampleRequestId { get; set; }
+    public Guid? WorkflowEventId { get; set; }
+    public Guid? SampleRequestSampleTrialId { get; set; }
+    public Guid? FormulaId { get; set; }
 
     public string? ExternalId { get; set; }
 

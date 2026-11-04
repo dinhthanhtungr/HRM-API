@@ -23,6 +23,7 @@ public sealed class DeliveryOrderDetailDto
     public decimal? DeliveryPrice { get; init; }
     public string? Note { get; init; }
     public bool IsActive { get; init; }
+    public bool HasPrinted { get; init; }
     public Guid CreatedBy { get; init; }
     public DateTime? CreatedDate { get; init; }
     public Guid? UpdatedBy { get; init; }
@@ -32,6 +33,18 @@ public sealed class DeliveryOrderDetailDto
     public decimal TotalQuantity { get; init; }
     public int TotalNumOfBags { get; init; }
 
+    /// <summary>Phân bổ đã lưu trên yêu cầu xuất kho, tổng hợp theo product/lot/loại tồn, không gắn riêng từng dòng PO.</summary>
+    public IReadOnlyList<DeliveryStockAllocationDto> StockAllocations { get; set; } = [];
+    public bool StockAllocationsComplete { get; set; }
     public IReadOnlyList<DeliveryOrderLineDto> Lines { get; init; } = Array.Empty<DeliveryOrderLineDto>();
     public IReadOnlyList<DelivererDto> Deliverers { get; init; } = Array.Empty<DelivererDto>();
+}
+
+public sealed class DeliveryStockAllocationDto
+{
+    public int NumOfBags { get; init; }
+    public string ProductCode { get; init; } = string.Empty;
+    public string LotNo { get; init; } = string.Empty;
+    public string StockType { get; init; } = string.Empty;
+    public decimal Quantity { get; init; }
 }

@@ -49,7 +49,7 @@ internal sealed class ProductPricingReviewCalculator
         PricingReviewPreviewRequest request,
         CancellationToken cancellationToken)
     {
-        var context = ProductPricingReviewRules.GetContext(_currentUser);
+        var context = ProductPricingReviewRules.GetReadContext(_currentUser);
         if (!context.Success)
             return OperationResult<PricingReviewCalculation>.Fail(context.Message!);
         if (productId == Guid.Empty || request.SourceId == Guid.Empty)

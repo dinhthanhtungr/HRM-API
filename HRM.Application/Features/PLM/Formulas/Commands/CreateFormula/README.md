@@ -2,6 +2,11 @@
 
 `POST /api/v1/plm/formulas` bắt buộc có `productId` hợp lệ.
 
+Sản phẩm phải active, đúng company và đã lưu cả `Product.ColourCode` (mã màu) lẫn
+`Product.Name` (tên sản phẩm). Null/rỗng/chỉ khoảng trắng bị từ chối trước khi cấp mã VU,
+thêm Formula/material hoặc snapshot. `request.name` là tên **công thức**, không thay thế tên sản phẩm.
+Áp dụng cả tạo từ dữ liệu copy. Không tự cập nhật/xóa công thức đã có.
+
 `name` là optional khi tạo mới:
 
 - Nếu FE gửi `name`, backend trim và validate tối đa 200 ký tự.

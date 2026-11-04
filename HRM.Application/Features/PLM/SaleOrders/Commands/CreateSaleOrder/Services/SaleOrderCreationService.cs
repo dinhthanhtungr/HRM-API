@@ -2,6 +2,7 @@ using HRM.Application.Abstractions.Commons.ExternalIds;
 using HRM.Application.Abstractions.Persistence.PLM.SaleOrders;
 using HRM.Application.Commons.Models;
 using HRM.Application.Features.PLM.SaleOrders.Dtos;
+using HRM.Application.Features.PLM.SaleOrders.Services;
 using HRM.Application.Features.Timeline.Dtos;
 using HRM.Application.Features.Timeline.Services;
 using HRM.Domain.Entities.AttachmentSchema;
@@ -24,17 +25,20 @@ internal sealed class SaleOrderCreationService
     private readonly IExternalIdService _externalIdService;
     private readonly IEventLogWriter _eventLogWriter;
     private readonly SaleOrderLeadConversionService _leadConversionService;
+    private readonly SaleOrderStandardSampleService _standardSamples;
 
     public SaleOrderCreationService(
         ISaleOrderDbContext dbContext,
         IExternalIdService externalIdService,
         IEventLogWriter eventLogWriter,
-        SaleOrderLeadConversionService leadConversionService)
+        SaleOrderLeadConversionService leadConversionService,
+        SaleOrderStandardSampleService standardSamples)
     {
         _dbContext = dbContext;
         _externalIdService = externalIdService;
         _eventLogWriter = eventLogWriter;
         _leadConversionService = leadConversionService;
+        _standardSamples = standardSamples;
     }
 
     public async Task<OperationResult<MerchandiseOrder>> CreateAsync(
@@ -44,7 +48,7 @@ internal sealed class SaleOrderCreationService
         DateTime now,
         CancellationToken cancellationToken)
     {
-        if (request.CustomerId == Guid.Empty)
+        if (request.CustomerId == Guid.Empty || request.SaleOrderDetails is null)
         {
             return OperationResult<MerchandiseOrder>.Fail("CustomerId không hợp lệ.");
         }
@@ -103,6 +107,7 @@ internal sealed class SaleOrderCreationService
             .ToListAsync(cancellationToken);
         var formulaById = formulaRows.ToDictionary(x => x.FormulaId);
 
+        var unfinishedWorkflowFormulas = await LoadUnfinishedWorkflowFormulaIdsAsync(companyId, detailFormulaIds, cancellationToken);
         foreach (var detail in details)
         {
             if (!formulaById.TryGetValue(detail.FormulaId, out var formula))
@@ -122,7 +127,16 @@ internal sealed class SaleOrderCreationService
                 return OperationResult<MerchandiseOrder>.Fail(
                     $"Công thức {formula.ExternalId} phải ở trạng thái SampleSent hoặc Completed để lên đơn hàng.");
             }
+            if (unfinishedWorkflowFormulas.Contains(formula.FormulaId))
+                return OperationResult<MerchandiseOrder>.Fail("Sale cần hoàn thành hồ sơ mẫu trước khi dùng công thức này để lên đơn.");
         }
+
+        var review = await _standardSamples.ReviewAsync(request, companyId, now, cancellationToken);
+        if (!review.Success || review.Data is null)
+            return OperationResult<MerchandiseOrder>.Fail(review.Message ?? "Không thể kiểm tra mẫu chuẩn.");
+        var requiredSamples = review.Data.Select(x => (x.ProductId, x.FormulaId)).ToHashSet();
+        if (details.Any(x => requiredSamples.Contains((x.ProductId, x.FormulaId)) && !x.StandardSampleReviewed))
+            return OperationResult<MerchandiseOrder>.Fail("Cần kiểm tra và xác nhận dialog mẫu chuẩn trước khi lưu đơn.");
 
         var orderId = request.MerchandiseOrderId == Guid.Empty
             ? Guid.CreateVersion7()
@@ -207,7 +221,8 @@ internal sealed class SaleOrderCreationService
                 RealQuantity = detailRequest.RealQuantity,
                 BagType = TrimToEmpty(detailRequest.BagType),
                 PackageWeight = TrimToEmpty(detailRequest.PackageWeight),
-                Status = order.Status,
+                Status = requiredSamples.Contains((detailRequest.ProductId, detailRequest.FormulaId)) && !detailRequest.HasStandardSample
+                    ? nameof(MerchadiseStatus.WaitingForStandardSample) : order.Status,
                 Comment = TrimToNull(detailRequest.Comment),
                 DeliveryRequestDate = detailRequest.DeliveryRequestDate,
                 DeliveryActualDate = detailRequest.DeliveryActualDate,
@@ -224,6 +239,20 @@ internal sealed class SaleOrderCreationService
             order.MerchandiseOrderDetails.Sum(x => x.TotalPriceAgreed),
             2,
             MidpointRounding.AwayFromZero);
+
+        foreach (var detail in order.MerchandiseOrderDetails.Where(x => requiredSamples.Contains((x.ProductId, x.FormulaId))))
+        {
+            await _eventLogWriter.AddAsync(new EventLogCreateRequest
+            {
+                EmployeeId = employeeId, CompanyId = companyId, SourceType = nameof(MerchandiseOrderDetail),
+                SourceId = detail.MerchandiseOrderDetailId, ParentSourceType = nameof(MerchandiseOrder),
+                ParentSourceId = orderId, SourceCode = order.ExternalId, EventType = EventType.MerchadiseStatus,
+                Status = detail.Status, CreatedDate = now,
+                Note = detail.Status == nameof(MerchadiseStatus.WaitingForStandardSample)
+                    ? "Đang chờ mẫu chuẩn." : "Sale xác nhận đã có mẫu chuẩn.",
+                PayloadJson = System.Text.Json.JsonSerializer.Serialize(new { detail.ProductId, detail.FormulaId })
+            }, cancellationToken);
+        }
 
         await _leadConversionService.ApplyAsync(order, employeeId, now, cancellationToken);
         await _dbContext.MerchandiseOrders.AddAsync(order, cancellationToken);
@@ -252,6 +281,28 @@ internal sealed class SaleOrderCreationService
             AttachmentCollectionId = order.AttachmentCollectionId,
             Status = order.Status
         };
+    }
+
+    internal async Task<HashSet<Guid>> LoadUnfinishedWorkflowFormulaIdsAsync(Guid companyId, Guid[] detailFormulaIds,
+        CancellationToken cancellationToken)
+    {
+        var unfinished = (await _dbContext.SampleRequestSampleTrials.AsNoTracking()
+            .Where(x => x.IsActive && x.FormulaId.HasValue && detailFormulaIds.Contains(x.FormulaId.Value) &&
+                x.SentDate != null && x.SampleRequest.IsActive && x.SampleRequest.CompanyId == companyId &&
+                x.SampleRequest.CreatedDate >= SampleRequests.Services.Workflow.SampleFlowRules.StartsAt &&
+                x.SampleRequest.Status != "Completed" && x.SampleRequest.Status != "Cancelled")
+            .Select(x => x.FormulaId!.Value).Distinct().ToListAsync(cancellationToken)).ToHashSet();
+        // Quotation finalization has no Trial: its persisted event links the VU until Sale completes the request.
+        var quotationIds = await (from evt in _dbContext.SampleRequestWorkflowEvents.AsNoTracking()
+                                  join request in _dbContext.SampleRequests.AsNoTracking() on evt.SampleRequestId equals request.SampleRequestId
+                                  where evt.CompanyId == companyId && request.CompanyId == companyId && request.IsActive &&
+                                      request.CreatedDate >= SampleRequests.Services.Workflow.SampleFlowRules.StartsAt &&
+                                      request.Status != "Completed" && request.Status != "Cancelled" &&
+                                      evt.EventType == SampleRequests.Services.Workflow.SampleFlowRules.QuotationFinalized &&
+                                      evt.FormulaId.HasValue && detailFormulaIds.Contains(evt.FormulaId.Value)
+                                  select evt.FormulaId!.Value).Distinct().ToListAsync(cancellationToken);
+        unfinished.UnionWith(quotationIds);
+        return unfinished;
     }
 
     private static string TrimToEmpty(string? value)

@@ -1,7 +1,7 @@
 using HRM.Application.Abstractions.Persistence.Dispatch;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Models;
-using HRM.Application.Features.Dispatch.DeliveryOrders.Queries;
+using HRM.Application.Features.Dispatch.DeliveryOrders.Services;
 using HRM.Domain.Entities.DeliverySchema;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -17,15 +17,21 @@ internal sealed class UpdateDeliveryOrderCommandHandler
     private readonly IDispatchWriteDbContext _dbContext;
     private readonly ICurrentUser _currentUser;
     private readonly DeliveryOrderLotInventoryService _inventoryService;
+    private readonly DeliveryWarehouseRequestService _warehouseRequests;
+    private readonly DeliveryOrderFulfillmentService _fulfillment;
 
     public UpdateDeliveryOrderCommandHandler(
         IDispatchWriteDbContext dbContext,
         ICurrentUser currentUser,
-        DeliveryOrderLotInventoryService inventoryService)
+        DeliveryOrderLotInventoryService inventoryService,
+        DeliveryWarehouseRequestService warehouseRequests,
+        DeliveryOrderFulfillmentService fulfillment)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
         _inventoryService = inventoryService;
+        _warehouseRequests = warehouseRequests;
+        _fulfillment = fulfillment;
     }
 
     public async Task<OperationResult<Guid>> Handle(
@@ -54,6 +60,12 @@ internal sealed class UpdateDeliveryOrderCommandHandler
         {
             return OperationResult<Guid>.Fail(lineError!);
         }
+
+        await using var transaction = await _dbContext.BeginDeliveryOrderTransactionAsync(cancellationToken);
+        if (await _dbContext.DeliveryOrders.Where(x => x.Id == request.Id && x.CompanyId == companyId &&
+                x.IsActive && x.Status == "Pending" && !x.HasPrinted)
+            .ExecuteUpdateAsync(set => set.SetProperty(x => x.HasPrinted, x => x.HasPrinted), cancellationToken) == 0)
+            return OperationResult<Guid>.Fail("Chỉ sửa nội dung phiếu Pending chưa in; phiếu đã in dùng PATCH số bao/người giao.");
 
         var deliveryOrder = await _dbContext.DeliveryOrders
             .Include(x => x.Details)
@@ -91,7 +103,6 @@ internal sealed class UpdateDeliveryOrderCommandHandler
                 x.ProductId,
                 x.ProductExternalIdSnapshot,
                 x.ProductNameSnapshot,
-                x.ExpectedQuantity,
                 MerchandiseOrderCustomerId = x.MerchandiseOrder.CustomerId,
                 MerchandiseOrderIsActive = x.MerchandiseOrder.IsActive,
                 x.MerchandiseOrder.PONo
@@ -113,33 +124,7 @@ internal sealed class UpdateDeliveryOrderCommandHandler
             return OperationResult<Guid>.Fail("Có dòng PO không cùng khách hàng với phiếu giao.");
         }
 
-        var deliveredQuantities = await _dbContext.DeliveryOrderDetails
-            .AsNoTracking()
-            .CountedForAllocation(companyId, request.Id)
-            .Where(x => detailIds.Contains(x.MerchandiseOrderDetailId!.Value))
-            .GroupBy(x => x.MerchandiseOrderDetailId!.Value)
-            .Select(group => new
-            {
-                MerchandiseOrderDetailId = group.Key,
-                Quantity = group.Sum(x => x.Quantity)
-            })
-            .ToListAsync(cancellationToken);
-
-        foreach (var line in requestedLines)
-        {
-            var detail = orderDetails.Single(x =>
-                x.MerchandiseOrderDetailId == line.MerchandiseOrderDetailId);
-            var delivered = deliveredQuantities
-                .FirstOrDefault(x => x.MerchandiseOrderDetailId == line.MerchandiseOrderDetailId)
-                ?.Quantity ?? 0m;
-            var remaining = detail.ExpectedQuantity - delivered;
-
-            if (line.Quantity > remaining)
-            {
-                return OperationResult<Guid>.Fail(
-                    $"Số lượng giao vượt quá còn lại. Product: {detail.ProductExternalIdSnapshot}, còn lại: {remaining}.");
-            }
-        }
+        // Cho phép giao vượt lượng đặt; giới hạn lượng giao vẫn được kiểm tra theo tồn lot/loại hàng.
 
         var delivererIds = request.DelivererInforIds
             .Where(x => x != Guid.Empty)
@@ -162,8 +147,10 @@ internal sealed class UpdateDeliveryOrderCommandHandler
                 deliveryOrder,
                 request,
                 requestedLines,
-                delivererIds))
+                delivererIds) && await _warehouseRequests.HasSameAllocationsAsync(deliveryOrder, requestedLines, cancellationToken))
         {
+            await _fulfillment.SyncAsync(deliveryOrder.Id, companyId, employeeId, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
             return OperationResult<Guid>.Ok(
                 deliveryOrder.Id,
                 "Phiếu giao hàng đã có đúng nội dung yêu cầu.");
@@ -178,7 +165,7 @@ internal sealed class UpdateDeliveryOrderCommandHandler
                     detail.ProductId,
                     detail.ProductExternalIdSnapshot,
                     lot.LotNo,
-                    lot.Quantity));
+                    lot.Quantity, lot.StockType));
             })
             .ToArray();
         var inventory = await _inventoryService.LoadAsync(
@@ -191,8 +178,6 @@ internal sealed class UpdateDeliveryOrderCommandHandler
         {
             return OperationResult<Guid>.Fail(inventoryError);
         }
-
-        await using var transaction = await _dbContext.BeginDeliveryOrderTransactionAsync(cancellationToken);
 
         var now = DateTime.Now;
         deliveryOrder.Receiver = TrimToNull(request.Receiver);
@@ -207,7 +192,7 @@ internal sealed class UpdateDeliveryOrderCommandHandler
         deliveryOrder.UpdatedBy = employeeId;
         deliveryOrder.UpdatedDate = now;
 
-        foreach (var oldDetail in deliveryOrder.Details.Where(x => x.IsActive))
+        foreach (var oldDetail in deliveryOrder.Details.Where(x => x.IsActive && !x.IsAttach))
         {
             oldDetail.IsActive = false;
             foreach (var oldLot in oldDetail.LotConsumptions.Where(x => x.IsActive))
@@ -255,6 +240,15 @@ internal sealed class UpdateDeliveryOrderCommandHandler
 
         foreach (var merchandiseOrderId in orderDetails.Select(x => x.MerchandiseOrderId).Distinct())
         {
+            // Khóa kép không cho phép tạo lại liên kết đã tồn tại, kể cả liên kết inactive.
+            var existingPo = deliveryOrder.DeliveryOrderPOs.SingleOrDefault(x =>
+                x.MerchandiseOrderId == merchandiseOrderId);
+            if (existingPo is not null)
+            {
+                existingPo.IsActive = true;
+                continue;
+            }
+
             deliveryOrder.DeliveryOrderPOs.Add(new DeliveryOrderPO
             {
                 DeliveryOrderId = deliveryOrder.Id,
@@ -273,7 +267,10 @@ internal sealed class UpdateDeliveryOrderCommandHandler
             });
         }
 
+        if (!await _warehouseRequests.SyncPendingAsync(deliveryOrder, cancellationToken, requestedLines))
+            return OperationResult<Guid>.Fail("Không thể đồng bộ xuất kho: PRQ đã xử lý, có nhiều PRQ liên kết hoặc phiếu thiếu mã liên kết.");
         await _dbContext.SaveChangesAsync(cancellationToken);
+        await _fulfillment.SyncAsync(deliveryOrder.Id, companyId, employeeId, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
         return OperationResult<Guid>.Ok(deliveryOrder.Id, "Cập nhật phiếu giao hàng thành công.");
@@ -305,21 +302,18 @@ internal sealed class UpdateDeliveryOrderCommandHandler
         Guid employeeId,
         DateTime createdDate)
     {
-        foreach (var lot in lots)
+        foreach (var group in lots.GroupBy(x => DeliveryOrderLotInventoryRules.Normalize(x.LotNo)))
         {
-            var unitCost = inventory[DeliveryOrderLotInventoryRules.Key(productCode, lot.LotNo)]
-                .UnitCostSnapshot;
+            var quantity = group.Sum(x => x.Quantity);
+            var totalCost = group.Sum(lot => DeliveryOrderLotInventoryRules.CalculateTotalCost(lot.Quantity,
+                inventory[DeliveryOrderLotInventoryRules.Key(productCode, lot.LotNo, lot.StockType)].UnitCostSnapshot));
             detail.LotConsumptions.Add(new DeliveryOrderDetailLotConsumption
             {
-                Id = Guid.CreateVersion7(),
-                DeliveryOrderDetailId = detail.Id,
-                LotNo = lot.LotNo,
-                Quantity = lot.Quantity,
-                UnitCostSnapshot = unitCost,
-                TotalCostSnapshot = DeliveryOrderLotInventoryRules.CalculateTotalCost(lot.Quantity, unitCost),
-                CreatedBy = employeeId,
-                CreatedDate = createdDate,
-                IsActive = true
+                Id = Guid.CreateVersion7(), DeliveryOrderDetailId = detail.Id,
+                LotNo = group.First().LotNo, Quantity = quantity,
+                UnitCostSnapshot = quantity == 0m ? 0m : totalCost / quantity,
+                TotalCostSnapshot = totalCost, CreatedBy = employeeId,
+                CreatedDate = createdDate, IsActive = true
             });
         }
     }

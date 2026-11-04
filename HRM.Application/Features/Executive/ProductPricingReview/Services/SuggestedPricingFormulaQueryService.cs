@@ -60,6 +60,9 @@ internal sealed class SuggestedPricingFormulaQueryService
             })
             .ToListAsync(cancellationToken);
 
+        var excludedSources = PricingSourceColourCodeFilter.SelectExcludedSources(
+            _dbContext.ManufacturingFormulaMaterials,
+            _dbContext.Products.Where(x => normalizedProductIds.Contains(x.ProductId)), companyId);
         var producedVaCandidates = await _dbContext.ProductionSelectVersions.AsNoTracking()
             .Where(x =>
                 x.CompanyId == companyId &&
@@ -71,7 +74,10 @@ internal sealed class SuggestedPricingFormulaQueryService
                 x.MfgProductionOrder.CompanyId == companyId &&
                 normalizedProductIds.Contains(x.MfgProductionOrder.ProductId) &&
                 x.MfgProductionOrder.IsActive &&
-                x.MfgProductionOrder.Product.IsActive)
+                x.MfgProductionOrder.Product.IsActive &&
+                !excludedSources.Any(excluded =>
+                    excluded.ProductId == x.MfgProductionOrder.ProductId &&
+                    excluded.ManufacturingFormulaId == x.ManufacturingFormulaId))
             .Select(x => new SuggestedPricingFormulaCandidate
             {
                 ProductId = x.MfgProductionOrder.ProductId,

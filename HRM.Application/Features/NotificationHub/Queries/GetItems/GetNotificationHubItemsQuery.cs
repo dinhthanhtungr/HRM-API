@@ -15,6 +15,8 @@ public sealed class GetNotificationHubItemsQuery : IRequest<NotificationHubItems
     /// mà current employee nhận được. Không áp dụng cho notification không có conversation.
     /// </summary>
     public bool UrgentOnly { get; init; }
+    public bool UnreadOnly { get; init; }
+    public bool MentionedOnly { get; init; }
     public int Take { get; init; } = 20;
     public DateTime? AfterCreated { get; init; }
     public Guid? AfterId { get; init; }

@@ -1,5 +1,7 @@
 # Quản lý máy và thông số kỹ thuật
 
+ACCUser được cấp mro.equipment.view như President; quyền create/update/delete giữ nguyên. Company/record scope vẫn áp dụng. Với permission DB, chạy seed claim rồi login/refresh để token nhận quyền xem.
+
 Danh mục máy dùng schema `mro` hiện có, không thêm bảng/cột. Thông số ở đây là thông số kỹ thuật cố định dạng tên–giá trị–đơn vị, không thay thế thông số vận hành của công đoạn BOM/PLM.
 
 ## API

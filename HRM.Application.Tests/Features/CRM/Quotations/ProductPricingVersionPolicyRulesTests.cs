@@ -42,7 +42,10 @@ public sealed class ProductPricingVersionPolicyRulesTests
         Assert.True(calculation.Success);
         Assert.Equal(120m, calculation.Data!.MaterialCost);
         Assert.Equal(10m, calculation.Data.ManufacturingCost);
-        Assert.Equal(156m, calculation.Data.StandardSellingPrice);
+        // Margin is measured on selling price: (120 + 10) / (1 - 20%) = 162.5,
+        // rounded to the policy increment of 1 => 163 (not a 20% markup on cost).
+        Assert.Equal(163m, calculation.Data.StandardSellingPrice);
+        Assert.Equal(20.2454m, calculation.Data.ProfitMarginRate);
 
         var tiers = ProductPricingVersionPolicyRules.BuildPolicyTiers(
             Guid.NewGuid(),
@@ -50,7 +53,7 @@ public sealed class ProductPricingVersionPolicyRulesTests
             []);
         Assert.True(tiers.Success);
         Assert.False(tiers.Data!.HasManualTierAdjustment);
-        Assert.Equal(161m, tiers.Data.Tiers.Single().UnitPrice);
+        Assert.Equal(168m, tiers.Data.Tiers.Single().UnitPrice);
     }
 
     [Fact]

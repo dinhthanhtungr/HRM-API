@@ -1,0 +1,167 @@
+.actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.stack {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.tableViewport,
+.previewViewport {
+  position: relative;
+  max-width: 100%;
+  overflow: auto;
+  max-height: 65vh;
+  border: 1px solid var(--color-border-soft);
+  border-radius: 8px;
+  background: var(--color-surface);
+  isolation: isolate;
+}
+.table {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: max-content;
+  min-width: 100%;
+  font-size: 14px;
+  color: var(--color-text);
+}
+.table th,
+.table td {
+  padding: 10px 12px;
+  min-width: 140px;
+  max-width: 320px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  border-right: 1px solid var(--color-border-soft);
+  border-bottom: 1px solid var(--color-border-soft);
+  vertical-align: top;
+  background: var(--color-surface);
+}
+.table th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  text-align: left;
+  font-weight: 600;
+  background: var(--color-brand-50);
+  color: var(--color-text);
+}
+.table small {
+  display: block;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+.table .indexColumn {
+  position: sticky;
+  left: 0;
+  min-width: 64px;
+  max-width: 64px;
+  width: 64px;
+  z-index: 2;
+}
+.table .dateColumn {
+  position: sticky;
+  left: 64px;
+  min-width: 140px;
+  width: 140px;
+  z-index: 2;
+}
+.table .codeColumn {
+  position: sticky;
+  left: 204px;
+  min-width: 190px;
+  width: 190px;
+  z-index: 2;
+  border-right: 2px solid var(--color-border-soft);
+}
+.table th.indexColumn,
+.table th.dateColumn,
+.table th.codeColumn {
+  z-index: 4;
+}
+.codeLink {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--color-brand-700);
+  font: inherit;
+  text-align: left;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.codeLink:focus-visible {
+  outline: 2px solid var(--color-brand-500);
+  outline-offset: 3px;
+}
+.observation {
+  text-decoration: underline dotted var(--color-brand-500);
+  text-underline-offset: 3px;
+  cursor: help;
+}
+.loadingOverlay {
+  position: sticky;
+  bottom: 0;
+  left: 0;
+  z-index: 5;
+  padding: 12px;
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border-soft);
+}
+.editorDialog {
+  width: min(960px, calc(100vw - 24px));
+  max-width: 960px;
+}
+.importDialog {
+  width: min(1280px, calc(100vw - 24px));
+  max-width: 1280px;
+}
+.editorBody {
+  display: grid;
+  gap: 16px;
+  overflow: auto;
+  max-height: 68vh;
+  min-width: 0;
+  padding: 4px;
+}
+.resultEditor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  padding-block: 12px;
+  border-bottom: 1px solid var(--color-border-soft);
+}
+.mapping summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.mappingGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+  padding-block: 12px;
+}
+.confirmation {
+  display: flex;
+  align-items: start;
+  gap: 10px;
+  font-size: 14px;
+}
+.confirmation input {
+  margin-top: 3px;
+}
+.table tr[data-invalid] td {
+  background: var(--color-danger-bg-soft);
+}
+@media (max-width: 600px) {
+  .resultEditor {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .table .dateColumn,
+  .table .codeColumn {
+    position: static;
+  }
+}
