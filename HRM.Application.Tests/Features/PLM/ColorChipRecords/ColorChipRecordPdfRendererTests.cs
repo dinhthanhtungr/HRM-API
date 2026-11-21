@@ -47,6 +47,21 @@ public sealed class ColorChipRecordPdfRendererTests
         Assert.True(bacNinh.Length > 10_000);
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("VA-STANDARD-001")]
+    public void Render_TanPhu_PreservesSuppliedStandardCode(string standard)
+    {
+        QuestPDF.Settings.License = LicenseType.Evaluation;
+        var model = CreateModel(FormStyle.ChipsTanPhu);
+        model.StandardText = standard;
+
+        var result = new ColorChipRecordPdfRenderer().Render(model, FormStyle.ChipsTanPhu);
+
+        Assert.Equal(standard, model.StandardText);
+        Assert.True(result.Length > 10_000);
+    }
+
     private static ColorChipRecordPdfModel CreateModel(FormStyle formStyle) => new()
     {
         BatchNo = "DF-001",

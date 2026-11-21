@@ -84,7 +84,7 @@ internal sealed class CreateLabManufacturingFormulaCommandHandler(
             var order = link.ProductionOrder;
             error = ManufacturingAccess.ValidateInformState(user, order.Status);
             if (error is not null) return Fail(error);
-            error = ManufacturingAccess.ValidateFormulaEditState(order.Status);
+            error = await ManufacturingAccess.FormulaEditLockAsync(db, order, ct);
             if (error is not null) return Fail(error);
             if (order.Status == nameof(ManufacturingProductOrder.WaitingForStandardSample))
                 return OperationResult<ProductionOrderFormulaCreatedDto>.Fail("Lệnh đang chờ Sale xác nhận mẫu chuẩn.");

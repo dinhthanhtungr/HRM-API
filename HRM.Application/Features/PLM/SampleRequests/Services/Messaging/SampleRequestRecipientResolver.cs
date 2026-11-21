@@ -293,7 +293,6 @@ public sealed class SampleRequestRecipientResolver
                       groupItem.GroupType != null &&
                       defaultLeaderGroupTypes.Contains(groupItem.GroupType) &&
                       member.IsActive &&
-                      member.IsAdmin == true &&
                       member.Profile.HasValue &&
                       employee.CompanyId == companyId &&
                       employee.IsActive
@@ -304,7 +303,7 @@ public sealed class SampleRequestRecipientResolver
                     FullName = employee.FullName,
                     ExternalId = employee.ExternalId,
                     Source = SampleRequestRecipientSources.Default,
-                    Reason = "Default sample request group leader",
+                    Reason = "Default sample request lab team member",
                     Locked = false
                 })
             .Distinct()

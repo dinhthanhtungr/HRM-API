@@ -75,4 +75,19 @@ public sealed class InternalConversationDetailProjectionTests
         Assert.Contains("count(*)", sql, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("IsDeleted", sql);
     }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void DetailWithCanonicalUnread_DoesNotQueryLegacyReadStates(bool scopedMessages)
+    {
+        using var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>().UseNpgsql().Options);
+        var projection = InternalConversationDetailProjection.ForEmployee(Guid.NewGuid(),
+            scopedMessages ? db.InternalMessages : null, db.InternalConversations, includeLegacyUnread: false);
+        var sql = db.InternalConversations.Select(projection).ToQueryString();
+
+        Assert.DoesNotContain("count(*)", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("InternalMessageReadStates", sql);
+        Assert.Contains("InternalConversationParticipants", sql);
+    }
 }

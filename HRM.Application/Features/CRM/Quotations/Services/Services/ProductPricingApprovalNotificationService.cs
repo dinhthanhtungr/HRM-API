@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace HRM.Application.Features.CRM.Quotations.Services;
 
-internal sealed class ProductPricingApprovalNotificationService
+internal sealed partial class ProductPricingApprovalNotificationService
 {
     private static readonly JsonSerializerOptions PayloadJsonOptions =
         new(JsonSerializerDefaults.Web);

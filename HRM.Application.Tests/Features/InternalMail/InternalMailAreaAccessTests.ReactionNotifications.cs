@@ -18,6 +18,42 @@ namespace HRM.Application.Tests.Features.InternalMail;
 
 public sealed partial class InternalMailAreaAccessTests
 {
+    [Theory]
+    [InlineData("visible")]
+    [InlineData("read")]
+    [InlineData("archived")]
+    [InlineData("deleted")]
+    [InlineData("removed")]
+    [InlineData("foreign")]
+    [InlineData("disabled")]
+    public async Task ReactionSummaryShortlistPreservesVisibilityAndUnreadState(string scenario)
+    {
+        var fixture = ReactionNotificationFixture();
+        await fixture.Sync(fixture.AddActor("Actor"), true);
+        fixture.Memory.Values["Notifications"] = new MemorySet<Notification>(fixture.Notifications);
+        fixture.Memory.Values["NotificationUserStates"] = new MemorySet<NotificationUserState>(fixture.States);
+        fixture.Memory.Values["QueryInternalMailNotificationLinks"] = new AsyncQuery<HRM.Application.Abstractions.Persistence.InternalMail.InternalMailNotificationLink>(
+            fixture.Notifications.Select(n => new HRM.Application.Abstractions.Persistence.InternalMail.InternalMailNotificationLink
+            { NotificationId = n.Id, HasConversation = true, ConversationId = fixture.Conversation.InternalConversationId,
+                MessageId = fixture.Message.InternalMessageId }));
+        var state = Assert.Single(fixture.States);
+        if (scenario == "read") state.IsRead = true;
+        if (scenario == "archived") state.IsArchived = true;
+        if (scenario == "deleted") fixture.Message.IsDeleted = true;
+        if (scenario == "removed") fixture.Conversation.Participants.Single(p => p.EmployeeId == fixture.Author.EmployeeId).IsActive = false;
+        if (scenario == "foreign") fixture.Notifications.Single().CompanyId = Guid.NewGuid();
+        foreach (var role in new[] { "SaleUser", "LabUser", "President", "Developer" })
+        {
+            var user = new User(role) { EmployeeId = fixture.Author.EmployeeId, CompanyId = fixture.Company };
+            var areas = new InternalMailAreaAccessService(fixture.Mail, user, reactionOptions:
+                Options.Create(new InternalMailReactionOptions { Enabled = scenario != "disabled" }));
+            var topics = InternalMailPersonalActivity.ReactionTopics;
+            var expected = await areas.States().CountAsync(s => !s.IsRead && !s.IsArchived && topics.Contains(s.Notification.Topic));
+            Assert.Equal(expected, await areas.PersonalReactionUnreadCountAsync(default));
+            if (scenario == "visible") Assert.Equal(1, expected);
+        }
+    }
+
     [Fact]
     public async Task ReactionNotificationGroupsActorsDoesNotRealertEmojiChangeAndArchivesLastRemoval()
     {

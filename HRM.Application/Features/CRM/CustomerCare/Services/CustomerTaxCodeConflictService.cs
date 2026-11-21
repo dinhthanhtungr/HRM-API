@@ -1,32 +1,61 @@
 using HRM.Application.Abstractions.Persistence.CRM.CustomerCare;
 using HRM.Application.Commons.Rules;
+using HRM.Application.Abstractions.Commons.Time;
+using HRM.Domain.Enums.CustomerEnum;
 using Microsoft.EntityFrameworkCore;
 
 namespace HRM.Application.Features.CRM.CustomerCare.Services;
 
 /// <summary>
-/// Resolves blocking tax-code conflicts against active, officially converted customers in the current company.
+/// Chặn MST khách chính thức cùng công ty và khách tiềm năng cùng nhóm chăm sóc hiệu lực.
 /// </summary>
 internal sealed class CustomerTaxCodeConflictService
 {
     private readonly ICRMReadDbContext _dbContext;
+    private readonly IDateTimeProvider _clock;
 
-    public CustomerTaxCodeConflictService(ICRMReadDbContext dbContext)
+    public CustomerTaxCodeConflictService(ICRMReadDbContext dbContext, IDateTimeProvider clock)
     {
         _dbContext = dbContext;
+        _clock = clock;
     }
 
     public async Task<CustomerTaxCodeConflict?> FindBlockingConflictAsync(
         Guid companyId,
         string? taxNumber,
         Guid? excludedCustomerId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Guid? creatingGroupId = null)
     {
         var normalizedTaxCode = NormalizeTaxCode(taxNumber);
         if (normalizedTaxCode.Length == 0)
         {
             return null;
         }
+
+        var now = _clock.Now;
+        var groupIds = new HashSet<Guid>();
+        if (creatingGroupId is { } group && group != Guid.Empty)
+            groupIds.Add(group);
+        else if (excludedCustomerId.HasValue)
+        {
+            // Khi sửa, nhóm của bản ghi là nguồn quyết định; không dùng nhóm của người sửa.
+            var target = await _dbContext.Customers.AsNoTracking()
+                .Where(x => x.CustomerId == excludedCustomerId.Value && x.CompanyId == companyId && x.IsLead)
+                .Select(x => new
+                {
+                    Assignments = x.CustomerAssignments.Where(a => a.IsActive && a.CompanyId == companyId)
+                        .Select(a => a.GroupId).ToList(),
+                    Claims = x.CustomerClaims.Where(c => c.IsActive && c.CompanyId == companyId
+                        && c.Type == ClaimType.Work && c.ExpiresAt > now).Select(c => c.GroupId).ToList()
+                }).FirstOrDefaultAsync(cancellationToken);
+            if (target is not null)
+            {
+                groupIds.UnionWith(target.Assignments);
+                groupIds.UnionWith(target.Claims);
+            }
+        }
+        var targetGroupIds = groupIds.ToArray();
 
         // TaxNumber has no normalized database column yet, so the minimal customer fields are read
         // before applying the business normalization in memory.
@@ -42,13 +71,17 @@ internal sealed class CustomerTaxCodeConflictService
                 customer.CustomerId,
                 customer.ExternalId,
                 customer.TaxNumber,
-                customer.IsLead
+                customer.IsLead,
+                SameLeadGroup = customer.CustomerAssignments.Any(a => a.IsActive && a.CompanyId == companyId
+                    && targetGroupIds.Contains(a.GroupId)) || customer.CustomerClaims.Any(c => c.IsActive
+                    && c.CompanyId == companyId && c.Type == ClaimType.Work && c.ExpiresAt > now
+                    && targetGroupIds.Contains(c.GroupId))
             })
             .ToListAsync(cancellationToken);
 
         var duplicateCustomerIds = taxRows
             .Where(row =>
-                row.IsLead == false &&
+                (!row.IsLead || row.SameLeadGroup) &&
                 !InternalCustomerRules.IsInternalCustomerExternalId(row.ExternalId) &&
                 NormalizeTaxCode(row.TaxNumber) == normalizedTaxCode)
             .Select(row => row.CustomerId)
@@ -62,14 +95,17 @@ internal sealed class CustomerTaxCodeConflictService
         var conflict = await _dbContext.Customers
             .AsNoTracking()
             .Where(customer => duplicateCustomerIds.Contains(customer.CustomerId))
+            .OrderBy(customer => customer.IsLead)
             .Select(customer => new
             {
                 customer.CustomerId,
                 customer.ExternalId,
                 customer.CustomerName,
                 customer.TaxNumber,
+                customer.IsLead,
                 Assignment = customer.CustomerAssignments
-                    .Where(assignment => assignment.IsActive)
+                    .Where(assignment => assignment.IsActive && assignment.CompanyId == companyId
+                        && (!customer.IsLead || targetGroupIds.Contains(assignment.GroupId)))
                     .OrderByDescending(assignment => assignment.CreatedDate)
                     .Select(assignment => new
                     {
@@ -78,7 +114,13 @@ internal sealed class CustomerTaxCodeConflictService
                         GroupId = (Guid?)assignment.GroupId,
                         GroupName = assignment.Group.Name
                     })
-                    .FirstOrDefault()
+                    .FirstOrDefault(),
+                Claim = customer.CustomerClaims
+                    .Where(c => c.IsActive && c.CompanyId == companyId && c.Type == ClaimType.Work
+                        && c.ExpiresAt > now && targetGroupIds.Contains(c.GroupId))
+                    .OrderByDescending(c => c.ExpiresAt)
+                    .Select(c => new { EmployeeId = (Guid?)c.EmployeeId, EmployeeName = c.Employee.FullName,
+                        GroupId = (Guid?)c.GroupId, GroupName = c.Group.Name }).FirstOrDefault()
             })
             .FirstOrDefaultAsync(cancellationToken);
 
@@ -92,14 +134,26 @@ internal sealed class CustomerTaxCodeConflictService
             conflict.ExternalId,
             conflict.CustomerName,
             conflict.TaxNumber,
-            conflict.Assignment?.EmployeeId,
-            conflict.Assignment?.EmployeeName,
-            conflict.Assignment != null ? conflict.Assignment.GroupId : null,
-            conflict.Assignment != null ? conflict.Assignment.GroupName : null);
+            conflict.Assignment?.EmployeeId ?? conflict.Claim?.EmployeeId,
+            conflict.Assignment?.EmployeeName ?? conflict.Claim?.EmployeeName,
+            conflict.Assignment?.GroupId ?? conflict.Claim?.GroupId,
+            conflict.Assignment?.GroupName ?? conflict.Claim?.GroupName,
+            conflict.IsLead);
     }
 
     public static string BuildConflictMessage(string? requestedTaxNumber, CustomerTaxCodeConflict conflict)
     {
+        if (conflict.IsLead)
+        {
+            var leadSaleName = string.IsNullOrWhiteSpace(conflict.EmployeeName)
+                ? "chưa xác định" : conflict.EmployeeName;
+            var leadTeamName = string.IsNullOrWhiteSpace(conflict.GroupName)
+                ? "chưa xác định" : conflict.GroupName;
+            return $"Mã số thuế {requestedTaxNumber?.Trim()} đã thuộc khách hàng tiềm năng {conflict.ExternalId} - " +
+                $"\"{conflict.CustomerName}\" trong cùng nhóm chăm sóc. " +
+                $"Sale phụ trách: {leadSaleName}. Team đang giữ: {leadTeamName}. " +
+                "Không được trùng MST trong cùng nhóm.";
+        }
         var employeeName = string.IsNullOrWhiteSpace(conflict.EmployeeName)
             ? "chua xac dinh"
             : conflict.EmployeeName;
@@ -127,4 +181,5 @@ internal sealed record CustomerTaxCodeConflict(
     Guid? EmployeeId,
     string? EmployeeName,
     Guid? GroupId,
-    string? GroupName);
+    string? GroupName,
+    bool IsLead = false);

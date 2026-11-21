@@ -99,10 +99,8 @@ internal sealed class GetInternalMessagesQueryHandler
                 IsEdited = x.IsEdited,
                 EditedAt = x.EditedAt,
                 IsDeleted = x.IsDeleted,
-                IsRead = x.ReadStates
-                    .Where(state => state.EmployeeId == employeeId.Value)
-                    .Select(state => state.IsRead)
-                    .FirstOrDefault(),
+                // Missing receipt means this employee has no unread delivery for this message.
+                IsRead = !x.ReadStates.Any(state => state.EmployeeId == employeeId.Value && !state.IsRead),
                 ReadAt = x.ReadStates
                     .Where(state => state.EmployeeId == employeeId.Value)
                     .Select(state => state.ReadAt)
@@ -215,6 +213,7 @@ internal sealed class GetInternalMessagesQueryHandler
 
         if (_reactions is not null) await _reactions.AttachAsync(items, cancellationToken);
         await _areas.MaskPriceMessagesAsync(items, cancellationToken);
+        await InternalMessageSampleWorkAudience.AttachAsync(items, _dbContext, _areas, companyId.Value, cancellationToken);
         return new PagedResult<InternalMessageDto>(items, totalCount, pageNumber, pageSize);
     }
 }

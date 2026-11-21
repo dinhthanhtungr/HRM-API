@@ -1,11 +1,13 @@
-﻿using HRM.Application.Features.PLM.SampleRequests.Dtos.Common;
+using HRM.Application.Features.PLM.SampleRequests.Dtos.Common;
 using HRM.Application.Features.PLM.Formulas.Dtos.GetFormulas;
 
 namespace HRM.Application.Features.PLM.SampleRequests.Dtos.Summary
 {
     public class SampleRequestSummaryDto
     {
+        public string? LabDeclineReason { get; set; }
         public Guid SampleRequestId { get; set; }
+        public bool CanRequestAdditionalWork { get; set; }
         public string? ExternalId { get; set; }
         public Guid? ProductId { get; set; }
         public string? ProductName { get; set; }

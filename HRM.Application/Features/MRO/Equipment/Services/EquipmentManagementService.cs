@@ -14,8 +14,11 @@ namespace HRM.Application.Features.MRO.Equipment.Services;
 internal sealed partial class EquipmentManagementService(
     IEquipmentDbContext db, ICurrentUser user, ICurrentUserPermissionService permissions) : IEquipmentManagementService
 {
+    private bool IsIms => ImsAccountRestrictions.AppliesTo(user);
+
     private bool Allowed(string capability) => user.IsAuthenticated && user.CompanyId is { } companyId
-        && companyId != Guid.Empty && permissions.HasPermission(capability);
+        && companyId != Guid.Empty
+        && (IsIms ? capability == ApplicationPermissions.Equipment.View : permissions.HasPermission(capability));
 
     public EquipmentCapabilities GetCapabilities() => new(
         Allowed(ApplicationPermissions.Equipment.View), Allowed(ApplicationPermissions.Equipment.Create),
@@ -31,14 +34,21 @@ internal sealed partial class EquipmentManagementService(
             || (long)(request.Page - 1) * request.PageSize > int.MaxValue)
             return EquipmentResult<PagedResult<EquipmentListItem>>.Fail(400, "invalidPagination");
         var query = ScopedMachines().AsNoTracking();
-        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        var smartSearch = SmartSearch.For(query, fields => [
+            fields.Code("equipmentCode", x => x.EquipmentExternalId, "Mã thiết bị", "Equipment code"),
+            fields.Name("equipmentName", x => x.EquipmentName, "Tên thiết bị", "Equipment name")
+        ]);
+        query = smartSearch.ApplyRequest(query, request.Keyword, request, out var smartKeyword);
+        if (!string.IsNullOrWhiteSpace(smartKeyword))
         {
-            var pattern = PostgresSearchPattern.ContainsLiteral(request.Keyword.Trim());
+            var pattern = PostgresSearchPattern.ContainsLiteral(smartKeyword.Trim());
             query = query.Where(x => EF.Functions.ILike(x.EquipmentExternalId, pattern, PostgresSearchPattern.EscapeCharacter)
                 || EF.Functions.ILike(x.EquipmentName, pattern, PostgresSearchPattern.EscapeCharacter));
         }
         if (!string.IsNullOrWhiteSpace(request.GroupType)) query = query.Where(x => x.GroupType == request.GroupType.Trim());
         if (request.AreaId.HasValue) query = query.Where(x => x.AreaId == request.AreaId.Value);
+        if (await smartSearch.SuggestionsAsync<EquipmentListItem>(query, request, ct) is { } suggestions)
+            return new(suggestions);
         var result = await query.OrderBy(x => x.EquipmentExternalId).ThenBy(x => x.EquipmentId)
             .Select(x => new EquipmentListItem(x.EquipmentId, x.EquipmentExternalId, x.EquipmentName,
                 x.GroupType, x.AreaId, x.AreaExternalId, x.PartId, x.PartExternalId))
@@ -53,18 +63,31 @@ internal sealed partial class EquipmentManagementService(
             .Select(x => new EquipmentListItem(x.EquipmentId, x.EquipmentExternalId, x.EquipmentName,
                 x.GroupType, x.AreaId, x.AreaExternalId, x.PartId, x.PartExternalId)).SingleOrDefaultAsync(ct);
         if (machine is null) return EquipmentResult<EquipmentDetailDto>.Fail(404, "notFound");
+        var isIms = IsIms;
         var details = await db.EquipmentDetailsMro.AsNoTracking()
             .Where(x => x.EquipmentId == id && x.Equipment.FactoryId == user.CompanyId)
             .Select(x => new EquipmentDetailsRequest { SerialNo = x.SerialNo, Manufacturer = x.Manufacturer,
                 Model = x.Model, PurchaseDate = x.PurchaseDate, CommissioningDate = x.CommissioningDate,
-                WarrantyUntil = x.WarrantyUntil, Notes = x.Notes, EquipmentTypeId = x.EquipmentTypeId })
+                WarrantyUntil = x.WarrantyUntil, Notes = isIms ? null : x.Notes, EquipmentTypeId = x.EquipmentTypeId })
             .SingleOrDefaultAsync(ct) ?? new EquipmentDetailsRequest();
-        return new(new(machine, details, await ReadSpecsAsync(id, ct)));
+        return new(new(machine, details, isIms ? [] : await ReadSpecsAsync(id, ct)));
     }
 
     public async Task<EquipmentResult<EquipmentOptions>> GetOptionsAsync(CancellationToken ct)
     {
         if (!Allowed(ApplicationPermissions.Equipment.View)) return EquipmentResult<EquipmentOptions>.Fail(403, "forbidden");
+        var groups = await ScopedMachines().AsNoTracking().Where(x => x.GroupType != null && x.GroupType != "")
+            .Select(x => x.GroupType!).Distinct().OrderBy(x => x).ToListAsync(ct);
+        if (IsIms)
+        {
+            var companyAreas = await ScopedMachines().AsNoTracking()
+                .Select(x => x.AreaId).Distinct().ToListAsync(ct);
+            var scopedAreas = await db.AreasMro.AsNoTracking().Where(x => companyAreas.Contains(x.AreaId))
+                .OrderBy(x => x.AreaName)
+                .Select(x => new EquipmentAreaOption(x.AreaId, x.AreaExternalId, x.AreaName)).ToListAsync(ct);
+            return new(new(scopedAreas, [], [], groups));
+        }
+
         // Areas, parts and equipment types are shared catalogs without CompanyId in the existing schema.
         var areas = await db.AreasMro.AsNoTracking().OrderBy(x => x.AreaName)
             .Select(x => new EquipmentAreaOption(x.AreaId, x.AreaExternalId, x.AreaName)).ToListAsync(ct);
@@ -72,8 +95,6 @@ internal sealed partial class EquipmentManagementService(
             .Select(x => new EquipmentPartOption(x.PartId, x.ExternalId, x.PartName)).ToListAsync(ct);
         var types = await db.EquipmentTypesMro.AsNoTracking().OrderBy(x => x.EquipmentTypeName)
             .Select(x => new EquipmentTypeOption(x.EquipmentTypeId, x.EquipmentTypeName)).ToListAsync(ct);
-        var groups = await ScopedMachines().AsNoTracking().Where(x => x.GroupType != null && x.GroupType != "")
-            .Select(x => x.GroupType!).Distinct().OrderBy(x => x).ToListAsync(ct);
         return new(new(areas, parts, types, groups));
     }
 

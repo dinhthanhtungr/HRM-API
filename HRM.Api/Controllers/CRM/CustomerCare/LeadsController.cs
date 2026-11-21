@@ -16,7 +16,7 @@ namespace HRM.Api.Controllers.CRM.CustomerCare;
 /// Tạo mới lead dùng chung POST /api/v1/crm/customers để tránh nhiều luồng tạo customer khác nhau.
 /// </summary>
 [ApiController]
-[Authorize]
+[Authorize(Policy = HRM.Api.Security.Authorization.SensitiveDataAuthorization.PolicyName)]
 [Route("api/v1/crm/leads")]
 public sealed class LeadsController : ControllerBase
 {

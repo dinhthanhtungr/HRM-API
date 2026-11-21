@@ -6,8 +6,10 @@ using MediatR;
 
 namespace HRM.Application.Features.PLM.Manufacturing.Queries.ListManufacturingColorChips;
 
-public sealed record ListManufacturingColorChipsQuery : IRequest<OperationResult<PagedResult<GetColorChipManufacturingRecordSummary>>>
+public sealed record ListManufacturingColorChipsQuery : IRequest<OperationResult<PagedResult<GetColorChipManufacturingRecordSummary>>>, HRM.Application.Commons.Searching.ISmartSearchRequest
 {
+    public string? SearchSelections { get; init; }
+    public string? SuggestionKeyword { get; init; }
     public int PageNumber { get; init; } = 1;
     public int PageSize { get; init; } = 15;
     public Guid? Id { get; init; }

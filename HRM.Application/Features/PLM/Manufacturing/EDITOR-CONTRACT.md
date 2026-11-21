@@ -33,8 +33,17 @@ and formula-creation writers recheck unchanged header values against the locked
 company-scoped order, so direct calls cannot bypass this restriction. UseStock,
 RequestFormula and Schedule require order-management capability; Check/Finish keep
 their existing permissions. Source/status rules and creation side effects remain.
-Formula-only Save preserves status (including FormulaSuccess) and does not create
-a missing schedule. Existing schedule notes and material reservations still sync.
+LabUser editor Save in FormulaRequested completes the currently selected active VA
+even when materials are unchanged: the server locks and resolves the open selection,
+requires formula-management/material capabilities and nonempty active materials with
+nonnegative quantities and at least one positive quantity. VA becomes Checking,
+MFG becomes FormulaSuccess, and audit/timeline and the existing price warning run
+in the same transaction. Missing/foreign/inactive selection or stale revision fails.
+This Save does not create a schedule or advance to Scheduling, including Lab+PLPU
+accounts. A later PLPU Save from FormulaSuccess performs the existing Scheduling,
+schedule creation and reservation synchronization. A repeated Lab-only Save preserves
+FormulaSuccess without another completion event. Other formula-only saves preserve
+status and do not create a missing schedule. Existing schedule notes and material reservations still sync.
 Formula editing reuses the existing capability and seeded LabUser claim.
 PLPU note belongs to order management (`plm.production-order.manage`), not formula
 editing. Formula-only/Lab users see it readonly; actions rejects posting/clearing
@@ -74,7 +83,18 @@ unit/category/price, generates material-change notes and replaces items without
 creating a formula snapshot, preserving legacy Inform behavior.
 
 `SaveAndCreateFormula` requires sourceFormulaId, origin and items, and resolves its
-source against server options. Per-row sourceItemId is optional tracking metadata:
+source against server options. Only FromVu (first production) creates an
+effective VA (Checking), selection ValidFrom=now and Scheduling order. The same
+transaction creates/updates the schedule and synchronizes material reservations
+from the server-resolved rows. This option returns requiresFormulaReview=false;
+creation returns isSelectionEffective=true. Standard, Improvement, Production and ProductionOld
+create a pending VA (New), pending selection (ValidFrom/ValidTo null) and
+FormulaRequested order, without creating a schedule or reservation. Those options
+return requiresFormulaReview=true; creation returns isSelectionEffective=false.
+Lab/QC completion activates the pending selection before the later PLPU Scheduling
+step. Origin is matched against company/product-scoped server options, never used
+as a client-selected shortcut to skip QC. Reservations do not physically issue stock.
+Per-row sourceItemId is optional tracking metadata:
 missing/unknown IDs and repeated source IDs do not block creation. Unknown IDs never
 load external rows. A unique same-item match within the validated source may retain
 its price and saved lot; ambiguous/unmatched rows use validated current pricing and
@@ -105,7 +125,7 @@ only by Save/Create. Save existing edits first if another action cannot carry th
 | Current state | Actions | Save behavior |
 | --- | --- | --- |
 | New | Save, RequestFormula, UseStock, SaveAndCreateFormula with material capability | Header/items; preserve New |
-| FormulaRequested | Save | Preserve pending selection and status |
+| FormulaRequested | Save | LabUser editor Save completes selected VA to Checking and MFG to FormulaSuccess; other saves preserve status |
 | FormulaSuccess | Save, RequestFormula, Schedule | Save transitions to Scheduling |
 | Scheduling, Scheduled, Waiting, Unassign, Getback, QCinprogress, QCPassed, QCFail, BTPNew, Weighting, Weighted, Mixing, Mixed, Started, Running, Change, Unassignfrommd, Reported | Save | Preserve status |
 | Finished, Canceled, Done | Save | Preserve terminal status, do not reopen |

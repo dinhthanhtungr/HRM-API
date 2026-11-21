@@ -1,14 +1,25 @@
 # Bảng cơ lý NVL — IQC và LabTest
 
-## Trạng thái hiện tại: tạm dừng
+## API cơ bản đã mở lại
 
-Toàn bộ API `/api/v1/dev-and-qa/lab-tests` (list/grid/detail/CRUD/import) đã tạm dừng theo yêu cầu.
+Chỉ mở tạo/xem/sửa/danh sách mẫu test tối giản và lưu tệp cùng biểu mẫu.
+Xem [BASIC_API.md](BASIC_API.md) để dùng contract đang hoạt động.
+API Basic hỗ trợ Material có sẵn hoặc mẫu tự do; lưu FK nullable và snapshot mã/tên, không cần phiếu kho.
+Schema bổ sung phải triển khai riêng trước code; chi tiết tại BASIC_API.md, chưa tạo/apply migration.
+Controller cũ, grid/import/xóa và 9 trường mở rộng tiếp tục tạm dừng.
+BatchNumber/WeightKg đã mở riêng để nhập tay thông tin mẫu; xem BASIC_API.md về schema cần có.
+Không bỏ toàn bộ Compile Remove để mở lại chức năng cũ; chỉ các handler/service Basic được include.
+Không tạo migration hoặc thay đổi DB trong lần mở này.
+
+## Contract Excel cũ: tạm dừng
+
+Phần API Excel cũ `/api/v1/dev-and-qa/lab-tests` (grid/import/xóa và metadata mở rộng) đã tạm dừng theo yêu cầu.
 Controller không compile; handlers/services bị loại khỏi compilation và DI. Sau deploy/restart các route này không còn được đăng ký.
 Source và các test workflow/import vẫn giữ để khôi phục sau; tests của phần API tạm dừng không được compile,
 model tests của hai entity cơ bản vẫn chạy. Không tác động API IQC hiện có.
 
-11 trường mở rộng trên LabTest và mapping/index import đã comment. Hai entity cơ bản, configuration và DbSet
-vẫn giữ; ObservedText trên result được giữ. Không tạo migration, xóa cột/bảng hoặc thay đổi dữ liệu DB.
+9 trường mở rộng còn lại trên LabTest và mapping/index import đã comment. Hai entity cơ bản, configuration và DbSet
+vẫn giữ; kết quả dùng Value theo kiểu chỉ tiêu IQC. ObservedText đã bỏ khỏi entity và EF mapping. Không tạo migration, xóa cột/bảng hoặc thay đổi dữ liệu DB.
 Phần contract bên dưới là tài liệu chức năng đang tạm dừng, không mô tả API hiện đang phục vụ.
 Khi mở lại: đồng bộ schema đã duyệt, khôi phục các field/mapping, bỏ Compile Remove của LabTests trong Application/tests,
 bật controller và DI, chạy lại workflow/import tests trước deploy. Frontend tab grid/import cần ẩn khi API tạm dừng.

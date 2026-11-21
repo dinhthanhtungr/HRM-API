@@ -13,7 +13,7 @@ namespace HRM.Application.Features.Purchasing.Materials.Services;
 
 internal static class PurchasingMaterialReadModel
 {
-    internal static IQueryable<Material> Filter(IQueryable<Material> materials, Guid companyId, GetPurchasingMaterialsQuery request)
+    internal static IQueryable<Material> Filter(IQueryable<Material> materials, Guid companyId, GetPurchasingMaterialsQuery request, bool includeKeyword = true)
     {
         if (request.PurchaseStatus.HasValue && !Enum.IsDefined(request.PurchaseStatus.Value))
             throw new ArgumentException("Trạng thái mua không hợp lệ.", nameof(request));
@@ -24,7 +24,7 @@ internal static class PurchasingMaterialReadModel
                 s.Supplier.CompanyId == companyId && s.Supplier.IsActive == true));
         if (request.PurchaseStatus.HasValue)
             query = query.Where(x => (x.PurchaseAvailability == null ? MaterialPurchaseStatus.Available : x.PurchaseAvailability.Status) == request.PurchaseStatus.Value);
-        return query.WhereKeyword(request.Keyword, term => x =>
+        return query.WhereKeyword(includeKeyword ? request.Keyword : null, term => x =>
             EF.Functions.ILike(x.ExternalId ?? "", term.ContainsPattern, PostgresSearchPattern.EscapeCharacter) ||
             EF.Functions.ILike(x.CustomCode ?? "", term.ContainsPattern, PostgresSearchPattern.EscapeCharacter) ||
             EF.Functions.ILike(x.Name ?? "", term.ContainsPattern, PostgresSearchPattern.EscapeCharacter) ||

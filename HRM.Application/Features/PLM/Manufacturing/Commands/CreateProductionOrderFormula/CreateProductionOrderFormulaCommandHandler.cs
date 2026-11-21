@@ -25,7 +25,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace HRM.Application.Features.PLM.Manufacturing.Commands.CreateProductionOrderFormula;
 
-/// <summary>Tạo VA từ nguồn được BE xác minh; hiệu lực, lịch và reservation phụ thuộc nguồn, không nhận status từ FE.</summary>
+/// <summary>Chỉ VU lần đầu vào Scheduling; mọi nguồn VA và VU cải tiến chờ QC. BE xác định nhánh từ nguồn hợp lệ.</summary>
 internal sealed class CreateProductionOrderFormulaCommandHandler(
     IManufacturingDbContext db,
     ICurrentUser user,
@@ -34,8 +34,9 @@ internal sealed class CreateProductionOrderFormulaCommandHandler(
     IExternalIdService codes,
     IEventLogWriter timeline,
     ManufacturingFormulaInputResolver inputResolver,
-    ProductionOrderReservationService reservations,
-    ManufacturingWorkflowNotifier notifier
+    ManufacturingWorkflowNotifier notifier,
+    PromisedDeliveryNotifier promisedDelivery,
+    ProductionOrderReservationService reservations
 ) : IRequestHandler<CreateProductionOrderFormulaCommand, OperationResult<ProductionOrderFormulaCreatedDto>>
 {
     public async Task<OperationResult<ProductionOrderFormulaCreatedDto>> Handle(CreateProductionOrderFormulaCommand command, CancellationToken ct)
@@ -84,7 +85,7 @@ internal sealed class CreateProductionOrderFormulaCommandHandler(
             var order = link.ProductionOrder;
             error = ManufacturingAccess.ValidateInformState(user, order.Status);
             if (error is not null) return Fail(error);
-            error = ManufacturingAccess.ValidateFormulaEditState(order.Status);
+            error = await ManufacturingAccess.FormulaEditLockAsync(db, order, ct);
             if (error is not null) return Fail(error);
             if (!permissions.HasPermission(ApplicationPermissions.PLM.ManageProductionOrders)
                 && !ManufacturingEditorPolicy.PlanUnchanged(order, request.TotalQuantity, request.NumOfBatches,
@@ -114,9 +115,7 @@ internal sealed class CreateProductionOrderFormulaCommandHandler(
                 await db.LockManufacturingFormulaAsync(source.FormulaId, company, ct);
             }
 
-            var effective = !source.RequiresFormulaReview;
-            if (await db.ProductionSelectVersions.AsNoTracking().AnyAsync(x => x.CompanyId == company && x.MfgProductionOrderId == command.Id && x.ValidTo == null
-                && (effective ? x.ValidFrom != null : x.ValidFrom == null), ct))
+            if (await db.ProductionSelectVersions.AsNoTracking().AnyAsync(x => x.CompanyId == company && x.MfgProductionOrderId == command.Id && x.ValidTo == null, ct))
             {
                 return Fail("Lệnh đã có công thức hiệu lực hoặc chờ xử lý trong nhánh đang chọn.");
             }
@@ -145,6 +144,7 @@ internal sealed class CreateProductionOrderFormulaCommandHandler(
             order.StepOfProduct = request.StepOfProduct;
             order.TotalQuantity = request.TotalQuantity;
             order.NumOfBatches = request.NumOfBatches;
+            var previousExpectedDate = order.ExpectedDate;
             order.ExpectedDate = request.ExpectedDate;
             order.ManufacturingDate = request.ManufacturingDate;
             order.PlpuNote = await inputResolver.BuildPlpuNoteAsync(order, source, request.Items, resolved.Data, request.PlpuNote ?? order.PlpuNote, ct, allowUntrackedSourceRows: true);
@@ -178,34 +178,34 @@ internal sealed class CreateProductionOrderFormulaCommandHandler(
             formula.Name = "F001";
             formula.Note = note;
             formula.SourceType = isVu ? FormulaSource.FromVU : FormulaSource.FromVA;
-            formula.Status = effective ? ManufacturingProductOrderFormula.Checking.ToString() : ManufacturingProductOrderFormula.New.ToString();
+            var autoSchedule = source.Origin == ManufacturingFormulaOrigin.FromVu;
+            if (!autoSchedule) formula.Status = nameof(ManufacturingProductOrderFormula.New);
             await db.ManufacturingFormulas.AddAsync(formula, ct);
             var selection = ProductionOrderFormulaFactory.CreateSelection(order, formula, now);
-            selection.ValidFrom = effective ? now : null;
+            if (!autoSchedule) selection.ValidFrom = null;
             await db.ProductionSelectVersions.AddAsync(selection, ct);
-            order.Status = effective ? ManufacturingProductOrder.Scheduling.ToString() : ManufacturingProductOrder.FormulaRequested.ToString();
+            order.Status = autoSchedule ? nameof(ManufacturingProductOrder.Scheduling) : nameof(ManufacturingProductOrder.FormulaRequested);
             var schedule = await db.SchedualMfgs.FirstOrDefaultAsync(x => x.MfgProductionOrderId == command.Id, ct);
-            if (effective && schedule is null)
-            {
-                await db.SchedualMfgs.AddAsync(ProductionOrderFormulaFactory.CreateSchedule(order, now), ct);
-            }
 
+            if (autoSchedule && schedule is null)
+                await db.SchedualMfgs.AddAsync(ProductionOrderFormulaFactory.CreateSchedule(order, now), ct);
             if (schedule is not null)
             {
                 schedule.DeliveryPlanDate = order.ExpectedDate;
                 schedule.Note = order.LabNote ?? order.PlpuNote;
                 schedule.requirement = order.Requirement;
-            }
-
-            if (effective)
-            {
-                var reservation = await reservations.SyncAsync(order, resolved.Data, now, ct);
-                if (!reservation.Success)
+                if (autoSchedule)
                 {
-                    return Fail(reservation.Message ?? "Không thể giữ chỗ vật tư.");
+                    schedule.Status = order.Status;
+                    schedule.StepOfProduct = order.StepOfProduct;
                 }
             }
-
+            if (autoSchedule)
+            {
+                // Dùng dữ liệu NVL vừa resolve: VA/selection Added chưa xuất hiện trong query trước SaveChanges.
+                var reserved = await reservations.SyncAsync(order, resolved.Data, now, ct);
+                if (!reserved.Success) return Fail(reserved.Message ?? "Không thể giữ chỗ nguyên vật liệu.");
+            }
             await WriteEvent(
                 order.MfgProductionOrderId,
                 order.ExternalId,
@@ -234,8 +234,9 @@ internal sealed class CreateProductionOrderFormulaCommandHandler(
             }
 
             await db.SaveChangesAsync(ct);
+            await promisedDelivery.PublishAsync(order.MfgProductionOrderId, order.ExternalId, previousExpectedDate, order.ExpectedDate, ct);
             await transaction.CommitAsync(ct);
-            return OperationResult<ProductionOrderFormulaCreatedDto>.Ok(new ProductionOrderFormulaCreatedDto(formula.ManufacturingFormulaId, formula.ExternalId, order.Status, effective));
+            return OperationResult<ProductionOrderFormulaCreatedDto>.Ok(new ProductionOrderFormulaCreatedDto(formula.ManufacturingFormulaId, formula.ExternalId, order.Status, autoSchedule));
         }
         catch (Exception exception)when (exception is not OperationCanceledException)
         {

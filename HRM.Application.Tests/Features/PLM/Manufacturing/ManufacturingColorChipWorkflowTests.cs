@@ -105,6 +105,25 @@ public sealed class ManufacturingColorChipWorkflowTests
         Assert.Null(f.Renderer.Model);
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("VA-STANDARD-001")]
+    public async Task TanPhuPdf_ForwardsSavedStandardCodeWithoutChangingDate(string? standard)
+    {
+        var f = new Fixture();
+        var row = f.Existing();
+        row.FormStyle = FormStyle.ChipsTanPhu;
+        row.StandardFormula = standard;
+        var result = await f.Service.PrintAsync(row.ColorChipMfgRecordId, default);
+        Assert.True(result.Success, result.Message);
+        Assert.Equal(standard ?? string.Empty, f.Renderer.Model!.StandardText);
+        Assert.Equal(f.Formula.ExternalId, f.Renderer.Model.BatchNo);
+        Assert.Equal(row.RecordDate, f.Renderer.Model.Date);
+        Assert.Equal(FormStyle.ChipsTanPhu, f.Renderer.Style);
+        Assert.Equal(0, f.Base.Store.Saves);
+    }
+
     private sealed class Fixture
     {
         public ManufacturingFormulaCreationTests.Fixture Base { get; } = new(ManufacturingFormulaOrigin.FromVu);

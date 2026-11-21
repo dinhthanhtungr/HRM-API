@@ -1,4 +1,4 @@
-> LabTest đang tạm dừng; tài liệu bên dưới giữ để khôi phục sau. Xem [trạng thái hiện tại](README.md#trạng-thái-hiện-tại-tạm-dừng).
+> Luồng Excel dưới đây vẫn tạm dừng. API/form cơ bản đã mở lại theo [BASIC_API.md](BASIC_API.md).
 
 # FE — bảng cơ lý NVL như Excel
 

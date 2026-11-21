@@ -23,12 +23,13 @@ using HRM.Application.Features.PLM.Materials.Queries.GetFormulaItemLookup;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using HRM.Api.Security.Authorization;
 using HRM.Application.Commons.Authorization.PLM;
 
 namespace HRM.Api.Controllers.PLM;
 
 [ApiController]
-[Authorize]
+[Authorize(Policy = SensitiveDataAuthorization.PolicyName)]
 [Route("api/v1/plm/formulas")]
 public sealed class FormulasController : ControllerBase
 {

@@ -15,6 +15,9 @@ internal static class SampleRequestPriceFeedbackVisibility
         "CustomerPriceConfirmed", "CustomerPriceConfirmationRevoked"
     ];
     internal static bool IsPriceEvent(string eventType) => PriceEventTypes.Contains(eventType);
+    // Publication privacy is broader than customer outcome history. A BGD approval is not customer acceptance.
+    internal static bool IsPrivatePublication(string eventType)
+        => IsPriceEvent(eventType) || eventType == SampleFlowRules.StandardPriceApproved;
     internal static bool IsPriceAuditField(string? reason, string fieldName)
         => fieldName.Equals("CustomerPriceReference", StringComparison.OrdinalIgnoreCase) ||
             fieldName.Equals("CustomerPriceConfirmationNote", StringComparison.OrdinalIgnoreCase) ||

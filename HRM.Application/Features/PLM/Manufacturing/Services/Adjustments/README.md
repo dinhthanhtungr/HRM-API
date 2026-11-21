@@ -34,7 +34,41 @@ Response bọc `OperationResult`, ví dụ rút gọn:
 `data=[]` là không có phiếu khớp hoặc trang vượt kết quả; `batches=[]` là phiếu chưa có mẻ active.
 Company/capability và quyền xem vật tư được kiểm tra trước khi đọc; parent MFG phải active.
 
+### Trạng thái khi lưu
+
+BE chuẩn hóa các dòng trùng vật tư/TP + loại hàng + lot trước Initialize/Calculate,
+Save/SaveRange và PDF preview: cộng QuantityGram, giữ các ghi chú khác nhau;
+lot trống và N/A được xem tương đương. Không gộp hàng đạt với hàng lỗi hoặc các lot
+khác nhau. Không chuẩn hóa để bỏ qua số âm khi cân mới, precision hoặc dữ liệu sai.
+Khởi tạo VA nhóm theo cả ItemType để không mất loại hàng lỗi khi cùng mã.
+Initialize không ghi DB; dữ liệu cũ chỉ thay đổi qua thao tác lưu của người dùng,
+không backfill. Quyền, company, vật tư/lot và các ràng buộc còn lại vẫn giữ nguyên.
+
+Tạo/lưu phiếu, PATCH header, lưu khoảng/mẻ và xóa mềm đều ghi trạng thái `Approved` (FE: Đã duyệt)
+cho phiếu và toàn bộ lần chỉnh active, kể cả request gửi trạng thái hợp lệ khác hoặc không gửi status.
+Khi xóa mềm, phiếu/mẻ vẫn có trạng thái Approved nhưng IsActive=false; không khôi phục dữ liệu đã xóa.
+`Approved=5` được bổ sung, giữ nguyên các mã 0–4 và hỗ trợ đọc `Accepted=2` cũ.
+API chuẩn hóa Accepted/Approve cũ thành Approved trong response. Bộ lọc header/lần chỉnh
+nhận cả ba giá trị đã lưu; lưu lại chỉ ghi Approved. Không tự backfill dữ liệu cũ.
+Trạng thái request vẫn phải hợp lệ theo enum. Chỉ thực hiện sau khi input/scope được xác minh,
+trong cùng transaction lưu; không đổi trạng thái MFG hay tự xuất kho.
+Initialize/calculate/preview chưa lưu vẫn giữ trạng thái nháp. Không backfill DB;
+phiếu cũ được chuyển khi người dùng lưu lại.
+
 ### Lượng và thao tác mẻ
+
+Lệnh có trên 100 mẻ vẫn mở editor: mặc định khởi tạo mẻ 1, giữ đủ PlannedBatchCount
+và khối lượng mỗi mẻ; người dùng chọn khoảng cần chỉnh, tối đa 100 mẻ mỗi lượt như trước.
+BE chặn trùng itemId/cùng loại hàng trong một lần chỉnh, kể cả khác Lot, và kiểm tra lại
+sau khi resolve loại hàng từ kho. Cùng vật tư có hai loại đạt/lỗi được giữ riêng.
+Khi cùng mã/Lot có nhiều loại tồn, resolver chọn theo loại hàng đã gửi; Lot chỉ có một
+loại vẫn suy loại theo kho như trước. Company, kệ active và quyền truy cập không đổi.
+Sửa hoặc xóa lần chỉnh cũ phải bảo đảm các lần còn lại đều có tổng sau chỉnh dương;
+nếu không thì từ chối trước ghi, giữ nguyên lịch sử.
+
+Khi thêm/thay mẻ trên phiếu đã lưu, batch mới và item thay mới được đăng ký EF
+ở trạng thái Added trước SaveChanges. UUID cấp sẵn không được coi là bản ghi đã
+tồn tại; mẻ giữ lại vẫn giữ nguyên ID. Tạo phiếu mới tiếp tục Add toàn bộ graph.
 
 FE nhập gram: `quantityGram` là lượng cân cho SetQuantity, delta có dấu cho AddQuantity.
 Backend tính base từ VA/kế hoạch hoặc lịch sử đã lưu, tự resolve category/snapshot/lot và

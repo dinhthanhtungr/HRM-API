@@ -8,7 +8,7 @@ internal static class QuotationWorkflowRules
         => status == QuotationStatus.Draft;
 
     public static bool CanEditCustomerPricing(QuotationStatus status)
-        => status is QuotationStatus.Draft or QuotationStatus.PendingApproval or QuotationStatus.Approved or QuotationStatus.PendingSendConfirmation;
+        => status is QuotationStatus.Draft or QuotationStatus.PendingApproval or QuotationStatus.Approved or QuotationStatus.PendingSendConfirmation or QuotationStatus.SendRejected;
 
     public static bool CanWithdrawPricingRequest(QuotationStatus status)
         => status is QuotationStatus.PendingApproval or QuotationStatus.Approved;
@@ -26,5 +26,5 @@ internal static class QuotationWorkflowRules
         => status is
             QuotationStatus.Draft or
             QuotationStatus.PendingApproval or
-            QuotationStatus.Approved;
+            QuotationStatus.Approved or QuotationStatus.SendRejected;
 }

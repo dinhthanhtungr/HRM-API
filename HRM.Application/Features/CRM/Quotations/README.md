@@ -1,5 +1,17 @@
 # Báo giá CRM
 
+Tên file export PDF: `VA-SA-F01 {ExternalId}.pdf`; ExternalId vẫn được sanitize.
+Không thay đổi nội dung PDF, quyền export hoặc dữ liệu báo giá.
+
+## Bỏ bước làm tròn policy (17/11/2026)
+
+FormulaPriceCalculator không áp dụng RoundingIncrement/RoundingRule của policy lên chi phí,
+giá chuẩn và giá tier tự tính. Giữ precision tiền hiện hành đến 1 đồng; giá nhập tay vẫn giữ
+precision lưu 6 số lẻ. NVL 585 + sản xuất 6000, margin 30% cho giá 9407; offset -400 cho tier 9007.
+Tier thủ công và mức cộng/trừ giữ nguyên. Field làm tròn còn trong contract/dữ liệu để tương thích,
+không còn tác dụng trong calculator này. Không migration/backfill hay sửa giá đã duyệt/giá khách
+và snapshot lịch sử; FE và BE cần cập nhật cùng nhau.
+
 ## Đồng bộ ngày báo giá mẫu khi gửi BBG
 
 Khi Sale đánh dấu Đã gửi thành công (Sent hoặc PendingSendConfirmation), cập nhật
@@ -233,6 +245,11 @@ Trong response của pricing policy, tier chưa cấu hình `PriceOffset` trả 
 để FE luôn nhận một giá trị số, đồng thời `requiresManualPrice = true` để không nhầm với
 offset 0 đã được cấu hình chủ đích. Khi ghi policy, request vẫn có thể gửi
 `priceOffset = null` để biểu thị tier cần nhập giá thủ công.
+
+Khi cập nhật policy, tier có `SortOrder` đã tồn tại giữ nguyên ID; tier có
+`SortOrder` mới được đăng ký thêm mới để EF thực hiện INSERT, tránh nhận nhầm
+thành UPDATE khi tier đã có GUID do BE tạo.
+
 | `GET` | `/api/v1/crm/quotations/pricing-queue` | Hàng đợi yêu cầu định giá cho President/Developer |
 | `GET` | `/api/v1/crm/quotations/{quotationId}/pricing-workspace` | Workspace định giá theo đúng báo giá cho President/Developer |
 | `GET` | `/api/v1/crm/quotations/products/{productId}/pricing` | Tự chọn một công thức và tính giá cho sản phẩm |
@@ -1696,6 +1713,13 @@ FE cần normalize đúng từng response; không giả định mọi endpoint �
 
 ## 12. Xác nhận gửi báo giá và giá thấp hơn chuẩn
 
+BGĐ có thể [từ chối gửi với lý do](SEND_REJECTION.md): trạng thái riêng 100, Sale chỉnh giá/gửi lại,
+PDF khóa đến khi Sent. Giữ nguyên giá khách và snapshot yêu cầu cũ; không dùng trạng thái khách từ chối (60).
+
+Sau khi duyệt giá chuẩn, báo giá đang chờ xác nhận (90) có thể được worker tự đánh dấu Đã gửi nếu
+tất cả giá khách không thấp hơn chuẩn hiện hành và yêu cầu thương mại còn nguyên.
+Xem [điều kiện, snapshot, retry và thông báo](AUTO_SEND_AFTER_PRICING_APPROVAL.md).
+
 `POST /api/v1/crm/quotations/{quotationId}/mark-sent` giữ response thành công `204 No Content`.
 FE tải lại quotation/thread sau mutation để biết trạng thái cuối cùng.
 
@@ -2362,3 +2386,26 @@ Metadata `approvedPricing.isEffectiveForSending/validFrom/validUntil/evaluatedAt
 Khi realtime đến lúc form dirty hoặc mutation đang chạy, FE giữ bản nhập và yêu cầu tải canonical có xác nhận.
 
 Ma trận kiểm thử và giới hạn kiểm chứng: [WORKFLOW_RECOVERY_TEST_MATRIX.md](WORKFLOW_RECOVERY_TEST_MATRIX.md).
+
+
+## Tìm kiếm gợi ý cho trang danh sách
+
+Báo giá: mã báo giá, mã/tên KH, người liên hệ, ColorCode, tên sản phẩm. Bảng giá/lựa chọn giá: ColorCode, tên sản phẩm, VU, TP, mã/tên KH. Chính sách giá dùng tên chính sách trên toàn bộ danh sách có quyền đã tải.
+
+Contract tùy chọn `searchSelections`/`suggestionKeyword`, OR/AND badge, giới hạn 10 và hướng dẫn thêm field: [Searching](../../../Commons/Searching/README.md). Không mở rộng quyền hoặc áp dụng tự động cho lookup.
+
+## Nguồn Sample Request cùng nhóm khách
+Được dùng mẫu của khách cùng nhóm active/cùng công ty khi lập hoặc sửa báo giá. QuotationLineBuilder dùng CustomerSampleSharingService đã đăng ký DI để resolve lại owner theo khách nhận, không tin eligibility từ FE; ScopeSampleRequests kiểm tra sample active và ProductId đúng line. Không đổi khách đứng báo giá, snapshot giá/currency, approved pricing, giá theo khách, terms, công nợ hoặc quyền. Tắt cờ giữ phạm vi khách sở hữu/nội bộ cũ. Không mở hồ sơ Sample Request; khi gửi, đồng bộ ngày mẫu vẫn chỉ áp mẫu đúng khách đứng báo giá, không sửa mẫu của owner khác. Không thêm schema/migration.
+## Theo dõi báo giá dành cho IMS
+
+`GET /api/v1/crm/quotations/tracking` trả danh sách phân trang, tối đa 25 hồ sơ mỗi
+trang. `GET /api/v1/crm/quotations/{quotationId}/tracking` trả cùng bộ trường đầu
+phiếu và các dòng tên TP, số lượng. Hai API yêu cầu quyền `crm.quotation.tracking.view`
+và ngữ cảnh nhân viên/công ty. Danh sách và chi tiết giới hạn trong công ty hiện tại,
+loại khách nội bộ và khách đã ngừng hoạt động.
+
+Đầu phiếu gồm mã, tên khách, ngày báo giá và trạng thái theo dõi. Các bước xử lý
+nội bộ được gộp vào `InProgress`. API theo dõi không đọc đơn giá, khoản tiền,
+điều khoản, công thức hoặc tệp. Các API báo giá đầy đủ, PDF và thao tác yêu cầu tài
+khoản không mang hạn chế IMS. Với token explicit, quyền theo dõi cần được cấp
+qua role claim và nạp lại khi login hoặc refresh.

@@ -143,6 +143,51 @@ public sealed class InternalConversationReadScopeTests
         Assert.False(InternalConversationReadScope.MatchesReadReceipt(row, _conversationId, new HashSet<Guid>(), _cutoff));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void BoundedReceipt_RepairsExistingPricingEventDespiteClockSkew(bool historicalCasing)
+    {
+        var row = new NotificationDto
+        {
+            Id = Guid.NewGuid(), Topic = TopicNotifications.QuotationPricingApproved,
+            CreatedDate = _cutoff.AddHours(7),
+            PayloadJson = historicalCasing
+                ? JsonSerializer.Serialize(new { ConversationId = _conversationId, MessageId = (Guid?)null })
+                : JsonSerializer.Serialize(new { conversationId = _conversationId })
+        };
+        Assert.False(InternalConversationReadScope.MatchesReadReceipt(row, _conversationId, new HashSet<Guid>(), _cutoff));
+        Assert.True(InternalConversationReadScope.MatchesReadReceipt(row, _conversationId, new HashSet<Guid>(), _cutoff,
+            new HashSet<Guid> { row.Id }));
+    }
+
+    [Theory]
+    [InlineData("afterSnapshot")]
+    [InlineData("conversation")]
+    [InlineData("topic")]
+    [InlineData("invalidMessageId")]
+    [InlineData("unseenMessage")]
+    public void ThreadSnapshot_DoesNotAcknowledgeIncomingOrUnrelatedEvents(string change)
+    {
+        var row = new NotificationDto
+        {
+            Id = Guid.NewGuid(), Topic = TopicNotifications.QuotationPricingApproved,
+            // Even a backdated event arriving after the snapshot is not part of this receipt.
+            CreatedDate = _cutoff.AddHours(-1),
+            PayloadJson = JsonSerializer.Serialize(new { conversationId = _conversationId })
+        };
+        var snapshot = new HashSet<Guid> { row.Id };
+        switch (change)
+        {
+            case "afterSnapshot": snapshot.Clear(); break;
+            case "conversation": row.PayloadJson = JsonSerializer.Serialize(new { conversationId = Guid.NewGuid() }); break;
+            case "topic": row.Topic = TopicNotifications.QuotationRequested; break;
+            case "invalidMessageId": row.PayloadJson = JsonSerializer.Serialize(new { conversationId = _conversationId, messageId = "invalid" }); break;
+            case "unseenMessage": row.PayloadJson = JsonSerializer.Serialize(new { conversationId = _conversationId, messageId = Guid.NewGuid() }); break;
+        }
+        Assert.False(InternalConversationReadScope.MatchesReadReceipt(row, _conversationId, new HashSet<Guid>(), _cutoff, snapshot));
+    }
+
     [Fact]
     public void ReopeningReadThread_StillSelectsOldMessagesToRepairNotifications()
     {

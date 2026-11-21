@@ -5,6 +5,7 @@ namespace HRM.Application.Features.PLM.SampleRequests.Rules;
 /// <summary>Các sự kiện nghiệp vụ bất biến; không thay thế lịch sử thay đổi dữ liệu AuditLog.</summary>
 internal static class SampleRequestWorkflowEvents
 {
+    public const string LabNote = "LabNoteRecorded";
     public const string Created = "SampleRequestWorkflowCreated";
     public const string FormulaConfirmed = "LabFormulaConfirmed";
     public const string PriceAccepted = "CustomerPriceAccepted";
@@ -12,6 +13,7 @@ internal static class SampleRequestWorkflowEvents
     public const string StandardReceived = "LabStandardReceived";
     public const string SampleSent = "SampleSent";
     public const string FeedbackRecorded = "CustomerFeedbackRecorded";
+    public const string LabDeclined = "SampleRequestLabDeclined";
     public const string RequestCancelled = "SampleRequestCancelled";
 
     public static SampleRequestWorkflowEvent Create(Guid requestId, Guid companyId, Guid employeeId,

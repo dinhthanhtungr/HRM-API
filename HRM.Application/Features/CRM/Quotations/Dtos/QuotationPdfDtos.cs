@@ -9,8 +9,15 @@ public sealed class QuotationPdfFileDto
     public byte[] Content { get; init; } = [];
 }
 
+public sealed class QuotationPdfBlockedFailure : HRM.Application.Commons.Models.OperationResult<QuotationPdfFileDto>
+{
+    public string Code { get; init; } = string.Empty;
+}
+
 public sealed class QuotationPdfDocumentDto
 {
+    public DateTime? SentDate { get; init; }
+    public DateTime? LastSendRejectionAt { get; init; }
     public string ExternalId { get; init; } = string.Empty;
     public QuotationStatus Status { get; init; }
     public DateTime QuotationDate { get; init; }

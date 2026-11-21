@@ -21,11 +21,13 @@ public sealed class StandardSampleReviewTests
     [InlineData("2024-10-25", "Approved", "New", true)]
     [InlineData("2024-10-26", "Approved", "New", false)]
     [InlineData("2024-10-27", "Approved", "New", false)]
-    [InlineData("2026-10-25", "New", "New", true)]
-    [InlineData("2026-10-25", "Cancelled", "New", true)]
-    [InlineData("2026-10-25", "Approved", "WaitingForStandardSample", true)]
-    [InlineData("2026-10-25", "Approved", "Cancelled", true)]
-    public async Task Review_UsesEligibleHistory_AndDoesNotWrite(string date, string status, string detailStatus, bool required)
+    [InlineData("2026-10-25", "New", "New", false)]
+    [InlineData("2026-10-25", "Cancelled", "New", false)]
+    [InlineData("2026-10-25", "Approved", "WaitingForStandardSample", false)]
+    [InlineData("2026-10-25", "Approved", "Cancelled", false)]
+    [InlineData("2026-08-26", "Approved", "New", false)]
+    [InlineData(null, "Approved", "New", false)]
+    public async Task Review_UsesEligibleHistory_AndDoesNotWrite(string? date, string status, string detailStatus, bool required)
     {
         var (db, store) = ProductionOrderTestStore.CreateContext<ISaleOrderDbContext>();
         var company = Guid.NewGuid();
@@ -34,7 +36,7 @@ public sealed class StandardSampleReviewTests
             { ProductId = Guid.NewGuid(), CompanyId = company, IsActive = true, ColourCode = "COLOR", Name = "Product" };
         store.Seed(nameof(db.Customers), customer);
         store.Seed(nameof(db.Products), product);
-        store.Seed(nameof(db.MerchandiseOrders), new MerchandiseOrder
+        if (date is not null) store.Seed(nameof(db.MerchandiseOrders), new MerchandiseOrder
         {
             MerchandiseOrderId = Guid.NewGuid(), CustomerId = customer.CustomerId, CompanyId = company, IsActive = true,
             Status = status, CreateDate = DateTime.Parse(date, System.Globalization.CultureInfo.InvariantCulture),

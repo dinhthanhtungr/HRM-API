@@ -11,6 +11,7 @@ using HRM.Application.Features.PLM.Boms.Dtos;
 using HRM.Application.Features.PLM.Boms.Queries.GetBomVersion;
 using HRM.Application.Features.PLM.Boms.Queries.GetBomDefinition;
 using HRM.Application.Features.PLM.Boms.Queries.GetBoms;
+using HRM.Application.Features.PLM.Boms.Queries.GetBomSearchSuggestions;
 using HRM.Application.Features.PLM.Boms.Queries.GetManufacturingProcessTemplateSuggestions;
 using HRM.Domain.Enums.Boms;
 using MediatR;
@@ -36,15 +37,23 @@ public sealed class ManufacturingBomsController : ControllerBase
     public async Task<IActionResult> GetMany(
         [FromQuery] Guid? productId,
         [FromQuery] string? keyword,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, [FromQuery] string? searchSelections = null)
     {
         var result = await _sender.Send(new GetBomsQuery
         {
             ProductId = productId,
             Keyword = keyword,
+            SearchSelections = searchSelections,
             BomType = BomType.Manufacturing
         }, cancellationToken);
         return Ok(result);
+    }
+
+    [HttpGet("suggestions"), Authorize(Policy = PlmPolicies.ViewBom)]
+    public async Task<IActionResult> GetSearchSuggestions([FromQuery] GetBomSearchSuggestionsQuery query, CancellationToken ct)
+    {
+        query.BomType = BomType.Manufacturing;
+        return Ok(await _sender.Send(query, ct));
     }
 
     [HttpGet("{bomDefinitionId:guid}")]

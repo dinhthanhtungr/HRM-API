@@ -5,7 +5,7 @@ namespace HRM.Application.Features.Warehouse.Services;
 
 public static class WarehouseVoucherReadModelMapper
 {
-    public static WarehouseVoucherDetailDto ToDetailDto(WarehouseVoucherDetail detail, DateTime? movementDate) => new()
+    public static WarehouseVoucherDetailDto ToDetailDto(WarehouseVoucherDetail detail, DateTime? movementDate, bool trackingOnly = false) => new()
     {
         VoucherDetailId = detail.VoucherDetailId,
         VoucherId = detail.VoucherId,
@@ -21,6 +21,6 @@ public static class WarehouseVoucherReadModelMapper
         MovementDate = movementDate,
         ExpiryDate = detail.ExpiryDate,
         VoucherType = detail.VoucherType,
-        Note = detail.Note
+        Note = trackingOnly ? null : detail.Note
     };
 }

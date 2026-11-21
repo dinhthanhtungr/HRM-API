@@ -52,4 +52,18 @@ public sealed class SampleRequestNotificationAudienceTests
     public void OrdinaryMessagesNotifyOnlyLabLeadersByDefault()
         => Assert.Equal(SampleRequestNotificationAudience.LabLeaders,
             SampleRequestNotificationAudienceRules.For(TopicNotifications.SampleRequestMessageCreated));
+
+    [Fact]
+    public void PersistedLabFinalizationRequestAlsoNotifiesLabAdmins()
+        => Assert.Equal(SampleRequestNotificationAudience.LabLeaders | SampleRequestNotificationAudience.LabAdmins,
+            SampleRequestNotificationAudienceRules.For(TopicNotifications.SampleRequestMessageCreated,
+                HRM.Application.Features.PLM.SampleRequests.Services.Workflow.SampleFlowRules.LabFinalizationRequested));
+
+    [Theory]
+    [InlineData("ColorChipRequested")]
+    [InlineData("TrialSampleRequested")]
+    [InlineData("RequestCompletionDeferred")]
+    public void CompletionChangesAlsoNotifyLabAdmins(string eventType)
+        => Assert.Equal(SampleRequestNotificationAudience.LabLeaders | SampleRequestNotificationAudience.LabAdmins,
+            SampleRequestNotificationAudienceRules.For(TopicNotifications.SampleRequestMessageCreated, eventType));
 }

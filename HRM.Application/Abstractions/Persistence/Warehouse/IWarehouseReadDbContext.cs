@@ -1,4 +1,5 @@
 using HRM.Domain.Entities.CompanySchema;
+using HRM.Domain.Entities.DeliverySchema;
 using HRM.Domain.Entities.CustomerSchema;
 using HRM.Domain.Entities.HrSchema;
 using HRM.Domain.Entities.MaterialSchema;
@@ -12,6 +13,9 @@ namespace HRM.Application.Abstractions.Persistence.Warehouse;
 
 public interface IWarehouseReadDbContext
 {
+    DbSet<ImportRequestFlowLog> ImportRequestFlowLogs { get; }
+    DbSet<WarehouseMovementRow> WarehouseMovementRows { get; }
+    IQueryable<WarehouseMovementRow> ReadMovementHistory(Guid companyId);
     DbSet<WarehouseShelfStock> WarehouseShelfStocks { get; }
 
     DbSet<WarehouseTempStock> WarehouseTempStocks { get; }
@@ -27,6 +31,11 @@ public interface IWarehouseReadDbContext
     DbSet<Customer> Customers { get; }
 
     DbSet<FormulaMaterial> FormulaMaterials { get; }
+
+    DbSet<DeliveryOrder> DeliveryOrders { get; }
+    DbSet<ManufacturingFormulaAdjustment> ManufacturingFormulaAdjustments { get; }
+    DbSet<ProductionOutputReceiptLedger> ProductionOutputReceiptLedgers { get; }
+    DbSet<OperationMaterialBuffer> OperationMaterialBuffers { get; }
 
     DbSet<WarehouseVoucher> WarehouseVouchers { get; }
 

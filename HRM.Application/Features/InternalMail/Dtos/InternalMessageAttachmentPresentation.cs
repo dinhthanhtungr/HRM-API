@@ -7,16 +7,25 @@ internal static class InternalMessageAttachmentPresentation
     public static void Enrich(InternalMessageAttachmentDto attachment)
     {
         (attachment.ContentType, attachment.Kind, attachment.IsImage) = Resolve(attachment.FileName);
+        attachment.MediaKind = ResolveMediaKind(attachment.ContentType);
         attachment.ContentUrl = $"{ContentRoute}/{attachment.AttachmentId}";
         attachment.ThumbnailUrl = attachment.IsImage
             ? $"{attachment.ContentUrl}/thumbnail"
             : null;
         attachment.DownloadUrl = $"{attachment.ContentUrl}?mode=download";
+        if (attachment.MediaKind == HRM.Domain.Enums.Attachment.AttachmentMediaKind.Video)
+        {
+            attachment.VideoInfoUrl = $"{attachment.ContentUrl}/video/info";
+            attachment.VideoRetryUrl = $"{attachment.ContentUrl}/video/retry";
+            attachment.PlaybackUrl = $"{attachment.ContentUrl}/video/playback";
+            attachment.PosterUrl = $"{attachment.ContentUrl}/video/poster";
+        }
     }
 
     public static void Enrich(InternalConversationAttachmentDto attachment, Guid? conversationId = null)
     {
         (attachment.ContentType, attachment.Kind, attachment.IsImage) = Resolve(attachment.FileName);
+        attachment.MediaKind = ResolveMediaKind(attachment.ContentType);
         attachment.ContentUrl = string.Equals(attachment.Source, "SampleRequest", StringComparison.Ordinal)
             && conversationId.HasValue
             ? $"/api/v1/internal-mail/conversations/{conversationId.Value}/related-attachments/{attachment.AttachmentId}"
@@ -25,7 +34,23 @@ internal static class InternalMessageAttachmentPresentation
             ? $"{attachment.ContentUrl}/thumbnail"
             : null;
         attachment.DownloadUrl = $"{attachment.ContentUrl}?mode=download";
+        if (attachment.MediaKind == HRM.Domain.Enums.Attachment.AttachmentMediaKind.Video)
+        {
+            attachment.VideoInfoUrl = $"{attachment.ContentUrl}/video/info";
+            attachment.VideoRetryUrl = $"{attachment.ContentUrl}/video/retry";
+            attachment.PlaybackUrl = $"{attachment.ContentUrl}/video/playback";
+            attachment.PosterUrl = $"{attachment.ContentUrl}/video/poster";
+        }
     }
+
+    internal static HRM.Domain.Enums.Attachment.AttachmentMediaKind ResolveMediaKind(string contentType)
+        => contentType.StartsWith("video/", StringComparison.OrdinalIgnoreCase)
+            ? HRM.Domain.Enums.Attachment.AttachmentMediaKind.Video
+            : contentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)
+                ? HRM.Domain.Enums.Attachment.AttachmentMediaKind.Image
+                : contentType.StartsWith("audio/", StringComparison.OrdinalIgnoreCase)
+                    ? HRM.Domain.Enums.Attachment.AttachmentMediaKind.Audio
+                    : HRM.Domain.Enums.Attachment.AttachmentMediaKind.Document;
 
     private static (string ContentType, string Kind, bool IsImage) Resolve(string fileName)
     {
@@ -37,6 +62,15 @@ internal static class InternalMessageAttachmentPresentation
             ".gif" => ("image/gif", "Image", true),
             ".webp" => ("image/webp", "Image", true),
             ".bmp" => ("image/bmp", "Image", true),
+            ".mp4" or ".m4v" => ("video/mp4", "Video", false),
+            ".mov" => ("video/quicktime", "Video", false),
+            ".webm" => ("video/webm", "Video", false),
+            ".avi" => ("video/x-msvideo", "Video", false),
+            ".mkv" => ("video/x-matroska", "Video", false),
+            ".3gp" => ("video/3gpp", "Video", false),
+            ".mp3" => ("audio/mpeg", "Audio", false),
+            ".m4a" => ("audio/mp4", "Audio", false),
+            ".wav" => ("audio/wav", "Audio", false),
             ".pdf" => ("application/pdf", "Pdf", false),
             ".doc" => ("application/msword", "Document", false),
             ".docx" => ("application/vnd.openxmlformats-officedocument.wordprocessingml.document", "Document", false),

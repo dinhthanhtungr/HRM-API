@@ -21,14 +21,15 @@ public sealed class SampleWorkDecisionPostgresTests(IsolatedGroupStoragePostgres
     private sealed record Scenario(string Name, string Code, string Role, string Formula = "Draft",
         double Kg = 0, SampleTrialStatus? Trial = null, decimal? Delivered = null,
         bool Accepted = false, bool Finalized = false, bool Price = false, bool Quoted = false,
-        bool Legacy = false, string Status = "InProgress", bool FormulaActive = true, bool SharedKg = false, bool Quotation = false);
+        bool Legacy = false, string Status = "InProgress", bool FormulaActive = true, bool SharedKg = false, bool Quotation = false,
+        bool DeliveryPlan = false, bool CombinedPlan = false);
 
     [PostgresGroupStorageFact]
     public async Task DecisionsAndRoleBucketsTranslateBeforeCountingAndPaging()
     {
         await using var connection = await postgres.OpenAsync();
         await using var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>().UseNpgsql(connection).Options);
-        foreach (var type in new[] { typeof(SampleRequest), typeof(SampleRequestSampleTrial), typeof(Formula), typeof(ProductPricingVersion) })
+        foreach (var type in new[] { typeof(Product), typeof(SampleRequest), typeof(SampleRequestSampleTrial), typeof(Formula), typeof(ProductPricingVersion), typeof(SampleRequestWorkflowEvent) })
             await CreateTable(connection, db.Model.FindEntityType(type)!);
         Scenario[] cases =
         [
@@ -36,15 +37,15 @@ public sealed class SampleWorkDecisionPostgresTests(IsolatedGroupStoragePostgres
             new("02-chip-send", "SendSample", "Lab", Formula: "Approved"),
             new("03-chip-feedback", "FollowUpCustomer", "Sale", Trial: SampleTrialStatus.SampleSent, Delivered: 0),
             new("04-chip-rework", "ReworkFormula", "Lab", Trial: SampleTrialStatus.Failed, Delivered: 0),
-            new("05-chip-finalize", "FinalizeChip", "Lab", Trial: SampleTrialStatus.Approved, Delivered: 0),
+            new("05-chip-choice", "ChooseAfterChip", "Sale", Trial: SampleTrialStatus.Approved, Delivered: 0),
             new("06-sale-decision", "CompleteRequest", "Sale", Formula: "Completed", Trial: SampleTrialStatus.Approved, Delivered: 0, Finalized: true),
             new("07-kg-prepare", "ApproveFormula", "Lab", Kg: 2),
-            new("08-kg-price", "ApproveStandardPrice", "President", Formula: "Approved", Kg: 2),
-            new("09-kg-quote", "SendQuotation", "Sale", Formula: "Approved", Kg: 2, Price: true),
-            new("10-kg-price-feedback", "PriceFeedback", "Sale", Formula: "Approved", Kg: 2, Price: true, Quoted: true),
+            new("08-kg-price", "SendSample", "Lab", Formula: "Approved", Kg: 2),
+            new("09-kg-quote", "SendSample", "Lab", Formula: "Approved", Kg: 2, Price: true),
+            new("10-kg-price-feedback", "SendSample", "Lab", Formula: "Approved", Kg: 2, Price: true, Quoted: true),
             new("11-kg-send", "SendSample", "Lab", Formula: "Approved", Kg: 2, Accepted: true),
             new("12-kg-feedback", "FollowUpCustomer", "Sale", Trial: SampleTrialStatus.WaitingCustomerFeedback, Delivered: 2),
-            new("13-kg-failed", "CreateNewRequest", "Sale", Trial: SampleTrialStatus.Failed, Delivered: 2),
+            new("13-kg-failed", "ReworkFormula", "Lab", Trial: SampleTrialStatus.Failed, Delivered: 2),
             new("14-legacy-send", "SendSample", "Lab", Formula: "Approved", Legacy: true),
             new("15-legacy-sent", "CompleteRequest", "Sale", Formula: "SampleSent", Legacy: true, Status: "SampleSent"),
             new("18-legacy-invalid", "ReviewSample", "LabAdmin", Legacy: true, Status: "SampleSent"),
@@ -53,7 +54,15 @@ public sealed class SampleWorkDecisionPostgresTests(IsolatedGroupStoragePostgres
             new("20-shared-vu-kg", "ReviewSample", "LabAdmin", Formula: "Approved", SharedKg: true),
             new("21-quote-lab-finalize", "FinalizeQuotation", "Lab", Formula: "Approved", Accepted: true, Quoted: true, Quotation: true),
             new("22-quote-sale-complete", "CompleteRequest", "Sale", Formula: "Completed", Accepted: true, Quoted: true, Quotation: true),
-            new("17-closed", "", "", Status: "Completed")
+            new("23-kg-accepted-price", "ApproveStandardPrice", "President", Formula: "SampleSent", Trial: SampleTrialStatus.Approved, Delivered: 2, Quotation: true),
+            new("24-kg-accepted-quote", "SendQuotation", "Sale", Formula: "SampleSent", Trial: SampleTrialStatus.Approved, Delivered: 2, Price: true, Quotation: true),
+            new("25-kg-accepted-feedback", "PriceFeedback", "Sale", Formula: "SampleSent", Trial: SampleTrialStatus.Approved, Delivered: 2, Price: true, Quoted: true),
+            new("26-kg-both-accepted", "CompleteRequest", "Sale", Formula: "SampleSent", Trial: SampleTrialStatus.Approved, Delivered: 2, Accepted: true),
+            new("17-closed", "", "", Status: "Completed"),
+            new("27-kg-repeat-plan", "ApproveFormula", "Lab", Formula: "Approved", Kg: 5, Trial: SampleTrialStatus.Approved, Delivered: 2, DeliveryPlan: true),
+            new("28-kg-repeat-select-vu", "SendSample", "Lab", Formula: "SampleSent", Kg: 5, Trial: SampleTrialStatus.Failed, Delivered: 2, DeliveryPlan: true),
+            new("29-chip-sent-kg-next", "SendSample", "Lab", Formula: "SampleSent", Kg: 100, Trial: SampleTrialStatus.WaitingCustomerFeedback, Delivered: 0, CombinedPlan: true),
+            new("30-chip-sample-no-quotation", "CompleteRequest", "Sale", Formula: "SampleSent", Kg: 100, Trial: SampleTrialStatus.Approved, Delivered: 100)
         ];
         var company = Guid.NewGuid();
         var accepted = new List<Guid>();
@@ -88,7 +97,20 @@ public sealed class SampleWorkDecisionPostgresTests(IsolatedGroupStoragePostgres
                     [nameof(SampleRequestSampleTrial.Status)] = (int)status,
                     [nameof(SampleRequestSampleTrial.DeliveredSampleQuantityKg)] = item.Delivered,
                     [nameof(SampleRequestSampleTrial.SentDate)] = new DateTime(2026, 11, 2),
+                    [nameof(SampleRequestSampleTrial.CreatedDate)] = new DateTime(2026, 11, 2),
                     [nameof(SampleRequestSampleTrial.IsActive)] = true
+                });
+            if (item.DeliveryPlan || item.CombinedPlan)
+                await Insert(connection, db.Model.FindEntityType(typeof(SampleRequestWorkflowEvent))!, new()
+                {
+                    [nameof(SampleRequestWorkflowEvent.Id)] = Guid.NewGuid(),
+                    [nameof(SampleRequestWorkflowEvent.CompanyId)] = company,
+                    [nameof(SampleRequestWorkflowEvent.SampleRequestId)] = request,
+                    [nameof(SampleRequestWorkflowEvent.FormulaId)] = formula,
+                    [nameof(SampleRequestWorkflowEvent.EventType)] = item.CombinedPlan
+                        ? HRM.Application.Features.PLM.SampleRequests.Services.Workflow.SampleFlowRules.ChipThenSampleRequested
+                        : HRM.Application.Features.PLM.SampleRequests.Services.Workflow.SampleFlowRules.KgRequested,
+                    [nameof(SampleRequestWorkflowEvent.RecordedAt)] = new DateTime(2026, 11, item.CombinedPlan ? 1 : 3)
                 });
             if (item.SharedKg)
             {
@@ -136,10 +158,21 @@ public sealed class SampleWorkDecisionPostgresTests(IsolatedGroupStoragePostgres
                      };
         var decisions = SampleWorkDecisionQuery.Enrich(source, db, db, "VND");
         var actual = await decisions.Select(x => new { x.SampleRequest.ExternalId, x.WorkDecision!.Code, x.WorkDecision.Role, x.WorkDecision.Stage }).ToListAsync();
+        // History reads these scalar facts once and computes the same decision after paging.
+        var deferredFacts = await SampleWorkDecisionQuery.ReadFacts(source.OrderBy(x => x.SampleRequest.ExternalId).Take(100), db, db, "VND")
+            .Select(x => new { x.Row.SampleRequest.ExternalId, x.Facts }).ToListAsync();
+        foreach (var row in deferredFacts)
+        {
+            var deferred = SampleWorkDecisionRules.Resolve(row.Facts);
+            var original = Assert.Single(actual, x => x.ExternalId == row.ExternalId);
+            Assert.Equal(original.Code, deferred.Code);
+            Assert.Equal(original.Role, deferred.Role);
+            Assert.Equal(original.Stage, deferred.Stage);
+        }
         foreach (var item in cases)
         {
             var found = Assert.Single(actual, x => x.ExternalId == item.Name);
-            Assert.Equal(item.Code, found.Code); Assert.Equal(item.Role, found.Role);
+            Assert.True(item.Code == found.Code, $"{item.Name}: expected {item.Code}, got {found.Code}"); Assert.Equal(item.Role, found.Role);
             if (item.Name == "16-unknown-delivery") Assert.Equal("NeedsReview", found.Stage);
         }
         foreach (var audience in new[] { SampleRequestWorkAudience.Lab, SampleRequestWorkAudience.Sale, SampleRequestWorkAudience.LabAdmin })
@@ -148,12 +181,40 @@ public sealed class SampleWorkDecisionPostgresTests(IsolatedGroupStoragePostgres
             { WorkAudience = audience, WorkBucket = SampleRequestWorkBucket.ActionRequired }, db);
             Assert.Contains("WHERE", queue.ToQueryString());
             var expected = cases.Where(x => audience == SampleRequestWorkAudience.LabAdmin
-                ? x.Role is "Lab" or "LabAdmin" : x.Role == audience.ToString()).Select(x => x.Name).Order().ToArray();
+                ? x.Role is "Lab" or "LabAdmin" : x.Role == audience.ToString() ||
+                    audience == SampleRequestWorkAudience.Sale && x.Name == "29-chip-sent-kg-next").Select(x => x.Name).Order().ToArray();
             Assert.Equal(expected.Length, await queue.CountAsync());
             var page = queue.OrderBy(x => x.SampleRequest.ExternalId).Skip(1).Take(3).Select(x => x.SampleRequest.ExternalId);
             Assert.Contains("LIMIT", page.ToQueryString());
             Assert.Equal(expected.Skip(1).Take(3), await page.ToArrayAsync());
+            if (audience != SampleRequestWorkAudience.LabAdmin)
+            {
+                // Execute the new facts-only role filter against the same isolated rows,
+                // including failed trials, legacy records and price states above.
+                var factsRows = SampleWorkDecisionQuery.ReadFacts(source, db, db, "VND")
+                    .OrderBy(x => x.Row.SampleRequest.SampleRequestId)
+                    .Select(x => new SampleRequestDailyPriorityFactsPage.ReadRow
+                    {
+                        CustomerId = Guid.Empty, Status = x.Row.SampleRequest.Status,
+                        SaleWritable = true,
+                        State = new SampleRequestDailyPayloadPage.State(x.Row.SampleRequest.SampleRequestId,
+                            x.Row.Trial == null ? null : x.Row.Trial.SampleRequestSampleTrialId,
+                            x.Facts, null, null, false)
+                    });
+                var factsPage = await SampleRequestDailyPriorityFactsPage.FromRowsAsync(factsRows.AsAsyncEnumerable(),
+                    source, new(audience, true, true, false, false, [], audience.ToString()),
+                    new(2026, 11, 7), 1, 15, CancellationToken.None);
+                var expectedIds = await queue.Select(x => x.SampleRequest.SampleRequestId).ToArrayAsync();
+                Assert.Equal(expectedIds.Order(), factsPage.Payload.States.Select(x => x.RequestId).Order());
+                Assert.Equal(expectedIds.Length > 0 ? 1 : 0, factsPage.TotalCustomers);
+            }
         }
+        var labProgress = SampleRequestWorkQueueQuery.Apply(decisions, new GetSampleRequestSampleTrialsQuery
+        { WorkAudience = SampleRequestWorkAudience.LabAdmin, WorkBucket = SampleRequestWorkBucket.LabProgress }, db);
+        var expectedLabProgress = cases.Where(x => x.Role == "Lab").Select(x => x.Name).Order().ToArray();
+        Assert.Equal(expectedLabProgress.Length, await labProgress.CountAsync());
+        Assert.Equal(expectedLabProgress.Skip(1).Take(3), await labProgress.OrderBy(x => x.SampleRequest.ExternalId)
+            .Skip(1).Take(3).Select(x => x.SampleRequest.ExternalId).ToArrayAsync());
         foreach (var (bucket, code) in new[] { (SampleRequestWorkBucket.Rework, "ReworkFormula"),
                      (SampleRequestWorkBucket.NewRequestRequired, "CreateNewRequest"), (SampleRequestWorkBucket.WaitingPrice, "ApproveStandardPrice") })
         {

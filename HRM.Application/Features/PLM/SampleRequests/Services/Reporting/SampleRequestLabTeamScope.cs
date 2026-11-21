@@ -1,5 +1,6 @@
 using HRM.Application.Abstractions.Persistence.CRM.CustomerCare;
 using HRM.Application.Abstractions.Security;
+using HRM.Application.Commons.Authorization;
 using HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestDailyWork;
 using HRM.Application.Features.PLM.SampleRequests.Rules;
 using HRM.Domain.Entities.SampleRequestSchema;
@@ -15,15 +16,19 @@ public sealed class SampleRequestLabTeamScope(ICRMReadDbContext db, ICurrentUser
 {
     public async Task<SampleLabTeamContext> ReadAsync(CancellationToken ct)
     {
+        using var timings = HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestSampleTrials.SampleWorkDiagnosticTags.Start("lab_teams");
         if (!SampleRequestWorkQueueAccess.CanRead(user, SampleRequestWorkAudience.Lab) ||
             user.CompanyId is not { } company || company == Guid.Empty ||
             user.EmployeeId is not { } employee || employee == Guid.Empty)
             throw new UnauthorizedAccessException("Lab work requires an authenticated company employee.");
         var active = await db.Employees.AsNoTracking().AnyAsync(x => x.CompanyId == company && x.EmployeeId == employee && x.IsActive, ct);
+        timings?.Mark("active-employee");
         if (!active) throw new UnauthorizedAccessException("Current employee is not active.");
         var teams = await MemberTeams(db.MemberInGroups.AsNoTracking(), company, employee).ToArrayAsync(ct);
-        // Team membership chooses the initial view; access is enforced by the queue and company scope.
-        return new(teams, true, teams.Length == 0 ? SampleLabTeamFilter.All : SampleLabTeamFilter.Mine);
+        timings?.Mark("memberships");
+        // LabAdmin uses the same technical queue, initially across teams; explicit filters remain user-owned.
+        return new(teams, true, user.IsInRole(ApplicationRoles.Lab.LabAdmin) || teams.Length == 0
+            ? SampleLabTeamFilter.All : SampleLabTeamFilter.Mine);
     }
 
     public async Task<IQueryable<SampleRequest>> ApplyAsync(IQueryable<SampleRequest> query, SampleLabTeamFilter? filter, CancellationToken ct)

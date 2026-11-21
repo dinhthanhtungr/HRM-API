@@ -11,6 +11,7 @@ namespace HRM.Application.Abstractions.Persistence.Purchasing;
 
 public interface IPurchaseOrderDbContext
 {
+    DbSet<global::HRM.Domain.Entities.SampleRequestSchema.Product> Products { get; }
     DbSet<PurchaseOrderDocument> PurchaseOrderDocuments { get; }
     DbSet<AttachmentCollection> AttachmentCollections { get; }
     DbSet<AttachmentModel> AttachmentModels { get; }

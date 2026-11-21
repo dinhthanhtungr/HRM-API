@@ -1,5 +1,7 @@
 using HRM.Application.Abstractions.Persistence.PLM;
+using HRM.Application.Features.PLM.CustomerLabels.Services;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Models;
 using HRM.Application.Commons.Patching;
@@ -29,6 +31,7 @@ internal sealed class PatchSampleRequestCommandHandler
 {
     private const string DataChangeApprovalAuditReason = "SampleRequestDataChangeApproval";
     private const string DirectPatchAuditReason = "SampleRequestDirectPatch";
+    private const int MaxCancellationReasonLength = 2000;
     private static readonly JsonSerializerOptions PayloadJsonOptions = new(JsonSerializerDefaults.Web);
 
     private static readonly IReadOnlySet<string> SampleRequestClearFields = new HashSet<string>(
@@ -96,6 +99,7 @@ internal sealed class PatchSampleRequestCommandHandler
     private readonly DraftQuotationProductSnapshotSyncService _draftQuotationProductSnapshotSyncService;
     private readonly ISender _sender;
     private readonly ICurrentUserPermissionService _permissions;
+    private readonly CustomerLabelColorCodeSyncService _labelCodeSync;
 
     public PatchSampleRequestCommandHandler(
         IPLMWriteDbContext dbContext,
@@ -104,7 +108,8 @@ internal sealed class PatchSampleRequestCommandHandler
         SampleRequestConversationSubjectService conversationSubjectService,
         DraftQuotationProductSnapshotSyncService draftQuotationProductSnapshotSyncService,
         ISender sender,
-        ICurrentUserPermissionService permissions)
+        ICurrentUserPermissionService permissions,
+        CustomerLabelColorCodeSyncService? labelCodeSync = null)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
@@ -113,6 +118,7 @@ internal sealed class PatchSampleRequestCommandHandler
         _draftQuotationProductSnapshotSyncService = draftQuotationProductSnapshotSyncService;
         _sender = sender;
         _permissions = permissions;
+        _labelCodeSync = labelCodeSync ?? new CustomerLabelColorCodeSyncService(dbContext);
     }
 
 
@@ -158,7 +164,7 @@ internal sealed class PatchSampleRequestCommandHandler
             clearFields.Contains("sample_request.lab_received_date");
         if ((request.LabReceivedDate.HasValue || clearFields.Contains("sample_request.lab_received_date")) &&
             !_permissions.HasPermission(ApplicationPermissions.PLM.ReceiveLabStandard))
-            return OperationResult<Guid>.Fail("Only an authorized Lab Admin can record laboratory standard receipt.");
+            return OperationResult<Guid>.Fail("Only an authorized Lab user can record laboratory standard receipt.");
         if (changesLabProgress &&
             (request.IsDataChangeApproval ||
              (!_currentUser.IsInAnyRole(ApplicationRoleSets.PLM.SampleRequestLabProgressEditors) &&
@@ -195,13 +201,55 @@ internal sealed class PatchSampleRequestCommandHandler
         {
             return OperationResult<Guid>.Fail("Sample request was not found.");
         }
+        if (await Services.Workflow.SampleRequestLabPauseRules.IsPausedAsync(_dbContext, companyId.Value, sampleRequest.SampleRequestId, cancellationToken))
+            return OperationResult<Guid>.Fail(Services.Workflow.SampleRequestLabPauseRules.PausedMessage);
 
+        if (HRM.Application.Features.PLM.Shared.Rules.SemiFinishedRequestRules.IsSemiFinished(sampleRequest.RequestType)
+            || HRM.Application.Features.PLM.Shared.Rules.SemiFinishedRequestRules.IsSemiFinished(request.RequestType))
+            return OperationResult<Guid>.Fail("Hồ sơ bán thành phẩm chỉ được cập nhật qua luồng NVL nội bộ.");
+        if (sampleRequest.Status == "LabDeclined")
+            return OperationResult<Guid>.Fail("Use an additional-work request to resume a Lab-declined request.");
         var priceStatusError = SampleRequestCustomerPriceRules.ValidateStatusPatch(sampleRequest.Status, request.Status);
         if (priceStatusError is not null) return OperationResult<Guid>.Fail(priceStatusError);
+        if (IsStatus(request.Status, SampleRequestStatus.Cancelled) &&
+            !await SampleSaleWorkflowAccess.CustomersAllowedForCancellation(_dbContext.Customers.AsNoTracking(),
+                _currentUser, _permissions, sampleRequestVisibilityScope)
+                .AnyAsync(c => c.CustomerId == sampleRequest.CustomerId, cancellationToken))
+            return OperationResult<Guid>.Fail("Only the customer's responsible Sale or an authorized customer Sale manager can cancel this request.");
+        if (IsStatus(request.Status, SampleRequestStatus.Cancelled))
+        {
+            if (IsStatus(sampleRequest.Status, SampleRequestStatus.Completed))
+                return OperationResult<Guid>.Fail("Completed sample requests cannot be cancelled.");
+            if (string.IsNullOrWhiteSpace(request.CancellationReason))
+                return OperationResult<Guid>.Fail("CancellationReason is required to cancel a sample request.");
+            if (request.CancellationReason.Trim().Length > MaxCancellationReasonLength)
+                return OperationResult<Guid>.Fail($"CancellationReason cannot exceed {MaxCancellationReasonLength} characters.");
+            if (_currentUser.EmployeeId is not { } cancellationActor || cancellationActor == Guid.Empty)
+                return OperationResult<Guid>.Fail("Current employee is invalid.");
+        }
+        var quotationToColourSet = SampleRequestCustomerPriceRules.IsQuotation(sampleRequest.InfoType) &&
+            request.InfoType is not null && SampleRequestCustomerPriceRules.IsColourSet(request.InfoType);
+        var convertedSampleKg = clearFields.Contains("sample_request.sample_quantity")
+            ? 0 : request.SampleQuantity ?? sampleRequest.SampleQuantity ?? 0;
+        if (quotationToColourSet)
+        {
+            if (!Services.Workflow.SampleFlowRules.IsOpen(sampleRequest.Status))
+                return OperationResult<Guid>.Fail("Use Change plan to request chips on a closed quotation.");
+            if (!_currentUser.IsAuthenticated || _currentUser.EmployeeId is not { } conversionActor ||
+                !await _dbContext.Employees.AsNoTracking().AnyAsync(e => e.EmployeeId == conversionActor && e.CompanyId == companyId.Value && e.IsActive, cancellationToken))
+                return OperationResult<Guid>.Fail("Current employee is not active in this company.");
+            var sets = Regex.Match(request.InfoType!.Trim(), @"\((\d+)\)$", RegexOptions.CultureInvariant);
+            if (!sets.Success || !int.TryParse(sets.Groups[1].Value, out var count) || count is < 1 or > 30 ||
+                !double.IsFinite(convertedSampleKg) || convertedSampleKg is < 0 or > 999999999)
+                return OperationResult<Guid>.Fail("Enter 1 to 30 chip sets and a valid non-negative sample quantity.");
+            if (await _dbContext.SampleRequestSampleTrials.AnyAsync(t => t.SampleRequestId == sampleRequest.SampleRequestId &&
+                t.IsActive && t.SentDate != null, cancellationToken))
+                return OperationResult<Guid>.Fail("Use Change plan on this request after sample delivery.");
+        }
         var changesPriceConditions = request.InfoType is not null || request.SampleQuantity.HasValue || request.ExpectedPrice.HasValue ||
             clearFields.Contains("sample_request.info_type") || clearFields.Contains("sample_request.sample_quantity") ||
             clearFields.Contains("sample_request.expected_price");
-        if (!Services.Workflow.SampleFlowRules.IsLegacy(sampleRequest.CreatedDate) &&
+        if (!await Services.Workflow.SampleFollowUpRules.IsLegacyAsync(_dbContext, sampleRequest, cancellationToken) &&
             ((request.SampleQuantity.HasValue && request.SampleQuantity != sampleRequest.SampleQuantity) ||
              clearFields.Contains("sample_request.sample_quantity")) &&
             await _dbContext.SampleRequestSampleTrials.AnyAsync(x => x.SampleRequestId == sampleRequest.SampleRequestId && x.IsActive && x.SentDate != null, cancellationToken))
@@ -220,17 +268,17 @@ internal sealed class PatchSampleRequestCommandHandler
              (request.InfoType is not null && !SampleRequestCustomerPriceRules.IsColourSet(request.InfoType) &&
               !SampleRequestCustomerPriceRules.IsQuotation(request.InfoType))))
             return OperationResult<Guid>.Fail("Select Quotation or ColorSampleSet as the request type.");
-        if (managedPriceWorkflow && request.InfoType is not null &&
+        if (managedPriceWorkflow && !quotationToColourSet && request.InfoType is not null &&
             SampleRequestCustomerPriceRules.IsQuotation(request.InfoType) != SampleRequestCustomerPriceRules.IsQuotation(sampleRequest.InfoType))
             return OperationResult<Guid>.Fail("Create a revised request to change between Quotation and ColorSampleSet.");
         var latestPriceAudit = managedPriceWorkflow
             ? await SampleRequestCustomerPriceAudit.LatestAsync(_dbContext, companyId.Value, sampleRequest.SampleRequestId, cancellationToken)
             : null;
         if (latestPriceAudit is not null && SampleRequestCustomerPriceAudit.Read(latestPriceAudit).IsActive &&
-            ((request.InfoType is not null && request.InfoType.Trim() != sampleRequest.InfoType) ||
+            ((!quotationToColourSet && ((request.InfoType is not null && request.InfoType.Trim() != sampleRequest.InfoType) ||
              (request.SampleQuantity.HasValue && request.SampleQuantity != sampleRequest.SampleQuantity) ||
+             clearFields.Contains("sample_request.info_type") || clearFields.Contains("sample_request.sample_quantity"))) ||
              (request.ExpectedPrice.HasValue && request.ExpectedPrice != sampleRequest.ExpectedPrice) ||
-             clearFields.Contains("sample_request.info_type") || clearFields.Contains("sample_request.sample_quantity") ||
              clearFields.Contains("sample_request.expected_price")))
             return OperationResult<Guid>.Fail("Revoke customer price confirmation before changing accepted request conditions; use a revised request after sample delivery.");
 
@@ -269,7 +317,7 @@ internal sealed class PatchSampleRequestCommandHandler
             selectsSentSampleFormula || acceptsFormulaUpdateByFormulaSelection;
 
         if (selectsSentSampleFormula &&
-            !Services.Workflow.SampleFlowRules.IsLegacy(sampleRequest.CreatedDate))
+            !await Services.Workflow.SampleFollowUpRules.IsLegacyAsync(_dbContext, sampleRequest, cancellationToken))
             return OperationResult<Guid>.Fail("Use the workflow completion action or customer feedback; formula selection cannot complete a sent request.");
 
         if (IsStatus(request.Status, SampleRequestStatus.SampleSent) ||
@@ -420,7 +468,7 @@ internal sealed class PatchSampleRequestCommandHandler
                     }
                 }
 
-                // Chọn VU để lên đơn chỉ chọn công thức. Phản hồi/hoàn thành legacy là thao tác riêng.
+                // Hồ sơ legacy giữ hành vi chọn công thức để hoàn thành; không tạo phản hồi khách giả.
 
             }
 
@@ -585,7 +633,11 @@ internal sealed class PatchSampleRequestCommandHandler
 
         var startedProcessing = false;
 
-        if (acceptsFormulaUpdateByFormulaSelection)
+        if (selectsSentSampleFormula && await Services.Workflow.SampleFollowUpRules.IsLegacyAsync(_dbContext, sampleRequest, cancellationToken))
+        {
+            SampleRequestStatusTransitionRules.MarkCustomerApproved(sampleRequest);
+        }
+        else if (acceptsFormulaUpdateByFormulaSelection)
         {
             SampleRequestStatusTransitionRules.MarkCustomerApproved(sampleRequest);
             await MarkPendingFormulaUpdateApprovedAsync(
@@ -604,7 +656,9 @@ internal sealed class PatchSampleRequestCommandHandler
         var completedByFormulaSelection =
             request.FormulaId is { } completedFormulaId &&
             completedFormulaId != Guid.Empty &&
-            IsStatus(originalStatus, SampleRequestStatus.FormulaUpdateRequested) &&
+            (IsStatus(originalStatus, SampleRequestStatus.FormulaUpdateRequested) ||
+             (await Services.Workflow.SampleFollowUpRules.IsLegacyAsync(_dbContext, sampleRequest, cancellationToken) &&
+              IsStatus(originalStatus, SampleRequestStatus.SampleSent))) &&
             IsStatus(sampleRequest.Status, SampleRequestStatus.Completed);
 
         var cancelledByPatch =
@@ -623,7 +677,7 @@ internal sealed class PatchSampleRequestCommandHandler
         {
             var cancelledEvent = SampleRequestWorkflowEvents.Create(sampleRequest.SampleRequestId, companyId.Value,
                 cancellingEmployee, auditChangedAt, SampleRequestWorkflowEvents.RequestCancelled,
-                note: request.SaleComment ?? request.OtherComment);
+                note: request.CancellationReason!.Trim());
             _dbContext.SampleRequestWorkflowEvents.Add(cancelledEvent);
             HRM.Application.Features.PLM.SampleRequests.Services.Workflow.SampleRequestWorkflowNotificationQueue.Queue(_dbContext, cancelledEvent,
                 new SendSampleRequestMessageCommand
@@ -634,6 +688,20 @@ internal sealed class PatchSampleRequestCommandHandler
                     TopicOverride = TopicNotifications.SampleRequestCancelled,
                     TitleOverride = "Yêu cầu phối mẫu đã hủy"
                 });
+        }
+
+        if (quotationToColourSet && !await Services.Workflow.SampleFollowUpRules.IsLegacyAsync(_dbContext, sampleRequest, cancellationToken))
+        {
+            // Expanding a quotation adds delivery work on the same TP; it does not erase its price obligation.
+            if (!await _dbContext.SampleRequestWorkflowEvents.AsNoTracking().AnyAsync(e => e.CompanyId == companyId.Value &&
+                e.SampleRequestId == sampleRequest.SampleRequestId && e.EventType == Services.Workflow.SampleFlowRules.QuotationRequired, cancellationToken))
+                _dbContext.SampleRequestWorkflowEvents.Add(SampleRequestWorkflowEvents.Create(sampleRequest.SampleRequestId,
+                    companyId.Value, _currentUser.EmployeeId!.Value, auditChangedAt, Services.Workflow.SampleFlowRules.QuotationRequired,
+                    formulaId: sampleRequest.FormulaId));
+            _dbContext.SampleRequestWorkflowEvents.Add(SampleRequestWorkflowEvents.Create(sampleRequest.SampleRequestId,
+                companyId.Value, _currentUser.EmployeeId!.Value, auditChangedAt,
+                convertedSampleKg > 0 ? Services.Workflow.SampleFlowRules.ChipThenSampleRequested : Services.Workflow.SampleFlowRules.ChipRequested,
+                note: $"{sampleRequest.InfoType}; {convertedSampleKg} kg", formulaId: sampleRequest.FormulaId));
         }
 
         if (!request.IsDataChangeApproval)
@@ -688,6 +756,7 @@ internal sealed class PatchSampleRequestCommandHandler
 
         if (productColourCodeChanged && patchedProduct is not null)
         {
+            await _labelCodeSync.SyncAsync(patchedProduct.ProductId, companyId.Value, patchedProduct.ColourCode, cancellationToken);
             await _draftQuotationProductSnapshotSyncService.SyncColourCodeAsync(
                 patchedProduct.ProductId,
                 companyId.Value,

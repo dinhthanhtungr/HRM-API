@@ -131,14 +131,24 @@ internal sealed class CreateSampleTrialInteractionCommandHandler
             return OperationResult<Guid>.Fail("Sample trial was not found or is outside this customer.");
         }
 
-        if (!SampleSaleWorkflowAccess.CanActFor(_currentUser, _permissions, trial.SampleRequest.ManagerBy, scope) ||
+        if (await _writeDbContext.SampleRequestWorkflowEvents.AsNoTracking().AnyAsync(e => e.CompanyId == scope.CompanyId &&
+            e.SampleRequestId == trial.SampleRequestId && e.SampleRequestSampleTrialId == trial.SampleRequestSampleTrialId &&
+            e.EventType == SampleRequestWorkflowEvents.SampleSent && e.RelatedEventId != null &&
+            _writeDbContext.SampleRequestWorkflowEvents.Any(b => b.Id == e.RelatedEventId && b.EventType == HRM.Application.Features.PLM.SampleRequests.DeliveryOptions.SampleDeliveryRules.BatchSent), cancellationToken))
+            return OperationResult<Guid>.Fail("Record this option through its delivery batch to keep all option results consistent.");
+        var isCancellation = string.Equals(replyStatus, CancelledReplyStatus, StringComparison.OrdinalIgnoreCase);
+        var canAct = isCancellation
+            ? await SampleSaleWorkflowAccess.CustomersAllowedForCancellation(_readDbContext.Customers.AsNoTracking(), _currentUser, _permissions, scope)
+                .AnyAsync(c => c.CustomerId == customer.CustomerId, cancellationToken)
+            : SampleSaleWorkflowAccess.CanActFor(_currentUser, _permissions, trial.SampleRequest.ManagerBy, scope);
+        if (!canAct ||
             !await _readDbContext.Employees.AsNoTracking().AnyAsync(x => x.CompanyId == scope.CompanyId &&
                 x.EmployeeId == scope.EmployeeId && x.IsActive, cancellationToken))
             return OperationResult<Guid>.Fail("Sample trial is outside your managed Sale workflow scope.");
         var actingForAnotherSale = trial.SampleRequest.ManagerBy != scope.EmployeeId;
         var employee = await _accessService.ResolveEmployeeAsync(
             scope,
-            request.AssignedSaleEmployeeId ?? (actingForAnotherSale ? trial.SampleRequest.ManagerBy : null),
+            request.AssignedSaleEmployeeId ?? (actingForAnotherSale && !isCancellation ? trial.SampleRequest.ManagerBy : null),
             defaultToCurrent: true,
             cancellationToken);
         if (!employee.IsAllowed || !employee.EmployeeId.HasValue)
@@ -253,7 +263,7 @@ internal sealed class CreateSampleTrialInteractionCommandHandler
         workflowEvent.Id = interactionId;
         _writeDbContext.SampleRequestWorkflowEvents.Add(workflowEvent);
         SampleRequestWorkflowNotificationQueue.Queue(_writeDbContext.OutboxMessages, workflowEvent,
-            BuildCustomerFeedbackMessage(trial, replyStatus!, replyNote, request.Content));
+            await BuildCustomerFeedbackMessage(trial, replyStatus!, replyNote, request.Content));
         await SampleRequestDataChangeAuditHelper.AddStatusTransitionAuditIfChangedAsync(
             _writeDbContext.AuditLogs,
             trial.SampleRequest,
@@ -265,7 +275,7 @@ internal sealed class CreateSampleTrialInteractionCommandHandler
         customer.LastContactDate = !customer.LastContactDate.HasValue || interactionAt > customer.LastContactDate
             ? interactionAt
             : customer.LastContactDate;
-        if (!actingForAnotherSale) customer.CurrentSaleId = employee.EmployeeId;
+        if (!actingForAnotherSale && !isCancellation) customer.CurrentSaleId = employee.EmployeeId;
 
         if (request.NextFollowUpDate.HasValue)
         {
@@ -396,10 +406,25 @@ internal sealed class CreateSampleTrialInteractionCommandHandler
             WaitingReplyStatus => SampleTrialStatus.WaitingCustomerFeedback,
             _ => SampleTrialStatus.PriceQuote
         };
+        var currentWorkflow = !await SampleFollowUpRules.IsLegacyAsync(_writeDbContext.SampleRequestWorkflowEvents, trial.SampleRequest, cancellationToken);
+        var optionalChip = currentWorkflow && trial.DeliveryKind == SampleDeliveryKind.ColorChip &&
+            await ChipThenSampleRules.OptionalChips(_writeDbContext.SampleRequestSampleTrials.AsNoTracking())
+                .AnyAsync(x => x.SampleRequestSampleTrialId == trial.SampleRequestSampleTrialId, cancellationToken);
+        if (optionalChip)
+        {
+            if (targetStatus is not (SampleTrialStatus.Approved or SampleTrialStatus.Failed or SampleTrialStatus.WaitingCustomerFeedback))
+                return "Optional chip feedback only records accepted, rejected or waiting; it cannot cancel the request.";
+            var optionalError = SampleTrialFeedbackRules.Validate(
+                trial.SampleRequest.Status == "Completed" ? "InProgress" : trial.SampleRequest.Status, trial.Status, targetStatus);
+            if (optionalError is not null) return optionalError;
+            // Historical chip feedback has no effect on the newer sample, selected VU or TP lifecycle.
+            trial.Status = targetStatus;
+            return null;
+        }
         var validationError = SampleTrialFeedbackRules.Validate(trial.SampleRequest.Status, trial.Status, targetStatus);
         if (validationError is not null)
             return validationError;
-        if (SampleFlowRules.IsModernChip(trial.SampleRequest, trial) &&
+        if (currentWorkflow && trial.DeliveryKind == SampleDeliveryKind.ColorChip &&
             targetStatus is SampleTrialStatus.Approved or SampleTrialStatus.Failed &&
             await _writeDbContext.SampleRequestSampleTrials.AnyAsync(x => x.IsActive && x.FormulaId == trial.FormulaId &&
                 x.SampleRequest.CompanyId == trial.SampleRequest.CompanyId && x.DeliveredSampleQuantityKg > 0 && x.SentDate != null, cancellationToken))
@@ -427,7 +452,7 @@ internal sealed class CreateSampleTrialInteractionCommandHandler
                 productFormulas,
                 employeeId,
                 now,
-                ApprovedReplyStatus);
+                ApprovedReplyStatus, currentWorkflow: currentWorkflow);
             return null;
         }
 
@@ -439,7 +464,7 @@ internal sealed class CreateSampleTrialInteractionCommandHandler
             }
 
             trial.Status = SampleTrialStatus.Failed;
-            if (SampleFlowRules.IsModernChip(trial.SampleRequest, trial))
+            if (currentWorkflow && trial.DeliveryKind == SampleDeliveryKind.ColorChip)
             {
                 SampleFlowRules.ApplyChipReply(trial.SampleRequest, trial, targetStatus, employeeId, now);
                 return null;
@@ -482,16 +507,21 @@ internal sealed class CreateSampleTrialInteractionCommandHandler
         return null;
     }
 
-    private static SendSampleRequestMessageCommand BuildCustomerFeedbackMessage(
+    private async Task<SendSampleRequestMessageCommand> BuildCustomerFeedbackMessage(
         SampleRequestSampleTrial trial,
         string customerReplyStatus,
         string? customerReplyNote,
         string interactionContent)
     {
+        var currentWorkflow = !await SampleFollowUpRules.IsLegacyAsync(_writeDbContext.SampleRequestWorkflowEvents, trial.SampleRequest, default);
         var sampleRequestExternalId = trial.SampleRequestExternalIdSnapshot ?? trial.SampleRequest.ExternalId;
         var formulaExternalId = trial.Formula?.ExternalId ?? trial.BatchNo ?? "--";
         var outcome = trial.Status switch
         {
+            SampleTrialStatus.Approved when currentWorkflow && trial.DeliveryKind == SampleDeliveryKind.ColorChip
+                => "Khách hàng đã duyệt chip. Sale vui lòng chọn bước tiếp theo; công thức chưa tự hoàn thành.",
+            SampleTrialStatus.Approved when currentWorkflow && trial.DeliveryKind == SampleDeliveryKind.TrialSample
+                => "Khách hàng đã chấp nhận mẫu. Sale tiếp tục theo dõi phản hồi giá và xác nhận hoàn thành khi cả giá và mẫu đều đạt.",
             SampleTrialStatus.Approved => "Khách hàng đã chấp nhận mẫu. Công thức đã hoàn thành.",
             SampleTrialStatus.Failed => "Khách hàng chưa đạt mẫu. Lab vui lòng phát triển và gửi lại mẫu.",
             SampleTrialStatus.Cancelled => "Khách hàng đã dừng hoặc từ chối yêu cầu mẫu.",

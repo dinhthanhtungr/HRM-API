@@ -24,6 +24,8 @@ public interface IManufacturingDbContext : IProductionOrderDbContext
     DbSet<WarehouseShelfStock> WarehouseShelfStocks { get; }
     DbSet<ProductionOutputReceiptSource> ProductionOutputReceiptSources { get; }
     DbSet<OperationMaterialRequestLink> OperationMaterialRequestLinks { get; }
+    DbSet<WarehouseRequest> WarehouseRequests { get; }
+    DbSet<TempStockIssueLedger> TempStockIssueLedgers { get; }
     DbSet<EventLog> EventLogs { get; }
     DbSet<global::HRM.Domain.Entities.CompanySchema.MemberInGroup> MemberInGroups { get; }
 }

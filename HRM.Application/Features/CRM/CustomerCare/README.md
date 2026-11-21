@@ -1,8 +1,21 @@
 # Customer CRM
 
-Phản hồi Trial dùng cùng phân luồng [legacy/chip/kg](../../PLM/SampleRequests/CHIP_SAMPLE_FLOW.md):
+Phản hồi option trong đợt gửi mẫu: API PLM `/sample-requests/{id}/deliveries/{batchId}/feedback` lưu một interaction `SampleTrial` và reference đúng Trial được Sale chọn, cùng transaction với kết quả cả đợt/audit/event/outbox. Các option tự Không đạt khi khách chọn một option Đạt không tạo interaction giả như khách đã phản hồi trực tiếp từng mẫu. Composer Trial cũ từ chối các Trial thuộc đợt này; dùng màn phản hồi theo đợt để bảo đảm chỉ một option Đạt. Scope Sale/managed Sale và quyền correction hiện có vẫn được kiểm tra tại handler mới.
+
+Phản hồi chip bổ sung: composer theo Trial cho phép Sale có quyền và scope hiện hành nhập Đạt/Không đạt/Chờ
+cho chip cũ đã có lần kg mới hơn, kể cả TP Completed. Chỉ cập nhật kết quả/metadata Trial chip và CRM interaction/event/outbox;
+không sửa kết quả kg, trạng thái/IsSelect VU hoặc TP. Không cho hủy qua nhánh bổ sung, không cho TP Cancelled,
+không mở sửa Trial terminal; correction giữ quy trình riêng. Không tự điền phản hồi chip theo phản hồi kg.
+
+Quyền mẫu theo team: SaleAdmin và SaleUser có membership Leader/IsAdmin active chỉ xem
+yêu cầu mẫu do mình hoặc thành viên nhóm quản lý phụ trách. `ApplySampleRequestVisibility`
+giữ giới hạn này kể cả khi có CustomerViewAll; không đổi visibility của customer, quotation
+hoặc merchandise order. Ghi phản hồi mẫu thay người khác cần thêm capability managed;
+SaleUser thường vẫn self-only, không được làm thay chỉ vì thấy hồ sơ/khách hàng.
+
+Phản hồi Trial dùng cùng phân luồng [legacy/chip/kg](../../PLM/SampleRequests/docs/workflow/CHIP_SAMPLE_FLOW.md):
 chip Đạt/Không đạt mở bước Rework cho VU trên hồ sơ còn mở, không tự hoàn thành/chọn Formula.
-Mẫu kg Đạt giữ luồng hoàn thành, Không đạt không mở sửa VU đã gửi. Phản hồi bổ sung không mở lại hồ sơ Completed.
+Mẫu kg hiện hành Đạt chỉ duyệt Trial; TP/VU chưa hoàn thành. Sale ghi giá và mẫu riêng theo thứ tự bất kỳ, rồi xác nhận Complete khi cả hai đạt đúng VU hiện tại. Tin phản hồi cũng dùng nghĩa này; topic/người nhận/idempotency không đổi. Không đạt không mở sửa VU đã gửi. Phản hồi bổ sung không mở lại hồ sơ Completed.
 
 ## Phản hồi Trial và lịch sử nghiệp vụ
 
@@ -17,7 +30,7 @@ tiếp tục lưu thay đổi trạng thái, không làm nguồn đọc xác nh�
 View saleToday của báo cáo PLM tái sử dụng WorkTask mở của chính user, đến hạn hôm nay/quá hạn,
 liên kết qua CustomerInteraction -> reference SampleTrial -> Sample Request. Không tạo task mới
 chỉ vì một hồ sơ đang chờ phản hồi, không suy ra hạn từ trạng thái và không gán việc của cùng KH
-cho mọi hồ sơ. Luồng ghi interaction/phản hồi hiện có giữ nguyên. Xem [contract workflow](../../PLM/SampleRequests/WORKFLOW.md).
+cho mọi hồ sơ. Luồng ghi interaction/phản hồi hiện có giữ nguyên. Xem [contract workflow](../../PLM/SampleRequests/docs/workflow/WORKFLOW.md).
 
 ACCUser được xem khách hàng, hồ sơ, tương tác, task/work plan, calendar và dashboard trong toàn công ty như President. Các query/service đọc dùng BuildReadScopeAsync; command vẫn dùng BuildScopeAsync với ownership/group và gate ghi hiện có. Quyền xem không cấp quyền chuyển giao, sửa hồ sơ hoặc quản lý assignee. Leader/director dashboard dùng nhóm reader riêng có ACCUser, giữ nguyên các role cũ. Customer/employee/reference vẫn phải cùng company.
 
@@ -183,10 +196,16 @@ company và visibility scope, đồng thời trả `{ customerId, isActive }` sa
 
 Mã số thuế được chuẩn hóa để so sánh bằng cách bỏ ký tự không phải chữ/số và chuyển thành chữ hoa. Ví dụ
 `0312-345-678` và `0312345678` được xem là cùng mã. Khi update, chính customer đang sửa được loại khỏi phép so sánh.
-BE chỉ chặn tạo/sửa khi mã đã chuẩn hóa trùng với một customer active, cùng công ty và đã là customer chính thức
-(`isLead=false`). Theo nghiệp vụ CRM, backend chuyển lead thành customer chính thức khi lên đơn nên không cần query
-`MerchandiseOrder` để quyết định rule MST. Customer còn là lead (`isLead=true`) được phép trùng MST; khách nội bộ
-`KH_VIETAUS` cũng là ngoại lệ và không dùng để chặn MST. Message lỗi kèm customer và sale/group đang quản lý.
+BE chặn tạo/sửa khi mã đã chuẩn hóa trùng với một customer active, cùng công ty và đã là customer chính thức
+(`isLead=false`), bất kể nhóm. Theo nghiệp vụ CRM, backend chuyển lead thành customer chính thức khi lên đơn nên không cần query
+`MerchandiseOrder` để quyết định rule MST. Với khách tiềm năng (`isLead=true`), MST chỉ bị chặn khi có khách tiềm năng
+active trùng MST và cùng GroupId chăm sóc; khác GroupId vẫn được phép trùng. Nhóm của khách dựa trên assignment active
+hoặc claim Work active còn hạn, cùng company. Khi tạo, dùng đúng GroupId sẽ được ghi vào claim mới; khi sửa,
+dùng nhóm của bản ghi đang sửa, không dùng nhóm của người thao tác. Claim hết hạn/inactive không giữ quyền chăm sóc nhóm.
+Khách nội bộ `KH_VIETAUS` vẫn là ngoại lệ và không dùng để chặn MST. Lỗi phân biệt khách chính thức với tiềm năng cùng nhóm.
+Thông báo trùng khách tiềm năng trả đủ mã khách, tên khách, Sale phụ trách và team đang giữ,
+lấy từ assignment/claim hiệu lực của đúng nhóm gây trùng. Thiếu tên Sale/team thì hiện `chưa xác định`.
+Rule áp dụng tại tạo/sửa profile, không tự gộp hoặc xóa các khách đã trùng trước đây. Không thêm migration/index trong thay đổi này.
 MST vẫn lưu theo định dạng người dùng nhập sau khi trim, không ghi đè bằng chuỗi đã chuẩn hóa.
 
 ### Khách hàng tiềm năng và chuyển giao
@@ -286,6 +305,16 @@ chỉ hydrate các customer người xem được phép thấy.
 
 ### Interaction
 
+Dialog PLM Báo giá & phản hồi khách (`POST /api/v1/plm/sample-requests/{id}/quotation-feedback`)
+lưu ô nội dung gửi Lab (`CustomerFeedbackNote`) thành `CustomerInteraction` loại `Quotation`, liên kết primary
+`SampleRequest`. Nội dung này bắt buộc khi ghi phản hồi; Ghi chú trao đổi giá (`Note`) tùy chọn
+được gộp cùng interaction, chia hai mục rõ ràng. Không tạo thêm interaction thứ hai.
+CRM áp quyền xem tương tác khách hàng hiện có; bản này không giới hạn theo nhóm Giá. Chỉ tạo
+cho lần lưu mới, không sao chép lịch sử cũ; không tạo khi ô trống. Customer phải nằm trong CRM
+visibility cùng company, actor là người thực hiện và AssignedSaleEmployeeId giữ Sale owner hồ sơ.
+LastContactDate chỉ tăng; không đổi CurrentSaleId, không tạo follow-up task. Lưu cùng transaction
+với thay đổi PLM; ID xác định từ company/actor/request/token/payload chống trùng khi retry.
+
 ```http
 POST  /api/v1/crm/interactions
 POST  /api/v1/crm/interactions/sample-trial
@@ -315,6 +344,13 @@ Nếu phản hồi này làm đổi `SampleRequest.Status`, cùng transaction c�
 thời điểm và reason `CustomerCareSampleTrialInteraction`; không đổi status thì không thêm audit dòng thừa.
 
 SaleAdmin được ghi nhận phản hồi mẫu thay Sale chỉ khi có capability workflow Sale và capability làm thay, owner của SampleRequest nằm trong EmployeeIdsInScope của write scope. Quyền đọc toàn company không bỏ qua gate này. Cả endpoint PLM và composer CRM chuyên biệt đều kiểm tra cùng rule, company, employee active và visibility; không mở quyền tương tác CRM chung. Actor tạo interaction/audit/sự kiện là người thực hiện, không đổi ManagerBy của hồ sơ. Khi làm thay và không chọn assigned Sale rõ ràng, interaction giao cho Sale owner; CurrentSaleId khách hàng không bị chuyển sang SaleAdmin (kể cả khi đã chọn assigned Sale cho interaction). Contact date vẫn cập nhật qua query tracking rõ ràng sau khi ghép visibility.
+
+Riêng phản hồi hủy (`CANCEL`) dùng quyền Sale phụ trách khách hàng, đồng bộ với PATCH
+hủy TP: assignment active, rồi claim Work còn hạn cho lead chưa có assignment, cuối
+cùng mới fallback CurrentSaleId. Không đòi actor là owner TP; quản lý vẫn cần capability
+và đúng nhóm Sale của khách. Hủy không tự chuyển CurrentSaleId hoặc ManagerBy; interaction
+không chỉ định Sale mặc định actor, không gán ngầm cho owner TP cũ ngoài scope. Các phản
+hồi khác giữ quy tắc owner TP và quyền CRM hiện có.
 
 Route PLM `POST /api/v1/plm/sample-requests/{sampleRequestId}/sample-trials/{trialId}/customer-feedback` là contract ưu tiên cho dialog mở từ Trial. Route tự resolve customer từ Trial, chỉ cho nhóm Sale, bắt buộc `idempotencyKey` và cho phép chọn `interactionType`. Một lần `SaveChangesAsync` cập nhật phản hồi Trial, tạo `CustomerInteraction`, tạo reference primary `SampleTrial/trialId` và tạo follow-up task tùy chọn. Vì toàn bộ mutation dùng cùng CRM write context, lỗi ở bất kỳ phần nào làm transaction rollback, không để Trial hoặc CRM interaction bị lưu riêng lẻ. Sau khi lưu thành công, composer gửi message/notification tiếng Việt trong conversation Sample Request với topic `SampleRequestCustomerFeedbackRecorded`; Sample Request private/KH_VIETAUS vẫn không tạo message theo rule chung.
 
@@ -709,3 +745,37 @@ AI summary dùng cấu hình Gemini hiện tại. Không ghi API key vào source
   rồi áp dụng `NormalizeTaxCode` trong memory. Khi dữ liệu tăng lớn nên bổ sung cột/index normalized bằng một
   migration được review riêng.
 - Không tạo hoặc chạy migration trong thay đổi này; database được giả định đã có schema `Work`.
+
+
+## Tìm kiếm gợi ý cho trang danh sách
+
+Danh sách khách hàng: mã/tên KH, nhân viên, nhóm. Panel activity khách hàng: mã/tên KH. Việc cá nhân: tên công việc, mã/tên KH, nhân viên; giữ scope current employee.
+
+Contract tùy chọn `searchSelections`/`suggestionKeyword`, OR/AND badge, giới hạn 10 và hướng dẫn thêm field: [Searching](../../../Commons/Searching/README.md). Không mở rộng quyền hoặc áp dụng tự động cho lookup.
+
+## Nhóm dùng chung mẫu
+
+Contract, quyền và rollout: [SampleSharingGroups](SampleSharingGroups/README.md). Nhóm này độc lập với team Sale; chưa bật trước khi có schema.
+
+### Phản hồi chip của TP theo dõi tiếp
+
+Viewer phản hồi Trial nhận biết marker SampleRequestFollowUpStarted của TP cũ.
+Chip thuộc diện tùy chọn sau lần gửi kg chỉ lưu phản hồi riêng; không mở lại VU,
+đổi kết quả kg hoặc hoàn thành/hủy TP. Phân quyền, scope và giao dịch CRM giữ nguyên.
+## Theo dõi khách hàng dành cho IMS
+
+`GET /api/v1/crm/customers/tracking` trả danh sách theo mã/tên, tối đa 25 hồ sơ
+mỗi trang. `GET /api/v1/crm/customers/{id}/tracking` trả cùng bộ trường.
+Quyền `crm.customer.tracking.view` yêu cầu nhân viên và công ty hiện tại.
+Chỉ đọc khách active cùng công ty và loại khách nội bộ.
+
+DTO gồm `customerId`, mã, tên, cờ khách tiềm năng và tên người phụ trách.
+Tên lấy từ claim Work còn hiệu lực hoặc phân công active theo loại hồ sơ,
+sau đó fallback về Sale hiện hành cùng công ty; `null` nếu chưa có tên.
+API không tải công nợ, điều khoản, nội dung tương tác, ghi chú hoặc tệp.
+Token explicit cần role claim và đăng nhập lại hoặc refresh.
+
+`GET /api/v1/crm/customers/{id}/tracking/interactions` dùng cùng quyền và scope
+hồ sơ khách. Trả lịch sử tương tác active cùng công ty, mới nhất trước, tối đa
+25 sự kiện mỗi trang. Mỗi dòng có mã sự kiện, loại, ngày tương tác và ngày
+theo dõi tiếp. Ngày theo dõi là `null` nếu chưa có lịch.

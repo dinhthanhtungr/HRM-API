@@ -12,7 +12,7 @@ internal sealed partial class ManufacturingAdjustmentService
 {
     /// <summary>Full draft replacement; calculates without tracking, saving, locking or publishing.</summary>
     public async Task<OperationResult<ManufacturingAdjustmentCalculation>> CalculateDraftAsync(
-        Guid orderId, ManufacturingAdjustmentInput request, CancellationToken ct, Guid? adjustmentId = null)
+        Guid orderId, ManufacturingAdjustmentInput request, CancellationToken ct, Guid? adjustmentId = null, bool validateDuplicates = false)
     {
         var error = Access(true);
         if (error is not null || !visibility.CanViewFormulaMaterials())
@@ -27,6 +27,9 @@ internal sealed partial class ManufacturingAdjustmentService
         }
 
         var company = user.CompanyId!.Value;
+        request = ManufacturingAdjustmentInputNormalization.Normalize(request);
+        if (request.Ranges is null)
+            return OperationResult<ManufacturingAdjustmentCalculation>.Fail("Thiếu danh sách lần chỉnh.");
         var order = await db.MfgProductionOrders.AsNoTracking().FirstOrDefaultAsync(x => x.MfgProductionOrderId == orderId && x.CompanyId == company && x.IsActive, ct);
         if (order is null)
         {
@@ -46,7 +49,7 @@ internal sealed partial class ManufacturingAdjustmentService
         {
             // Read-only calculation also initializes empty input and historical rows.
             // Persisting mutations enforce the required sample weight separately.
-            error = ManufacturingAdjustmentBatchRules.ValidateRange(range, planned, requireTakenQuantity: false);
+            error = ManufacturingAdjustmentBatchRules.ValidateRange(range, planned, requireTakenQuantity: false, validateDuplicates: validateDuplicates);
             if (error is not null)
             {
                 return OperationResult<ManufacturingAdjustmentCalculation>.Fail(error);
@@ -79,7 +82,7 @@ internal sealed partial class ManufacturingAdjustmentService
             return OperationResult<ManufacturingAdjustmentCalculation>.Fail("Không có VA active để tính khối lượng gốc.");
         }
 
-        var resolved = await inputs.ResolveAsync(company, request.Ranges, ct);
+        var resolved = await inputs.ResolveAsync(company, request.Ranges, ct, validateDuplicates: validateDuplicates);
         if (!resolved.Success || resolved.Data is null)
         {
             return OperationResult<ManufacturingAdjustmentCalculation>.Fail(resolved.Message ?? "Vật tư không hợp lệ.");
@@ -96,7 +99,8 @@ internal sealed partial class ManufacturingAdjustmentService
             now,
             user.EmployeeId!.Value,
             originalBatches: original?.Batches.Where(x => x.IsActive).ToList(),
-            requireTakenQuantity: false
+            requireTakenQuantity: false,
+            validateDuplicates: validateDuplicates
         );
         if (!built.Success || built.Data is null)
         {
@@ -112,7 +116,7 @@ internal sealed partial class ManufacturingAdjustmentService
             CompanyId = company,
             CreatedBy = user.EmployeeId.Value,
             CreatedDate = request.PreviewCreatedDate ?? now,
-            Status = (request.Status ?? AdjustmentStatus.Draft).ToString(),
+            Status = ManufacturingAdjustmentMapping.StatusName(request.Status ?? AdjustmentStatus.Draft),
             Note = request.Note,
             Batches = built.Data
         };

@@ -1,4 +1,5 @@
 using HRM.Domain.Enums.Notifications;
+using HRM.Application.Features.PLM.SampleRequests.Services.Workflow;
 
 namespace HRM.Application.Features.PLM.SampleRequests.Services;
 
@@ -14,7 +15,13 @@ internal enum SampleRequestNotificationAudience
 
 internal static class SampleRequestNotificationAudienceRules
 {
-    internal static SampleRequestNotificationAudience For(TopicNotifications topic) => topic switch
+    internal static SampleRequestNotificationAudience For(TopicNotifications topic, string? workflowEventType = null)
+        => topic == TopicNotifications.SampleRequestMessageCreated && workflowEventType == SampleRequestLabPauseRules.Rejected
+            ? SampleRequestNotificationAudience.CustomerSales | SampleRequestNotificationAudience.LabLeaders | SampleRequestNotificationAudience.LabAdmins
+            : topic == TopicNotifications.SampleRequestMessageCreated && workflowEventType is SampleRequestLabPauseRules.Resumed or SampleFlowRules.LabFinalizationRequested or SampleFlowRules.ChipFinalizationRequested or
+            SampleFlowRules.ChipThenSampleRequested or SampleFlowRules.ChipRequested or SampleFlowRules.KgRequested or SampleFlowRules.CompletionDeferred
+            ? SampleRequestNotificationAudience.LabLeaders | SampleRequestNotificationAudience.LabAdmins
+            : topic switch
     {
         TopicNotifications.SampleRequestMessageCreated => SampleRequestNotificationAudience.LabLeaders,
         TopicNotifications.SampleRequestUpdated or

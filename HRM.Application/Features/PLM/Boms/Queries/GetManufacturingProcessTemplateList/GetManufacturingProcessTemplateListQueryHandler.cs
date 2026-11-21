@@ -33,7 +33,12 @@ internal sealed class GetManufacturingProcessTemplateListQueryHandler
         if (request.Status.HasValue)
             query = query.Where(x => x.Status == request.Status.Value);
 
-        if (request.NormalizedKeyword is { } keyword)
+        var smartSearch = SmartSearch.For(query, fields => [
+            fields.Code("templateCode", x => x.ExternalId, "Mã mẫu", "Template code"),
+            fields.Name("templateName", x => x.Name, "Tên mẫu", "Template name")
+        ]);
+        query = smartSearch.ApplyRequest(query, request.NormalizedKeyword, request, out var smartKeyword);
+        if (smartKeyword is { } keyword)
         {
             var pattern = PostgresSearchPattern.ContainsLiteral(keyword);
             query = query.Where(x =>
@@ -41,6 +46,8 @@ internal sealed class GetManufacturingProcessTemplateListQueryHandler
                 EF.Functions.ILike(x.Name, pattern, PostgresSearchPattern.EscapeCharacter));
         }
 
+        if (await smartSearch.SuggestionsAsync<ManufacturingProcessTemplateListItemDto>(query, request, cancellationToken) is { } suggestions)
+            return suggestions;
         query = (request.NormalizedSortBy?.ToLowerInvariant(), request.SortDescending) switch
         {
             ("externalid", false) => query.OrderBy(x => x.ExternalId).ThenByDescending(x => x.VersionNo),

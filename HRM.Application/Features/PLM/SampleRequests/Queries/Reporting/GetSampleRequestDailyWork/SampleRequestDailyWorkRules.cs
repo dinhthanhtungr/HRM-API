@@ -35,7 +35,7 @@ internal static class SampleRequestDailyWorkRules
         // A manual pin can surface an open request whose normal Lab/Sale work has ended.
         // Keep real pending actions; only supply a review action when there is otherwise none.
         if (!useDelayReviewAction && item.IsDelayed && string.IsNullOrEmpty(action) &&
-            item.SampleRequestStatus is not "Completed" and not "Cancelled")
+            item.SampleRequestStatus is not "Completed" and not "Cancelled" and not "LabDeclined")
             (status, action, label, role) = ("ReviewDelayedWork", "ReviewSample", "Lab kiểm tra hồ sơ đang treo", "Lab");
 
         item.WorkStatus = status;
@@ -106,10 +106,10 @@ internal static class SampleRequestDailyWorkRules
         bool useDelayReviewAction)
     {
         if (useDelayReviewAction && item.IsLabWorkComplete == true && item.IsDelayed &&
-            item.SampleRequestStatus is not "Completed" and not "Cancelled")
+            item.SampleRequestStatus is not "Completed" and not "Cancelled" and not "LabDeclined")
             return ("ReviewDelayFlag", "ClearDelay", "Lab kiểm tra hồ sơ được đánh dấu delay", "Lab");
         if (item.Status is SampleTrialStatus.Approved or SampleTrialStatus.Cancelled ||
-            item.SampleRequestStatus is "Completed" or "Cancelled")
+            item.SampleRequestStatus is "Completed" or "Cancelled" or "LabDeclined")
         {
             return feedbackToday
                 ? ("FeedbackRecorded", string.Empty, "Đã ghi nhận phản hồi", string.Empty)
@@ -143,7 +143,7 @@ internal static class SampleRequestDailyWorkRules
 
     internal static bool IsLabComplete(SampleRequestSampleTrialReportDto item)
     {
-        if (item.SampleRequestStatus is "Completed" or "Cancelled" ||
+        if (item.SampleRequestStatus is "Completed" or "Cancelled" or "LabDeclined" ||
             item.Status is SampleTrialStatus.Approved or SampleTrialStatus.Cancelled)
             return true;
         if (IsQuotation(item.InfoType))

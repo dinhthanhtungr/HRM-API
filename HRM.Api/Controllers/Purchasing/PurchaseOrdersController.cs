@@ -1,4 +1,6 @@
 using HRM.Application.Features.Purchasing.PurchaseOrders.Queries.GetPurchaseOrderReceiptProgress;
+using HRM.Application.Features.Purchasing.PurchaseOrders.Queries.GetPurchaseReturnOptions;
+using HRM.Application.Features.Purchasing.PurchaseOrders.Commands.CreatePurchaseReturn;
 using HRM.Application.Features.Purchasing.PurchaseOrders.Queries.ExportPurchaseOrdersExcel;
 using HRM.Application.Commons.Authorization;
 using HRM.Application.Features.Purchasing.PurchaseOrders.Commands.CancelPurchaseOrder;
@@ -52,6 +54,20 @@ public sealed class PurchaseOrdersController : ControllerBase
     {
         var result = await _sender.Send(new GetPurchaseOrderReceiptProgressQuery(purchaseOrderId, includeInactive), ct);
         return result is null ? NotFound(new { message = "Không tìm thấy PO." }) : Ok(result);
+    }
+
+    [HttpGet("{purchaseOrderId:guid}/return-requests")]
+    public async Task<IActionResult> GetReturnOptions(Guid purchaseOrderId, CancellationToken ct, [FromQuery] bool includeAccepted = false)
+    {
+        var result = await _sender.Send(new GetPurchaseReturnOptionsQuery(purchaseOrderId, includeAccepted), ct);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    [HttpPost("{purchaseOrderId:guid}/return-requests")]
+    public async Task<IActionResult> CreateReturn(Guid purchaseOrderId, [FromBody] CreatePurchaseReturnRequest request, CancellationToken ct)
+    {
+        var result = await _sender.Send(new CreatePurchaseReturnCommand(purchaseOrderId, request), ct);
+        return result.Success ? StatusCode(StatusCodes.Status201Created, result) : BadRequest(result);
     }
 
     [HttpGet("{purchaseOrderId:guid}/pdf")]

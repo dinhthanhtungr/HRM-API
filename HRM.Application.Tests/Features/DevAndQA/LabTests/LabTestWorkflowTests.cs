@@ -38,13 +38,13 @@ public sealed class LabTestWorkflowTests
         var entity = new LabTest { Id = Guid.NewGuid(), CompanyId = user.CompanyId!.Value, Code = "NVL_TEST_00000001",
             SampleName = "Sample", TestDate = new(2026, 1, 2), Note = "Keep", BatchNumber = "Batch",
             Results = [new() { Id = Guid.NewGuid(), EvaluationStandardId = standard.Id, CriterionCode = standard.Code,
-                CriterionName = standard.Name, DataType = EvaluationDataType.Decimal, Value = "0.9", ObservedText = "Original" }] };
+                CriterionName = standard.Name, DataType = EvaluationDataType.Decimal, Value = "0.9" }] };
         store.Seed("LabTests", entity);
         var changed = await service.PatchAsync(entity.Id, new() { ClearFields = ["batchNumber"], Results = [new(standard.Id, ClearValue: true)] }, default);
         Assert.Null(changed.BatchNumber);
         Assert.Equal("Keep", changed.Note);
         Assert.Null(Assert.Single(changed.Results).Value);
-        Assert.Equal("Original", changed.Results[0].ObservedText);
+
         Assert.Equal(user.EmployeeId, changed.UpdatedBy);
     }
 

@@ -9,10 +9,10 @@ Trial là bản ghi lịch sử của một lần giao mẫu thực tế, không
 3. Gửi mẫu mới chuyển Trial trực tiếp sang `WaitingCustomerFeedback`; không tạo action Sale nhận mẫu.
    Ngày Lab nhận chuẩn nằm ở Sample Request, không ghi vào `Trial.RequestReceivedDate` lịch sử.
 4. Sale ghi nhận phản hồi khách qua action `customer-feedback`:
-   - `Approved`: Trial `Approved`, Formula của Trial `Completed`, Formula đó được chọn, Sample Request `Completed`.
+   - `Approved`: với kg hiện hành, chỉ Trial `Approved`; Formula/TP chưa hoàn thành. Sale ghi phản hồi giá riêng và xác nhận workflow `Complete` khi cả hai đạt đúng VU. Chip/legacy theo [contract luồng](../../docs/workflow/CHIP_SAMPLE_FLOW.md).
    - `Failed`: Trial `Failed`, Sample Request trở về `InProgress`; Lab tạo/clone Formula mới và gửi mẫu lại để tạo Trial kế tiếp.
    - `Cancelled`: Trial `Cancelled`, Sample Request `Cancelled`.
-   - Shortcut trên màn Sample Request: khi hồ sơ đang `SampleSent`, role thuộc `FormulaSelectors` có thể PATCH chọn
+   - Shortcut legacy trên màn Sample Request: khi hồ sơ legacy đang `SampleSent`, role thuộc `FormulaSelectors` có thể PATCH chọn
      `formulaId` của đúng Trial pending mới nhất. Backend hiểu thao tác đã xác nhận là khách chấp nhận mẫu, tự đặt
      `CustomerReplyStatus = APPROVED`, duyệt Trial và hoàn thành Formula/Sample Request trong cùng transaction.
      `LabUser` chỉ nhận cùng quyền shortcut khi customer là `KH_VIETAUS` và `RequestType` là nội bộ; thiếu một trong
@@ -30,7 +30,7 @@ Mọi chuyển trạng thái trên được lưu trước; message/notification 
 ## Sale xác nhận đã nhận mẫu — API legacy, không dùng trong luồng mới
 
 Nội dung mục này mô tả payload/lịch sử trước đây. FE không hiện action pending, report message
-trả canConfirm=false; message gửi mẫu mới không còn sampleReceiptAction. Xem [quy trình mới](../../WORKFLOW.md).
+trả canConfirm=false; message gửi mẫu mới không còn sampleReceiptAction. Xem [quy trình mới](../../docs/workflow/WORKFLOW.md).
 
 Message được tạo khi Lab gửi mẫu có `sampleReceiptAction` trong payload, gồm `sampleRequestSampleTrialId`, `status` và dữ liệu xác nhận. FE hiển thị ô ngày/giờ mặc định là thời điểm hiện tại cùng nút **Đã nhận mẫu** khi `canConfirm = true`.
 

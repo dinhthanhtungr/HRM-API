@@ -10,22 +10,35 @@ public sealed partial class InternalMailAreaAccessService
 {
     /// <summary>Read-only, page-batched navigation and unread counts. No default-group writes.</summary>
     internal async Task<IReadOnlyDictionary<Guid, IReadOnlyList<InternalMailQuickGroupDto>>> QuickGroupsAsync(
-        IEnumerable<Guid> sourceRootIds, CancellationToken ct)
+        IEnumerable<Guid> sourceRootIds, CancellationToken ct,
+        IReadOnlyDictionary<Guid, int>? pageUnreadCounts = null)
     {
         var result = new Dictionary<Guid, IReadOnlyList<InternalMailQuickGroupDto>>();
         var ids = sourceRootIds.Distinct().ToArray();
         if (ids.Length == 0 || !user.IsAuthenticated || user.CompanyId is not { } company || user.EmployeeId is not { } employee)
             return result;
-        var visible = Conversations();
-        var visibleGroups = VisibleGroupScopes();
-        var colors = ColorRoots(company);
+        // Evaluate the full scope once for this page. Only authorized IDs are materialized;
+        // this is local to the call; the next call evaluates membership and scope again.
+        var pageGroups = GroupScopes(company).Where(g => ids.Contains(g.RootConversationId));
+        const int maxCandidateGroups = 4096;
+        var candidates = await pageGroups.Select(g => g.ConversationId).Take(maxCandidateGroups + 1).ToArrayAsync(ct);
+        var readableIds = ConversationsForCandidates(candidates).Select(c => c.InternalConversationId);
+        var scopedGroups = candidates.Length <= maxCandidateGroups
+            ? pageGroups.Where(g => readableIds.Contains(g.ConversationId))
+            : VisibleGroupScopes().Where(g => ids.Contains(g.RootConversationId));
+        var visibleGroups = await scopedGroups
+            .Select(g => new { g.ConversationId, g.RootConversationId }).ToArrayAsync(ct);
+        if (visibleGroups.Length == 0) return result;
+        var visibleIds = visibleGroups.Select(g => g.ConversationId).ToArray();
+        var visibleRootIds = visibleGroups.Select(g => g.RootConversationId).Distinct().ToArray();
+        var colors = ColorRoots(company, ids);
         var roots = await db.InternalConversations.AsNoTracking().Where(c => ids.Contains(c.InternalConversationId) &&
                 c.CompanyId == company && c.IsActive && c.RelatedType == InternalMailRelatedType.SampleRequest &&
-                visibleGroups.Any(g => g.RootConversationId == c.InternalConversationId))
+                visibleRootIds.Contains(c.InternalConversationId))
             .Select(c => new
             {
                 Id = c.InternalConversationId,
-                CanReadRoot = visible.Any(v => v.InternalConversationId == c.InternalConversationId),
+                CanReadRoot = visibleIds.Contains(c.InternalConversationId),
                 IsMember = c.Participants.Any(p => p.EmployeeId == employee && p.IsActive),
                 IsColor = colors.Contains(c.InternalConversationId),
                 Category = db.SampleRequests.Where(s => s.CompanyId == company && s.IsActive && s.SampleRequestId == c.RelatedId &&
@@ -38,23 +51,21 @@ public sealed partial class InternalMailAreaAccessService
         var children = await GroupScopes(company).AsNoTracking().Where(g => rootIds.Contains(g.RootConversationId) &&
                 (g.GroupType == InternalConversationGroupType.Technical || g.GroupType == InternalConversationGroupType.Pricing))
             .Select(g => new { Id = g.ConversationId, RootId = g.RootConversationId, g.Conversation.RelatedType,
-                Visible = visible.Any(v => v.InternalConversationId == g.ConversationId) }).ToListAsync(ct);
+                Visible = visibleIds.Contains(g.ConversationId) }).ToListAsync(ct);
         var needsPreview = roots.Any(r => r.CanReadRoot && children.Count(c => c.RootId == r.Id) < 2);
         var visibleChildIds = children.Where(c => c.Visible).Select(c => c.Id).ToArray();
         var unreadCounts = new Dictionary<Guid, int>();
-        if (visibleChildIds.Length > 0)
+        foreach (var id in visibleChildIds)
+            if (pageUnreadCounts != null && pageUnreadCounts.TryGetValue(id, out var count))
+                unreadCounts[id] = count;
+        // Reuse only canonical counts from this request; absent entries still need a scoped count.
+        var missingCountIds = visibleChildIds.Where(id => !unreadCounts.ContainsKey(id)).ToArray();
+        if (missingCountIds.Length > 0)
         {
-            var legacyCounts = await Conversations().AsNoTracking()
-                .Where(c => visibleChildIds.Contains(c.InternalConversationId))
-                .Select(c => new { Id = c.InternalConversationId,
-                    Count = c.Messages.Count(m => !m.IsDeleted && m.SenderEmployeeId != employee &&
-                        (m.PayloadJson == null || !EF.Functions.JsonContains(m.PayloadJson, InternalMailMentions.AudienceMarker)) &&
-                        m.ReadStates.Any(s => s.EmployeeId == employee && !s.IsRead)) })
-                .ToListAsync(ct);
-            var notificationCounts = await NotificationUnreadCounts(visibleChildIds)
-                .ToDictionaryAsync(c => c.ConversationId, c => c.UnreadCount, ct);
-            foreach (var count in legacyCounts)
-                unreadCounts[count.Id] = Math.Max(count.Count, notificationCounts.GetValueOrDefault(count.Id));
+            var missingCounts = pageUnreadCounts is null
+                ? await NotificationUnreadCounts(missingCountIds).ToDictionaryAsync(c => c.ConversationId, c => c.UnreadCount, ct)
+                : await PageNotificationUnreadCountsAsync(missingCountIds, ct);
+            foreach (var entry in missingCounts) unreadCounts[entry.Key] = entry.Value;
         }
         var observer = CanObserveSampleRequestGroups;
         var pricingObserver = CanObservePricing;
@@ -82,7 +93,7 @@ public sealed partial class InternalMailAreaAccessService
             executive = roles?.Executive == true;
             technical = roles?.Technical == true;
             rd = roles?.Rd == true;
-            leaderTypes = await db.MemberInGroups.AsNoTracking().Where(m => m.Profile == employee && m.IsActive && m.IsAdmin == true &&
+            leaderTypes = await db.MemberInGroups.AsNoTracking().Where(m => m.Profile == employee && m.IsActive &&
                     m.Group.CompanyId == company && m.Group.GroupType != null && m.ProfileNavigation != null &&
                     m.ProfileNavigation.CompanyId == company && m.ProfileNavigation.IsActive)
                 .Select(m => m.Group.GroupType!).Distinct().ToArrayAsync(ct);

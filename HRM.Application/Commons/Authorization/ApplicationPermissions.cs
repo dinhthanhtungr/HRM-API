@@ -6,18 +6,29 @@ namespace HRM.Application.Commons.Authorization;
 /// </summary>
 public static class ApplicationPermissions
 {
+    public static class CRM
+    {
+        public const string ViewCustomerTracking = "crm.customer.tracking.view";
+        public const string ManageCustomerSampleSharing = "crm.customer-sample-sharing.manage";
+        public const string AdminCustomerSampleSharing = "crm.customer-sample-sharing.admin";
+    }
     public static class Warehouse
     {
+        public const string ViewStockTracking = "warehouse.stock.tracking.view";
+        public const string ViewVoucherSuppliers = "warehouse.voucher-supplier.view";
         public const string ViewMixingStock = "warehouse.mixing-stock.view";
     }
 
     public static class Quotations
     {
+        public const string ViewTracking = "crm.quotation.tracking.view";
         public const string ConfirmSent = "crm.quotation.send.confirm";
     }
 
     public static class Reports
     {
+        public const string ViewDeliveryOtd = "reports.delivery-otd.view";
+        public const string ViewDeliveryFinish = "reports.delivery-finish.view";
         public const string ViewPlpu = "reports.plpu.view";
         public const string ViewSalesProfit = "reports.sales-profit.view";
     }
@@ -67,6 +78,15 @@ public static class ApplicationPermissions
 
     public static class PLM
     {
+        public const string ViewProductionTracking = "plm.production-order.tracking.view";
+        public const string ViewSampleProductionTracking = "plm.sample-production-order.tracking.view";
+        public const string ViewSaleOrderTracking = "plm.sale-order.tracking.view";
+        public const string ViewSampleRequestTracking = "plm.sample-request.tracking.view";
+        public const string EditRequestedDeliverySchedule = "plm.sale-orders.delivery-schedule.request.edit";
+        public const string EditPromisedDeliverySchedule = "plm.sale-orders.delivery-schedule.promise.edit";
+        public const string ViewMaterialProcessing = "plm.material-processing.view";
+        public const string CreateMaterialProcessing = "plm.material-processing.create";
+        public const string ManageMaterialProcessing = "plm.material-processing.manage";
         public const string ManageSampleWorkSchedule = "plm.sample-request.work-schedule.manage";
         public const string ManageSampleLabWorkflow = "plm.sample-request.workflow.lab";
         public const string ManageSampleSaleWorkflow = "plm.sample-request.workflow.sale";
@@ -95,6 +115,7 @@ public static class ApplicationPermissions
 
     public static class Dispatch
     {
+        public const string ViewDeliveryTracking = "dispatch.delivery.tracking.view";
         public const string ViewDeliveryCost = "dispatch.delivery-cost.view";
     }
 

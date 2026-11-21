@@ -30,7 +30,7 @@ namespace HRM.Domain.Enums.WareHouses
         ExportRawMaterial = 6,            // Xuất nguyên vật liệu
         ExportDefectiveRawMaterial = 8,   // Xuất nguyên vật liệu lỗi
         ExportOther = 10,                 // Xuất khác
-        ExportReturn = 12,               // Xuất trả hàng
+        ExportReturn = 12,               // Xuất hàng trả NCC
         ExportMaterial = 14,             // Xuất vật tư
     }
 }

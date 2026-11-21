@@ -4,12 +4,15 @@ Quy trình hiện hành: [API_SYNC.md](API_SYNC.md). API/controller/command/perm
 
 Marker thống nhất: `GROUP-STORAGE-TRANSITION`. Marker là chỉ dẫn tìm phạm vi và điều kiện dọn, không phải cho phép xóa cả file hoặc dữ liệu DB. Phân biệt API/công cụ dùng trong đợt chuyển đổi với writer/mapped reader cần tiếp tục vận hành.
 
+`InternalMailAreaAccessService.UnreadKeys.cs`: marker `switch` giữ query khóa unread legacy khi `GroupStorage.Enabled=false`; chỉ bỏ guard sau khi mọi môi trường đã chuyển canonical và đối chiếu quyền/tập khóa/badge. Hàm lấy khóa async, kiểm tra quyền và bước fallback tin legacy không phải code backfill để xóa toàn bộ.
+
 ```powershell
 rg -n "GROUP-STORAGE-TRANSITION" HRM.Application HRM.Infrastructure HRM.Api tools/internal-mail-group-storage
 ```
 
 | Nhãn | Vị trí | Khi dọn cần làm gì |
 | --- | --- | --- |
+| switch / comparison-reader (unread plans) | InternalMailAreaAccessService.UnreadConversationIds và LatestVisibleMessageBusinessEvents | Sau cutover toàn bộ DB, giữ kế hoạch canonical đã đo và bỏ nhánh query legacy; không xóa predicate quyền ở khóa nhóm. Rà parity role/DTO/unread và đo lại trước khi bỏ guard UsesGroupStorage. Không đổi schema/flag hay dữ liệu như một phần tối ưu query. |
 | switch | InternalMailGroupStorageOptions; constructor/access predicates trong InternalMailAreaAccessService; hai DI registrations ở Application và API | Bỏ cờ cùng nhánh legacy sau nghiệm thu, rồi bắt buộc kiểm tra mapping thay vì xóa kiểm tra quyền/mapping. Cập nhật test cấu hình và runbook. |
 | legacy-adapter | InternalMailAreaAccessService.Storage.cs, false branch của GroupScopes | Xóa nhánh chuyển RelatedType/RelatedId cũ thành cấu trúc nhóm. Giữ query đọc bảng mới và các helper root/children dùng trong runtime. |
 | mirror-validation | Mapped branch trong InternalMailAreaAccessService.Storage.cs | Chỉ bỏ các điều kiện đối chiếu RelatedType/RelatedId khi mọi writer đã dùng bảng mới làm nguồn chính. Giữ company, active, root hợp lệ, loại nhóm và authorization. |

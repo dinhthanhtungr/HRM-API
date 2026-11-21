@@ -22,9 +22,11 @@ public sealed class SampleRequestRoleWorkReportTests
         var user = new User("SaleUser", authenticated, hasContext);
         Assert.False(SampleRequestReportAccess.CanRead(user));
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
-            new GetSampleRequestAdminSummaryQueryHandler(null!, user, null!).Handle(new(), CancellationToken.None));
+            new GetSampleRequestAdminSummaryQueryHandler(null!, user, null!, null!).Handle(new(), CancellationToken.None));
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
-            new GetSampleRequestAdminDetailsQueryHandler(user, null!).Handle(new(), CancellationToken.None));
+            new GetSampleRequestAdminDetailsQueryHandler(user, null!, null!, null!).Handle(new(), CancellationToken.None));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+            new HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleActivityDetails.GetSampleActivityDetailsQueryHandler(null!, null!, user, null!).Handle(new(), CancellationToken.None));
     }
     [Fact]
     public void ManualPinDoesNotHideSaleFeedbackActionOnNewRoleScreens()
@@ -59,11 +61,15 @@ public sealed class SampleRequestRoleWorkReportTests
 
     [Theory]
     [InlineData("SaleUser", SampleRequestWorkAudience.Sale, true)]
+    [InlineData("SaleAdmin", SampleRequestWorkAudience.Sale, true)]
+    [InlineData("SaleAdmin", SampleRequestWorkAudience.Lab, false)]
     [InlineData("LabUser", SampleRequestWorkAudience.Sale, false)]
     [InlineData("LabAdmin", SampleRequestWorkAudience.Lab, true)]
     [InlineData("SaleUser", SampleRequestWorkAudience.Lab, false)]
     [InlineData("Admin", SampleRequestWorkAudience.Lab, true)]
     [InlineData("Developer", SampleRequestWorkAudience.Sale, false)]
+    [InlineData("Developer", SampleRequestWorkAudience.Lab, true)]
+    [InlineData("Developer", SampleRequestWorkAudience.LabAdmin, true)]
     [InlineData("Leader", SampleRequestWorkAudience.Sale, false)]
     public void NewAudienceDoesNotGrantOtherRoles(string role, SampleRequestWorkAudience audience, bool expected)
         => Assert.Equal(expected, SampleRequestWorkQueueAccess.CanRead(new User(role), audience));
@@ -90,7 +96,7 @@ public sealed class SampleRequestRoleWorkReportTests
         var rows = new[]
         {
             new SampleRequestAdminReportRecord { SampleRequestId = Guid.NewGuid(), CreatedDate = start.AddMonths(-1), Status = "InProgress" },
-            new SampleRequestAdminReportRecord { SampleRequestId = Guid.NewGuid(), CreatedDate = start, Status = "Completed", CompletedDate = start.AddDays(2) },
+            new SampleRequestAdminReportRecord { SampleRequestId = Guid.NewGuid(), CreatedDate = start, Status = "Completed", CompletedDate = start.AddDays(2), LabCompletedDate = start.AddDays(2) },
             new SampleRequestAdminReportRecord { SampleRequestId = Guid.NewGuid(), CreatedDate = start, Status = "Cancelled", CancelledDate = start.AddDays(3) },
             new SampleRequestAdminReportRecord { SampleRequestId = Guid.NewGuid(), CreatedDate = start, Status = "Completed", CompletedDate = end.AddDays(2) },
             new SampleRequestAdminReportRecord { SampleRequestId = Guid.NewGuid(), CreatedDate = start, Status = "Cancelled" },
@@ -99,6 +105,25 @@ public sealed class SampleRequestRoleWorkReportTests
         Assert.Equal(2, SampleRequestAdminReportQuery.Filter(rows, SampleRequestAdminMetric.Open, start, end).Count());
         Assert.Single(SampleRequestAdminReportQuery.Filter(rows, SampleRequestAdminMetric.Completed, start, end));
         Assert.Single(SampleRequestAdminReportQuery.Filter(rows, SampleRequestAdminMetric.Cancelled, start, end));
+    }
+
+    [Fact]
+    public void FormulaMetricsSeparateUnstartedAndActiveWorkWithoutCountingSentOrTerminalRequests()
+    {
+        var start = new DateTime(2026, 11, 1);
+        var end = start.AddMonths(1);
+        var rows = new[]
+        {
+            new SampleRequestAdminReportRecord { CreatedDate = start.AddMonths(-1), Status = "InProgress", HasFormula = true },
+            new SampleRequestAdminReportRecord { CreatedDate = start, Status = "InProgress", HasFormula = false },
+            new SampleRequestAdminReportRecord { CreatedDate = start, Status = "New", HasFormula = false },
+            new SampleRequestAdminReportRecord { CreatedDate = start, Status = "SampleSent", HasFormula = true, LabCompletedDate = start.AddDays(1) },
+            new SampleRequestAdminReportRecord { CreatedDate = start, Status = "Completed", HasFormula = true },
+            new SampleRequestAdminReportRecord { CreatedDate = start, Status = "Cancelled", HasFormula = false },
+            new SampleRequestAdminReportRecord { CreatedDate = end, Status = "InProgress", HasFormula = true }
+        }.AsQueryable();
+        Assert.Single(SampleRequestAdminReportQuery.Filter(rows, SampleRequestAdminMetric.InProgress, start, end));
+        Assert.Equal(2, SampleRequestAdminReportQuery.Filter(rows, SampleRequestAdminMetric.Pending, start, end).Count());
     }
 
     [Fact]
@@ -142,7 +167,7 @@ public sealed class SampleRequestRoleWorkReportTests
     {
         using var db = Db();
         var company = Guid.NewGuid();
-        var source = SampleRequestAdminReportQuery.Build(db.SampleRequests.Where(x => x.CompanyId == company && x.IsActive), db);
+        var source = SampleRequestAdminReportQuery.Build(db.SampleRequests.Where(x => x.CompanyId == company && x.IsActive), db, db.ProductPricingVersions);
         foreach (var metric in Enum.GetValues<SampleRequestAdminMetric>())
         {
             var sql = SampleRequestAdminReportQuery.Filter(source, metric, new DateTime(2026, 10, 1), new DateTime(2026, 11, 1))
@@ -151,7 +176,11 @@ public sealed class SampleRequestRoleWorkReportTests
             Assert.Contains("GROUP BY", sql);
             Assert.Contains("LegacyWorkTrackingIncluded", sql);
             Assert.Contains("LegacyWorkTrackingExcluded", sql);
-            Assert.DoesNotContain("UpdatedDate", sql);
+            // Completion submetrics share the same persisted rework/reset rules as Completed.
+            if (metric is not (SampleRequestAdminMetric.Completed or SampleRequestAdminMetric.InProgress or
+                SampleRequestAdminMetric.CompletedQuotation or SampleRequestAdminMetric.CompletedChip or
+                SampleRequestAdminMetric.CompletedSample or SampleRequestAdminMetric.CompletedOther))
+                Assert.DoesNotContain("UpdatedDate", sql);
         }
         Assert.False(SampleRequestAdminReportQuery.IsValidPeriod(new DateOnly(2026, 11, 1), DateOnly.MaxValue));
         Assert.False(SampleRequestAdminReportQuery.IsValidPeriod(new DateOnly(2026, 11, 2), new DateOnly(2026, 11, 1)));

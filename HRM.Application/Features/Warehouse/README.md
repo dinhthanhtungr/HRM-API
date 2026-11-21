@@ -1,5 +1,54 @@
 # Warehouse
 
+## Tồn kho theo dõi dành cho IMS
+
+`GET /api/v1/warehouse/stock-available/tracking` yêu cầu
+`warehouse.stock.tracking.view` và nhân viên/công ty hiện tại. Trả `items` có mã,
+tên, loại tồn, `onHandKg` và `availableKg`, tối đa 25 dòng mỗi trang. Tìm theo
+mã hoặc tên bằng `keyword` tối đa 100 ký tự.
+
+`onHandKg` là tổng trên kệ active cùng công ty, loại kho cân trộn, chỉ gồm TP
+và NVL thường. `availableKg` của TP bằng tồn trừ giữ chỗ đang mở còn lại.
+Trường này là `null` với NVL hoặc khi mã TP trùng mã vật tư vì bảng giữ chỗ
+chưa tách loại tồn. Không trả lô, vị trí kệ, mã giữ chỗ, liên kết sản xuất,
+công thức hoặc giá. Tồn kho đầy đủ, export và lịch sử biến động yêu cầu tài
+khoản không mang hạn chế IMS. Token explicit cần role claim rồi refresh.
+
+`reservedVaCodes[].mfgProductionOrderId` bổ sung ID MFG từ selection hiện hành
+cùng company với `vaCode`, để FE mở chi tiết MFG ở tab mới. Thiếu selection/ID
+hợp lệ thì trả null; không suy MFG từ VA. Quyền truy cập chi tiết MFG giữ nguyên.
+
+Lệnh NVL nội bộ vẫn tạo/cập nhật giữ chỗ WarehouseTempStock khi tạo/sửa; riêng giới hạn
+Max và kg từng lot lấy theo ShelfStock hợp lệ, không trừ reservation. Hủy lệnh giải phóng
+Open của chính lệnh và xóa lịch trong transaction.
+MFG thường vẫn dùng ProductionOrderReservationService như hiện tại.
+Không trừ tồn thực, không tạo phiếu xuất; kg khả dụng/FIFO chỉ là dữ liệu tại thời điểm đọc.
+
+## Lý do nhập TP lỗi và xuất tồn kho
+
+`details[].defectReasons` trên list/detail voucher và
+`stockDetailAvailables[].defectReasons` trên tồn kho là mảng
+`{ reason, sourceKind, requestCode, voucherCode, recordedAt }`, mặc định `[]`.
+Nguồn hiện xác minh được là `ImportRequestFlowLog.Note`, phần `REASON=` trong
+dòng `[WIP_YIELD_CHECK]`, với flow đã APPLIED và chưa hủy. `sourceKind` là
+`ImportConfirmation`: lý do xác nhận nhập TP lỗi, không phải kết luận QC.
+Liên kết qua `ProductionOutputReceiptLedger` theo company/request/detail/voucher,
+rồi VoucherDetailId, không suy đoán LineNo. Không trả log thô, supplier hoặc cost.
+Tồn kho chỉ gắn lịch sử cho TP lỗi cùng company/mã/lot không rỗng; đây không phải
+phân bổ lý do riêng cho lượng tồn còn lại. Không có liên kết tin cậy thì trả `[]`.
+
+`GET /api/v1/warehouse/stock-available/export` trả XLSX gồm `Tong hop` và
+`Chi tiet ke lot`, dùng toàn bộ bộ lọc stock-available và bỏ phân trang.
+Tái sử dụng query tồn kho với company/ownership/mixing capability hiện hành;
+kệ tắt vẫn xuất nhưng không cộng khả dụng. Giới hạn 100.000 dòng chi tiết,
+vượt giới hạn báo lỗi yêu cầu thu hẹp bộ lọc, không cắt dữ liệu ngầm.
+File có lý do và phiếu/yêu cầu nguồn; kg là số, chuỗi được ghi dạng text.
+Excel áp dụng quyền cột giống màn tồn kho: chỉ PLPUUser/Developer có cột tồn kệ
+đã tắt và trạng thái kệ (`ApplicationRoleSets.Warehouse.InactiveShelfFieldViewers`).
+Role khác được bỏ hẳn hai cột khỏi workbook, không dùng hidden column. Không xuất
+cột tổng tồn vật lý vì màn tồn kho không có cột này. Tổng tồn hoạt động/đang giữ/
+khả dụng và chi tiết kệ/lot giữ nguyên scope của query; không cấp thêm quyền kho cân trộn.
+
 Báo cáo [nhu cầu mua NVL](../Purchasing/MaterialRequirements/README.md) cân đối nhu cầu reservation
 chưa dùng với tồn RawMaterial trên kệ active và lượng mua chưa nhập. API riêng thuộc Purchasing;
 không thay đổi công thức `AvailableKg` của các endpoint Warehouse hiện có.
@@ -12,6 +61,12 @@ timeline vẫn dùng lịch sử nhập. Chi tiết contract: [Delivery Plan](..
 `lines[].stockBreakdown` bổ sung phân rã tổng này thành Hàng đạt/Hàng lỗi; xem cùng contract Delivery Plan.
 
 ## Mục đích
+
+Lịch sử biến động tồn trên kệ có API riêng, xem [Lịch sử biến động tồn kho](MOVEMENT-HISTORY.md).
+Nguồn là ledger đã ghi nhận, bao gồm chuyển kho cân trộn, kiểm kê và điều chỉnh; không union thêm voucher.
+
+Mua hàng có API [tạo yêu cầu xuất hàng trả NCC](../Purchasing/PurchaseOrders/RETURN_REQUESTS.md)
+loại ExportReturn=12, codeFromRequest là mã ĐĐH. Đây là tạo yêu cầu, không phải ghi nhận thực xuất/ledger.
 
 Feature Warehouse phục vụ màn hình xem tồn kho khả dụng và kiểm tra lịch sử phiếu kho. Endpoint tồn kho lấy tổng tồn, lượng đang giữ chỗ, lượng khả dụng và detail theo kệ/lô/công ty; endpoint voucher trả header và toàn bộ dòng phiếu đã lưu.
 
@@ -165,13 +220,79 @@ Hàng lỗi vẫn trả `reservedVaCodes=[]` như trước. Scope xem hàng và 
 
 ### Lịch sử voucher
 
-`GET /api/v1/warehouse/vouchers` nhận `voucherType`, `reqType`, `status`, `fromDate`, `toDate`, `keyword`, `pageNumber`, `pageSize`. Không nhận `companyId`: company luôn lấy từ token hiện tại. `status` vẫn là chuỗi legacy và lọc không phân biệt hoa thường; `voucherType`, `reqType`, `reqStatus` và `detail.voucherType` là code enum ổn định để FE tự map nhãn.
+IMSUser xem các phiếu nhập mua, trả nhà cung cấp và xuất giao khách khi loại phiếu khớp yêu cầu kho và mã nguồn xác định duy nhất một đơn mua hoặc đơn giao cùng công ty. List, gợi ý, tổng số và chi tiết dùng cùng phạm vi. Phiếu liên kết với cấp phát sản xuất, nhập đầu ra sản xuất hoặc kho cân trộn bị loại. Luồng IMS bỏ tên yêu cầu nhập tự do, ghi chú, lý do lỗi chi tiết và metadata nhà cung cấp trên phiếu. Tìm kiếm IMS giới hạn ở mã chứng từ, mã yêu cầu/mã nguồn, mã/tên hàng và số lô. Lịch sử biến động và truy vết theo ledger vẫn yêu cầu tài khoản không mang IMS.
+
+`GET /api/v1/warehouse/vouchers` nhận `voucherType`, `reqType`, `status`, `fromDate`, `toDate`, `keyword`, `pageNumber`, `pageSize`. Không nhận `companyId`: company luôn lấy từ token hiện tại. `status` vẫn là chuỗi legacy và lọc không phân biệt hoa thường; các mã enum cũ giữ để tương thích và lọc, còn nhãn Loại phiếu dùng `businessType` do BE xác định.
 
 Kết quả có dạng `OperationResult<PagedResult<WarehouseVoucherListItemDto>>`; mỗi item gồm header (`voucherId`, `voucherCode`, `status`, `createdDate`), request (`requestId`, `requestCode`, `reqType`, `reqStatus`, `codeFromRequest`), company/người tạo và `details`. Thứ tự là `createdDate DESC`, rồi `voucherId DESC`. `keyword` tìm voucher/request, mã/tên hàng và lot trên dòng, hoặc mã sample request suy ra `Product.ColourCode`; ký tự `%` và `_` được xử lý literal, không trở thành wildcard.
 
-`GET /api/v1/warehouse/vouchers/{voucherId}` trả `OperationResult<WarehouseVoucherDetailResponseDto>` với cùng header và `details`, nhưng không bổ sung supplier/comment ImportOther như legacy list. Nếu không tồn tại, voucher khác company, id không hợp lệ hoặc người gọi không có quyền Warehouse thì trả `404` để không lộ sự tồn tại của phiếu.
+`GET /api/v1/warehouse/vouchers/{voucherId}` trả `OperationResult<WarehouseVoucherDetailResponseDto>` với cùng header, `businessType`, thông tin NCC/đơn mua và `details` như list. Nếu không tồn tại, voucher khác company, id không hợp lệ hoặc người gọi không có quyền Warehouse thì trả `404` để không lộ sự tồn tại của phiếu.
 
-Mỗi `details[]` đại diện một `WarehouseVoucherDetail` đã persist. `movementDate` là thời điểm mới nhất (`MAX(WarehouseShelfLedger.CreatedAt)`) theo `voucherDetailId`; `null` nghĩa là chưa có ledger liên kết. Danh sách rỗng nghĩa là phiếu không có dòng. Với request `ImportOther`, list mới điền `supplierName`, `supplierExternalId`, `comments` từ Purchase Order/Snapshot theo `codeFromRequest`; chuỗi rỗng nghĩa là không tìm thấy snapshot phù hợp hoặc voucher không thuộc nhánh đó.
+Mỗi `details[]` đại diện một `WarehouseVoucherDetail` đã persist. `movementDate` là thời điểm mới nhất (`MAX(WarehouseShelfLedger.CreatedAt)`) theo `voucherDetailId`; `null` nghĩa là chưa có ledger liên kết. Danh sách rỗng nghĩa là phiếu không có dòng. Thông tin NCC/đơn mua được xác định chung cho cả list và detail theo contract bên dưới.
+
+### Loại nghiệp vụ phiếu kho thống nhất
+
+`businessType` là nguồn nhãn duy nhất cho cột Loại phiếu trên FE, gồm `code` ổn định,
+`name` tiếng Việt, `nameEn` tiếng Anh và `tone` màu ngữ nghĩa. BE tính tại thời điểm đọc, không ghi lại loại phiếu
+hoặc tạo migration. `voucherType`, `reqType`, `details[].voucherType` giữ giá trị cũ:
+loại đầu phiếu, loại yêu cầu và loại dòng/kết quả QC là các khái niệm khác nhau.
+
+Thứ tự xác định theo nguồn đã kiểm chứng cùng company:
+
+1. Đầu phiếu nhập NVL/khác/vật tư hoặc xuất trả (`5/9/13/12`) có `codeFromRequest`
+   khớp duy nhất một đơn mua: nhập mua NVL/vật tư/hàng mua hỗn hợp hoặc xuất trả NCC.
+   Phân nhóm dựa vào các dòng mua active và `Material.Category.Types`; thiếu phân nhóm với
+   mã 9 thì dùng Nhập hàng mua từ NCC, không tự gán NVL. Mã 5/13 giữ nghĩa NVL/vật tư khi thiếu category.
+2. Xuất TP đạt/lỗi (`2/4`) liên kết phiếu giao: Xuất thành phẩm giao khách/TP lỗi giao khách.
+3. Xuất khác (`10`) có marker có cấu trúc `MfgFormulaAdjustment:<guid>` và bản chỉnh màu
+   thực sự tồn tại cùng company: Xuất bổ sung chỉnh màu. Tên phiếu hoặc tiền tố mã không đủ.
+4. Nhập TP đạt/lỗi (`1/3`) có liên kết `ProductionOutputReceiptLedger` và nguồn sản xuất
+   cùng company: Nhập thành phẩm sản xuất/TP lỗi sản xuất.
+5. Có biến động kệ `CT.0.1` cùng company theo `VoucherId`, hoặc qua `VoucherDetailId` nếu
+   thiếu header ID: các biến động khác 0 đều dương → Nhập kho cân trộn; đều âm → Xuất kho cân trộn.
+   Nếu đồng thời có `OperationMaterialBuffer` cùng company thì nhãn xuất là Xuất từ cân trộn cho sản xuất.
+   Cả dương lẫn âm không đủ để đoán một chiều, giữ loại gốc.
+6. Xuất NVL/NVL lỗi/khác/vật tư có `OperationMaterialBuffer` cùng company: Xuất cấp sản xuất.
+7. Chưa có nguồn đủ rõ: trả đủ 14 loại gốc theo `voucherType`; mã lạ trả Unknown kèm số mã,
+   không bỏ phiếu vì chưa nhận diện. Quy tắc list có RequestId vẫn giữ nguyên.
+
+Nguồn nghiệp vụ cụ thể ưu tiên hơn vị trí kệ. Không suy rằng mọi phiếu tại CT.0.1 đều là
+cấp cân trộn hoặc mọi xuất khác đều là chỉnh màu. Không gộp bộ lọc hiện tại: `reqType`/
+`voucherType` vẫn lọc theo mã lưu, keyword không tự tìm theo nhãn tính toán.
+
+`purchaseOrderCode` là mã đơn mua đã xác minh, `null` nếu thiếu/không phù hợp/trùng nguồn.
+`canViewSupplier` là quyết định BE: phải đăng nhập, đúng company, có role `PLPUUser` và capability
+`warehouse.voucher-supplier.view`. Mapping mặc định chỉ PLPUUser; Developer, President, Admin,
+ACC, Lab, kho hoặc Sale không được đọc NCC nếu không đồng thời có role PLPUUser, kể cả có claim.
+Token legacy dùng mapping fallback; môi trường explicit permission cần cấp capability trên trong cấu hình role,
+rồi login/refresh. Không sinh/chạy SQL hoặc đổi DB trong task này.
+`supplierName`, `supplierExternalId` lấy từ snapshot NCC của đơn đó; `comments` lấy từ đơn mua.
+Khi không được phép, cả ba field trả `null` và BE không query snapshot/ghi chú đơn mua.
+PLPU được phép nhưng chưa có dữ liệu thì chuỗi rỗng. `purchaseOrderCode` và businessType giữ nguyên
+cho người đã được xem phiếu; không được dùng mã nguồn bất kỳ làm mã đơn mua.
+Không lấy supplier/customer/giá từ công ty khác. Các nguồn lịch sử không bắt active ở header
+để không mất liên kết của phiếu đã phát sinh; không cấp thêm quyền hoặc trả field giá.
+
+```json
+{
+  "voucherType": 9,
+  "businessType": { "code": "PurchaseRawMaterialReceipt", "name": "Nhập NVL mua từ NCC", "nameEn": "Purchased raw material receipt", "tone": "success" },
+  "purchaseOrderCode": "PO-001",
+  "canViewSupplier": true,
+  "supplierName": "Nhà cung cấp A",
+  "supplierExternalId": "NCC-A",
+  "comments": "",
+  "details": []
+}
+```
+
+List enrich theo batch trên trang, detail dùng cùng `IWarehouseVoucherBusinessReader`, không query
+từng phiếu. Dữ liệu trả là mô tả chứng từ kho hiện hữu; yêu cầu đang Pending không được biến thành
+một phiếu đã nhập/xuất chỉ vì có liên kết nguồn. FE không dùng businessType để quyết định quyền ghi kho.
+
+`businessType.tone` dùng các code màu shared: success = nhập, warning = xuất/trả NCC,
+primary = cân trộn/chỉnh màu, danger = loại hàng lỗi, muted = chưa rõ. Đây là màu phân loại,
+không đại diện trạng thái duyệt hoặc kết luận kiểm tra của toàn phiếu. FE giữ nhãn chữ và tự xuống dòng.
 
 ## Dữ liệu
 
@@ -213,8 +334,9 @@ Voucher history cho phép thêm Sale đọc nhưng Sale chỉ thấy phiếu có
 `GET /api/v1/warehouse/vouchers` và `GET /api/v1/warehouse/vouchers/{voucherId}`,
 kể cả khi đồng thời mang role Sale. Gate đọc dùng `WarehouseVoucherAccessRules` và role set Lab tập trung;
 không thêm capability/role claim mới hoặc cấp quyền ghi kho. LAB phải đăng nhập và có company hợp lệ;
-phiếu khác company vẫn không xuất hiện trong list và detail trả 404. Response/field giữ nguyên,
-không bổ sung field giá hoặc dữ liệu công thức. Phạm vi tồn kho của API khác không đổi.
+phiếu khác company vẫn không xuất hiện trong list và detail trả 404. LAB không được đọc NCC;
+field supplier tuân theo `canViewSupplier` ở contract phía trên. Không bổ sung field giá hoặc dữ liệu
+công thức. Phạm vi tồn kho của API khác không đổi.
 
 ## Quy tắc nghiệp vụ
 
@@ -267,3 +389,16 @@ GET `/api/v1/purchasing/purchase-orders/{purchaseOrderId}/receipt-progress` cung
 các request/phiếu/QC/ledger gắn nguồn ĐĐH, kiểm tra quyền mua hàng và company của parent trước khi đọc kho.
 Không cấp quyền ghi kho hoặc quyền mở toàn bộ màn Warehouse. Không thay API tồn/voucher hiện hành;
 [contract và quy tắc net ledger chống cộng trùng](../Purchasing/PurchaseOrders/RECEIPT_PROGRESS.md).
+# Tổng hợp nhu cầu NVL từ PLM
+
+Màn nhu cầu/chuyển đổi NVL dùng GetStockAvailableQuery theo batch ExactCodes, giữ company/shelf visibility và không trả giá.
+Nguồn nhu cầu là giữ chỗ Open chưa dùng của MFG active; khi tính thiếu cộng lại đúng phần nhu cầu đang thống kê trước
+khi so với tồn, tránh trừ giữ chỗ hai lần. Hàng lỗi tách riêng và cần capability hiện hành; endpoint này chỉ đọc, không xuất/giữ chỗ thêm.
+
+
+
+## Tìm kiếm gợi ý cho trang danh sách
+
+Tồn kho: mã/tên NVL, mã/tên sản phẩm, ColorCode, lô. Phiếu kho: mã chứng từ, mã/tên hàng, lô. Biến động: mã hàng, lô, mã tồn kho, mã yêu cầu; badge lọc cả nhóm biến động.
+
+Contract tùy chọn `searchSelections`/`suggestionKeyword`, OR/AND badge, giới hạn 10 và hướng dẫn thêm field: [Searching](../../Commons/Searching/README.md). Không mở rộng quyền hoặc áp dụng tự động cho lookup.

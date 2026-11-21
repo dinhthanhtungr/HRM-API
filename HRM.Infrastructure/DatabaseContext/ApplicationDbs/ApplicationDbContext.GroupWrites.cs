@@ -19,6 +19,7 @@ public partial class ApplicationDbContext
     private async Task<int> SaveGroupAwareAsync(bool accept, CancellationToken ct)
     {
         ChangeTracker.DetectChanges();
+        CaptureConversationSummaryChanges();
         ValidatePublishedMembershipRevisions();
         var changes = ChangeTracker.Entries<InternalConversation>()
             .Where(e => e.State == EntityState.Added || (e.State == EntityState.Modified && GroupStructuralProperties.Any(p => e.Property(p).IsModified)))

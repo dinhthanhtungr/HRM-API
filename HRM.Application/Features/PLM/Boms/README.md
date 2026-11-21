@@ -388,3 +388,10 @@ Role sets được khai báo tập trung trong `ApplicationRoleSets.PLM`; contro
 - Rollback thủ công: `20260908_CompleteBomLifecycle.rollback.sql`. Script này xóa dữ liệu production loss nên phải backup và dừng traffic ghi trước khi chạy.
 
 Thứ tự triển khai: chạy master migration nếu môi trường chưa có, chạy completion migration, deploy API, rồi smoke-test quyền và các lifecycle action. Không chạy rollback trong deploy thông thường.
+
+
+## Tìm kiếm gợi ý cho trang danh sách
+
+E-BOM và M-BOM dùng scope riêng, gợi ý mã/tên BOM, tên sản phẩm, ColorCode và công thức nguồn. GET /boms/suggestions và /manufacturing-boms/suggestions áp dụng cùng quyền ViewBom và ép loại BOM theo route; list giữ response array cũ và nhận thêm searchSelections.
+
+Contract tùy chọn `searchSelections`/`suggestionKeyword`, OR/AND badge, giới hạn 10 và hướng dẫn thêm field: [Searching](../../../Commons/Searching/README.md). Không mở rộng quyền hoặc áp dụng tự động cho lookup.

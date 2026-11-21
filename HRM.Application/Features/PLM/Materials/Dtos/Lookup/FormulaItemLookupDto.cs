@@ -11,6 +11,7 @@ namespace HRM.Application.Features.PLM.Materials.Dtos.Lookup;
 public sealed class FormulaItemLookupDto
 {
     public Guid ItemId { get; init; }
+    public bool IsProcessingPreview { get; init; }
 
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public ItemType ItemType { get; init; }

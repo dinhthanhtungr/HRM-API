@@ -1,4 +1,5 @@
 using HRM.Application.Abstractions.Commons.Time;
+using HRM.Application.Abstractions.Commons.ExternalIds;
 using HRM.Application.Abstractions.Persistence.PLM;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Models;
@@ -15,12 +16,14 @@ internal sealed class CreateCustomerLabelCommandHandler : IRequestHandler<Create
     private readonly IPLMWriteDbContext _dbContext;
     private readonly ICurrentUser _currentUser;
     private readonly IDateTimeProvider _dateTimeProvider;
+    private readonly IExternalIdService _externalIds;
 
-    public CreateCustomerLabelCommandHandler(IPLMWriteDbContext dbContext, ICurrentUser currentUser, IDateTimeProvider dateTimeProvider)
+    public CreateCustomerLabelCommandHandler(IPLMWriteDbContext dbContext, ICurrentUser currentUser, IDateTimeProvider dateTimeProvider, IExternalIdService externalIds)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
         _dateTimeProvider = dateTimeProvider;
+        _externalIds = externalIds;
     }
 
     public async Task<OperationResult<SaveCustomerLabelResultDto>> Handle(CreateCustomerLabelCommand request, CancellationToken cancellationToken)
@@ -38,11 +41,13 @@ internal sealed class CreateCustomerLabelCommandHandler : IRequestHandler<Create
             return OperationResult<SaveCustomerLabelResultDto>.Fail(validationError);
         }
 
-        var productExists = await _dbContext.Products.AsNoTracking().AnyAsync(product =>
-            product.ProductId == request.ProductId && product.CompanyId == companyId && product.IsActive, cancellationToken);
-        var customerExists = await _dbContext.Customers.AsNoTracking().AnyAsync(customer =>
-            customer.CustomerId == request.CustomerId && customer.CompanyId == companyId && customer.IsActive == true, cancellationToken);
-        if (!productExists || !customerExists)
+        var product = await _dbContext.Products.AsNoTracking().Where(p =>
+            p.ProductId == request.ProductId && p.CompanyId == companyId && p.IsActive)
+            .Select(p => new { p.ColourCode }).SingleOrDefaultAsync(cancellationToken);
+        var customer = await _dbContext.Customers.AsNoTracking().Where(c =>
+            c.CustomerId == request.CustomerId && c.CompanyId == companyId && c.IsActive == true)
+            .Select(c => new { c.ExternalId }).SingleOrDefaultAsync(cancellationToken);
+        if (product is null || customer is null)
         {
             return OperationResult<SaveCustomerLabelResultDto>.Fail("Product or customer was not found, is inactive, or is outside the current company.");
         }
@@ -84,14 +89,24 @@ internal sealed class CreateCustomerLabelCommandHandler : IRequestHandler<Create
             return OperationResult<SaveCustomerLabelResultDto>.Fail("PrintLabelElementId requires PrintLabelTemplateId.");
         }
 
+        var colorCode = CustomerLabelRules.Normalize(product.ColourCode);
+        if (colorCode is null)
+        {
+            var customerCode = CustomerLabelRules.Normalize(customer.ExternalId);
+            if (customerCode is null) return OperationResult<SaveCustomerLabelResultDto>.Fail("Customer code is required to allocate a temporary label code.");
+            // Persistent atomic counter: replacing the temporary code never reuses its number.
+            var allocated = await _externalIds.GenerateGlobalCodeAsync(companyId,
+                $"CL:{companyId:N}:{request.CustomerId:N}", cancellationToken);
+            colorCode = $"{customerCode}_{allocated[(allocated.LastIndexOf('_') + 1)..]}";
+        }
         var now = _dateTimeProvider.Now;
         var entity = new CustomerLabelHeader
         {
             Id = Guid.CreateVersion7(),
             ProductId = request.ProductId,
-            ColorCode = CustomerLabelRules.Normalize(request.ColorCode),
+            ColorCode = colorCode,
             CustomerId = request.CustomerId,
-            CustomerExternalId = CustomerLabelRules.Normalize(request.CustomerExternalId),
+            CustomerExternalId = CustomerLabelRules.Normalize(customer.ExternalId),
             LabelType = CustomerLabelRules.Normalize(request.LabelType),
             PrintLabelTemplateId = request.PrintLabelTemplateId,
             DefaultPrintLabelLogoId = request.DefaultPrintLabelLogoId,

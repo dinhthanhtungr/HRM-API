@@ -1,5 +1,14 @@
 # Delivery OTD
 
+## Phạm vi IMS
+
+Tài khoản IMS cần quyền `reports.delivery-otd.view` và ngữ cảnh nhân viên/công ty.
+Đầu báo cáo, biểu đồ, xu hướng theo tháng, chi tiết và tổng lượng giao trong kỳ
+cùng giới hạn theo khách active bên ngoài trong công ty hiện tại. Dòng giao phải
+khớp khách trên đơn. Dữ liệu dùng ngày, lượng và trạng thái giao, không trả giá,
+doanh thu, công thức, lô, ghi chú hoặc lý do tạm dừng. Token explicit cần role
+claim tương ứng và refresh sau khi cấp quyền.
+
 ## Xu hướng theo PO giống card header
 
 Mỗi điểm `charts.monthly[]` bổ sung `poSummary` giống hệt cấu trúc và công thức

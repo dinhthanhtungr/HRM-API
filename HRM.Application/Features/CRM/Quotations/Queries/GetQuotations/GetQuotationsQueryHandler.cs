@@ -1,6 +1,8 @@
+using HRM.Application.Features.CRM.CustomerCare.Services.Search;
 using HRM.Application.Abstractions.Persistence.CRM.CustomerCare;
 using HRM.Application.Commons.Models;
 using HRM.Application.Commons.Pagination;
+using HRM.Application.Commons.Searching;
 using HRM.Application.Features.CRM.CustomerCare.Visibility;
 using HRM.Application.Features.CRM.Quotations.Dtos;
 using HRM.Application.Features.CRM.Quotations.Services;
@@ -79,12 +81,25 @@ namespace HRM.Application.Features.CRM.Quotations.Queries.GetQuotations
                 query = query.Where(x => x.QuotationDate <= request.To.Value);
             }
 
-            if (request.NormalizedKeyword is { } keyword)
+            var smartSearch = SmartSearch.For(query, fields => [
+                fields.Code("quotationCode", x => x.ExternalId, "Mã báo giá", "Quotation code"),
+                fields.Code("customerCode", x => x.Customer.ExternalId, "Mã KH", "Customer code"),
+                fields.Name("customerName", x => x.Customer.CustomerName, "Tên KH", "Customer name"),
+                fields.CustomerTaxNumber(x => x.Customer.CompanyId == scope.CompanyId ? x.Customer.TaxNumber : null),
+                fields.Name("contactName", x => x.ContactName, "Người liên hệ", "Contact"),
+                fields.Codes("colourCode", x => x.Lines.Where(line => line.IsActive && line.ProductNavigation.CompanyId == scope.CompanyId),
+                    line => line.ProductNavigation.ColourCode, "ColorCode", "Mã màu"),
+                fields.Names("productName", x => x.Lines.Where(line => line.IsActive && line.ProductNavigation.CompanyId == scope.CompanyId),
+                    line => line.ProductNavigation.Name, "Tên sản phẩm", "Product name")
+            ]);
+            query = smartSearch.ApplyRequest(query, request.NormalizedKeyword, request, out var smartKeyword);
+            if (smartKeyword is { } keyword)
             {
                 query = query.Where(x =>
                     EF.Functions.ILike(x.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
                     EF.Functions.ILike(x.Customer.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
                     EF.Functions.ILike(x.Customer.CustomerName, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                    x.Customer.CompanyId == x.CompanyId && EF.Functions.ILike(x.Customer.TaxNumber ?? "", PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
                     (x.ContactName != null && EF.Functions.ILike(x.ContactName, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter)) ||
 
                     x.Lines.Any(line => line.ProductNavigation.ColourCode != null &&
@@ -95,6 +110,8 @@ namespace HRM.Application.Features.CRM.Quotations.Queries.GetQuotations
                         EF.Functions.ILike(line.SampleRequest.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter)));
             }
 
+            if (await smartSearch.SuggestionsAsync<QuotationListItemDto>(query, request, cancellationToken) is { } suggestions)
+                return OperationResult<PagedResult<QuotationListItemDto>>.Ok(suggestions);
             query = ApplySorting(query, request);
             var page = await query
                 .Select(x => new QuotationListItemDto
@@ -112,6 +129,8 @@ namespace HRM.Application.Features.CRM.Quotations.Queries.GetQuotations
                     QuotationDate = x.QuotationDate,
                     ValidUntil = x.ValidUntil,
                     SentDate = x.SentDate,
+                    LastSendRejectionAt = x.StatusHistories.Where(h => h.ToStatus == QuotationStatus.SendRejected)
+                        .OrderByDescending(h => h.ChangedDate).Select(h => (DateTime?)h.ChangedDate).FirstOrDefault(),
                     LineCount = x.Lines.Count
                 })
                 .ToPagedResultAsync(

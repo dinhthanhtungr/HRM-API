@@ -74,6 +74,21 @@ public sealed class NotificationsController : ControllerBase
         return Ok(result);
     }
 
+    [HttpGet("sales-order-stream")]
+    public async Task<ActionResult<NotificationStreamPageDto>> GetSalesOrderStream(
+        [FromQuery] Guid? cursorId = null,
+        [FromQuery] string direction = "initial",
+        CancellationToken cancellationToken = default,
+        [FromQuery] string streamKey = "sales-order-stream")
+    {
+        if (direction is not ("initial" or "older" or "newer") ||
+            (direction != "initial" && !cursorId.HasValue))
+            return BadRequest("Invalid stream cursor or direction.");
+        if (streamKey is not ("sales-order-stream" or "sales-order-delivery-stream" or "sales-order-delivery-status-stream"))
+            return BadRequest("Invalid notification stream.");
+        return Ok(await _notificationService.GetSalesOrderStreamAsync(cursorId, direction, cancellationToken, streamKey));
+    }
+
     [HttpGet("unread-count")]
     public async Task<ActionResult<int>> GetUnreadCount(CancellationToken cancellationToken)
     {

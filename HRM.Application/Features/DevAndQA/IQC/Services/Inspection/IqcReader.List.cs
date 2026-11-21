@@ -1,4 +1,6 @@
 using HRM.Application.Abstractions.Persistence.DevAndQA;
+using System.Linq.Expressions;
+using HRM.Domain.Entities.WarehouseSchema;
 using HRM.Application.Commons.Pagination;
 using HRM.Application.Features.DevAndQA.IQC.Dtos;
 using HRM.Domain.Entities.DevandqaSchema;
@@ -15,6 +17,11 @@ internal sealed partial class IqcReader
 {
     public async Task<IqcPagedResult<GetSummaryQCInput>> GetPagedSummaryAsync(QCInputQuery query, CancellationToken ct)
     {
+        if ((query.SuggestionKeyword is not null || !string.IsNullOrWhiteSpace(query.SearchSelections) ||
+             query.Keyword?.IndexOfAny([':', '：']) >= 0) && await ReadSmartSummaryAsync(query, ct) is { } smart)
+            return smart;
+        if (query.IncludeLabTests)
+                return await GetCombinedSummaryAsync(query, ct);
         var pageNumber = query.PageNumber <= 0 ? 1 : query.PageNumber;
         var pageSize = query.PageSize <= 0 ? 20 : query.PageSize;
 
@@ -43,9 +50,9 @@ internal sealed partial class IqcReader
         return new IqcPagedResult<GetSummaryQCInput>(items, total, pageNumber, pageSize);
     }
 
-    internal IQueryable<long> BuildSummaryIdsQuery(QCInputQuery query)
+    internal IQueryable<long> BuildSummaryIdsQuery(QCInputQuery query, bool includeKeyword = true)
     {
-        var hasKeyword = !string.IsNullOrWhiteSpace(query.Keyword);
+        var hasKeyword = includeKeyword && !string.IsNullOrWhiteSpace(query.Keyword);
         var kw = hasKeyword ? query.Keyword!.Trim() : "";
 
         var keywordIncludesQcFields = false;
@@ -70,35 +77,41 @@ internal sealed partial class IqcReader
             join v in WarehouseVouchers.AsNoTracking()
                 on vd.VoucherId equals v.VoucherId
 
-            join movement0 in ReceiptDates
-                on vd.VoucherDetailId equals movement0.VoucherDetailId into movementJoin
-            from movement in movementJoin.DefaultIfEmpty()
-
-            join r0 in WarehouseRequests.AsNoTracking()
-                on v.RequestId equals r0.RequestId into rJoin
-            from r in rJoin.DefaultIfEmpty()
-
-            from po in PurchaseOrders.AsNoTracking()
-                .Where(po =>
-                    r != null &&
-                    po.ExternalId != null &&
-                    po.ExternalId == r.codeFromRequest &&
-                    po.IsActive == true && (po.Supplier == null || po.Supplier.CompanyId == _companyId))
-                .OrderByDescending(po => po.CreateDate)
-                .Take(1)
-                .DefaultIfEmpty()
-
             where v.VoucherType == requiredHeaderType
                && allowedDetailTypes.Contains(vd.VoucherType)
             select new
             {
                 vd,
                 v,
-                InputDate = movement == null ? (DateTime?)null : movement.InputDate,
-                SupplierName = po != null && po.Supplier != null
-                    ? po.Supplier.SupplierName
-                    : null
+                InputDate = (DateTime?)null,
+                // Scalar projection được EF bỏ khi không tìm keyword NCC; LEFT LATERAL
+                // trước đây vẫn tra DDH cho từng dòng ở mọi nhánh gợi ý mã/tên/lô.
+                SupplierName = PurchaseOrders.AsNoTracking()
+                    .Where(po => po.ExternalId != null && po.IsActive == true &&
+                        (po.Supplier == null || po.Supplier.CompanyId == _companyId) &&
+                        WarehouseRequests.Any(header => header.RequestId == v.RequestId &&
+                            header.codeFromRequest == po.ExternalId))
+                    .OrderByDescending(po => po.CreateDate)
+                    .Select(po => po.Supplier != null ? po.Supplier.SupplierName : null)
+                    .FirstOrDefault()
             };
+
+        // Ngày nhập chỉ tham gia điều kiện khi người dùng lọc ngày. Không lặp
+        // GROUP BY lịch sử kho ở các nhánh gợi ý không cần ngày nhập.
+        if (query.FromDate.HasValue || query.ToDate.HasValue)
+        {
+            q1 = from item in q1
+                 join movement0 in ReceiptDates
+                     on item.vd.VoucherDetailId equals movement0.VoucherDetailId into movementJoin
+                 from movement in movementJoin.DefaultIfEmpty()
+                 select new
+                 {
+                     item.vd,
+                     item.v,
+                     InputDate = movement == null ? (DateTime?)null : movement.InputDate,
+                     item.SupplierName
+                 };
+        }
 
         if (query.VoucherDetailId > 0)
             q1 = q1.Where(x => x.vd.VoucherDetailId == query.VoucherDetailId);
@@ -193,11 +206,17 @@ internal sealed partial class IqcReader
     }
 
     internal IQueryable<GetSummaryQCInput> BuildSummaryItemsQuery(IReadOnlyCollection<long> pageIds)
+        => BuildSummaryItemsQueryCore(detail => pageIds.Contains(detail.VoucherDetailId));
+
+    internal IQueryable<GetSummaryQCInput> BuildSummaryItemsQuery(IQueryable<long> pageIds)
+        => BuildSummaryItemsQueryCore(detail => pageIds.Contains(detail.VoucherDetailId));
+
+    private IQueryable<GetSummaryQCInput> BuildSummaryItemsQueryCore(Expression<Func<WarehouseVoucherDetail, bool>> predicate)
     {
         var requiredHeaderType = (int)WareHouseRequestType.ImportOther;
         var allowedDetailTypes = new[] { VoucherDetailType.Waiter, VoucherDetailType.QCPass, VoucherDetailType.QCFail, VoucherDetailType.Special };
         var itemsQuery =
-            from vd in WarehouseVoucherDetails.AsNoTracking()
+            from vd in WarehouseVoucherDetails.AsNoTracking().Where(predicate)
             join v in WarehouseVouchers.AsNoTracking()
                 on vd.VoucherId equals v.VoucherId
 
@@ -215,7 +234,6 @@ internal sealed partial class IqcReader
 
             where v.VoucherType == requiredHeaderType
                 && allowedDetailTypes.Contains(vd.VoucherType)
-                && pageIds.Contains(vd.VoucherDetailId)
 
             let qcLatest = QCInputByQCs.AsNoTracking()
                 .Where(qc => qc.VoucherDetailId == vd.VoucherDetailId)

@@ -1,4 +1,4 @@
-﻿using HRM.Application;
+using HRM.Application;
 using HRM.Domain.Entities.DependencyInjection;
 using HRM.Infrastructure;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -12,7 +12,13 @@ builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddPresentation(builder.Configuration, builder.Environment);
 
+var performanceProbe = HRM.Api.Diagnostics.PerformanceProbe.Prepare(
+    builder.Services, builder.Configuration, builder.Environment);
+
 var app = builder.Build();
+
+if (performanceProbe)
+    app.Use(HRM.Api.Diagnostics.PerformanceProbe.InvokeAsync);
 
 app.UseSwagger();
 if (app.Environment.IsDevelopment())
@@ -45,10 +51,42 @@ app.UseForwardedHeaders(new ForwardedHeadersOptions
 });
 
 //app.UseHttpsRedirection();
+app.UseMiddleware<HRM.Api.Diagnostics.SampleWorkRequestTimingMiddleware>();
+app.UseMiddleware<HRM.Api.Diagnostics.WarehouseMovementRequestTimingMiddleware>();
+app.UseMiddleware<HRM.Api.Diagnostics.NotificationRequestTimingMiddleware>();
+app.UseMiddleware<HRM.Api.Diagnostics.IqcSuggestionRequestTimingMiddleware>();
+app.UseRouting();
 app.UseCors("DefaultCors");
+app.Use(async (context, next) =>
+{
+    HRM.Api.Diagnostics.SampleWorkRequestTimingMiddleware.MarkCheckpoint(context, "cors");
+    HRM.Api.Diagnostics.PerformanceProbe.MarkCheckpoint(context, "cors");
+    await next(context);
+});
 app.UseAuthentication();
+app.Use(async (context, next) =>
+{
+    HRM.Api.Diagnostics.SampleWorkRequestTimingMiddleware.MarkCheckpoint(context, "authentication");
+    HRM.Api.Diagnostics.PerformanceProbe.MarkCheckpoint(context, "authentication");
+    await next(context);
+});
+app.UseMiddleware<HRM.Api.Security.Authorization.ImsSessionAuthorizationMiddleware>();
 app.UseMiddleware<HRM.Api.Security.DeveloperSampleWorkMiddleware>();
+app.Use(async (context, next) =>
+{
+    HRM.Api.Diagnostics.SampleWorkRequestTimingMiddleware.MarkCheckpoint(context, "acting_user");
+    HRM.Api.Diagnostics.PerformanceProbe.MarkCheckpoint(context, "acting_user");
+    await next(context);
+});
 app.UseAuthorization();
+app.Use(async (context, next) =>
+{
+    HRM.Api.Diagnostics.SampleWorkRequestTimingMiddleware.MarkCheckpoint(context, "authorization");
+    HRM.Api.Diagnostics.PerformanceProbe.MarkCheckpoint(context, "authorization");
+    HRM.Api.Diagnostics.NotificationRequestTimingMiddleware.MarkDispatch(context);
+    HRM.Api.Diagnostics.SampleWorkRequestTimingMiddleware.MarkDispatch(context);
+    await next(context);
+});
 
 if (app.Environment.IsDevelopment())
 {

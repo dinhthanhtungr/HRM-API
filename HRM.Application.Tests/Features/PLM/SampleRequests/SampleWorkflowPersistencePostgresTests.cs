@@ -32,7 +32,7 @@ public sealed class SampleWorkflowPersistencePostgresTests(IsolatedGroupStorageP
     {
         await using var connection = await postgres.OpenAsync();
         await using var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>().UseNpgsql(connection).Options);
-        var names = new[] { "SampleRequest", "SampleRequestSampleTrial", "Formula", "ProductPricingVersion", "Employee",
+        var names = new[] { "Product", "SampleRequest", "SampleRequestSampleTrial", "Formula", "ProductPricingVersion", "Employee",
             "Customer", "CustomerClaim", "CustomerAssignment",
             "SampleRequestWorkflowEvent", "FormulaVersion", "FormulaVersionItem", "FormulaMaterial", "InternalMessage", "InternalConversation", "OutboxMessage", "AuditLog" };
         foreach (var name in names)
@@ -43,15 +43,17 @@ public sealed class SampleWorkflowPersistencePostgresTests(IsolatedGroupStorageP
         var user = new SampleTrialFeedbackCorrectionTests.User("SaleUser");
         var employee = db.Model.GetEntityTypes().Single(x => x.ClrType.Name == "Employee");
         await Insert(connection, employee, new() { ["EmployeeId"] = user.EmployeeId, ["CompanyId"] = user.CompanyId, ["IsActive"] = true });
-        foreach (var action in new[] { "PriceRejected", "PriceNoResponse", "RequestSample", "Complete", "Feedback", "FinalizeQuotation" })
+        foreach (var action in new[] { "PriceRejected", "PriceNoResponse", "RequestSample", "Complete", "Feedback", "FinalizeQuotation", "FinalizeChip" })
         {
-            ICurrentUser actor = action == "FinalizeQuotation" ? new RoleView(user, "LabUser") : user;
-            var chipChoice = action is "RequestSample" or "Complete";
+            ICurrentUser actor = action is "FinalizeQuotation" or "FinalizeChip" ? new RoleView(user, "LabUser") : user;
+            var chipChoice = action is "RequestSample" or "Complete" or "FinalizeChip";
             var customerId = Guid.NewGuid();
             await Insert(connection, db.Model.FindEntityType(typeof(Customer))!, new()
             { ["CustomerId"] = customerId, ["CompanyId"] = user.CompanyId, ["IsActive"] = true, ["IsLead"] = true });
             var requestId = Guid.NewGuid(); var formulaId = Guid.NewGuid(); var productId = Guid.NewGuid(); var trialId = Guid.NewGuid();
             var original = new DateTime(2026, 11, 2, 8, 29, 0).AddTicks(5436160);
+            await Insert(connection, db.Model.FindEntityType(typeof(Product))!, new()
+            { ["ProductId"] = productId, ["CompanyId"] = user.CompanyId, ["IsActive"] = true });
             await Insert(connection, db.Model.FindEntityType(typeof(SampleRequest))!, new()
             {
                 ["SampleRequestId"] = requestId, ["CompanyId"] = user.CompanyId, ["ProductId"] = productId,
@@ -62,7 +64,7 @@ public sealed class SampleWorkflowPersistencePostgresTests(IsolatedGroupStorageP
             await Insert(connection, db.Model.FindEntityType(typeof(Formula))!, new()
             {
                 ["FormulaId"] = formulaId, ["CompanyId"] = user.CompanyId, ["ProductId"] = productId,
-                ["Status"] = action == "Feedback" ? "SampleSent" : chipChoice ? "Completed" : "Approved", ["IsActive"] = true, ["UpdatedDate"] = original
+                ["Status"] = action is "Feedback" or "FinalizeChip" ? "SampleSent" : chipChoice ? "Completed" : "Approved", ["IsActive"] = true, ["UpdatedDate"] = original
             });
             await Insert(connection, db.Model.FindEntityType(typeof(ProductPricingVersion))!, new()
             {
@@ -83,16 +85,35 @@ public sealed class SampleWorkflowPersistencePostgresTests(IsolatedGroupStorageP
             {
                 ["Id"] = Guid.NewGuid(), ["SampleRequestId"] = requestId, ["CompanyId"] = user.CompanyId,
                 ["RecordedByEmployeeId"] = user.EmployeeId, ["FormulaId"] = formulaId, ["RecordedAt"] = original,
-                ["EventType"] = chipChoice ? SampleFlowRules.ChipFinalized : SampleRequestWorkflowEvents.FormulaConfirmed,
+                ["EventType"] = action == "FinalizeChip" ? SampleFlowRules.ChipFinalizationRequested : chipChoice ? SampleFlowRules.ChipFinalized : SampleRequestWorkflowEvents.FormulaConfirmed,
                 ["SampleRequestSampleTrialId"] = chipChoice ? trialId : null
             });
+            if (chipChoice)
+            {
+                // Quoted requests require accepted price before finalization/completion.
+                await Insert(connection, db.Model.FindEntityType(typeof(SampleRequestWorkflowEvent))!, new()
+                {
+                    ["Id"] = Guid.NewGuid(), ["SampleRequestId"] = requestId, ["CompanyId"] = user.CompanyId,
+                    ["RecordedByEmployeeId"] = user.EmployeeId, ["FormulaId"] = formulaId,
+                    ["RecordedAt"] = original.AddSeconds(-1), ["EventType"] = SampleRequestWorkflowEvents.PriceAccepted
+                });
+            }
             if (action == "FinalizeQuotation")
+            {
                 await Insert(connection, db.Model.FindEntityType(typeof(SampleRequestWorkflowEvent))!, new()
                 {
                     ["Id"] = Guid.NewGuid(), ["SampleRequestId"] = requestId, ["CompanyId"] = user.CompanyId,
                     ["RecordedByEmployeeId"] = user.EmployeeId, ["FormulaId"] = formulaId, ["RecordedAt"] = original.AddSeconds(1),
                     ["EventType"] = SampleRequestWorkflowEvents.PriceAccepted
                 });
+                // Sale must explicitly ask Lab to finalize after accepting the quotation.
+                await Insert(connection, db.Model.FindEntityType(typeof(SampleRequestWorkflowEvent))!, new()
+                {
+                    ["Id"] = Guid.NewGuid(), ["SampleRequestId"] = requestId, ["CompanyId"] = user.CompanyId,
+                    ["RecordedByEmployeeId"] = user.EmployeeId, ["FormulaId"] = formulaId,
+                    ["RecordedAt"] = original.AddSeconds(2), ["EventType"] = SampleFlowRules.LabFinalizationRequested
+                });
+            }
             var handler = new ApplySampleFlowActionCommandHandler(db, actor, new CurrentUserPermissionService(actor),
                 RestrictedVisibility.Create(actor), new FormulaVersionService(db, new KeyedMutationLock<Guid>()), null!, db);
             var command = new ApplySampleFlowActionCommand
@@ -119,7 +140,7 @@ public sealed class SampleWorkflowPersistencePostgresTests(IsolatedGroupStorageP
                         CustomerReplyStatus = "Không đạt", CustomerReplyNote = "Restricted Sale real handler regression"
                     }, default)
                 : await handler.Handle(command, default);
-            Assert.True(result.Success, result.Message);
+            Assert.True(result.Success, $"{action}: {result.Message}");
             // Re-read from the database rather than using the mutated handler object/change tracker.
             var saved = await db.SampleRequests.AsNoTracking().SingleAsync(x => x.SampleRequestId == requestId);
             Assert.True(saved.UpdatedDate > original, $"{action} did not persist its request token");
@@ -132,6 +153,14 @@ public sealed class SampleWorkflowPersistencePostgresTests(IsolatedGroupStorageP
                 Assert.True(selected.IsSelect);
                 Assert.True(selected.UpdatedDate > original);
             }
+            if (action == "FinalizeChip")
+            {
+                var finalized = await db.Formulas.AsNoTracking().SingleAsync(x => x.FormulaId == formulaId);
+                Assert.Equal("Completed", finalized.Status);
+                Assert.True(finalized.IsSelect);
+                Assert.Equal("Completed", saved.Status);
+                Assert.Equal(formulaId, saved.FormulaId);
+            }
             if (action == "Feedback")
             {
                 Assert.Equal("InProgress", saved.Status);
@@ -140,22 +169,16 @@ public sealed class SampleWorkflowPersistencePostgresTests(IsolatedGroupStorageP
             }
             if (action == "FinalizeQuotation")
             {
-                Assert.Equal("InProgress", saved.Status);
+                Assert.Equal("Completed", saved.Status);
+                Assert.Equal(formulaId, saved.FormulaId);
                 var finalized = await db.Formulas.AsNoTracking().SingleAsync(x => x.FormulaId == formulaId);
                 Assert.Equal("Completed", finalized.Status);
-                Assert.False(finalized.IsSelect);
-                var orderService = new SaleOrderCreationService(db, null!, null!, null!, null!);
-                var blockedOrder = await orderService.CreateAsync(new CreateSaleOrderRequest
-                {
-                    CustomerId = customerId,
-                    SaleOrderDetails = [new() { ProductId = productId, FormulaId = formulaId, ExpectedQuantity = 1, UnitPriceAgreed = 100 }]
-                }, user.EmployeeId!.Value, user.CompanyId!.Value, DateTime.Now, default);
-                Assert.False(blockedOrder.Success);
-                Assert.Contains("Sale cần hoàn thành hồ sơ mẫu", blockedOrder.Message);
-                Assert.Contains(formulaId, await orderService.LoadUnfinishedWorkflowFormulaIdsAsync(user.CompanyId.Value, [formulaId], default));
+                Assert.True(finalized.IsSelect);
+                var orderService = new SaleOrderCreationService(db, null!, null!, null!, null!, HRM.Application.Tests.Features.CRM.CustomerCare.CustomerSampleSharingTestServices.Disabled());
+                Assert.DoesNotContain(formulaId, await orderService.LoadUnfinishedWorkflowFormulaIdsAsync(user.CompanyId!.Value, [formulaId], default));
                 Assert.Single(await db.FormulaVersions.AsNoTracking().Where(x => x.FormulaId == formulaId).ToArrayAsync());
             }
-            var eventType = action == "FinalizeQuotation" ? SampleFlowRules.QuotationFinalized : action == "Feedback" ? SampleRequestWorkflowEvents.FeedbackRecorded : action == "Complete" ? SampleFlowRules.CompletedWithoutTrial : action == "RequestSample" ? SampleFlowRules.KgRequested : action == "PriceRejected" ? SampleFlowRules.PriceRejected : SampleFlowRules.PriceNoResponse;
+            var eventType = action == "FinalizeChip" ? SampleFlowRules.ChipFinalized : action == "FinalizeQuotation" ? SampleFlowRules.QuotationFinalized : action == "Feedback" ? SampleRequestWorkflowEvents.FeedbackRecorded : action == "Complete" ? SampleFlowRules.CompletedWithoutTrial : action == "RequestSample" ? SampleFlowRules.KgRequested : action == "PriceRejected" ? SampleFlowRules.PriceRejected : SampleFlowRules.PriceNoResponse;
             Assert.Equal(1, await db.SampleRequestWorkflowEvents.CountAsync(x => x.SampleRequestId == requestId && x.EventType == eventType));
             if (action is "PriceRejected" or "PriceNoResponse")
             {
@@ -175,6 +198,35 @@ public sealed class SampleWorkflowPersistencePostgresTests(IsolatedGroupStorageP
                 : await handler.Handle(command, default);
             Assert.False(replay.Success); // stale token or already answered round cannot append duplicate work
             Assert.Equal(outboxCount, await db.OutboxMessages.CountAsync());
+            if (action == "RequestSample")
+            {
+                // A later kg delivery was rejected. Requesting another run must not create another TP.
+                await db.SampleRequestSampleTrials.Where(x => x.SampleRequestSampleTrialId == trialId)
+                    .ExecuteUpdateAsync(set => set.SetProperty(x => x.DeliveredSampleQuantityKg, 2m)
+                        .SetProperty(x => x.Status, SampleTrialStatus.Failed)
+                        .SetProperty(x => x.CustomerReplyNote, "Original rejection"));
+                await db.Formulas.Where(x => x.FormulaId == formulaId)
+                    .ExecuteUpdateAsync(set => set.SetProperty(x => x.Status, "SampleSent"));
+                db.ChangeTracker.Clear();
+                var before = await db.SampleRequests.AsNoTracking().SingleAsync(x => x.SampleRequestId == requestId);
+                var count = await db.SampleRequests.CountAsync();
+                var jobs = await db.OutboxMessages.CountAsync();
+                var again = await handler.Handle(new() { SampleRequestId = requestId, Action = "RequestSample",
+                    RequestedKg = 7, ExpectedUpdatedDate = before.UpdatedDate, Note = "Run another VU" }, default);
+                Assert.True(again.Success, again.Message);
+                Assert.Equal(requestId, again.Data);
+                Assert.Equal(count, await db.SampleRequests.CountAsync());
+                Assert.Equal(jobs + 1, await db.OutboxMessages.CountAsync());
+                var next = await db.SampleRequests.AsNoTracking().SingleAsync(x => x.SampleRequestId == requestId);
+                Assert.Equal(productId, next.ProductId);
+                Assert.Equal(7, next.SampleQuantity);
+                var old = await db.SampleRequestSampleTrials.AsNoTracking().SingleAsync(x => x.SampleRequestSampleTrialId == trialId);
+                Assert.Equal(formulaId, old.FormulaId);
+                Assert.Equal(original, old.SentDate);
+                Assert.Equal("Original rejection", old.CustomerReplyNote);
+                Assert.Equal(SampleTrialStatus.Failed, old.Status);
+                Assert.Equal("SampleSent", (await db.Formulas.AsNoTracking().SingleAsync(x => x.FormulaId == formulaId)).Status);
+            }
             if (action == "FinalizeQuotation")
             {
                 var finalized = await db.Formulas.AsNoTracking().SingleAsync(x => x.FormulaId == formulaId);
@@ -183,7 +235,7 @@ public sealed class SampleWorkflowPersistencePostgresTests(IsolatedGroupStorageP
                 db.ChangeTracker.Clear(); // A subsequent HTTP request re-reads DB timestamps at PostgreSQL precision.
                 var completed = await saleHandler.Handle(new() { SampleRequestId = requestId, Action = "Complete",
                     ExpectedUpdatedDate = saved.UpdatedDate, ExpectedFormulaUpdatedDate = finalized.UpdatedDate }, default);
-                Assert.True(completed.Success, completed.Message);
+                Assert.False(completed.Success); // Lab already completed this request; no second Sale confirmation.
                 Assert.Equal("Completed", (await db.SampleRequests.AsNoTracking().SingleAsync(x => x.SampleRequestId == requestId)).Status);
                 Assert.True((await db.Formulas.AsNoTracking().SingleAsync(x => x.FormulaId == formulaId)).IsSelect);
                 // A completed ordinary request accepts only an explicit public note, without reopening its lifecycle.
@@ -230,7 +282,7 @@ public sealed class SampleWorkflowPersistencePostgresTests(IsolatedGroupStorageP
                 Assert.Equal(beforeJobs + 1, await db.OutboxMessages.CountAsync());
 
 
-                Assert.Empty(await new SaleOrderCreationService(db, null!, null!, null!, null!)
+                Assert.Empty(await new SaleOrderCreationService(db, null!, null!, null!, null!, HRM.Application.Tests.Features.CRM.CustomerCare.CustomerSampleSharingTestServices.Disabled())
                     .LoadUnfinishedWorkflowFormulaIdsAsync(user.CompanyId!.Value, [formulaId], default));
             }
         }

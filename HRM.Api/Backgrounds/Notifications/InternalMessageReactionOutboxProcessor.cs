@@ -57,7 +57,8 @@ public sealed class InternalMessageReactionOutboxProcessor(
                     m.InternalConversationId == envelope.ConversationId && m.Conversation.CompanyId == envelope.CompanyId && !m.IsDeleted, ct))
                 {
                     // Quyền được xét lại lúc dispatch: người đã bị loại không nhận tín hiệu đang chờ.
-                    var query = access.ReactionReaders(envelope.CompanyId, envelope.ConversationId);
+                    var query = access.RestrictRealtimeRecipients(
+                        access.ReactionReaders(envelope.CompanyId, envelope.ConversationId), envelope.CompanyId);
                     if (personal is not null) query = query.Where(id => id == personal.RecipientEmployeeId);
                     var readers = await query.ToArrayAsync(ct);
                     if (readers.Length > 0)

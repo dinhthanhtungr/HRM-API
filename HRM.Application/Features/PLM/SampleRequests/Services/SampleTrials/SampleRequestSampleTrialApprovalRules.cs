@@ -58,7 +58,7 @@ internal static class SampleRequestSampleTrialApprovalRules
         DateTime now,
         string customerReplyStatus,
         string? customerReplyNote = null,
-        DateTime? customerReplyDate = null)
+        DateTime? customerReplyDate = null, bool currentWorkflow = false)
     {
         var formulaId = trial.FormulaId!.Value;
 
@@ -70,7 +70,7 @@ internal static class SampleRequestSampleTrialApprovalRules
         trial.UpdatedBy = employeeId;
         trial.UpdatedDate = now;
 
-        if (SampleFlowRules.IsModernChip(sampleRequest, trial))
+        if (SampleFlowRules.IsModernChip(sampleRequest, trial) || currentWorkflow && trial.DeliveryKind == SampleDeliveryKind.ColorChip)
         {
             SampleFlowRules.ApplyChipReply(sampleRequest, trial, SampleTrialStatus.Approved, employeeId, now);
             return;

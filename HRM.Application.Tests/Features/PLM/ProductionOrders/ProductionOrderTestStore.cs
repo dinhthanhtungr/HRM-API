@@ -38,6 +38,9 @@ public class ProductionOrderTestStore : DispatchProxy
     protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
     {
         var method = targetMethod!;
+        if (method.Name == "ReadMovementHistory")
+            return Invoke(typeof(HRM.Application.Abstractions.Persistence.Warehouse.IWarehouseReadDbContext)
+                .GetProperty("WarehouseMovementRows")!.GetMethod, []);
         if (method.Name is "LockProductionOrderAsync" or "LockManufacturingFormulaAsync" or "LockManufacturingProductAsync" or "LockManufacturingColorChipAsync")
             return Task.CompletedTask;
         if (method.Name == nameof(IProductionOrderDbContext.BeginTransactionAsync))

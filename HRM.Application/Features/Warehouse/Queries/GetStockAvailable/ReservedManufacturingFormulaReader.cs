@@ -8,9 +8,15 @@ internal static class ReservedManufacturingFormulaReader
 {
     public static async Task<IReadOnlyDictionary<string, string>> ReadAsync(
         IWarehouseReadDbContext db, Guid companyId, string[] mfgCodes, CancellationToken ct)
+        => (await ReadLinksAsync(db, companyId, mfgCodes, ct)).ToDictionary(x => x.Key, x => x.Value.FormulaCode, StringComparer.Ordinal);
+
+    internal sealed record ReservationLink(string FormulaCode, Guid MfgProductionOrderId);
+
+    public static async Task<IReadOnlyDictionary<string, ReservationLink>> ReadLinksAsync(
+        IWarehouseReadDbContext db, Guid companyId, string[] mfgCodes, CancellationToken ct)
     {
         if (mfgCodes.Length == 0)
-            return new Dictionary<string, string>(StringComparer.Ordinal);
+            return new Dictionary<string, ReservationLink>(StringComparer.Ordinal);
 
         var selections = await db.ProductionSelectVersions.AsNoTracking()
             .Where(x => x.CompanyId == companyId && x.ValidTo == null
@@ -23,6 +29,7 @@ internal static class ReservedManufacturingFormulaReader
             {
                 MfgCode = x.MfgProductionOrder.ExternalId,
                 FormulaCode = x.ManufacturingFormula!.ExternalId,
+                x.MfgProductionOrderId,
                 x.ValidFrom,
                 x.ProductionSelectVersionId
             })
@@ -32,7 +39,8 @@ internal static class ReservedManufacturingFormulaReader
         return selections.GroupBy(x => x.MfgCode, StringComparer.Ordinal)
             .ToDictionary(g => g.Key,
                 g => g.OrderByDescending(x => x.ValidFrom)
-                    .ThenByDescending(x => x.ProductionSelectVersionId).First().FormulaCode,
+                    .ThenByDescending(x => x.ProductionSelectVersionId)
+                    .Select(x => new ReservationLink(x.FormulaCode, x.MfgProductionOrderId)).First(),
                 StringComparer.Ordinal);
     }
 }

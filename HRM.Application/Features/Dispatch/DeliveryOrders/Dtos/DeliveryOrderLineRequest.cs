@@ -4,6 +4,7 @@ public sealed class DeliveryOrderLineRequest
 {
     public Guid MerchandiseOrderDetailId { get; init; }
     public decimal Quantity { get; init; }
+    public IReadOnlyList<HRM.Application.Features.PLM.SaleOrders.DeliverySchedules.DeliveryScheduleAllocationPart>? ScheduleAllocations { get; init; }
     public int NumOfBags { get; init; }
 
     /// <summary>

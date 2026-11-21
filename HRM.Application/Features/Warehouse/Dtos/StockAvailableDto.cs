@@ -31,6 +31,7 @@ public sealed class StockAvailableDto
 
 public sealed class StockAvailableDetailDto
 {
+    public IReadOnlyList<DefectReasonDto> DefectReasons { get; set; } = [];
     public string? LotNo { get; init; }
 
     public string ShelfStockCode { get; init; } = string.Empty;
@@ -49,6 +50,7 @@ public sealed class StockAvailableDetailDto
 
 public sealed class ReservedVaCodeDto
 {
+    public Guid? MfgProductionOrderId { get; init; }
     public string VaCode { get; init; } = string.Empty;
 
     public decimal ReservedKg { get; init; }

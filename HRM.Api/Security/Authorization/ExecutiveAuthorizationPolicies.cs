@@ -8,9 +8,9 @@ internal static class ExecutiveAuthorizationPolicies
     internal static void AddExecutivePolicies(this AuthorizationOptions options)
     {
         options.AddPolicy(ExecutivePolicies.ViewSampleRequestPricingOverview, policy =>
-            policy.RequireRole(ApplicationRoleSets.Pricing.ExecutiveReaders));
+            policy.RequireRole(ApplicationRoleSets.Pricing.ExecutiveReaders).RequireUnrestrictedAccount());
 
         options.AddPolicy(ExecutivePolicies.ManageProductPricingReview, policy =>
-            policy.RequireRole(ApplicationRoleSets.Pricing.Managers));
+            policy.RequireRole(ApplicationRoleSets.Pricing.Managers).RequireUnrestrictedAccount());
     }
 }

@@ -80,6 +80,8 @@ internal sealed class ConfirmSampleRequestSampleReceiptCommandHandler
                 "Sample request was not found or is outside your scope.");
         }
 
+        if (await Services.Workflow.SampleRequestLabPauseRules.IsPausedAsync(_dbContext, scope.CompanyId, request.SampleRequestId, cancellationToken))
+            return OperationResult<SampleReceiptConfirmationDto>.Fail(Services.Workflow.SampleRequestLabPauseRules.PausedMessage);
         var trial = await _dbContext.SampleRequestSampleTrials
             .AsTracking()
             .FirstOrDefaultAsync(x =>
@@ -155,6 +157,11 @@ internal sealed class ConfirmSampleRequestSampleReceiptCommandHandler
             return OperationResult<SampleReceiptConfirmationDto>.Fail(validationError);
         }
 
+        await using var transaction = await _dbContext.BeginTransactionAsync(cancellationToken);
+        var parentLocked = await _dbContext.SampleRequests.Where(x => x.SampleRequestId == request.SampleRequestId && x.CompanyId == scope.CompanyId && x.IsActive)
+            .ExecuteUpdateAsync(set => set.SetProperty(x => x.UpdatedDate, x => x.UpdatedDate), cancellationToken);
+        if (parentLocked != 1 || await Services.Workflow.SampleRequestLabPauseRules.IsPausedAsync(_dbContext, scope.CompanyId, request.SampleRequestId, cancellationToken))
+            return OperationResult<SampleReceiptConfirmationDto>.Fail(Services.Workflow.SampleRequestLabPauseRules.PausedMessage);
         trial.RequestReceivedDate = receivedDate;
         trial.Status = SampleTrialStatus.WaitingCustomerFeedback;
         trial.UpdatedBy = employeeId;
@@ -163,6 +170,7 @@ internal sealed class ConfirmSampleRequestSampleReceiptCommandHandler
         ApplyConfirmedPayload(message, payload, trial, currentEmployeeName, now, employeeId);
 
         await _dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         return OperationResult<SampleReceiptConfirmationDto>.Ok(
             ToDto(request.MessageId, trial, payload.SampleReceiptAction!),

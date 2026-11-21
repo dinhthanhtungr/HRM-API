@@ -59,7 +59,13 @@ internal sealed partial class EvaluationStandardService(
             query = query.Where(x => x.IsActive == request.IsActive.Value);
         }
 
-        if (request.NormalizedKeyword is { } keyword)
+        var smartSearch = HRM.Application.Commons.Searching.SmartSearch.For(query, fields => [
+            fields.Code("standardCode", x => x.Code, "Mã tiêu chuẩn", "Standard code"),
+            fields.Name("standardName", x => x.Name, "Tên tiêu chuẩn", "Standard name"),
+            fields.Name("standardNameEn", x => x.NameEn, "Tên tiêu chuẩn EN", "English standard name")
+        ]);
+        query = smartSearch.ApplyRequest(query, request.NormalizedKeyword, request, out var smartKeyword);
+        if (smartKeyword is { } keyword)
         {
             var pattern = PostgresSearchPattern.ContainsLiteral(keyword);
             query = query.Where(x => EF.Functions.ILike(x.Code, pattern, PostgresSearchPattern.EscapeCharacter) ||
@@ -67,6 +73,8 @@ internal sealed partial class EvaluationStandardService(
                 x.NameEn != null && EF.Functions.ILike(x.NameEn, pattern, PostgresSearchPattern.EscapeCharacter));
         }
 
+        if (await smartSearch.SuggestionsAsync<EvaluationStandardDto>(query, request, ct) is { } suggestions)
+            return OperationResult<PagedResult<EvaluationStandardDto>>.Ok(suggestions);
         var total = await query.CountAsync(ct);
 
         var rows = await query

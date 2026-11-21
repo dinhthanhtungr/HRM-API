@@ -1,5 +1,51 @@
 # Authorization Organization
 
+## Hạn chế dữ liệu theo tài khoản IMS
+
+Middleware kiểm tra role của phiên ngay sau xác thực và trước cơ chế đổi
+ngữ cảnh thao tác. Phiên mang IMS chỉ đến action được đánh dấu
+`AllowImsSession`, gồm API phiên đăng nhập và các action theo dõi đã rà dữ liệu.
+Marker chỉ cho request đến bước authorization hiện hành. Policy, capability
+và phạm vi công ty/hồ sơ vẫn được kiểm tại action hoặc query. Khi thêm action
+cho IMS, chỉ đánh dấu sau khi kiểm query, DTO và mọi nội dung trả về.
+Marker mặc định chỉ mở GET/HEAD. POST được đánh dấu riêng cho login, refresh-token và logout.
+Khi xác thực JWT, backend đối chiếu role IMS đang active với role trong token.
+Token cũ bị từ chối khi IMS được thêm hoặc gỡ. Refresh phát token theo quyền hiện hành.
+
+Mọi response từ action có marker dùng Cache-Control: no-store cho cả bản IMS
+và bản đầy đủ. Chế độ Developer Sample Work từ chối thao tác thay mặt nếu
+tài khoản thực hiện hoặc tài khoản đích có IMSUser, trước khi ghi audit hoặc
+chạy action.
+Client web bỏ qua cache HTTP cho GET/HEAD có xác thực. Nếu role hoặc quyền
+thay đổi trong lúc request đang chạy, client loại response cũ kể cả khi đã
+nhận header và còn đang đọc body.
+Client chuẩn hóa kiểu chữ của IMSUser trong phiên lưu. Sau khi chuyển sang
+IMS, web dùng danh tính đăng nhập và bỏ header thao tác thay mặt còn sót lại.
+
+Với phiên mang role `IMSUser`, `CurrentUserPermissionService` áp dụng danh sách hạn chế của
+`ImsAccountRestrictions` trước claim, fallback và ngoại lệ theo role. Danh sách này bao gồm các
+capability giá, chi phí, lợi nhuận và chi tiết công thức được kiểm qua resolver. Policy
+`SensitiveData.UnrestrictedAccount` chặn IMS ở các API chuyên biệt đã gắn policy trực tiếp.
+Các policy PLM chuyên về formula, BOM và lệnh mẫu, Executive Pricing và quản lý mua hàng
+dùng cùng điều kiện IMS cùng với gate role hiện hành.
+Quyền đọc hồ sơ, phạm vi công ty và projection của các endpoint hỗn hợp được quyết định tại từng use case.
+
+### Kiểm chứng cấu hình IMS trên môi trường chạy
+
+- Dùng role IMSUser hiện có. Kiểm tra gán role đang active và nhân viên/công ty
+  trùng với phiên đăng nhập.
+- Với role IMS còn dùng fallback, danh sách quyền đọc lấy từ
+  `ApplicationPermissionRoleSets`. Nếu role IMS đã có permission model trong
+  DB, xác nhận claim theo dõi cần cấp trước khi refresh. Kiểm quyền thực tế
+  bằng token mới, kể cả khi tài khoản có thêm role đã chuyển sang permission
+  DB. Role chưa chuyển vẫn được resolve fallback lúc phát token.
+- Thử IMS thuần, IMS kèm ACCUser hoặc Developer, ACCUser thuần, người dùng
+  thường và phiên chưa đăng nhập. Kiểm cùng một hồ sơ hợp lệ, ID thuộc công
+  ty khác và hồ sơ riêng tư cho các use case có loại hồ sơ này.
+- So sánh response API, kết quả gợi ý/tìm kiếm, tổng hợp và các endpoint tải
+  tệp. Thử token cũ ngay sau khi thêm hoặc gỡ IMS, rồi thử lại sau refresh.
+  Khi đổi role trong một tab đang mở, kiểm thêm cache và thông báo desktop.
+
 ACCUser có các quyền xem nghiệp vụ của President: pricing, IQC, thiết bị, production order, Formula/NVL/BOM, thông tin kỹ thuật và chi tiết rà soát giá NVL. ProductTechnicalViewers tách khỏi ProductTechnicalEditors. CRM, Sample Request, quotation, lookup, timeline và dashboard dùng BuildReadScopeAsync để xem toàn công ty; command tiếp tục dùng BuildScopeAsync và các gate ghi hiện có. Executive Pricing Review cho ACCUser đọc/preview qua GetReadContext, không mở gate ghi GetContext. Kho và phân bổ sale trong P&L dùng cùng quyền xem điều hành. Conversation Sample Request chỉ mở rộng đọc ở khu vực mà bộ lọc area cho phép; không mở khu vực riêng hay quyền quản lý participant. Seed/rollback hiện có được cập nhật cho claim mới, không tự chạy SQL. Với role đã migrate, triển khai code và chạy lại baseline seed idempotent trên AspNetRoleClaims trước khi login/refresh; token cũ không tự nhận quyền mới.
 
 Private conversation areas use explicit active participants, not department roles or new permission claims. See [area contract](../../Features/InternalMail/AREAS.md). Company, parent activity and RD/color scopes still apply. Inviting a person grants that area's chat history, not access to other areas or pricing approval in business modules.

@@ -6,6 +6,7 @@ using HRM.Application.Features.Dispatch.DeliveryOrders.Dtos;
 using HRM.Application.Features.Dispatch.DeliveryOrders.Queries.GetDeliveryPlan;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using HRM.Application.Features.Dispatch.DeliveryOrders.Services;
 
 namespace HRM.Application.Features.Dispatch.DeliveryOrders.Queries.GetSelectableDeliveryLines;
 
@@ -139,6 +140,7 @@ internal sealed class GetSelectableDeliveryLinesQueryHandler
             .Select(g => new { OrderId = g.Key, Date = g.Max(x => x.ProductionOrder.ExpectedDate) })
             .ToDictionaryAsync(x => x.OrderId, x => x.Date, cancellationToken);
 
+        var labelNames = DeliveryCustomerLabelNames.Query(_dbContext.CustomerLabelDetails.AsNoTracking(), companyId);
         var pageLines = await lineBaseQuery
             .Where(x => orderIds.Contains(x.Order.MerchandiseOrderId))
             .OrderBy(x => x.Order.PONo)
@@ -151,8 +153,12 @@ internal sealed class GetSelectableDeliveryLinesQueryHandler
                 x.Detail.ProductId,
                 ProductExternalId = x.Detail.ProductExternalIdSnapshot,
                 ProductName = x.Detail.ProductNameSnapshot,
+                ProductDisplayCode = x.Detail.Product != null && x.Detail.Product.CompanyId == companyId ? x.Detail.Product.ColourCode : null,
+                ProductDisplayName = labelNames.Where(n => n.Header.CustomerId == x.Order.CustomerId && n.Header.ProductId == x.Detail.ProductId)
+                    .Select(n => n.FieldValue!.Trim()).FirstOrDefault() ??
+                    (x.Detail.Product != null && x.Detail.Product.CompanyId == companyId ? x.Detail.Product.Name : null),
                 Note = x.Detail.Comment,
-                BagWeightKg = x.Detail.Product.IsActive && x.Detail.Product.CompanyId == companyId
+                BagWeightKg = x.Detail.Product != null && x.Detail.Product.IsActive && x.Detail.Product.CompanyId == companyId
                     ? x.Detail.Product.SampleRequests.Where(sr => sr.CompanyId == companyId && sr.IsActive &&
                         sr.CustomerId == x.Order.CustomerId)
                         .OrderByDescending(sr => sr.CreatedDate).ThenByDescending(sr => sr.SampleRequestId)
@@ -206,6 +212,8 @@ internal sealed class GetSelectableDeliveryLinesQueryHandler
                             ProductId = line.ProductId,
                             ProductExternalId = line.ProductExternalId,
                             ProductName = line.ProductName,
+                            ProductDisplayCode = line.ProductDisplayCode,
+                            ProductDisplayName = line.ProductDisplayName,
                             BagWeightKg = line.BagWeightKg ?? 25,
                             PONo = line.PONo,
                             Note = line.Note,

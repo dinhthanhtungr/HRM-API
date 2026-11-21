@@ -1,4 +1,6 @@
 using HRM.Domain.Enums.Merchadises;
+using HRM.Domain.Entities.CustomerSchema;
+using HRM.Application.Features.CRM.Quotations.Services;
 
 namespace HRM.Application.Features.PLM.SaleOrders.Services;
 
@@ -15,6 +17,22 @@ internal static class SaleOrderApprovalPriceWarningRules
 
     public static bool IsBelowApprovedStandardPrice(decimal unitPriceAgreed, decimal approvedStandardSellingPrice)
         => unitPriceAgreed < approvedStandardSellingPrice;
+
+    public static decimal ConvertApprovedPrice(decimal vndPrice, string currency, decimal exchangeRate)
+        => QuotationPricingCurrencyConverter.ConvertFromStandardPricing(vndPrice, currency, exchangeRate);
+
+    // Match the SaleOrder form: first matching range by SortOrder, honoring open bounds.
+    // If quantity falls in a gap or no active tier exists, retain the approved base price.
+    public static decimal ResolveApprovedPrice(decimal quantity, decimal standardSellingPrice,
+        IEnumerable<ProductPricingTier> tiers)
+        => tiers.Where(t => t.IsActive)
+            .OrderBy(t => t.SortOrder)
+            .FirstOrDefault(t =>
+                (!t.MinQuantity.HasValue || quantity > t.MinQuantity.Value ||
+                    (t.MinInclusive && quantity == t.MinQuantity.Value)) &&
+                (!t.MaxQuantity.HasValue || quantity < t.MaxQuantity.Value ||
+                    (t.MaxInclusive && quantity == t.MaxQuantity.Value)))?.UnitPrice
+            ?? standardSellingPrice;
 
     public static bool IsWarningMessage(string? message)
         => message?.StartsWith(MessagePrefix, StringComparison.Ordinal) == true;

@@ -14,6 +14,49 @@ namespace HRM.Application.Tests.Features.InternalMail;
 public sealed partial class InternalMailAreaAccessTests
 {
     [Theory]
+    [InlineData(InternalMailRelatedType.ConversationTechnical)]
+    [InlineData(InternalMailRelatedType.ConversationPricing)]
+    public void RepresentativeBusinessEventRequiresExactVisibleNonDeletedMessage(InternalMailRelatedType type)
+    {
+        var user = new User("LabUser");
+        var store = CreateStore(user, type, true);
+        var message = store.Db.InternalMessages.Single();
+        var notification = new Notification { Id = Guid.NewGuid(), CompanyId = user.CompanyId!.Value,
+            Topic = TopicNotifications.SampleRequestPriceQuoteRequested };
+        var memory = (MemoryStore)(object)store.Db;
+        memory.Values[nameof(store.Db.Notifications)] = new MemorySet<Notification>([notification]);
+        memory.Values[nameof(store.Db.NotificationUserStates)] = new MemorySet<NotificationUserState>([
+            new() { NotificationId = notification.Id, Notification = notification, UserId = Guid.NewGuid() }
+        ]);
+        memory.Values[nameof(store.Db.QueryInternalMailNotificationLinks)] =
+            new AsyncQuery<HRM.Application.Abstractions.Persistence.InternalMail.InternalMailNotificationLink>([
+                new() { NotificationId = notification.Id, HasConversation = true,
+                    ConversationId = message.InternalConversationId, MessageId = message.InternalMessageId }
+            ]);
+        var access = new InternalMailAreaAccessService(store.Db, user);
+        Assert.Single(access.VisibleMessageBusinessEvents([store.Child.InternalConversationId]));
+        Assert.Single(access.LatestVisibleMessageBusinessEvents([store.Child.InternalConversationId]));
+        memory.Values[nameof(store.Db.NotificationUserStates)] = new MemorySet<NotificationUserState>([]);
+        Assert.Single(access.VisibleMessageBusinessEvents([store.Child.InternalConversationId]));
+        Assert.Single(access.LatestVisibleMessageBusinessEvents([store.Child.InternalConversationId]));
+        notification.Topic = (TopicNotifications)int.MaxValue;
+        Assert.Empty(access.VisibleMessageBusinessEvents([store.Child.InternalConversationId]));
+        Assert.Empty(access.LatestVisibleMessageBusinessEvents([store.Child.InternalConversationId]));
+        notification.Topic = TopicNotifications.SampleRequestPriceQuoteRequested;
+        notification.CompanyId = Guid.NewGuid();
+        Assert.Empty(access.VisibleMessageBusinessEvents([store.Child.InternalConversationId]));
+        Assert.Empty(access.LatestVisibleMessageBusinessEvents([store.Child.InternalConversationId]));
+        notification.CompanyId = user.CompanyId.Value;
+        message.IsDeleted = true;
+        Assert.Empty(access.VisibleMessageBusinessEvents([store.Child.InternalConversationId]));
+        Assert.Empty(access.LatestVisibleMessageBusinessEvents([store.Child.InternalConversationId]));
+        message.IsDeleted = false;
+        store.Child.Participants.Single().IsActive = false;
+        Assert.Empty(access.VisibleMessageBusinessEvents([store.Child.InternalConversationId]));
+        Assert.Empty(access.LatestVisibleMessageBusinessEvents([store.Child.InternalConversationId]));
+    }
+
+    [Theory]
     [InlineData(InternalMailRelatedType.Internal)]
     [InlineData(InternalMailRelatedType.SampleRequest)]
     [InlineData(InternalMailRelatedType.Quotation)]
@@ -120,6 +163,8 @@ public sealed partial class InternalMailAreaAccessTests
         public bool? ObserverDecision { get; private set; }
         protected override object? Invoke(MethodInfo? method, object?[]? args)
         {
+            if (method!.Name == "QueryInternalMailNotificationLinks")
+                return new AsyncQuery<HRM.Application.Abstractions.Persistence.InternalMail.InternalMailNotificationLink>([]);
             if (method!.Name == "QueryInternalConversationNotificationUnreadCounts")
             {
                 ObserverDecision = (bool)args![3]!;

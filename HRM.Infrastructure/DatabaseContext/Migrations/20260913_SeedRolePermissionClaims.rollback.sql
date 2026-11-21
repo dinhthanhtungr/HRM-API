@@ -4,6 +4,20 @@
 BEGIN;
 
 DELETE FROM "AspNetRoleClaims" c USING "AspNetRoles" r
+WHERE c."RoleId" = r."Id" AND c."ClaimType" = 'permission'
+  AND ((r."Name" IN ('Admin', 'Developer', 'President', 'PLPUUser', 'ACCUser', 'LabUser', 'LabAdmin', 'SeePriceUser')
+        AND c."ClaimValue" = 'plm.material-processing.view')
+       OR (r."Name" IN ('Developer', 'LabUser') AND c."ClaimValue" = 'plm.material-processing.manage'));
+
+-- Managed capability never bypasses the active Leader/team and record scope checks.
+DELETE FROM "AspNetRoleClaims" c USING "AspNetRoles" r
+WHERE c."RoleId" = r."Id" AND c."ClaimType" = 'permission'
+  AND ((r."Name" = 'SaleAdmin' AND c."ClaimValue" IN
+       ('plm.sample-request.workflow.sale', 'plm.sample-request.workflow.sale.managed',
+        'plm.sample-request.customer-price.confirm', 'plm.sample-trial.feedback.correct'))
+       OR (r."Name" = 'SaleUser' AND c."ClaimValue" = 'plm.sample-request.workflow.sale.managed'));
+
+DELETE FROM "AspNetRoleClaims" c USING "AspNetRoles" r
 WHERE c."RoleId"=r."Id" AND r."Name"='Developer' AND c."ClaimType"='permission'
  AND c."ClaimValue" IN ('dev.workflow-notification-jobs.view', 'dev.workflow-notification-jobs.retry');
 

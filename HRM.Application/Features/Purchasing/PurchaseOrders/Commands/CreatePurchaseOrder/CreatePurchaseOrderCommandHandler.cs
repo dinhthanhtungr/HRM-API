@@ -142,7 +142,8 @@ internal sealed class CreatePurchaseOrderCommandHandler
             .Where(x => x.SupplierId == supplierId && x.CompanyId == companyId && x.IsActive == true)
             .Select(x => new SupplierSnapshot(
                 x.SupplierId, x.ExternalId, x.SupplierName, x.Phone, x.RegistrationAddress,
-                x.SupplierContacts.Where(c => c.IsActive == true && c.IsPrimary == true)
+                x.SupplierContacts.Where(c => c.IsActive == true)
+                    .OrderByDescending(c => c.IsPrimary == true).ThenBy(c => c.ContactId)
                     .Select(c => ((c.FirstName ?? string.Empty) + " " + (c.LastName ?? string.Empty)).Trim()).FirstOrDefault(),
                 x.SupplierAddresses.Where(a => a.IsActive == true && a.IsPrimary == true)
                     .Select(a => a.AddressLine).FirstOrDefault()))

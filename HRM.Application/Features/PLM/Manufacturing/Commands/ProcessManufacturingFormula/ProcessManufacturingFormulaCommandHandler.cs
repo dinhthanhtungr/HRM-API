@@ -75,8 +75,11 @@ internal sealed class ProcessManufacturingFormulaCommandHandler(
             var order = link.ProductionOrder;
             error = ManufacturingAccess.ValidateInformState(user, order.Status);
             if (error is not null) return Fail(error);
-            error = ManufacturingAccess.ValidateFormulaEditState(order.Status);
-            if (error is not null) return Fail(error);
+            error = await ManufacturingAccess.FormulaEditLockAsync(db, order, ct);
+            if (error is not null && command.Request.Items is not null) return Fail(error);
+            if (error is not null && !await db.ProductionSelectVersions.AsNoTracking().AnyAsync(x => x.CompanyId == company
+                && x.MfgProductionOrderId == command.Id && x.ManufacturingFormulaId == command.FormulaId && x.ValidTo == null
+                && x.ValidFrom != null, ct)) return Fail(error);
             var waitingForSample = order.Status == nameof(ManufacturingProductOrder.WaitingForStandardSample);
             if (waitingForSample && (!user.IsInRole(ApplicationRoles.Lab.LabUser)
                 || !command.Request.IsStandard.HasValue || command.Request.Items is not null || command.Request.Note is not null))

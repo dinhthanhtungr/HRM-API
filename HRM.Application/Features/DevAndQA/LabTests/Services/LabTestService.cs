@@ -119,9 +119,8 @@ internal sealed partial class LabTestService(ILabTestDbContext db, EvaluationAcc
             .Select(x => x.EvaluationStandardId).ToArray(), company, ct);
         foreach (var input in inputs)
         {
-            if (input.ClearValue && input.Value is not null || input.ClearObservedText && input.ObservedText is not null ||
-                input.ObservedText?.Length > 16000)
-                throw new EvaluationRequestException("Không vừa gửi vừa xóa kết quả; ObservedText tối đa 16000 ký tự.");
+            if (input.ClearValue && input.Value is not null || input.ClearObservedText || input.ObservedText is not null)
+                throw new EvaluationRequestException("Kết quả không hợp lệ; chỉ dùng Value, không nhận ObservedText.");
             var row = entity.Results.FirstOrDefault(x => x.EvaluationStandardId == input.EvaluationStandardId);
             if (row is null)
             {
@@ -137,8 +136,7 @@ internal sealed partial class LabTestService(ILabTestDbContext db, EvaluationAcc
             if (row.DataType == EvaluationDataType.Attachment && input.ObservedText is not null)
                 throw new EvaluationRequestException("Chỉ tiêu Attachment không nhận ObservedText.");
             row.Value = EvaluationValueRules.Normalize(input.ClearValue ? null : input.Value ?? row.Value, LabTestMapper.Configuration(row));
-            if (input.ClearObservedText || input.ObservedText is not null)
-                row.ObservedText = input.ClearObservedText || string.IsNullOrWhiteSpace(input.ObservedText) ? null : input.ObservedText.Trim();
+
         }
         if (entity.Results.Count > 200) throw new EvaluationRequestException("Phiếu vượt 200 chỉ tiêu.");
     }

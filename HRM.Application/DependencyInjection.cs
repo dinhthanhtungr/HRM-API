@@ -23,6 +23,7 @@ using HRM.Application.Features.PLM.SaleOrders.Services;
 using HRM.Application.Features.PLM.ComplaintReports.Services;
 using HRM.Application.Features.PLM.Boms.Services;
 using HRM.Application.Features.CRM.Quotations.Services;
+using HRM.Application.Features.CRM.Quotations.Queries.Tracking;
 using HRM.Application.Features.CRM.Quotations.Services.Queries;
 using HRM.Application.Features.CRM.InteractionSummaries.Services.Automation;
 using HRM.Application.Features.CRM.InteractionSummaries.Services.GenerateCustomerInteractionSummary;
@@ -42,9 +43,20 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddApplication(this IServiceCollection services)
     {
+        services.AddScoped<HRM.Application.Features.CRM.CustomerCare.SampleSharingGroups.CustomerSampleSharingService>();
+        services.AddScoped<QuotationTrackingReader>();
+        services.AddScoped<HRM.Application.Features.PLM.ManufacturingVUFormulas.Queries.Tracking.SampleProductionTrackingReader>();
+        services.AddScoped<HRM.Application.Features.PLM.Manufacturing.Queries.Tracking.ProductionTrackingReader>();
+        services.AddScoped<HRM.Application.Features.CRM.CustomerCare.Queries.Tracking.CustomerTrackingReader>();
+        services.AddScoped<HRM.Application.Features.Dispatch.DeliveryOrders.Queries.Tracking.DeliveryTrackingReader>();
+        services.AddScoped<HRM.Application.Features.PLM.SaleOrders.Queries.Tracking.SaleOrderTrackingReader>();
+        services.AddScoped<HRM.Application.Features.PLM.SaleOrders.DeliverySchedules.DeliveryScheduleService>();
+        services.AddScoped<HRM.Application.Features.PLM.SaleOrders.DeliverySchedules.DeliveryScheduleFulfillmentService>();
+        services.AddScoped<HRM.Application.Features.Dispatch.DeliveryOrders.Queries.GetDeliveryPlan.DeliverySchedulePlanService>();
         QuestPDF.Settings.License = LicenseType.Community;
 
         services.AddMediatR(typeof(DependencyInjection).Assembly);
+        services.AddScoped<HRM.Application.Features.PLM.SampleRequests.DeliveryOptions.SampleDeliveryCompletion>();
         services.AddScoped<HRM.Application.Features.PLM.SampleRequests.Services.SampleWorkPreviewSession>();
         services.AddTransient(typeof(MediatR.IPipelineBehavior<,>), typeof(HRM.Application.Features.PLM.SampleRequests.Services.SampleWorkPreviewReadOnlyBehavior<,>));
         services.AddScoped<HRM.Application.Features.Reports.PLPU.IPLPUPurchaseOverviewReportRepository, HRM.Application.Features.Reports.PLPU.PLPUPurchaseOverviewReportRepository>();
@@ -62,7 +74,7 @@ public static class DependencyInjection
         services.AddScoped<HRM.Application.Features.DevAndQA.CoaCertificates.Services.CoaCertificateService>();
         services.AddScoped<HRM.Application.Features.DevAndQA.EvaluationTemplates.Services.EvaluationTemplateService>();
         services.AddScoped<HRM.Application.Features.DevAndQA.MeasurementMethods.Services.MeasurementMethodService>();
-        // Tạm dừng LabTest: services.AddScoped<HRM.Application.Features.DevAndQA.LabTests.Services.LabTestService>();
+        services.AddScoped<HRM.Application.Features.DevAndQA.LabTests.Services.Basic.BasicLabTestService>();
         // Tạm dừng LabTest: services.AddScoped<HRM.Application.Features.DevAndQA.LabTests.Services.MaterialTestGridService>();
         services.AddScoped<HRM.Application.Features.DevAndQA.IQC.Services.Evaluations.IqcEvaluationHistoryReader>();
         services.AddScoped<HRM.Application.Features.DevAndQA.IQC.Services.Attachments.IIqcAttachmentService, HRM.Application.Features.DevAndQA.IQC.Services.Attachments.IqcAttachmentService>();
@@ -84,6 +96,7 @@ public static class DependencyInjection
         services.AddScoped<ISampleRequestAttachmentService, SampleRequestAttachmentService>();
         services.AddScoped<ICustomerVisibilityService, CustomerVisibilityService>();
         services.AddScoped<IWarehouseStockVisibilityService, WarehouseStockVisibilityService>();
+        services.AddScoped<IWarehouseVoucherBusinessReader, WarehouseVoucherBusinessReader>();
         services.AddScoped<CustomerCrmAccessService>();
         services.AddScoped<CustomerInteractionAiSummaryGenerationService>();
         services.AddScoped<
@@ -91,6 +104,7 @@ public static class DependencyInjection
             CustomerInteractionAiSummaryAutomationProcessor>();
         services.AddScoped<CustomerFollowUpTaskCommandSupport>();
         services.AddScoped<MyTaskSupport>();
+        services.AddScoped<HRM.Application.Features.PLM.SampleRequests.PersonalWork.SamplePersonalReminderProcessor>();
         services.AddScoped<CustomerTaxCodeConflictService>();
         services.AddScoped<CustomerActivationService>();
         services.AddScoped<ISaleGroupRecipientResolver, SaleGroupRecipientResolver>();
@@ -99,6 +113,7 @@ public static class DependencyInjection
         services.AddScoped<QuotationAtomicSaveService>();
         services.AddScoped<QuotationStandardReferenceSaveService>();
         services.AddScoped<QuotationSendService>();
+        services.AddScoped<IQuotationPricingApprovalAutoSendProcessor, QuotationPricingApprovalAutoSendProcessor>();
         services.AddScoped<QuotationLinesReplaceService>();
         services.AddScoped<QuotationCustomerPriceUpdateService>();
         services.AddScoped<QuotationCurrentPricingResolver>();
@@ -128,6 +143,7 @@ public static class DependencyInjection
         services.AddScoped<QuotationTierPriceReferenceService>();
         services.AddScoped<QuotationConversationSubjectService>();
         services.AddScoped<DraftQuotationProductSnapshotSyncService>();
+        services.AddScoped<HRM.Application.Features.PLM.CustomerLabels.Services.CustomerLabelColorCodeSyncService>();
         services.AddSingleton<KeyedMutationLock<Guid>>();
         services.AddSingleton<KeyedMutationLock<string>>();
         services.AddScoped<ICustomerCrmWorkService, CustomerCrmWorkService>();
@@ -151,6 +167,9 @@ public static class DependencyInjection
         services.AddScoped<HRM.Application.Features.InternalMail.Services.InternalMailMentionResolver>();
         services.AddScoped<SampleRequestConversationSubjectService>();
         services.AddScoped<FormulaWriteService>();
+        services.AddScoped<HRM.Application.Features.PLM.MaterialProcessing.Services.MaterialProcessingWriter>();
+        services.AddScoped<HRM.Application.Features.PLM.MaterialProcessing.Services.ProcessingWarehouseService>();
+        services.AddScoped<HRM.Application.Features.PLM.MaterialProcessing.Services.ProcessingMaterialResolver>();
         services.AddScoped<HRM.Application.Features.PLM.SampleRequests.Services.Workflow.LegacySampleDeliveryService>();
         services.AddScoped<FormulaVersionService>();
         services.AddScoped<FormulaPricingReviewService>();
@@ -167,6 +186,7 @@ public static class DependencyInjection
         services.AddScoped<HRM.Application.Features.PLM.Manufacturing.Services.ColorChips.ManufacturingColorChipService>();
         services.AddScoped<HRM.Application.Features.PLM.Manufacturing.Services.Formulas.ManufacturingFormulaReadService>();
         services.AddScoped<HRM.Application.Features.PLM.Manufacturing.Services.Notifications.ManufacturingWorkflowNotifier>();
+        services.AddScoped<HRM.Application.Features.PLM.Manufacturing.Services.Notifications.PromisedDeliveryNotifier>();
         services.AddScoped<SaleOrderApprovalService>();
         services.AddScoped<SaleOrderStandardSampleService>();
         services.AddScoped<ComplaintInteractionWriter>();
@@ -186,6 +206,7 @@ public static class DependencyInjection
         services.AddScoped<HRM.Application.Features.Dispatch.DeliveryOrders.Services.DeliveryAttachedGoodsService>();
         services.AddScoped<HRM.Application.Features.Dispatch.DeliveryOrders.Services.DeliveryDocumentFormulaService>();
         services.AddScoped<PurchaseOrderWorkflowService>();
+        services.AddScoped<PurchaseOrderReturnService>();
         services.AddScoped<PurchaseOrderPrintService>();
         services.AddScoped<HRM.Application.Features.Purchasing.Catalog.Services.IPurchasingCatalogService, HRM.Application.Features.Purchasing.Catalog.Services.PurchasingCatalogService>();
         services.AddScoped<PurchaseOrderReceiptReader>();

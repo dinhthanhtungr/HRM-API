@@ -14,7 +14,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace HRM.Application.Features.PLM.SampleRequests.Commands.UpdateSampleWorkSchedule;
 
-/// <summary>LabAdmin planning does not accept formulas, feedback or lifecycle status, and never publishes workflow notifications.</summary>
+/// <summary>Lab planning does not accept formulas, feedback or lifecycle status, and never publishes workflow notifications.</summary>
 internal sealed class UpdateSampleWorkScheduleCommandHandler(IPLMWriteDbContext db, ICurrentUser user,
     ICurrentUserPermissionService permissions, ICustomerVisibilityService visibility, IDateTimeProvider clock)
     : IRequestHandler<UpdateSampleWorkScheduleCommand, OperationResult<Guid>>
@@ -32,10 +32,12 @@ internal sealed class UpdateSampleWorkScheduleCommandHandler(IPLMWriteDbContext 
         scope = await SampleWorkPlanningVisibility.ForPlanningAsync(scope, user, db.Employees, ct);
         var requests = visibility.ApplySampleRequestVisibility(db.SampleRequests.AsNoTracking(), db.Customers.AsNoTracking(), scope)
             .Where(x => x.CompanyId == company && x.SampleRequestId == command.SampleRequestId && x.IsActive &&
-                x.Status != "Completed" && x.Status != "Cancelled" &&
+                x.Status != "Completed" && x.Status != "Cancelled" && x.Status != "LabDeclined" &&
                 x.CustomerId != CustomerVisibilityConstants.RestrictedCustomerId && x.Customer.ExternalId != PLMCustomerRules.InternalCustomerExternalId);
         var sample = await requests.SingleOrDefaultAsync(ct);
         if (sample is null) return Fail("Sample request is outside your scope or has ended.");
+        if (await Services.Workflow.SampleRequestLabPauseRules.IsPausedAsync(db, company, sample.SampleRequestId, ct))
+            return Fail(Services.Workflow.SampleRequestLabPauseRules.PausedMessage);
         if (sample.UpdatedDate != command.ExpectedUpdatedDate) return Fail("Sample request changed. Reload before saving.");
         var delivery = SampleWorkScheduleRules.Resolve(sample.ExpectedDeliveryDate, command.ExpectedDeliveryDate,
             SampleWorkScheduleRules.DeliveryDate, command.ClearFields);

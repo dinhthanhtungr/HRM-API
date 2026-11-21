@@ -10,6 +10,26 @@ namespace HRM.Application.Tests.Features.CRM.Quotations;
 
 public sealed class PricingRoundingRulesTests
 {
+    [Theory]
+    [InlineData(FormulaPricingRoundingRule.Nearest)]
+    [InlineData(FormulaPricingRoundingRule.Up)]
+    [InlineData(FormulaPricingRoundingRule.Down)]
+    public void FormulaPricing_IgnoresLegacyThousandStep(FormulaPricingRoundingRule rule)
+    {
+        var policy = new FormulaPricingPolicyDefinition(
+            FormulaPricingProfile.Powder, 6000m, 30m, rule, 1000m,
+            [new("First", 1000m, 3000m, true, true, 0m, 0),
+             new("Next", 3001m, 6000m, true, true, -400m, 1),
+             new("Manual", 6001m, null, true, true, null, 2)]);
+        var result = FormulaPriceCalculator.Calculate(policy, 585m, 6000m, null);
+        Assert.Equal(585m, result.MaterialCost);
+        Assert.Equal(6585m, result.CostBase);
+        Assert.Equal(9407m, result.StandardSellingPrice);
+        Assert.Equal(9407m, result.SuggestedPriceTiers[0].UnitPrice);
+        Assert.Equal(9007m, result.SuggestedPriceTiers[1].UnitPrice);
+        Assert.Null(result.SuggestedPriceTiers[2].UnitPrice);
+    }
+
     [Fact]
     public void RealtimeMaterialCost_RoundsSystemTotalToInteger()
     {

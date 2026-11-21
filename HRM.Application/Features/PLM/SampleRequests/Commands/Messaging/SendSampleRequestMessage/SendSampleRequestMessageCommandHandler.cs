@@ -201,9 +201,15 @@ internal sealed partial class SendSampleRequestMessageCommandHandler
         if (conversation is null)
             return OperationResult<SendInternalMessageResultDto>.Fail("Conversation appeared during historical recovery; reload and retry.");
 
+        // User pricing requests can contain quoted amounts in free text. Never publish them in General.
+        // The trusted FormulaConfirmed workflow uses this topic too, but its technical notice has no price.
+        if (request.Type == SampleRequestNotificationType.PriceQuoteRequest && request.WorkflowEventId is null)
+            return await PublishPrivatePriceQuoteRequestAsync(conversation, request, currentEmployeeId.Value,
+                message, cancellationToken);
+
         // Only a server-linked, persisted price event can select the private pricing group.
         // Public AreaCode/TopicOverride never grant this route.
-        if (workflowEvent is not null && SampleRequestPriceFeedbackVisibility.IsPriceEvent(workflowEvent.EventType))
+        if (workflowEvent is not null && SampleRequestPriceFeedbackVisibility.IsPrivatePublication(workflowEvent.EventType))
         {
             if (!SampleRequestWorkflowPublicationRules.IsTrustedPublication(workflowEvent,
                     sampleRequest.SampleRequestId, sampleRequest.CompanyId, currentEmployeeId.Value,
@@ -223,7 +229,8 @@ internal sealed partial class SendSampleRequestMessageCommandHandler
         var mentionedIds = mentions.Select(m => m.EmployeeId).Where(id => id != currentEmployeeId.Value).ToArray();
         var notificationAudience = request.IsInitialMessage ? Array.Empty<Guid>()
             : await _notificationAudience.ResolveAsync(sampleRequest.CompanyId,
-                sampleRequest.SampleRequestId, request.TopicOverride ?? ResolveTopic(request.Type), cancellationToken);
+                sampleRequest.SampleRequestId, request.TopicOverride ?? ResolveTopic(request.Type), cancellationToken,
+                workflowEvent?.EventType);
         targetUserIds.UnionWith(notificationAudience);
 
         var defaultRecipients = await _sampleRequestRecipientResolver.ResolveDefaultMessageRecipientsAsync(
@@ -329,6 +336,8 @@ internal sealed partial class SendSampleRequestMessageCommandHandler
             currentEmployeeId.Value,
             targetUserIds,
             silentWatcherIds,
+            defaultRecipients.Where(r => r.Source == SampleRequestRecipientSources.Default)
+                .Select(r => r.EmployeeId).ToArray(),
             cancellationToken);
 
         var now = request.RestoreInitialSummaryHistory ? sampleRequest.CreatedDate : DateTime.Now;
@@ -546,6 +555,7 @@ internal sealed partial class SendSampleRequestMessageCommandHandler
         Guid senderEmployeeId,
         IReadOnlyCollection<Guid> memberParticipantIds,
         IReadOnlyCollection<Guid> silentWatcherIds,
+        IReadOnlyCollection<Guid> labTeamRecipientIds,
         CancellationToken cancellationToken)
     {
         var memberIds = memberParticipantIds
@@ -558,9 +568,16 @@ internal sealed partial class SendSampleRequestMessageCommandHandler
             .Concat(silentWatcherIdSet)
             .ToHashSet();
 
-        var existingParticipants = await _dbContext.InternalConversationParticipants
+        var existingParticipants = await _dbContext.InternalConversationParticipants.AsTracking()
             .Where(x => x.InternalConversationId == conversationId)
             .ToListAsync(cancellationToken);
+
+        foreach (var participant in existingParticipants.Where(x => x.IsActive &&
+            x.Role == InternalConversationParticipantRole.Watcher && labTeamRecipientIds.Contains(x.EmployeeId)))
+        {
+            participant.Role = InternalConversationParticipantRole.Member;
+            participant.IsMuted = false;
+        }
 
         foreach (var participant in existingParticipants.Where(x =>
                      !x.IsActive && participantIds.Contains(x.EmployeeId)))

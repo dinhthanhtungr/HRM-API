@@ -11,8 +11,13 @@ internal sealed partial class PurchasingCatalogService
     public async Task<PagedResult<CatalogSupplierSummaryDto>> GetSuppliersAsync(CatalogListQuery request, CancellationToken ct)
     {
         var companyId = RequireReadContext();
-        var query = db.Suppliers.AsNoTracking().Where(x => x.CompanyId == companyId && (request.IncludeInactive || x.IsActive == true))
-            .WhereKeyword(request.Keyword, term =>
+        var query = db.Suppliers.AsNoTracking().Where(x => x.CompanyId == companyId && (request.IncludeInactive || x.IsActive == true));
+        var smartSearch = SmartSearch.For(query, fields => [
+            fields.Code("supplierCode", x => x.ExternalId, "Mã NCC", "Supplier code"),
+            fields.Name("supplierName", x => x.SupplierName, "Tên NCC", "Supplier name")
+        ]);
+        query = smartSearch.ApplyRequest(query, request.Keyword, request, out var smartKeyword)
+            .WhereKeyword(smartKeyword, term =>
             {
                 if (term.StartsWith("VT") || term.StartsWith("NVL_"))
                     return x => x.MaterialsSuppliers.Any(link =>
@@ -26,6 +31,8 @@ internal sealed partial class PurchasingCatalogService
                 EF.Functions.ILike(x.Phone ?? "", term.ContainsPattern, PostgresSearchPattern.EscapeCharacter) ||
                 EF.Functions.ILike(x.TaxNumber ?? "", term.ContainsPattern, PostgresSearchPattern.EscapeCharacter);
             });
+        if (await smartSearch.SuggestionsAsync<CatalogSupplierSummaryDto>(query, request, ct) is { } suggestions)
+            return suggestions;
         var count = await query.CountAsync(ct);
         var rows = await query.OrderByDescending(x => x.CreatedDate.HasValue).ThenByDescending(x => x.CreatedDate)
             .ThenBy(x => x.SupplierName).ThenBy(x => x.SupplierId)

@@ -16,8 +16,10 @@ public sealed record EquipmentOptions(IReadOnlyList<EquipmentAreaOption> Areas,
     IReadOnlyList<EquipmentPartOption> Parts, IReadOnlyList<EquipmentTypeOption> Types,
     IReadOnlyList<string> GroupTypes);
 
-public sealed class EquipmentListRequest
+public sealed class EquipmentListRequest : HRM.Application.Commons.Searching.ISmartSearchRequest
 {
+    public string? SearchSelections { get; init; }
+    public string? SuggestionKeyword { get; init; }
     [StringLength(200)] public string? Keyword { get; set; }
     [StringLength(100)] public string? GroupType { get; set; }
     [Range(1, int.MaxValue)] public int? AreaId { get; set; }

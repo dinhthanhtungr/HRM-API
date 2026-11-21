@@ -118,11 +118,11 @@ internal sealed class GetInternalConversationAttachmentsQueryHandler
         var normalizedKind = request.Kind?.Trim();
         if (string.Equals(normalizedKind, "Image", StringComparison.OrdinalIgnoreCase))
         {
-            items = items.Where(x => x.IsImage).ToList();
+            items = items.Where(x => x.IsImage || x.MediaKind == HRM.Domain.Enums.Attachment.AttachmentMediaKind.Video).ToList();
         }
         else if (string.Equals(normalizedKind, "File", StringComparison.OrdinalIgnoreCase))
         {
-            items = items.Where(x => !x.IsImage).ToList();
+            items = items.Where(x => !x.IsImage && x.MediaKind != HRM.Domain.Enums.Attachment.AttachmentMediaKind.Video).ToList();
         }
         else if (!string.IsNullOrWhiteSpace(normalizedKind) &&
                  !string.Equals(normalizedKind, "All", StringComparison.OrdinalIgnoreCase))

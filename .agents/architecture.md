@@ -1,6 +1,6 @@
 ﻿# Kiến Trúc Và Tổ Chức Code
 
-Đọc file này khi task thêm/sửa feature, refactor, thêm service/helper, thêm endpoint hoặc thay đổi boundary giữa các layer.
+Đọc khi thêm/đổi tổ chức feature, service/helper, endpoint hoặc boundary giữa các layer, theo router root. Sửa cục bộ trong cấu trúc hiện có không yêu cầu nạp lại file này; các invariant kiến trúc hiện hành vẫn áp dụng.
 
 ## Clean Architecture
 

@@ -14,6 +14,7 @@ public sealed class PatchSampleRequestCommand : IRequest<OperationResult<Guid>>
     public Guid? FormulaId { get; set; }
     public DateTime? ExpectedUpdatedDate { get; set; }
     public string? Status { get; set; }
+    public string? CancellationReason { get; set; }
     public string? RequestType { get; set; }
     public double? ExpectedQuantity { get; set; }
     public decimal? ExpectedPrice { get; set; }

@@ -7,6 +7,8 @@ public sealed class WarehouseVoucherListItemDto
     public long VoucherId { get; init; }
     public string VoucherCode { get; init; } = string.Empty;
     public int VoucherType { get; init; }
+    public WarehouseVoucherBusinessTypeDto BusinessType { get; init; } = new("Unknown", "Chưa xác định", "Unclassified");
+    public string? PurchaseOrderCode { get; init; }
     public string? Status { get; init; }
     public DateTime CreatedDate { get; init; }
     public int? RequestId { get; init; }
@@ -19,8 +21,9 @@ public sealed class WarehouseVoucherListItemDto
     public string CompanyName { get; init; } = string.Empty;
     public Guid CreatedBy { get; init; }
     public string CreatedByName { get; init; } = string.Empty;
-    public string SupplierName { get; init; } = string.Empty;
-    public string SupplierExternalId { get; init; } = string.Empty;
-    public string Comments { get; init; } = string.Empty;
+    public bool CanViewSupplier { get; init; }
+    public string? SupplierName { get; init; }
+    public string? SupplierExternalId { get; init; }
+    public string? Comments { get; init; }
     public IReadOnlyList<WarehouseVoucherDetailDto> Details { get; init; } = [];
 }

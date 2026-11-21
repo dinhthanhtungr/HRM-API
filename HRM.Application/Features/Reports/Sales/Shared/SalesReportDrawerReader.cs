@@ -10,11 +10,11 @@ namespace HRM.Application.Features.Reports.Sales.Shared;
 internal sealed class SalesReportDrawerReader(IReportReadDbContext db, ICurrentUser user)
 {
     public async Task<List<DeliveryRevenueLine>> DeliveriesAsync(SalesReportDrawerRequest request,
-        SalesReportPeriod period, CancellationToken ct)
+        SalesReportPeriod period, CancellationToken ct, bool includeDisplayFields = false)
     {
         var lines = await DeliveryRevenueQuery.Create(db.DeliveryOrderDetails.AsNoTracking(),
             period.From, period.ToExclusive, user.CompanyId!.Value,
-            includeCosts: false, includeDisplayFields: false).ToListAsync(ct);
+            includeCosts: false, includeDisplayFields: includeDisplayFields).ToListAsync(ct);
         var scope = await new SalesAttributionScopeResolver(db, user).ResolveAsync(user.CompanyId,
             lines.Select(x => x.CustomerId).Distinct().ToArray(), request.SaleGroup, request.SalePerson, ct, includeUnassignedCompanyCustomers: true);
         return lines.Where(x => scope.TryGetAttribution(x.CustomerId, out _)).ToList();

@@ -1,4 +1,49 @@
+## 2026-11-14 — Phản hồi option theo đợt gửi mẫu
+
+- Giữ CRM interaction/reference cho Trial được Sale thao tác qua API PLM theo đợt; retry operationId không tạo trùng.
+- Option tự Không đạt do khách chọn mẫu khác không được ghi như một phản hồi CRM trực tiếp riêng.
+- Composer Trial cũ chặn Trial có Event nhóm đợt; không thêm bảng/cột hay sửa lịch sử cũ.
+
+## 2026-11-13 — Phản hồi chip bổ sung sau gửi mẫu kg
+
+- Giữ scope/capability/idempotency của composer Trial; cho nhập phản hồi chip đang trống sau lần kg mới hơn.
+- Nhánh bổ sung không đổi TP/VU/kết quả kg, kể cả TP Completed; không cho hủy và không mở Trial terminal.
+- Giữ CRM interaction, audit/event/outbox; không có schema/migration hoặc cập nhật dữ liệu lịch sử tự động.
+
+## 2026-11-10 — Quyền hủy TP theo Sale của khách hàng
+
+- Nhánh phản hồi hủy CRM/PLM dùng phân công khách hàng hiện hành thay ManagerBy của TP;
+  chặn quyền xem rộng và owner TP cũ khi không còn phụ trách khách.
+- Giữ capability quản lý, company/visibility, lý do và token; hủy không chuyển Sale
+  khách hàng/TP. Phản hồi khác không đổi. Không có schema/migration.
+
+## 2026-11-08 — Phản hồi chip chuyển Sale chọn bước tiếp theo
+
+- Thông báo duyệt chip của luồng hiện hành không còn khẳng định VU đã hoàn thành. Sale chọn hướng xử lý; chỉ nhánh lên đơn mới yêu cầu Lab chốt VU trước khi Sale hoàn thành hồ sơ. Legacy và mẫu kg giữ nguyên.
+
+## 2026-11-07 — Đọc yêu cầu mẫu theo quyền khách hàng
+
+- Bỏ gate ManagerBy khỏi visibility đọc SampleRequest; Sale thấy TP của khách được phép xem, kể cả owner ngoài team.
+- Giữ company/active/customer scope, quyền KH_VIETAUS, điều kiện lên đơn và quyền thao tác workflow.
+
+## 2026-11-05 — MST khách tiềm năng theo nhóm
+
+- Tạo/sửa khách tiềm năng chặn MST trùng trong cùng nhóm chăm sóc hiệu lực; khác nhóm vẫn được phép.
+- Thông báo trùng khách tiềm năng nêu mã/tên khách, Sale phụ trách và team đang giữ; tên thiếu hiện chưa xác định.
+- Giữ chặn MST của khách chính thức active cùng công ty và ngoại lệ KH_VIETAUS.
+- Dùng nhóm được nhận khi tạo và nhóm bản ghi khi sửa; không sửa dữ liệu trùng lịch sử hoặc thêm schema.
+
 ## 2026-11-04 — Sample-trial managed Sale workflow
+
+- Visibility của yêu cầu mẫu giữ phạm vi owner trong nhóm Leader cho SaleAdmin/SaleUser Leader,
+  kể cả khi có quyền xem khách hàng toàn công ty. Quyền managed của SaleUser phải có nhóm
+  Leader active; SaleUser thường không làm thay. Không mở scope customer/quotation/order.
+
+- Dialog báo giá PLM lưu ghi chú giá vào CustomerInteraction loại Quotation, cùng transaction,
+  có liên kết SampleRequest và chống trùng retry. Nguồn CRM đã chốt lại là nội dung gửi Lab,
+  bắt buộc khi ghi phản hồi; Ghi chú trao đổi giá tùy chọn được gộp thành mục riêng trong cùng interaction.
+  Bản CRM áp quyền xem tương tác khách hàng,
+  không giới hạn nhóm Giá; giữ Sale owner, không đổi phân công khách hay tự tạo task.
 
 - Composer phản hồi mẫu kiểm tra owner/managed-owner bằng write scope, chặn gọi CRM trực tiếp để vượt quyền PLM. SaleAdmin ghi nhận actor thực tế, giữ owner hồ sơ và khách hàng; interaction mặc định giao Sale owner khi làm thay.
 - Khôi phục tracking trên customer mutation query sau visibility để lưu mốc liên hệ đúng transaction hiện có.
@@ -88,3 +133,10 @@
 - Fixed: Bổ sung namespace `QuotationStatus` còn thiếu trong EF configuration.
 - Fixed: Tính lại `Customer.LastContactDate` khi sửa/archive interaction và loại order detail inactive khỏi doanh số report.
 - Documentation: Bổ sung XML summary tiếng Việt cho CRM service, interface, API, request/query/DTO và luồng AI summary.
+
+## 2026-11-17 — Nhóm khách dùng chung mẫu
+
+- Chuẩn bị quản lý nhóm và quyền dùng mẫu chéo khi lên đơn, kiểm tra lại lúc lưu; mặc định tắt chờ schema. Xem SampleSharingGroups/README.md.
+- SaleUser/SaleAdmin/Leader được quản lý liên kết trong ownership/team scope; nhóm ngoài scope bị chặn ở mutation và ẩn dữ liệu thành viên. Thêm POST link nguyên tử, không tự gộp hai nhóm; UI dùng chung drawer trong hồ sơ và expand danh sách khách CRM. Chưa thay claim DB hoặc schema.
+
+- Viewer phản hồi chip hỗ trợ TP cũ đã mở chu kỳ yêu cầu bổ sung, giữ nguyên lifecycle kg và lịch sử.

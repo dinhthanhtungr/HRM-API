@@ -37,8 +37,8 @@ public sealed class SampleRequestSummaryScopeTests
         var start = new DateTime(2026, 11, 1);
         var end = start.AddMonths(1);
         var details = SampleRequestAdminReportQuery.Filter(records, SampleRequestAdminMetric.Received, start, end).ToList();
-        Assert.Equal(2, details.Count);
-        Assert.Equal(details.Count, records.Count(x => x.ReceivedDate >= start && x.ReceivedDate < end));
+        Assert.Equal(current.SampleRequestId, Assert.Single(details).SampleRequestId);
+        Assert.Equal(details.Count, records.Count(x => x.CreatedDate >= start && x.CreatedDate < end));
         Assert.Equal(2, SampleRequestAdminReportQuery.Filter(records, SampleRequestAdminMetric.Open,
             new DateTime(2027, 1, 1), new DateTime(2027, 2, 1)).Count());
         var revoke = new SampleRequestWorkflowEvent { CompanyId = company,
@@ -46,5 +46,25 @@ public sealed class SampleRequestSummaryScopeTests
             RecordedAt = new DateTime(2026, 11, 3) };
         store.Seed(nameof(db.SampleRequestWorkflowEvents), events.Append(revoke).ToArray());
         Assert.Equal(current.SampleRequestId, Assert.Single(SampleRequestAdminReportQuery.Build(source, db)).SampleRequestId);
+    }
+
+    [Fact]
+    public void ReceivedCountsAllRequestsCreatedInPeriodRegardlessOfReceiptOrCurrentStatus()
+    {
+        var start = new DateTime(2026, 11, 1);
+        var end = start.AddMonths(1);
+        var records = new[]
+        {
+            new SampleRequestAdminReportRecord { CreatedDate = start, ReceivedDate = null, Status = "New" },
+            new SampleRequestAdminReportRecord { CreatedDate = start.AddDays(1), ReceivedDate = end, Status = "Completed" },
+            new SampleRequestAdminReportRecord { CreatedDate = end.AddTicks(-1), ReceivedDate = null, Status = "Cancelled" },
+            new SampleRequestAdminReportRecord { CreatedDate = start.AddTicks(-1), ReceivedDate = start, Status = "InProgress" },
+            new SampleRequestAdminReportRecord { CreatedDate = end, ReceivedDate = start, Status = "New" }
+        }.AsQueryable();
+        var received = SampleRequestAdminReportQuery.Filter(records, SampleRequestAdminMetric.Received, start, end).ToArray();
+        Assert.Equal(3, received.Length);
+        Assert.Contains(received, x => x.Status == "New" && x.ReceivedDate == null);
+        Assert.Contains(received, x => x.Status == "Completed");
+        Assert.Contains(received, x => x.Status == "Cancelled");
     }
 }

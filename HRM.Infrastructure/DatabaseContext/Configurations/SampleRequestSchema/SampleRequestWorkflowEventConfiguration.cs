@@ -28,7 +28,7 @@ public sealed class SampleRequestWorkflowEventConfiguration : IEntityTypeConfigu
         entity.HasIndex(x => x.MessageId);
         entity.HasIndex(x => x.NotificationId);
         entity.HasOne<Company>().WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict).HasConstraintName("FK_WorkflowEvents_Company");
-        entity.HasOne<SampleRequest>().WithMany().HasForeignKey(x => x.SampleRequestId).OnDelete(DeleteBehavior.Restrict).HasConstraintName("FK_WorkflowEvents_Request");
+        entity.HasOne<SampleRequest>().WithMany(x => x.WorkflowEvents).HasForeignKey(x => x.SampleRequestId).OnDelete(DeleteBehavior.Restrict).HasConstraintName("FK_WorkflowEvents_Request");
         entity.HasOne<Employee>().WithMany().HasForeignKey(x => x.RecordedByEmployeeId).OnDelete(DeleteBehavior.Restrict).HasConstraintName("FK_WorkflowEvents_RecordedBy");
         entity.HasOne<Formula>().WithMany().HasForeignKey(x => x.FormulaId).OnDelete(DeleteBehavior.Restrict).HasConstraintName("FK_WorkflowEvents_Formula");
         entity.HasOne<SampleRequestSampleTrial>().WithMany().HasForeignKey(x => x.SampleRequestSampleTrialId).OnDelete(DeleteBehavior.Restrict).HasConstraintName("FK_WorkflowEvents_Trial");

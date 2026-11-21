@@ -47,7 +47,7 @@ internal sealed class SaleOrderStandardSampleService(ISaleOrderDbContext db, ICu
             .GroupBy(x => x.ProductId).Select(g => new { ProductId = g.Key, LastOrderDate = g.Max(x => x.CreateDate) })
             .ToDictionaryAsync(x => x.ProductId, x => x.LastOrderDate, ct);
         IReadOnlyList<StandardSampleReviewDto> result = lines
-            .Where(x => !history.TryGetValue(x.ProductId, out var date) || date.Date < now.Date.AddYears(-2))
+            .Where(x => history.TryGetValue(x.ProductId, out var date) && date.Date < now.Date.AddYears(-2))
             .Select(x => new StandardSampleReviewDto(x.ProductId, x.FormulaId,
                 products[x.ProductId].ColourCode ?? products[x.ProductId].Code ?? string.Empty,
                 products[x.ProductId].Name ?? string.Empty,

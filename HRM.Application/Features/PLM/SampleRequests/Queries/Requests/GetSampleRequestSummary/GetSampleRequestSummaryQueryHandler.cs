@@ -1,3 +1,6 @@
+using HRM.Application.Commons.Authorization;
+using HRM.Application.Abstractions.Security;
+using HRM.Application.Features.PLM.SampleRequests.Rules;
 using HRM.Application.Abstractions.Persistence.PLM;
 using HRM.Application.Features.PLM.Shared.Authorization;
 using HRM.Application.Commons.Pagination;
@@ -18,88 +21,28 @@ internal sealed class GetSampleRequestSummaryQueryHandler
     private readonly IPLMReadDbContext _dbContext;
     private readonly ICustomerVisibilityService _visibilityService;
     private readonly IPLMFieldVisibilityService _fieldVisibility;
+    private readonly ICurrentUser? _user;
+    private readonly ICurrentUserPermissionService? _permissions;
 
     public GetSampleRequestSummaryQueryHandler(
         IPLMReadDbContext dbContext,
         ICustomerVisibilityService visibilityService,
-        IPLMFieldVisibilityService fieldVisibility)
+        IPLMFieldVisibilityService fieldVisibility,
+        ICurrentUser? user = null, ICurrentUserPermissionService? permissions = null)
     {
         _dbContext = dbContext;
         _visibilityService = visibilityService;
         _fieldVisibility = fieldVisibility;
+        _user = user;
+        _permissions = permissions;
     }
 
     public async Task<PagedResult<SampleRequestSummaryDto>> Handle(
         GetSampleRequestSummaryQuery request,
         CancellationToken cancellationToken)    
     {
-        var scope = await _visibilityService.BuildReadScopeAsync(cancellationToken);
-        var visibilityScope = request.NormalizedKeyword is not null
-            ? scope with { CanViewInternalCustomer = true }
-            : scope;
-
-        var sampleRequestQuery = _visibilityService.ApplySampleRequestVisibility(
-            _dbContext.SampleRequests
-            .Where(x => x.IsActive)
-            .AsNoTracking()
-            .AsQueryable(),
-            _dbContext.Customers.AsNoTracking(),
-            visibilityScope);
-
-        if (request.CompanyId.HasValue)
-        {
-            sampleRequestQuery = sampleRequestQuery.Where(x => x.CompanyId == request.CompanyId.Value);
-        }
-
-        if (request.ProductId.HasValue)
-        {
-            sampleRequestQuery = sampleRequestQuery.Where(x => x.ProductId == request.ProductId.Value);
-        }
-
-        if (request.FromDate.HasValue)
-        {
-            var fromDate = request.FromDate.Value.Date;
-            sampleRequestQuery = sampleRequestQuery.Where(x => x.CreatedDate >= fromDate);
-        }
-
-        if (request.ToDate.HasValue)
-        {
-            var toDateExclusive = request.ToDate.Value.Date.AddDays(1);
-            sampleRequestQuery = sampleRequestQuery.Where(x => x.CreatedDate < toDateExclusive);
-        }
-
-        if (request.Status.HasValue)
-        {
-            var status = request.Status.Value.ToString();
-            sampleRequestQuery = sampleRequestQuery.Where(x => x.Status == status);
-        }
-
-        if (!string.IsNullOrWhiteSpace(request.Color))
-        {
-            var color = request.Color.Trim();
-            sampleRequestQuery = sampleRequestQuery.Where(x => x.Product.ColourName == color);
-        }
-
-        if (!string.IsNullOrWhiteSpace(request.AdditiveCode))
-        {
-            var additiveCode = request.AdditiveCode.Trim();
-            sampleRequestQuery = sampleRequestQuery.Where(x => x.Product.Additive == additiveCode);
-        }
-
-        if (!string.IsNullOrWhiteSpace(request.Keyword))
-        {
-            var keyword = request.Keyword.Trim();
-
-            sampleRequestQuery = sampleRequestQuery.Where(x =>
-                EF.Functions.ILike(x.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
-                EF.Functions.ILike(x.Customer.CustomerName, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
-                EF.Functions.ILike(x.Customer.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
-                x.CreatedByNavigation != null && EF.Functions.ILike((x.CreatedByNavigation.FullName ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
-                x.Product.CreatedByNavigation != null && EF.Functions.ILike((x.Product.CreatedByNavigation.FullName ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
-                EF.Functions.ILike((x.Product.Name ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
-                (EF.Functions.ILike((x.Product.ColourCode ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter)) ||
-                (x.Formula != null && EF.Functions.ILike(x.Formula.ExternalId, $"%{keyword}%")));
-        }
+        var sampleRequestQuery = await SampleRequestSummaryQueryRules.BuildAsync(
+            _dbContext, _visibilityService, request, cancellationToken);
 
         var sortedQuery = ApplySorting(sampleRequestQuery, request);
 
@@ -133,6 +76,10 @@ internal sealed class GetSampleRequestSummaryQueryHandler
                 ColourCode = sampleRequest.Product.ColourCode,
 
                 Status = sampleRequest.Status,
+                LabDeclineReason = sampleRequest.Status == "LabDeclined"
+                    ? _dbContext.SampleRequestWorkflowEvents.Where(e => e.CompanyId == sampleRequest.CompanyId &&
+                        e.SampleRequestId == sampleRequest.SampleRequestId && e.EventType == "SampleRequestLabDeclined")
+                        .OrderByDescending(e => e.RecordedAt).ThenByDescending(e => e.Id).Select(e => e.Note).FirstOrDefault() : null,
 
                 CustomerName = sampleRequest.Customer.CustomerName,
                 CustomerExternalId = sampleRequest.Customer.ExternalId,
@@ -174,6 +121,20 @@ internal sealed class GetSampleRequestSummaryQueryHandler
             .Take(request.NormalizedPageSize)
             .ToListAsync(cancellationToken);
 
+        // Menu capability uses the same owner/team policy as the workflow mutation.
+        // The dialog loads authoritative current plan actions (pending delivery, tokens, etc.).
+        if (_user is not null && _permissions is not null)
+        {
+            var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
+            var owners = SampleSaleWorkflowAccess.GetAllowedOwnerIds(_user, _permissions, scope);
+            var companyWide = SampleSaleWorkflowAccess.HasCompanyWideAccess(_user, scope);
+            var pageIds = pagedRows.Select(x => x.Summary.SampleRequestId).ToArray();
+            var allowed = await _visibilityService.ApplySampleRequestVisibility(_dbContext.SampleRequests, _dbContext.Customers.AsNoTracking(), scope)
+                .Where(x => pageIds.Contains(x.SampleRequestId) && x.CompanyId == scope.CompanyId && x.IsActive &&
+                    (companyWide || owners.Contains(x.ManagerBy)) && _dbContext.Employees.Any(e => e.CompanyId == scope.CompanyId && e.EmployeeId == scope.EmployeeId && e.IsActive))
+                .Select(x => x.SampleRequestId).ToArrayAsync(cancellationToken);
+            foreach (var row in pagedRows) row.Summary.CanRequestAdditionalWork = allowed.Contains(row.Summary.SampleRequestId);
+        }
         var canViewFormulaPrices = _fieldVisibility.CanViewFormulaPrices();
 
         await SampleRequestSummaryRelatedDataLoader.PopulateAsync(

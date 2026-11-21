@@ -28,6 +28,7 @@ namespace HRM.Domain.Entities.Controllers.Dispatch;
 
 [ApiController]
 [Authorize(Roles = DeliveryOrderAccessRules.ReadRoles)]
+[Authorize(Policy = HRM.Api.Security.Authorization.SensitiveDataAuthorization.PolicyName)]
 [Route("api/v1/dispatch")]
 public sealed class DeliveryOrdersController : ControllerBase
 {

@@ -1,3 +1,4 @@
+using HRM.Api.Security.Authorization;
 using HRM.Application.Commons.Authorization.PLM;
 using HRM.Application.Features.PLM.Boms.Commands.CreateManufacturingBomFromSelectedFormula;
 using HRM.Application.Features.PLM.Boms.Queries.GetFormulaDrivenManufacturingBomQueue;
@@ -11,7 +12,7 @@ namespace HRM.Api.Controllers.PLM;
 /// Additive Formula-to-M-BOM flow. This controller does not change existing E-BOM or M-BOM routes.
 /// </summary>
 [ApiController]
-[Authorize]
+[Authorize(Policy = SensitiveDataAuthorization.PolicyName)]
 [Route("api/v1/plm/formula-driven-manufacturing-boms")]
 public sealed class FormulaDrivenManufacturingBomsController : ControllerBase
 {

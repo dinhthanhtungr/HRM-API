@@ -1,8 +1,10 @@
 
 namespace HRM.Application.Features.Reports.PLPU
 {
-    public class PLPUPurchaseOverviewQuery
+    public class PLPUPurchaseOverviewQuery : HRM.Application.Commons.Searching.ISmartSearchRequest
     {
+        public string? SearchSelections { get; set; }
+        public string? SuggestionKeyword { get; set; }
         public int PageNumber { get; set; } = 1;
         public int PageSize { get; set; } = 15;
         public DateTime? From { get; set; }

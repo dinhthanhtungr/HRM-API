@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace HRM.Domain.Entities.Controllers.Reports
 {
     [ApiController]
-    [Authorize]
+    [Authorize(Policy = HRM.Api.Security.Authorization.SensitiveDataAuthorization.PolicyName)]
     [Route("api/v1/reports/executive/pnl")]
     public sealed class ExecutivePnLReportController : ControllerBase
     {

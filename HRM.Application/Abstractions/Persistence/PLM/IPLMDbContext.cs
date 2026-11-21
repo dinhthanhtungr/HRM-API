@@ -92,6 +92,7 @@ namespace HRM.Application.Abstractions.Persistence.PLM
         DbSet<ColorChipRecordDevelopmentFormula> ColorChipRecordDevelopmentFormulas { get; }
         DbSet<Product> Products { get; }
         DbSet<SampleRequest> SampleRequests { get; }
+        DbSet<SampleRequestUserPreference> SampleRequestUserPreferences { get; }
         DbSet<SampleRequestSampleTrial> SampleRequestSampleTrials { get; }
         DbSet<SampleRequestWorkflowEvent> SampleRequestWorkflowEvents { get; }
         DbSet<OutboxMessage> OutboxMessages { get; }

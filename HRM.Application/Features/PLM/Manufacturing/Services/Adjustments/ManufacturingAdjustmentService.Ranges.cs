@@ -27,6 +27,7 @@ internal sealed partial class ManufacturingAdjustmentService
             return Fail("Phiếu/mẻ không hợp lệ.");
         }
 
+        request = ManufacturingAdjustmentInputNormalization.Normalize(request);
         await using var transaction = await db.BeginTransactionAsync(ct);
         try
         {
@@ -118,6 +119,8 @@ internal sealed partial class ManufacturingAdjustmentService
                 if (old is null)
                 {
                     entity.Batches.Add(batch);
+                    // UUID đã có sẵn: đánh dấu Added để EF INSERT thay vì UPDATE bản ghi chưa tồn tại.
+                    await db.ManufacturingFormulaAdjustmentBatches.AddAsync(batch, ct);
                     continue;
                 }
 
@@ -139,6 +142,7 @@ internal sealed partial class ManufacturingAdjustmentService
                 {
                     item.ManufacturingFormulaAdjustmentBatchId = old.ManufacturingFormulaAdjustmentBatchId;
                     old.Items.Add(item);
+                    await db.ManufacturingFormulaAdjustmentItems.AddAsync(item, ct);
                 }
             }
 
@@ -147,6 +151,8 @@ internal sealed partial class ManufacturingAdjustmentService
                 entity.UpdatedDate = now;
                 entity.UpdatedBy = Employee;
             }
+
+            ApproveSaved(entity, now);
 
             // Legacy AddBatch (including single-batch upsert) did not publish; range create/patch did.
             if (!singleBatchUpsert)
@@ -214,12 +220,19 @@ internal sealed partial class ManufacturingAdjustmentService
                     return OperationResult.Fail(error);
                 }
 
+                if (MfgAdjustmentQuantityCalculator.CalculateTrialTotals(entity.Batches
+                    .Where(x => x.IsActive && x != batch).SelectMany(ManufacturingAdjustmentBatchRules.ToRows))
+                    .Any(x => x.FinalQuantityGram <= 0))
+                    return OperationResult.Fail("Không thể xóa: có lần chỉnh còn lại có khối lượng sau chỉnh không lớn hơn 0.");
+
+                ApproveSaved(entity, now);
                 batch.IsActive = false;
                 batch.UpdatedDate = now;
                 batch.UpdatedBy = Employee;
             }
             else
             {
+                ApproveSaved(entity, now);
                 entity.IsActive = false;
             }
 

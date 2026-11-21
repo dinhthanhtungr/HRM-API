@@ -1,5 +1,159 @@
 # Notification
 
+SignalR và Web Push kiểm tra lại role IMS tại thời điểm phát. Người nhận được
+xác định theo nhân viên, nên một nhân viên có tài khoản mang role IMS active
+không nhận tín hiệu Hub đầy đủ qua các kênh này, kể cả với outbox đã xếp hàng.
+Điều này cũng áp dụng cho tín hiệu cảm xúc và tệp sẵn sàng. Trạng thái inbox
+đã lưu tiếp tục được giữ để bảo toàn lịch sử.
+Khi phiên web chuyển sang IMS, widget thông báo dừng và service worker
+đóng thẻ desktop của phiên cũ. Bản nháp soạn thông báo được tách theo quyền
+của phiên để nội dung từ phiên đầy đủ không được dùng lại.
+
+## Đợt gửi nhiều option mẫu
+
+PLM ghi một outbox thông báo SampleSent tóm tắt toàn đợt (các mã VU), gắn với một Event SampleSent con để dùng trusted publication/topic/recipient hiện có. Event cha SampleOptionsBatchSent chỉ nhóm lịch sử. Khi Sale báo cáo, một CustomerFeedbackRecorded của option được thao tác phát thông báo kết quả/nội dung; các SampleOptionNotSelected tự ghi Không đạt không tạo thêm thông báo. Không thêm topic/quyền/người nhận, không đưa giá/cost/NVL vào payload; SignalR/Web Push và worker dùng đường dispatch hiện hành. Retry batchId/operationId không thêm outbox mới.
+
+## Tối ưu đếm cảm xúc chưa đọc (14/11/2026)
+
+`unread-summary` giữ nguyên DTO và số đếm theo quyền. Nhánh `nm_summary_reactions` trả 0 ngay khi tính năng cảm xúc tắt; khi bật, lấy ID notification cảm xúc chưa đọc/chưa archived của đúng employee/company trước, rồi kiểm tra lại state và toàn bộ quyền hội thoại/tác giả/actor theo từng lô tối đa 256 ID. Không cache số đếm, không tải nội dung, không đổi read-state hay gửi thêm thông báo. Notification mới đến sau bước lấy ID sẽ được phản ánh ở lượt refresh tiếp theo.
+
+Development thêm các mốc `request_cors`, `request_authentication`, `request_acting_user`, `request_authorization` để phân rã `_pre_dispatch`; chỉ là thời lượng không chồng nhau, không đổi thứ tự hoặc bỏ bước xác thực. Mốc đầu gồm cả phần trước CORS kể từ middleware đo. Chỉ xuất cho GET thuộc scope diagnostic, người dùng authenticated và response không phải 401/403; không xuất nội dung hoặc SQL. Không cộng các mốc này thêm vào `_pre_dispatch`/`_total` vì đó là tổng bao ngoài.
+
+## Quy tắc badge BBG theo tin hiển thị (13/11/2026)
+
+Badge hội thoại BBG, tổng chuông, tổng category/event-group và lọc chưa đọc chỉ tính các notification unread liên kết tin nhắn hợp lệ thực sự trong đúng hội thoại; dedupe theo message. Sự kiện duyệt giá không có MessageId vẫn lưu, phát và acknowledge như trước nhưng không làm tăng badge chat. Thông báo standalone vẫn giữ cơ chế đếm hiện tại; module khác giữ nguyên.
+
+Feed trả thêm `conversationUnreadCount` nullable (số nguyên gồm 0) cho BBG. FE dùng số chính thức này khi feed-only, hoặc số conversation khi đã tải list/detail; không cộng/max với lượng notification trong feed. Các request đọc, recipient, company/visibility và kho lịch sử không bị nới quyền. Chi tiết và test nằm tại README InternalMail, mục “Badge BBG theo tin hiển thị”. Không yêu cầu thay đổi schema/backfill.
+
+## Yêu cầu báo giá Sample Request
+
+Yêu cầu báo giá do người dùng gửi dùng topic `SampleRequestPriceQuoteRequested` (23), chỉ vào nhóm Giá của TP.
+Giữ payload/action TP/Product/VU và link hiện có; body có thể chứa giá người gửi nhập.
+Chuông gửi President active cùng company, giao membership Giá và quyền giá bán DB; loại
+sender/mute. Không cấp quyền đọc Giá cho Lab gửi yêu cầu. Dùng notification service/outbox
+hiện có; không di chuyển, sửa hoặc gửi lại tin đã tồn tại.
+
+Thông báo kỹ thuật xác nhận công thức có workflow event dùng chung topic vẫn ở Chung, không chứa nội dung giá người dùng nhập.
+
+## Tín hiệu video sẵn sàng
+
+Outbox `InternalMailMediaReady` phát event `internalMailMediaReady` chỉ chứa attachmentId tới reader scope
+được xét lại lúc dispatch. FE gọi API metadata để lấy trạng thái, không dùng signal làm nội dung file.
+Không tạo notification, tăng unread hoặc Web Push. Contract và cấu hình:
+[Internal Mail media](../InternalMail/media/README.md#realtime).
+
+Sau duyệt chip, sự kiện `ChipFormulaFinalizationRequested` chỉ phát khi Sale chọn nhờ Lab chốt để lên đơn; audience dùng LabLeaders/ LabAdmins theo scope hiện có, không chỉ Sale leaders. `ChipCustomerFollowUpDeferred` ghi nhận Sale tiếp tục theo dõi. Cả hai nằm trong allowlist workflow/outbox, không tạo bảng/cột. Thông báo phản hồi chip Approved không khẳng định VU đã hoàn thành; Lab vẫn phải chốt trước khi Sale hoàn thành hồ sơ.
+
+## Phân công worker và khôi phục lỗi thiếu bộ xử lý
+
+`OutboxProcessor` chỉ nhận `InAppPush`; Web Push và reaction nhận loại riêng.
+`SampleRequestWorkflowNotificationWorker` nhận `SampleRequestWorkflowNotification`
+và `SampleWorkChanged` bằng `FOR UPDATE SKIP LOCKED`, cùng transaction với publication.
+Mỗi vòng tối đa 10 job. Chỉ ghi `ProcessedAt` sau dispatch thành công (gồm no-op theo
+policy); lỗi rollback rồi tăng Attempts và lưu mã lỗi an toàn. Hết 5 lần vẫn Failed,
+không thành hoàn tất. Log có ID/type/mã lỗi và loại exception, không có payload.
+
+Màn `/dev/notification-jobs` giải thích lỗi, đánh giá gửi lại và đối soát 10 giây khi
+visible. POST `workflow-notification-jobs/recover-ready` yêu cầu view + retry và company
+scope; lô tối đa 50, kiểm tra lại dưới khóa. Chỉ khôi phục lỗi legacy thiếu handler của
+lần xác nhận mới nhất, VU hiện tại, hồ sơ mở, chưa có tin và chưa có sự kiện duyệt giá
+chuẩn sau đó. Không tự gửi hàng loạt tóm tắt hoặc lịch sử lỗi thời. Giữ publisher,
+recipient/topic/area và loại trừ private/nội bộ hiện hành; không mở thêm quyền.
+
+Phải cập nhật/dừng worker cũ dùng chung DB trước phục hồi thực tế; bản mới localhost
+không ngăn bản cũ trên máy khác lấy nhầm job. Không tự restart hoặc gửi lại khi chỉ kiểm tra.
+
+## BGD duyệt giá chuẩn cho yêu cầu mẫu
+
+Duyệt/tạo-duyệt/xác nhận lại giá chuẩn lưu `StandardPriceApproved` và outbox cùng lần lưu giá.
+Chỉ ghép TP active cùng công ty/sản phẩm đang dùng đúng VU nguồn; bỏ hồ sơ private/nội bộ.
+TP cũ và đã hoàn thành vẫn nhận tin khi đúng VU, không tự đổi trạng thái TP, VU hoặc phản hồi giá khách.
+Khóa sự kiện xác định theo pricing-version + TP chống phát trùng khi retry.
+
+Worker gửi tin hệ thống vào **nhóm Giá**, dùng topic sẵn có `SampleRequestReferencePriceAvailable`
+(51, `plm.sample_request.reference_price.available`). Tin chứa snapshot giá chuẩn, khoảng kg/giá,
+VU, người/ngày duyệt; không đưa cost, margin hoặc ghi chú nội bộ vào tin. Khoảng giá quá dài
+được rút gọn có báo số còn lại và hướng dẫn mở tổng quan, không cắt ngang con số giá.
+Người nhận là thành viên nhóm Giá có capability xem giá bán, cùng công ty/active theo policy hiện hành;
+Developer observer cũng kiểm tra capability giá. Không gửi bản sao vào Chung cho Lab.
+
+Outbox `SampleWorkChanged` phát SignalR `sampleWorkChanged` tới company group `Guid:N` với payload rỗng.
+Đây chỉ là tín hiệu đối chiếu quyền/dữ liệu tại API, không chứa TP/VU/giá và không tạo inbox, unread hay toast.
+FE chỉ kiểm tra stamp các thẻ đang nhìn thấy, tải lại thẻ thay đổi; giữ debounce, bảo vệ nội dung nhập
+và watchdog 30 giây. Không backfill/phát lại thông báo duyệt trước khi triển khai; không thêm schema.
+
+## Sale nhờ Lab chốt công thức
+
+Đổi phương án `ColorChipThenSampleRequested` dùng topic `SampleRequestMessageCreated` và
+audience Lab leaders theo sản phẩm cộng LabAdmin cùng scope như yêu cầu gửi chip đơn.
+Tin Chung mô tả số bộ, kg đăng ký và thứ tự chip Đạt rồi chạy kg; không chứa giá/thành phần
+công thức. Tin đi qua workflow outbox, giữ company/active/area, sender/muted exclusions.
+Khi tạo hồ sơ kết hợp, tin khởi tạo hiện có mô tả thứ tự này, không phát thêm tin trùng.
+
+Gửi mẫu legacy lưu kg thực gửi vào bản ghi gửi hiện có và đưa số kg vào thông báo `SampleRequestSampleSent` nhóm Chung. Không yêu cầu Sale ghi phản hồi mới chỉ vì có bản ghi gửi; recipient/topic và outbox giữ cơ chế hiện hành.
+
+Sale đổi yêu cầu lúc chờ chốt/sau chốt VU dùng các sự kiện chip/kg hiện có. `RequestCompletionDeferred` bổ sung vào allowlist outbox, thông báo nhóm Chung rằng Sale thu lại yêu cầu hoàn thành để tiếp tục theo dõi; không mang dữ liệu giá. Lịch sử sự kiện trước giữ nguyên. Báo giá lại vẫn đi API duyệt giá/nhóm Giá theo quyền hiện hành, không tạo luồng thông báo mới.
+
+Workflow event nội bộ `LabFinalizationRequested` dùng topic `SampleRequestMessageCreated`, gửi member/leader active của team Lab theo phân loại sản phẩm cộng LabAdmin cùng công ty. Tin nhắn thường gửi cùng team sản phẩm. Resolver nhận loại sự kiện từ record đã lưu (HTTP không được chọn WorkflowEventId); publish vẫn qua notification service/outbox, kiểm tra company/active/area access và loại sender/muted. SignalR chỉ chứa ID thông báo. Thay đổi không backfill user state hoặc phát lại lịch sử. FE có đối chiếu snapshot thẻ dự phòng cho người được xem báo cáo nhưng không thuộc audience thông báo.
+
+## Từ chối gửi báo giá
+
+Topic mới `QuotationSendConfirmationRejected = 63`, code `crm.quotation.send_confirmation.rejected`,
+category Quotation/eventGroup approval. BGĐ từ chối request hiện hành tạo tin/lịch sử và đóng action cũ;
+notification gọn cho Sale, quản lý và người quyết định theo active/company/membership/mute hiện hành,
+giữ Developer observer policy. Realtime/Web Push vẫn qua publisher/outbox, chỉ báo hiệu tải lại.
+Xem [contract và bảo toàn snapshot](../CRM/Quotations/SEND_REJECTION.md).
+
+## Tự đánh dấu gửi BBG sau duyệt chuẩn
+
+Outbox type `QuotationPricingApprovalAutoSend` được worker CRM xử lý riêng sau commit duyệt giá.
+Khi toàn bộ giá khách của yêu cầu đang chờ đáp ứng chuẩn hiện hành, worker đóng action cũ và phát `QuotationSent`
+qua publisher/outbox hiện có. Không dựng lại bảng đối chiếu lịch sử. Sale, quản lý và người duyệt chuẩn nhận
+tín hiệu theo scope/membership/mute hiện hành. Lỗi follow-up retry độc lập, không làm thất bại duyệt chuẩn.
+Xem [điều kiện, audit và retry](../CRM/Quotations/AUTO_SEND_AFTER_PRICING_APPROVAL.md).
+
+## Nhắc ghi chú mẫu cá nhân
+
+`WorkTaskDue` khi producer SamplePersonalReminderProcessor đặt PersonalReminderOwnerId
+chỉ phát cho đúng chủ task active trong công ty. Publisher kiểm tra owner bằng CreatedBy,
+chỉ một target, không role/team/silent/conversation và không thêm observer Developer.
+Producer khác không đặt cờ này giữ nguyên recipient policy. Notification không chứa
+Description của task, không gửi vào nhóm Chung; outbox/realtime/push dùng pipeline hiện có.
+Worker chỉ bật sau khi triển khai schema và đặt SamplePersonalWork:RemindersEnabled=true.
+
+## Outbox đồng bộ tóm tắt mẫu yên lặng
+
+Type `SampleRequestConversationSummarySync` thuộc worker tóm tắt riêng, không phải
+workflow notification/InAppPush/WebPush. Nó không gọi publisher hoặc đổi receipt,
+unread, message và LastMessageAt. Xem [contract và cờ triển khai](../PLM/SampleRequests/CONVERSATION_SUMMARY.md).
+
+Sale chọn sau đồng ý giá: workflow event `ColorChipRequested`, `TrialSampleRequested`
+và `LabFinalizationRequested` đi qua outbox workflow hiện có vào nhóm Chung của yêu cầu.
+Nội dung yêu cầu mẫu có số bộ/kg và ghi chú đã lưu tại thời điểm yêu cầu; nhắn Lab chốt
+chỉ gửi lưu ý, không chuyển trạng thái. Giữ nguyên company/membership/mute và quy tắc
+nội bộ không gửi; không gửi ghi chú nhóm Giá hay thông tin giá riêng vào nhóm Chung.
+
+## Lưu ý Lab gửi Sale
+
+Sample Request append `LabNoteRecorded` và outbox trong cùng transaction. Topic mới
+`SampleRequestLabNoteRecorded = 62`, code `plm.sample_request.lab_note.recorded`, category
+`sample_request`, event group `message`, mapping tại `NotificationTopicCatalog`.
+Worker workflow tái sử dụng SendSampleRequestMessage → notification service/outbox hiện có;
+tin kiểu Action vào nhóm Chung, tác giả là Lab thật, người nhận theo scope/resolver hồ sơ
+và nhóm Chung (gồm Sale phụ trách), vẫn áp dụng company, active, mute/sender exclusions.
+Event ID cố định và liên kết message/notification chống phát trùng retry. Không gửi note giá
+hoặc kỹ thuật bảo mật; SignalR/Web Push tiếp tục chỉ báo hiệu để FE đọc lại nội dung qua API.
+
+## Nội dung tin workflow mẫu
+
+Dispatcher Sample Request dựng nội dung nhiều dòng: kết quả phản hồi, ghi chú, mã công thức
+và bước tiếp theo nếu trạng thái hiện tại xác định rõ. Nhóm Chung chỉ nhận note chia sẻ và
+kết quả từ sự kiện liên quan, không nhận note/tham chiếu giá. Nhóm Giá giữ nội dung giá riêng.
+Sửa note có marker outbox `FeedbackNoteUpdated` để dùng tiêu đề cập nhật nội dung thay vì
+báo một phản hồi mới. Không đổi topic/category/recipient, không thêm nội dung vào SignalR/Web Push,
+không phát lại hay sửa message đã gửi. Contract và giới hạn nội dung ở
+[Sample Requests WORKFLOW](../PLM/SampleRequests/docs/workflow/WORKFLOW.md#nội-dung-tin-workflow).
+
 ## Dấu nhận diện tin tự động của luồng mẫu
 
 Tin phát từ sự kiện workflow đã lưu dùng `InternalMessageType.Action`, kể cả job
@@ -35,21 +189,27 @@ tường minh trước khi xử lý trường hợp này.
 
 ## Luồng chip/kg và legacy SampleRequest
 
-Dev có [thao tác khôi phục người xem im lặng bị thiếu](../PLM/SampleRequests/SILENT_WATCHER_RECOVERY.md):
+Dev có [thao tác khôi phục người xem im lặng bị thiếu](../PLM/SampleRequests/docs/operations/SILENT_WATCHER_RECOVERY.md):
 chỉ bổ sung Watcher muted vào Chung theo preview, không thêm người nhận/thông báo cũ.
 
 Workflow job retry recovers the exact legacy missing-handler error mistakenly marked processed only
 with no event delivery IDs and no existing event-ID message. The original company-scoped row is locked
 and requeued; repeated retry creates no additional job. See SampleRequests README for the recovery contract.
 
-Phân loại R&D/Màu dùng chung `SampleRequestLabTeamRules` với [công việc Lab](../PLM/SampleRequests/LAB_TEAMS.md).
-Thông báo vẫn resolve trưởng nhóm, danh mục chưa biết vẫn fallback cả hai. Work queue dùng thành viên active,
-không dùng danh sách người nhận notification làm phạm vi công việc.
+Phân loại R&D/Màu dùng chung `SampleRequestLabTeamRules` với [công việc Lab](../PLM/SampleRequests/docs/work/LAB_TEAMS.md).
+Thông báo gửi toàn bộ thành viên active của team tương ứng, gồm member và leader; danh mục chưa biết fallback cả hai team. Work queue dùng thành viên active,
+không dùng danh sách người nhận notification làm phạm vi công việc. Rule mở rộng áp dụng khi audience nghiệp vụ chọn nhóm Lab, không mở rộng các thông báo cá nhân/Sale/President sang cả team. Sender/muted và scope company vẫn được kiểm tra. Không phát lại lịch sử.
+
+Hòm thư mặc định của thành viên R&D/Màu chỉ liệt kê phối mẫu thuộc mapping loại sản phẩm của team (GCO thuộc cả hai). Tìm kiếm conversation bỏ bộ lọc trình bày này nhưng vẫn giữ quyền đọc/company/membership; không mở nhóm Giá hoặc nhóm riêng R&D cho người ngoài. Feed lọc trước phân trang; unread summary vẫn là tổng thông báo thực tế, không đánh dấu đọc vì ẩn khỏi danh sách. Hồ sơ Chung cũ bổ sung thành viên team còn thiếu khi gửi tin mới, không khôi phục participant bị xóa chủ động.
+
+Feed resolve team hiện tại một lần trước query trang (`feed-scope`); người quan sát toàn công ty hoặc không thuộc team Lab không ghép bộ lọc loại sản phẩm. Với thành viên Lab, bộ lọc được ghép vào tập conversation đã có authorization để liên kết notification JSON chỉ được kiểm tra một lần. Không đổi category/cursor/thứ tự, quyền nhóm riêng hoặc trạng thái đọc. Đo đối chiếu query đầy đủ 30 dòng/trang trong snapshot chỉ đọc trên tài khoản đại diện (role fallback, không phải phiên trình duyệt): hai trang của Báo giá/Phối mẫu/Đơn hàng giữ nguyên ID và thứ tự; số đo query không đại diện HTTP/render.
+
+Feed thường bắt buộc loại topic reaction ngay trong scope, nên không ghép thêm nhánh kiểm tra tác giả/actor dành riêng cho reaction đã bị loại. `mentionedOnly` tiếp tục chạy đầy đủ kiểm tra reaction/privacy. Benchmark 12/11/2026 dùng GroupStorage và Reactions bật theo cấu hình API, inbox đại diện khoảng 5.172 dòng: median 5 mẫu warm trang đầu Báo giá 1.251 → 81 ms (bản mới 80–95 ms), Phối mẫu 657 → 91 ms (bản mới 88–187 ms). Đây là query EF với cùng projection và snapshot; không phải cam kết độ trễ HTTP. Diagnostic và build không tự restart API đang chạy.
 
 Luồng chip/kg và legacy SampleRequest dùng WorkflowEvent/outbox chung: chốt/mở lại VU chip,
 yêu cầu kg, Sale hoàn thành và phản hồi giá. Legacy gửi không tạo Trial giả. Không thêm topic/numeric
 value hoặc đổi recipient/mute/SignalR/Push. Payload không chứa thành phần VU, cost hoặc số tiền.
-Xem [contract workflow](../PLM/SampleRequests/CHIP_SAMPLE_FLOW.md).
+Xem [contract workflow](../PLM/SampleRequests/docs/workflow/CHIP_SAMPLE_FLOW.md).
 
 ## Thông báo cảm xúc cá nhân
 
@@ -66,10 +226,25 @@ DTO bổ sung `personalReason` (`mention`, `reply`, `reaction`), `personalActivi
 `mentionedMessageId` vẫn được giữ để tương thích. `unreadMentionCount` là số chưa đọc của đúng conversation,
 FE cộng các nhóm khi hiển thị hồ sơ gốc. Chỉ @Tôi dùng thời gian hoạt động cá nhân để sắp xếp;
 feed thường và badge tin nhắn loại reaction, không đổi `LastMessageAt` hoặc thứ tự Tất cả.
+Đường đọc @Tôi thu hẹp bằng các ID message/sự kiện cá nhân đã scope, tối đa 4.096
+ứng viên mỗi tập; vượt giới hạn thì dùng truy vấn đầy đủ, không cắt dữ liệu. Tập này
+chỉ hỗ trợ lập kế hoạch truy vấn: quyền notification/reaction, điều kiện mention/reply,
+message chưa xóa, liên kết đúng conversation/message và masking vẫn được giữ khi trả DTO.
+Winner cá nhân được chọn trước category/event/cursor từ đầy đủ ứng viên hợp lệ.
+Metadata mention/reply của trang dùng cùng bộ lọc quyền, giới hạn các tập hội thoại
+phụ thuộc vào đúng ID của trang; không tái sử dụng quyền hoặc số đếm giữa các request.
+Với tập sự kiện đầy đủ đã giới hạn, `DefaultLabInboxSelectionAsync` đánh giá quyền
+notification/reaction và phân vùng Lab một lần trong lời gọi, chỉ giữ các ID hợp lệ
+để chọn winner, đọc trang và đếm reaction của chính request. Actor còn hoạt động,
+quyền xem tác giả/actor, message chưa xóa và phạm vi message thực tế vẫn được kiểm tra;
+không suy quyền từ conversationId trong payload. Read/archive được đọc lại khi đếm.
+Luồng Gấp dùng nguồn reaction đầy đủ cho số đếm vì tập sự kiện Gấp có thể thiếu các
+reaction khác trong cùng hội thoại. Hết request thì bỏ tập ID; lượt tải sau kiểm tra
+quyền lại. Sự kiện tới sau bước chọn ứng viên được phản ánh ở lượt refresh tiếp theo.
 SignalR `internalMailPersonalActivityChanged` chỉ gửi cho tác giả còn quyền, payload gồm conversationId/messageId,
 để cập nhật @Tôi và số chưa đọc khi tổng hợp thay đổi hoặc hết cảm xúc. Link mở đúng nhóm và tin gốc.
 
-Lab chốt VU của hồ sơ Báo giá không kg sau khi khách đồng ý giá ghi `QuotationFormulaFinalized` cùng snapshot/outbox. Worker phát tin “Lab đã hoàn thành công thức báo giá” qua topic `SampleRequestMessageCreated`, actor/scope/recipient/mute và idempotency theo workflow hiện có; payload không thêm thành phần, giá hoặc cost. Tin này chỉ báo VU Completed, chưa phải Sale hoàn thành hồ sơ. Sale Complete phát sự kiện/thông báo hoàn thành riêng. Không thêm topic hoặc đổi transport. Xem [contract](../PLM/SampleRequests/CHIP_SAMPLE_FLOW.md#báo-giá-không-kg-lab-chốt-vu-rồi-sale-hoàn-thành-hồ-sơ).
+Lab chốt VU của hồ sơ Báo giá không kg sau khi khách đồng ý giá ghi `QuotationFormulaFinalized` cùng snapshot/outbox. Worker phát tin “Lab đã hoàn thành công thức báo giá” qua topic `SampleRequestMessageCreated`, actor/scope/recipient/mute và idempotency theo workflow hiện có; payload không thêm thành phần, giá hoặc cost. Tin này chỉ báo VU Completed, chưa phải Sale hoàn thành hồ sơ. Sale Complete phát sự kiện/thông báo hoàn thành riêng. Không thêm topic hoặc đổi transport. Xem [contract](../PLM/SampleRequests/docs/workflow/CHIP_SAMPLE_FLOW.md#báo-giá-không-kg-lab-chốt-vu-rồi-sale-hoàn-thành-hồ-sơ).
 
 ## Quy trình giá/mẫu của Sample Request
 
@@ -91,7 +266,7 @@ WorkflowEventId là metadata nội bộ JsonIgnore, không nhận JSON public; a
 Sau 5 lỗi job dừng Failed. Chỉ người ghi sự kiện có write scope được retry, không lưu lại phản hồi.
 Ngoài endpoint cá nhân này, Developer có API quản trị công ty để xem job lỗi/chờ lâu
 và đưa chính job Failed về hàng chờ dưới khóa dòng cùng worker, không tạo job mới.
-Contract, quyền và seed: [Quản trị job thông báo](../PLM/SampleRequests/JOB_ADMIN.md).
+Contract, quyền và seed: [Quản trị job thông báo](../PLM/SampleRequests/docs/operations/JOB_ADMIN.md).
 Job lịch sử bị worker không hỗ trợ đánh dấu processed nhưng còn error được màn quản trị
 phân loại NeedsReview, không coi là gửi thành công và không tự reset/replay.
 Created nghĩa notification đã tạo trong DB, không phải push đã đến/đã đọc. Import không enqueue
@@ -102,7 +277,7 @@ resolver người nhận Sample Request hiện có (company/private/KH_VIETAUS r
 không đưa đơn giá/cost vào push. Thông báo giá chỉ là thông tin theo dõi, không khóa/mở gửi mẫu.
 Message SampleRequestSampleSent mới không tạo
 sampleReceiptAction; FE không hiện nút Sale nhận pending. Payload đã Confirmed chỉ để đọc lịch sử.
-Contract, capability và rollout: [Sample Request workflow](../PLM/SampleRequests/WORKFLOW.md).
+Contract, capability và rollout: [Sample Request workflow](../PLM/SampleRequests/docs/workflow/WORKFLOW.md).
 
 ## Metadata phối mẫu của từng trang feed
 
@@ -140,13 +315,22 @@ Không thêm schema/migration; tin chỉ gõ tên mà không có metadata mentio
 
 ## Feed unread query
 
-`GET /notifications/feed?unreadOnly=true` resolves eligible notification IDs in a
-separate read query before selecting latest conversation events. The winner query
-still uses the complete scoped inbox, and category/cursor/Take remain after winner
-selection. This avoids composing unread-message and latest-event subqueries into
-one expression while preserving read-latest/unread-older conversation semantics.
-The intermediate ID set scales with the eligible inbox; latency improvements must
-be verified on the running API and are not established by unit tests alone.
+`GET /notifications/feed?unreadOnly=true` lấy các khóa hội thoại chưa đọc riêng trước
+khi chọn sự kiện đại diện. Cùng tập khóa này được dùng giới hạn các hội thoại cần
+chọn winner; trong mỗi hội thoại vẫn xét toàn bộ lịch sử inbox được phép, không lọc
+topic/ngày/cursor trước khi chọn. Category/event-group/cursor/Take giữ thứ tự hiện hành.
+Nhánh thông báo standalone chưa đọc giữ riêng, kể cả tập khóa hội thoại rỗng. Không
+coi sự kiện đại diện đã đọc là hội thoại đã đọc hết nếu còn sự kiện/tin cũ chưa đọc.
+
+API hội thoại canonical truyền relatedType vào bước tìm khóa unread để loại lịch sử các loại
+khác sớm; nhóm Kỹ thuật/Giá/riêng vẫn được phân loại theo root như predicate ngoài.
+Company, participant/observer, trạng thái archived, mute/legacy và nguồn đếm badge
+không thay đổi. Icon của danh sách chưa đọc canonical kiểm tra quyền ở khóa nhóm trước khi
+hydrate winner, thay vì lặp scope cho mỗi tin lịch sử; vẫn yêu cầu đúng message link,
+company và topic nghiệp vụ. Không thêm index, migration, cache hoặc bỏ kiểm tra quyền.
+Chế độ group storage legacy giữ query hội thoại cũ đã đo; không đổi cấu hình rollout.
+Xem [phép đo và giới hạn](UNREAD_PERFORMANCE.md). Số đo fixture không thay thế đo API
+đang chạy sau triển khai.
 
 ## Metadata phiếu chỉnh màu
 
@@ -159,6 +343,8 @@ không đổi topic code, recipient policy chung hoặc transport SignalR/Web Pu
 Hai nhóm rỗng vẫn gọi publisher để policy Developer cùng company tiếp tục áp dụng như legacy.
 
 ## Thông báo ngày hứa giao MFG
+
+Các luồng sửa ngày trên lệnh MFG dùng chung publisher với API gửi riêng: chụp ngày cũ trước khi sửa, chỉ phát một thông báo topic 55 cho mỗi thay đổi ngày thực tế, trong cùng transaction với lệnh. Không phát cảnh báo ngày legacy riêng ở luồng inform. So sánh phần ngày; ngày mới null hoặc không đổi không phát. Người nhận và payload theo contract bên dưới; không thay transport SignalR/Web Push.
 
 Topic `MerchandiseOrderPromisedDeliveryNotified = 55`: `sales.merchandise_order.promised_delivery_notified`,
 category `sales_order`, event group `schedule`, aggregate `MerchandiseOrder`.
@@ -274,6 +460,20 @@ Là hộp thư và trạng thái riêng của từng employee:
 - `UserId`: `EmployeeId` của người nhận.
 - `IsRead`, `ReadDate`: trạng thái đọc.
 - `IsArchived`: ẩn khỏi inbox của riêng employee đó.
+
+Unread summary dùng cùng fallback lịch sử với InternalMail list/detail/quick groups: cộng các message chưa có state thông báo của employee, đủ điều kiện đọc theo company/membership/inbox và mute. State đã đọc hoặc archive chặn fallback cùng message; không backfill. Reaction vẫn chỉ thuộc tổng cá nhân @Tôi. Đây là tổng toàn phạm vi quyền, không phải tổng của riêng trang tìm kiếm/bộ lọc đang hiện.
+
+Feed `unreadOnly` xác định DISTINCT ID cuộc trò chuyện còn unread, thay vì tải ID của từng notification lịch sử về ứng dụng. Đường đọc tách suppression, khóa unread, standalone và ranking để tránh lặp đồ thị JSON/quyền trong cùng SQL lớn. Tập ứng viên có giới hạn và fallback về SQL đầy đủ khi vượt giới hạn; không cắt kết quả. Sự kiện đại diện vẫn chọn từ full inbox đã scope, lọc trước category/cursor/take; sự kiện mới nhất đã đọc vẫn đại diện cho nhóm còn tin cũ chưa đọc. Badge kết hợp notification và legacy theo cùng quy tắc, tái dùng kết quả trong request khi có, không cache giữa request. Chi tiết tại [InternalMail](../InternalMail/README.md#phạm-vi-truy-vấn-hội-thoại-chưa-đọc). Không thay đổi recipient, archive, phạm vi company hoặc quyền nhóm để tối ưu.
+
+Kiểm chứng ngày 2026-11-05 dùng `InternalConversationGroupStoragePostgresTests.UnreadPerformance.cs`: cluster PostgreSQL loopback sinh riêng bởi fixture, 400 conversation/3.204 notification giả, 5 mẫu warm xen kẽ baseline/bản mới mỗi role. ID và thứ tự các trang khớp; có ca khác company, thiếu membership, archived/other-user, legacy và standalone/null payload/invalid link.
+
+| Principal giả | Inbox: COUNT → tồn tại, median ms | Feed: notification-ID staging → conversation-key staging, median ms | ID staging trước → sau |
+| --- | --- | --- | --- |
+| Developer | 391,89 → 14,93 | 110,40 → 106,79 | 1.772 → 226 |
+| LabUser | 333,49 → 37,39 | 135,29 → 131,49 | 1.436 → 226 |
+| SaleUser | 330,51 → 37,18 | 134,95 → 129,67 | 1.436 → 226 |
+
+Đây là thời gian EF/query lấy ID trang trong fixture, không phải PostgreSQL thuần, HTTP toàn endpoint hoặc thời gian mở màn hình trên máy người dùng. LabUser inbox min/max: baseline 327,19–337,92 ms, bản mới 36,59–38,46 ms; feed baseline 134,56–137,19 ms, bản mới 129,30–132,36 ms. Feed chỉ cải thiện nhỏ; chưa chứng minh request thật mất 9 giây đã hết. Không thay index/schema/DB ứng dụng. Metrics sinh dưới `artifacts/unread-performance`, không commit artifacts.
 
 User chỉ xem được notification qua API khi có `NotificationUserState` tương ứng và state chưa
 archive. Vì vậy, biết `notificationId` không đồng nghĩa với việc được phép đọc notification.
@@ -470,7 +670,7 @@ dùng để API vẫn đọc an toàn dữ liệu lịch sử lạ, không đư�
 topic giao hàng và complaint của đơn hàng dùng `categoryCode = sales_order`, lần lượt có
 `eventGroupCode = delivery` và `eventGroupCode = complaint`.
 
-`MerchandiseOrderBelowStandardPriceApproved = 54` được phát khi duyệt đơn Hàng hóa của khách ngoài có dòng giá chốt thấp hơn giá chuẩn VND Approved hiện hành. Topic `sales.merchandise_order.below_standard_price_approved` thuộc `sales_order/pricing`, severity `Warning`, gửi đến President active cùng công ty và mở chi tiết SaleOrder. Notification độc lập, không tạo InternalMail conversation nên không xuất hiện trong tab Gấp.
+`MerchandiseOrderBelowStandardPriceApproved = 54` được phát khi duyệt đơn Hàng hóa của khách ngoài có dòng giá chốt thấp hơn giá VND Approved hiện hành theo tier số lượng dòng đơn (cận đóng/mở, ưu tiên SortOrder; không khớp tier thì dùng StandardSellingPrice). Topic `sales.merchandise_order.below_standard_price_approved` thuộc `sales_order/pricing`, severity `Warning`, gửi đến President active cùng công ty và mở chi tiết SaleOrder. Notification độc lập, không tạo InternalMail conversation nên không xuất hiện trong tab Gấp.
 
 Các topic `0-28` được giữ nguyên để giải mã dữ liệu lịch sử. Code mới append các topic cụ thể:
 
@@ -611,6 +811,27 @@ Notification tiếp tục dùng outbox SignalR và Web Push chung, không thay �
 
 Các query user-facing luôn lọc theo current company, current employee và UserState chưa
 archive. `remove recipient` chỉ archive UserState để giữ audit, không xóa dữ liệu thật.
+
+## Luồng thông báo DHG chung
+
+Luồng Tạm dừng/Mở lại cũng nhận tin lịch sử topic 5 `MerchandiseOrderUpdated` khi payload có boolean `isDeliveryPaused` và đủ sáu khóa `merchandiseOrderId`, `merchandiseOrderCode`, `deliveryPausedFrom`, `deliveryPausedTo`, `deliveryPauseReason`, `deliveryPauseType`. Truy vấn JSONB lọc trước phân trang/đếm, đồng nhất với nhận diện marker trong feed/detail. Không phân loại từ title/message, không đổi topic/category/event group đã lưu, không backfill hay phát lại. Company, người nhận, archive và loại trừ conversation vẫn áp dụng.
+
+Payload pause/resume mới có thêm boolean `previousIsDeliveryPaused` được chụp trước khi PATCH, để FE hiển thị chuyển trạng thái thật. Tên người thực hiện lấy từ CreatedByNameSnapshot; lý do và khoảng tạm dừng lấy từ payload. Tin cũ thiếu trạng thái trước chỉ hiển thị trạng thái sau; thiếu lý do/tên thì FE ghi rõ không có dữ liệu. `deliveryPauseReason` luôn là lý do tạm dừng, không tự diễn giải thành lý do mở lại.
+
+Thông báo độc lập Tạm dừng/Mở lại giao hàng (topic 32/33) được gom riêng bằng `streamKey=sales-order-delivery-status-stream`. Endpoint sales-order-stream chấp nhận mã này, dùng cùng phân trang cursor, firstUnreadId, read-state và tổng unread có scope. Không trộn với ngày hứa giao hoặc giá; không gom notification đã gắn conversation. Người nhận, publisher và transport hiện hành không thay đổi. Đây là cách đọc dữ liệu đã lưu, không phát lại hoặc sửa DB lịch sử.
+
+Hòm thư tách hai luồng chỉ đọc, giữ nguyên category/topic/người nhận hiện hành: `sales-order-stream` dành riêng topic 54 (Cảnh báo giá), `sales-order-delivery-stream` dành riêng topic 55 (Thay đổi ngày hứa giao). Feed/detail trả marker và tổng unread riêng cho từng luồng. Sự kiện DHG khác không mang marker, giữ nhóm hồ sơ thông thường.
+
+`GET /api/v1/notifications/sales-order-stream` nhận `streamKey` tùy chọn, mặc định `sales-order-stream`; giá trị ngoài các mã luồng nêu ở đây trả 400. Ví dụ `?streamKey=sales-order-delivery-stream&direction=initial` trả `{ items: [...], firstUnreadId: "...", unreadCount: 2, hasOlder: true, hasNewer: false }`. `unreadCount` đếm toàn bộ inbox hợp lệ trong luồng đã chọn, không chỉ trang hiện tại; `firstUnreadId` null khi đã đọc hết. Cursor của luồng khác không được dùng để tra dữ liệu, kết quả rỗng. Scope người nhận/công ty/archive và masking giá vẫn được áp dụng trước response; GET không ghi read-state.
+
+- FE gom notification độc lập topic 54 và 55 thành hai dòng tương ứng bên trên. Không gom complaint hoặc notification đã gắn hội thoại thật; không tạo sự kiện hoặc mở rộng người nhận mới.
+- Feed/detail bổ sung `streamKey` theo loại luồng và `streamUnreadCount` cho các tin phù hợp. Số đếm là toàn bộ tin chưa đọc, chưa lưu trữ trong luồng mà người hiện tại được xem, không chỉ các tin có trong trang feed.
+- `GET /api/v1/notifications/sales-order-stream?direction=initial|older|newer&cursorId=<guid>`: mỗi trang tối đa 30 tin theo thời gian tăng dần, phá hòa bằng ID. `older/newer` bắt buộc cursor; cursor chỉ được tra trong query đã giới hạn người nhận/công ty/quyền. Response gồm `items`, `firstUnreadId`, `unreadCount`, `hasOlder`, `hasNewer`.
+- Initial mở tại tin chưa đọc cũ nhất; nếu đã đọc hết thì lấy trang mới nhất. Tải trước/sau dùng cursor, không OFFSET. GET không đổi trạng thái đọc.
+- Mỗi tin giữ nguyên `NotificationUserState` của từng nhân viên, company scope, giới hạn ngày dữ liệu hiện hành, archive và masking hiện hành. Không dùng membership chung để cấp quyền; quyền President nhận cảnh báo vẫn do publisher/recipient hiện hành quyết định.
+- Đây là luồng hệ thống chỉ đọc. FE dùng endpoint đánh dấu từng notification đã có khi tin hiện trong vùng xem và tab có focus; không tự gọi đọc toàn bộ luồng. Nút Đánh dấu đã đọc toàn Hub hiện hành vẫn là thao tác chủ động riêng.
+- Không thêm bảng/migration/backfill, không copy dữ liệu cũ hoặc phát lại thông báo. Các notification cũ còn trong inbox hiện hành tự tham gia luồng theo điều kiện trên. Realtime/Push và publisher không thay đổi.
+- Verification: test `InternalMailAreaAccessTests.SalesOrderStream` dùng bộ nhớ kiểm tra người nhận, công ty, archive, loại sự kiện, loại trừ hội thoại thật, cursor và phân trang cùng timestamp; không dùng DB thật.
 
 ## 7. Phân biệt SignalR và Web Push
 
@@ -817,3 +1038,21 @@ cùng event/message ID. Sự kiện nghiệp vụ đã lưu có request/company/
 system notice kể cả actor không có quyền chat General của category đó. Đây không phải quyền chat:
 request JSON không thiết lập được WorkflowEventId, các area riêng không đổi, recipient vẫn bị giao
 với eligibility/mute hiện có và không tự thêm actor bị loại làm participant.
+
+Thông báo ngày hứa giao mới bổ sung `customerCode`, `customerName`, `productCodes` trong từng `merchandiseOrders` từ snapshot ĐHG/detail active cùng company. Gộp theo ID ĐHG, mã sản phẩm không trùng. Không thêm query hay thay người nhận. Thông báo cũ thiếu dữ liệu này giữ cách hiển thị cũ; không backfill DB.
+
+### Thông tin đơn hàng trong luồng ĐHG
+
+API luồng đơn hàng bổ sung `salesOrderInfo` gồm mã ĐHG, mã/tên khách hàng và mã sản phẩm hiện tại cho trang thông báo đã được lọc theo inbox và công ty. Áp dụng cả dữ liệu cũ: không sửa payload lịch sử, không phát thông báo mới. Đọc gộp tối đa hai truy vấn cho cả trang, chỉ lấy đơn còn hoạt động cùng công ty theo ID liên kết; mã đơn chỉ là fallback và phải khớp duy nhất. Không suy đoán ID từ tiêu đề/nội dung, không trả giá. Nếu không xác định được đơn thì không bổ sung metadata. Số chưa đọc và quyền nhận thông báo không đổi.
+
+Tổng chưa đọc: canonical group storage dùng khóa tin unread theo employee/công ty, kiểm tra `InboxConversations(false)` một lần, chống đếm trùng bằng cặp conversation/message rồi cộng theo root type. Không đổi quyền/recipient/read-state hay schema; legacy storage giữ query cũ. Xem số đo, invariant và cách kiểm thử trong [UNREAD_PERFORMANCE.md](UNREAD_PERFORMANCE.md). API summary có Server-Timing `nm_summary_legacy` và tổng handler để kiểm tra sau triển khai; lỗi vẫn trả lỗi, không giả số 0.
+
+Cảnh báo giá SaleOrder ngoại tệ dùng tỷ giá snapshot trên đơn, so sánh sau khi quy giá tier chuẩn VND về tiền tệ đơn. Nội dung mới ghi giá thập phân invariant kèm mã tiền (ví dụ 0.9 USD); FE giữ phần thập phân và đơn vị. Payload/recipient/topic không đổi; không backfill notification cũ.
+
+### PLM yêu cầu bổ sung trên TP cũ
+
+Chu kỳ mới đánh dấu bằng SampleRequestFollowUpStarted trong workflow event hiện có.
+Marker không queue tin riêng. Những sự kiện mới từ thời điểm marker được dispatch
+qua luồng PLM/outbox hiện hành; sự kiện legacy trước marker vẫn giữ quy tắc bỏ qua
+tracking-only, không phát lại lịch sử. Topic, người nhận, scope và payload nhạy cảm
+không được mở rộng bởi việc mở lại TP. Xem README SampleRequests cho contract kế hoạch.

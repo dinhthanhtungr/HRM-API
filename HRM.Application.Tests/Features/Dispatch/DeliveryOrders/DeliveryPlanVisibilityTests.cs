@@ -27,11 +27,17 @@ public sealed class DeliveryPlanVisibilityTests
     [Theory]
     [InlineData("QCUser")]
     [InlineData("User")]
-    public async Task UnrelatedRoleCannotPauseOrFinishBeforeReadingRecords(string role)
+    public async Task UnrelatedRoleCannotFinishBeforeReadingRecords(string role)
     {
         var user = new Viewer { Roles = [role] };
         var finish = new HRM.Application.Features.Dispatch.DeliveryOrders.Commands.FinishDelivery.FinishDeliveryCommandHandler(null!, user, null!, null!, null!);
         Assert.False((await finish.Handle(new(Guid.NewGuid()), default)).Success);
+    }
+
+    [Fact]
+    public async Task AnonymousUserCannotPauseBeforeReadingRecords()
+    {
+        var user = new Viewer { IsAuthenticated = false, Roles = ["SaleUser"] };
         var pause = new HRM.Application.Features.PLM.SaleOrders.Commands.PauseSaleOrderDelivery.PauseSaleOrderDeliveryCommandHandler(null!, user, null!, null!, null!);
         Assert.False((await pause.Handle(new(new()), default)).Success);
     }

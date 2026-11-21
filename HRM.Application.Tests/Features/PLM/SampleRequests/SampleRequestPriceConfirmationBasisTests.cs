@@ -6,13 +6,13 @@ namespace HRM.Application.Tests.Features.PLM.SampleRequests;
 public sealed class SampleRequestPriceConfirmationBasisTests
 {
     [Fact]
-    public void NewConfirmedFormulaWinsOverOlderSentTrialWithoutChangingTrialDisplay()
+    public void ApprovedProductPriceDoesNotHaveToMatchSentOrConfirmedFormula()
     {
         var oldTrialFormula = Guid.NewGuid();
         var confirmed = Guid.NewGuid();
         var item = new SampleRequestSampleTrialReportDto { FormulaId = oldTrialFormula, PriceConfirmationFormulaId = confirmed };
-        Assert.True(SampleRequestPriceConfirmationBasis.MatchesApprovedFormula(item, confirmed));
-        Assert.False(SampleRequestPriceConfirmationBasis.MatchesApprovedFormula(item, oldTrialFormula));
+        Assert.True(SampleRequestPriceConfirmationBasis.HasApprovedPriceSource(confirmed));
+        Assert.True(SampleRequestPriceConfirmationBasis.HasApprovedPriceSource(oldTrialFormula));
         Assert.Equal(oldTrialFormula, item.FormulaId);
     }
 
@@ -22,15 +22,15 @@ public sealed class SampleRequestPriceConfirmationBasisTests
         var confirmed = Guid.NewGuid();
         var item = new SampleRequestSampleTrialReportDto { PriceConfirmationFormulaId = confirmed };
         Assert.Equal(confirmed, SampleRequestPriceConfirmationBasis.ResolveFormulaId(item));
-        Assert.True(SampleRequestPriceConfirmationBasis.MatchesApprovedFormula(item, confirmed));
+        Assert.True(SampleRequestPriceConfirmationBasis.HasApprovedPriceSource(confirmed));
     }
 
     [Fact]
     public void LegacyFormulaFallbackDoesNotTreatMissingSourceAsApproved()
     {
         var item = new SampleRequestSampleTrialReportDto();
-        Assert.False(SampleRequestPriceConfirmationBasis.MatchesApprovedFormula(item, null));
+        Assert.False(SampleRequestPriceConfirmationBasis.HasApprovedPriceSource(null));
         item.FormulaId = Guid.NewGuid();
-        Assert.True(SampleRequestPriceConfirmationBasis.MatchesApprovedFormula(item, item.FormulaId));
+        Assert.True(SampleRequestPriceConfirmationBasis.HasApprovedPriceSource(item.FormulaId));
     }
 }

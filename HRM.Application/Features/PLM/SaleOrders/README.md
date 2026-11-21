@@ -1,5 +1,24 @@
 # PLM Sale Orders
 
+## Theo dõi đơn bán dành cho IMS
+
+`GET /api/v1/plm/sale-orders/tracking` trả danh sách tối đa 25 đơn mỗi trang.
+`GET /api/v1/plm/sale-orders/{orderId}/tracking` trả đầu đơn và dòng sản phẩm.
+Hai API dùng quyền `plm.sale-order.tracking.view`, yêu cầu ngữ cảnh nhân viên
+và chỉ đọc đơn active của khách active trong công ty hiện tại. Đơn và khách nội
+bộ nằm ngoài phạm vi theo dõi.
+
+`completedDeliveryQuantity` cộng lượng trên các dòng phiếu còn hiệu lực có
+trạng thái `Completed`. `remainingQuantity` bằng lượng đặt trừ lượng đó, tối
+thiểu bằng 0. Giá trị 0 là kết quả tính nghiệp vụ. Ngày nullable biểu thị ngày
+chưa được ghi nhận. `schedules` là các đợt giao có lưu trữ đang bật, gồm số
+lượng, ngày yêu cầu và ngày hứa. Danh sách rỗng khi chưa có hoặc chưa bật lưu trữ.
+
+Bộ trường theo dõi không có giá, công nợ, ghi chú, lý do dừng, công thức hoặc
+lô NVL. Đơn tạm dừng hiển thị trạng thái `Paused`. API đơn bán đầy đủ, timeline
+và lịch giao hiện hành dùng policy hạn chế IMS. Token explicit cần role claim
+`plm.sale-order.tracking.view` sau login hoặc refresh.
+
 Với Formula có lần gửi hoặc sự kiện chốt VU Báo giá (`QuotationFormulaFinalized`) thuộc SampleRequest từ 01/11/2026 còn mở, Sale phải hoàn thành
 hồ sơ trước khi dùng Formula lên đơn. Chốt VU Báo giá không tạo Trial: guard dùng sự kiện đúng company/hồ sơ/VU và vẫn chặn gọi create trực tiếp khi Formula đã Completed nhưng Sale chưa hoàn thành hồ sơ. Đây là guard workflow bổ sung; lookup mẫu
 hiện hành chỉ trả Completed. Hồ sơ legacy giữ điều kiện lookup SampleSent/Completed theo loại đơn.
@@ -11,10 +30,12 @@ Create SaleOrder nhận `OrderType` từ FE: `0` Nội bộ, `1` Hàng hóa, `2`
 ### Thao tác giao hàng từ dialog kế hoạch
 
 `PATCH /api/v1/plm/sale-orders/{id}/pause-delivery` dùng chung cho trang đơn hàng và dialog kế hoạch.
-Handler yêu cầu đăng nhập và tập quyền `ApplicationRoleSets.SaleOrderDelivery.Pausers` (SaleUser/SaleAdmin/ACUser/Leader/Admin/President/Developer/ACC).
-Sale/Leader không có role quản lý toàn công ty dùng `BuildReadScopeAsync` và cùng `ApplyMerchandiseOrderVisibility` như danh sách timeline: được tạm dừng mọi đơn họ được xem, không đòi thêm điều kiện đứng tên đơn. Đơn ngoài phạm vi xem/khác company vẫn bị chặn.
-Company/employee phải hợp lệ; đơn hủy/Delivered/Completed không được tạm dừng/mở lại. Sale không được mở lại PaymentHold.
+Notification giữ thêm `previousIsDeliveryPaused` trước PATCH cùng trạng thái sau, lý do/khoảng tạm dừng và snapshot người thực hiện. Hub gom topic 32/33 và dữ liệu topic 5 lịch sử có đúng payload giao hàng vào một luồng; không suy trạng thái trước cho tin cũ thiếu field này. Người nhận, company/visibility và quyền mở lại công nợ giữ nguyên.
+Handler yêu cầu đăng nhập, employee/company hợp lệ; không giới hạn theo role tạm dừng riêng.
+Mọi người thao tác, kể cả quản lý, đều dùng `BuildReadScopeAsync` và cùng `ApplyMerchandiseOrderVisibility` như danh sách timeline: được tạm dừng mọi đơn họ được xem, không đòi thêm điều kiện đứng tên đơn. Đơn ngoài phạm vi xem/khác company vẫn bị chặn.
+Company/employee phải hợp lệ; đơn hủy/Delivered/Completed không được tạm dừng/mở lại. SaleUser/SaleAdmin/ACUser không được mở lại hoặc sửa loại/khoảng thời gian của PaymentHold đang giữ; ngoại lệ President/Developer giữ nguyên.
 Payload pause type/lý do/ngày, audit và thông báo hiện có giữ nguyên; không thêm token concurrency mới.
+Query lấy đơn để PATCH bật `AsTracking()` sau khi áp dụng visibility: subquery customer `AsNoTracking()` có thể làm cả query không tracking, khiến response đổi nhưng SaveChanges không ghi DB cho người xem bị giới hạn phạm vi. Test PostgreSQL read-only kiểm tra cơ chế này, không cập nhật đơn nguồn.
 Xác nhận giao xong dùng API Dispatch, xem README DeliveryOrders; không cấp quyền tạo/sửa/hủy phiếu giao cho Sale.
 
 Feature quản lý đơn hàng bán thành phẩm/sản phẩm thương mại. Aggregate chính là `MerchandiseOrder` và các dòng `MerchandiseOrderDetail`.
@@ -37,14 +58,14 @@ Customer phải nằm trong visibility của người gọi hoặc là khách n�
 Mỗi cặp product/formula khác nhau cần kiểm tra được trả một lần; lookup lịch sử theo
 company/customer/product. Chỉ tính header active `Approved`, `Processing`, `Delivering`,
 `Delivered`, `Completed` và detail active không hủy/không chờ mẫu chuẩn; không tính đơn đang tạo.
-Mẫu cần xác nhận khi không có lịch sử hợp lệ hoặc ngày đặt cuối trước ngày hiện tại trừ hai năm lịch.
+Mẫu chỉ cần xác nhận khi có lịch sử hợp lệ và ngày đặt cuối trước ngày hiện tại trừ hai năm lịch. Chưa có đơn hợp lệ thì không yêu cầu xác nhận mẫu chuẩn.
 Đúng ngày tròn hai năm chưa bị coi là quá hạn. Ngày nguồn là `MerchandiseOrder.CreateDate`.
 
 ```json
 {"success":true,"data":[{"productId":"guid","formulaId":"guid","colorCode":"COLOR01","name":"Tên sản phẩm","lastOrderDate":"2023-10-01T10:00:00"}]}
 ```
 
-`data=[]` nghĩa là không cần dialog; `lastOrderDate=null` nghĩa là chưa có đơn hợp lệ.
+`data=[]` nghĩa là không cần dialog, bao gồm trường hợp chưa có đơn hợp lệ. Các dòng cần review luôn có `lastOrderDate` của đơn hợp lệ gần nhất.
 Mã/tên lấy từ Product hiện tại, không dùng snapshot do client gửi. Đây là preview, chưa persist.
 FE giữ form và file local; chỉ gửi multipart tạo đơn sau khi Sale bấm Đồng ý.
 Mỗi dòng trong danh sách review phải gửi `standardSampleReviewed=true` và
@@ -96,7 +117,7 @@ copy/kết thúc MFG và tạo thêm MFG từ detail đều chặn khi dòng/l�
   - Ví dụ `{"deliveryAddress":"Địa chỉ mới"}` giữ nguyên VAT, ngày thanh toán, tổng tiền, loại thanh toán và cờ đã thanh toán. PATCH không tính lại tổng tiền.
   - Quyền cập nhật/xóa dùng cùng endpoint có `[Authorize]`, employee context và company/active scope hiện hành; không thêm role/capability mới. Thay đổi VAT/ngày thanh toán ghi EventLog cùng transaction với old/new trong Note, giữ nguyên status đơn.
   - GET chi tiết trả `vat`/`paymentDate` trực tiếp từ dữ liệu đã lưu: `null` là chưa có/đã xóa, VAT `0` là giá trị 0 thực tế. Không có fallback VAT về 0 ở BE.
-- `PATCH api/v1/plm/sale-orders/{merchandiseOrderId}/approve`: chỉ `Admin`, `Developer`, `President`, `Leader` được duyệt đơn `New` và tạo MFG. Với đơn Hàng hóa của khách ngoài, response thành công kèm cảnh báo khi `UnitPriceAgreed` của bất kỳ dòng nào thấp hơn giá chuẩn VND `Approved` hiện hành; đơn khiếu nại, gửi mẫu và nội bộ không áp dụng cảnh báo. Cùng điều kiện này tạo notification `Warning` cho President tại Notification Hub > Đơn hàng > Giá, không tạo conversation nên không thuộc tab Gấp.
+- `PATCH api/v1/plm/sale-orders/{merchandiseOrderId}/approve`: chỉ `Admin`, `Developer`, `President`, `Leader` được duyệt đơn `New` và tạo MFG. Với đơn Hàng hóa của khách ngoài, response thành công kèm cảnh báo khi `UnitPriceAgreed` của bất kỳ dòng nào thấp hơn giá VND `Approved` hiện hành áp dụng cho số lượng dòng (`ExpectedQuantity`): chọn tier active đầu tiên theo `SortOrder` khớp cận Min/Max và MinInclusive/MaxInclusive; nếu không có tier khớp thì dùng `StandardSellingPrice`. Giá bằng tier không cảnh báo, không dùng `RecommendedUnitPrice` do FE gửi; đơn khiếu nại, gửi mẫu và nội bộ không áp dụng cảnh báo. Cùng điều kiện này tạo notification `Warning` cho President tại Notification Hub > Đơn hàng > Giá, không tạo conversation nên không thuộc tab Gấp.
 - `PATCH api/v1/plm/sale-orders/{merchandiseOrderId}/cancel`: hủy đơn, chặn nếu đã có delivery hoàn tất.
 - `PATCH api/v1/plm/sale-orders/{merchandiseOrderId}/confirm-delivery`: xác nhận giao xong; backend kiểm tra mọi detail active đã giao đủ rồi chuyển header và các detail sang `Delivered`.
 - `PATCH api/v1/plm/sale-orders/{merchandiseOrderId}/pause-delivery`: tạm dừng/mở lại giao hàng và gửi notification theo rule người nhận.
@@ -187,6 +208,9 @@ thời gian giao hàng; SignalR/Web Push tiếp tục đi qua outbox hiện có 
 
 ## Mô hình lịch giao nhiều đợt
 
+Contract API/UI, cờ mặc định giữ luồng ngày đơn, quyền và phân bổ phiếu:
+[DeliverySchedules](DeliverySchedules/README.md). Chưa tạo/chạy migration; người dùng tự đồng bộ schema tại F:/Backend.
+
 `MerchandiseOrderDetail.DeliverySchedules` chứa nhiều `MerchandiseOrderDeliverySchedule`.
 Mỗi dòng là một đợt giao, có `Quantity`, `RequestedDate`, `PromisedDate`,
 `RequestNote`, `PromiseNote`, `IsActive` và thông tin người/thời gian tạo, sửa.
@@ -194,21 +218,35 @@ Mỗi dòng là một đợt giao, có `Quantity`, `RequestedDate`, `PromisedDat
 `date`, chỉ biểu diễn ngày, không biểu diễn giờ hoặc timezone.
 
 Một dòng dùng chung khối lượng cho yêu cầu và lời hứa. Khi chia giao thành nhiều ngày,
-tách thành nhiều dòng và giữ cùng ngày yêu cầu. Không đặt unique constraint theo ngày
+tách thành nhiều đợt trong cùng detail, không nhân dòng sản phẩm. Không đặt unique constraint theo ngày
 vì nhiều đợt có thể trùng ngày nhưng khác ghi chú/ngày hứa. Quan hệ tới detail dùng
 `Restrict` khi xóa vật lý; scope công ty được xác định qua detail và đơn hàng cha.
 Mapping có check constraint `Quantity > 0`, precision khối lượng `(18, 3)`.
 
-Hiện chỉ bổ sung entity, navigation, DbSet và EF configuration; chưa có migration,
-backfill, API/DTO hoặc luồng ghi lịch giao. Database hiện tại chưa có bảng mới.
-Các field `DeliveryRequestDate` và `ExpectedDeliveryDate` trên detail vẫn phục vụ
-contract hiện hành, chưa tự đồng bộ với collection. Chưa lưu lịch sử đổi ngày hứa.
-Khi triển khai luồng ghi cần kiểm tra tổng `Quantity` của các dòng active không vượt
-`ExpectedQuantity` trong transaction, đồng thời áp dụng company scope và quyền sửa.
-Ràng buộc tổng liên dòng chưa được enforce bởi thay đổi mô hình này.
+Luồng mới có API/DTO/editor và bảng phân bổ nguồn trong model, sau cờ tắt mặc định.
+Save kiểm tra tổng Quantity bằng ExpectedQuantity trong transaction/khóa theo detail;
+giữ audit thay đổi và không thay giá/thanh toán. Luồng ngày đơn cũ giữ nguyên khi tắt.
+Chưa tạo/chạy migration hoặc backfill; xem hướng dẫn đồng bộ và giới hạn legacy ở contract chi tiết.
 
 ## Giới hạn hiện tại
 
 Feature chưa tạo migration. Nếu database chưa có các cột pause delivery trên `Orders.MerchandiseOrders`, cần bổ sung migration/schema trước khi chạy runtime.
 
 Database và file storage không hỗ trợ distributed transaction. Handler đã cleanup file vật lý khi transaction tạo đơn thất bại và ghi log nếu cleanup lỗi; trường hợp storage ngừng hoạt động đúng lúc cleanup vẫn có thể để lại file mồ côi nhưng không để lại SaleOrder trong database.
+
+Cảnh báo giá khi duyệt lưu số lượng đặt ExpectedQuantity của từng dòng trong nội dung sự kiện, dạng ColorCode (quantity kg), dùng số thập phân invariant để FE hiển thị cạnh mã màu. Đây là snapshot lúc duyệt; không nạp lại số lượng hiện tại để thay lịch sử.
+
+### Tiền tệ và cảnh báo giá
+Currency/ExchangeRate là snapshot trên đơn; tỷ giá là số VND tương ứng 1 đơn vị ngoại tệ, cùng quy ước báo giá. Giá chốt/tổng tiền giữ nguyên đơn vị tiền của đơn. Timeline trả thêm currency và exchangeRate trên header để FE hiển thị tổng và đơn giá detail theo tiền tệ đó; null/rỗng currency của dữ liệu cũ dùng VND. Không nhân tỷ giá vào số tiền đang hiển thị USD.
+Khi duyệt, chọn tier Approved VND theo số lượng rồi chia giá chuẩn cho ExchangeRate để so với giá chốt cùng ngoại tệ (tương đương nhân giá chốt ngoại tệ với tỷ giá để so VND). Đơn ngoại tệ thiếu tỷ giá hoặc tỷ giá <= 0 bị từ chối trước khi tạo MFG. Notification mới giữ số thập phân invariant và mã tiền ở cả hai giá; notification cũ không tự tính lại. Ví dụ giả lập: giá chuẩn 26.200 VND, tỷ giá 25.000, giá chuẩn quy đổi 1,048 USD; giá chốt 0,90 USD thấp hơn khoảng 14,12%, không phải 100%.
+
+### Định giá từ timeline
+GET /api/v1/timeline/plm/sale-orders/{id}/details trả thêm productId/formulaId (GUID nguồn persist trên detail, không suy diễn từ mã màu hoặc MFG) cho từng dòng đã qua visibility của đơn. Ví dụ rút gọn: items: [{ merchandiseOrderDetailId: detail-guid, productId: product-guid, formulaId: formula-guid, colourCode: BL35001 }]. Không trả thêm cost/material qua timeline. FE dùng hai ID mở drawer định giá cùng sản phẩm/công thức, chuẩn VND; entry chỉ President/Developer và rule mở tách rule sửa/duyệt. API executive pricing-review giữ Authorize policy ManageProductPricingReview, company/active/source eligibility; không mở quyền pricing cho Sale/ACC bằng task này. Không đổi giá chốt đơn khi duyệt giá sản phẩm.
+
+### Trạng thái hiện tại trên timeline MFG
+GET /api/v1/timeline/plm/sale-orders/{id}/details trả currentMfgStatus là trạng thái persist hiện tại của MFG active cùng company gắn với detail. Nếu có nhiều MFG, chọn UpdatedDate mới nhất, rồi CreatedDate và ID giảm dần để ổn định. Không có MFG thì null. Ví dụ: currentMfgStatus=FormulaRequested trong khi eventLogs vẫn có Scheduled lịch sử là hợp lệ khi MFG đã lùi bước.
+FE dùng currentMfgStatus cho mốc hiện tại màu xanh dương, không dùng mốc cao nhất từng đạt. Log giữ nguyên cho tooltip từng mốc; không ghi lại log/DB khi render. Khi null/thiếu field (chưa tạo MFG hoặc server cũ), giữ fallback theo log/detail như trước. Thông tin nhập kho vẫn có trạng thái và tooltip riêng, không ghi đè mốc sản xuất hiện tại.
+
+## Nhóm khách dùng chung mẫu
+
+Khi CustomerSampleSharing:Enabled được bật, khách cùng nhóm active được dùng mẫu đủ điều kiện của nhau; membership được kiểm tra lại lúc tạo đơn. Lookup/detail/Formula gửi customerId của khách đặt hàng. Không chia sẻ giá, công nợ hay quyền sửa hồ sơ mẫu. Contract và rollout: [CRM SampleSharingGroups](../../CRM/CustomerCare/SampleSharingGroups/README.md).

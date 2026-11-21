@@ -42,4 +42,20 @@ public sealed class InternalMailChatAttachmentMatrixTests
         Assert.Equal(kind == "Image" ? route + "/thumbnail" : null, dto.ThumbnailUrl);
         Assert.DoesNotContain(dto.FileName, dto.ContentUrl);
     }
+
+    [Theory]
+    [InlineData("sample.mp4", "video/mp4")]
+    [InlineData("sample.MOV", "video/quicktime")]
+    [InlineData("sample.webm", "video/webm")]
+    public void VideoHasItsOwnMediaKindAndProtectedPlaybackRoutes(string name, string mime)
+    {
+        var attachment = new InternalMessageAttachmentDto { AttachmentId = Guid.NewGuid(), FileName = name };
+        InternalMessageAttachmentPresentation.Enrich(attachment);
+        Assert.Equal(HRM.Domain.Enums.Attachment.AttachmentMediaKind.Video, attachment.MediaKind);
+        Assert.False(attachment.IsImage);
+        Assert.Equal(mime, attachment.ContentType);
+        Assert.Equal(attachment.ContentUrl + "/video/info", attachment.VideoInfoUrl);
+        Assert.Equal(attachment.ContentUrl + "/video/playback", attachment.PlaybackUrl);
+        Assert.Equal(attachment.ContentUrl + "/video/poster", attachment.PosterUrl);
+    }
 }

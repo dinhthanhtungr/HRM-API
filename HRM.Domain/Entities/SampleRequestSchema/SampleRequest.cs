@@ -94,6 +94,7 @@ public partial class SampleRequest
 
     public virtual ICollection<QuotationLine> QuotationLines { get; set; } = [];
     public virtual ICollection<SampleRequestSampleTrial> SampleRequestSampleTrials { get; set; } = [];
+    public virtual ICollection<SampleRequestWorkflowEvent> WorkflowEvents { get; set; } = [];
 
     public virtual Employee? UpdatedByNavigation { get; set; }
     public virtual Employee? SendByNavigation { get; set; }

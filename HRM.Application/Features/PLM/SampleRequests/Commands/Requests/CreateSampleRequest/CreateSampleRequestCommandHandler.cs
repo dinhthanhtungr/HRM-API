@@ -53,7 +53,15 @@ internal sealed class CreateSampleRequestCommandHandler
             return OperationResult<Guid>.Fail("Current employee is invalid.");
         }
 
+        if (HRM.Application.Features.PLM.Shared.Rules.SemiFinishedRequestRules.IsSemiFinished(request.RequestType))
+            return OperationResult<Guid>.Fail("Hồ sơ bán thành phẩm chỉ được tạo từ lệnh NVL nội bộ.");
         var initialLabMessage = TrimToNull(request.InitialLabMessage);
+        var chipThenSample = request.ChipBeforeSample;
+        if (chipThenSample && (string.Equals(request.RequestType, "private", StringComparison.OrdinalIgnoreCase) ||
+            !SampleRequestCustomerPriceRules.IsColourSet(request.InfoType) || request.SampleQuantity is not > 0 ||
+            !double.IsFinite(request.SampleQuantity.Value) || request.SampleQuantity > 999999999 ||
+            !System.Text.RegularExpressions.Regex.IsMatch(request.InfoType ?? "", @"\(([1-9]|[12][0-9]|30)\)")))
+            return OperationResult<Guid>.Fail("Choose 1–30 chip sets and a positive sample quantity within range.");
         if (!string.Equals(request.RequestType, "private", StringComparison.OrdinalIgnoreCase) &&
             !HRM.Application.Features.PLM.SampleRequests.Rules.SampleRequestCustomerPriceRules.IsQuotation(request.InfoType) &&
             !HRM.Application.Features.PLM.SampleRequests.Rules.SampleRequestCustomerPriceRules.IsColourSet(request.InfoType))
@@ -93,7 +101,7 @@ internal sealed class CreateSampleRequestCommandHandler
         }
 
         // Persist the request and its summary together; notification transport is not part of success.
-        await using var transaction = await _dbContext.BeginTransactionAsync(cancellationToken);
+        await using var transaction = request.UseExistingTransaction ? null : await _dbContext.BeginTransactionAsync(cancellationToken);
         var productResult = await ResolveProductIdAsync(
             request,
             currentCompanyId,
@@ -191,6 +199,11 @@ internal sealed class CreateSampleRequestCommandHandler
         var createdEvent = SampleRequestCustomerPriceAudit.CreateWorkflowMarker(
             sampleRequestId, currentCompanyId, currentUserId, DateTime.Now, initialStatus);
         _dbContext.SampleRequestWorkflowEvents.Add(createdEvent);
+        if (chipThenSample)
+            _dbContext.SampleRequestWorkflowEvents.Add(SampleRequestWorkflowEvents.Create(sampleRequestId,
+                currentCompanyId, currentUserId, DateTime.Now,
+                HRM.Application.Features.PLM.SampleRequests.Services.Workflow.SampleFlowRules.ChipThenSampleRequested,
+                note: $"{request.InfoType}; {request.SampleQuantity} kg."));
         var summary = initialLabMessage ?? BuildLabSummaryMessage(externalId, request);
         // Match the former workflow dispatcher limit for server-generated fallback summaries.
         if (summary.Length > MaxInitialLabMessageLength)
@@ -212,7 +225,7 @@ internal sealed class CreateSampleRequestCommandHandler
         var stored = await _sender.Send(initialMessage, cancellationToken);
         if (!stored.Success || stored.Data is null)
         {
-            await transaction.RollbackAsync(cancellationToken);
+            if (transaction is not null) await transaction.RollbackAsync(cancellationToken);
             return OperationResult<Guid>.Fail(stored.Message ?? "Could not save the initial summary.");
         }
         // Suppressed internal requests deliberately have no conversation/message or notification job.
@@ -224,7 +237,7 @@ internal sealed class CreateSampleRequestCommandHandler
                 _dbContext, createdEvent, initialMessage);
         }
         await _dbContext.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
+        if (transaction is not null) await transaction.CommitAsync(cancellationToken);
 
         return OperationResult<Guid>.Ok(sampleRequestId, "Created sample request successfully.");
     }

@@ -19,19 +19,22 @@ internal sealed class UpdateDeliveryOrderCommandHandler
     private readonly DeliveryOrderLotInventoryService _inventoryService;
     private readonly DeliveryWarehouseRequestService _warehouseRequests;
     private readonly DeliveryOrderFulfillmentService _fulfillment;
+    private readonly HRM.Application.Features.PLM.SaleOrders.DeliverySchedules.DeliveryScheduleFulfillmentService? _schedules;
 
     public UpdateDeliveryOrderCommandHandler(
         IDispatchWriteDbContext dbContext,
         ICurrentUser currentUser,
         DeliveryOrderLotInventoryService inventoryService,
         DeliveryWarehouseRequestService warehouseRequests,
-        DeliveryOrderFulfillmentService fulfillment)
+        DeliveryOrderFulfillmentService fulfillment,
+        HRM.Application.Features.PLM.SaleOrders.DeliverySchedules.DeliveryScheduleFulfillmentService? schedules = null)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
         _inventoryService = inventoryService;
         _warehouseRequests = warehouseRequests;
         _fulfillment = fulfillment;
+        _schedules = schedules;
     }
 
     public async Task<OperationResult<Guid>> Handle(
@@ -267,6 +270,11 @@ internal sealed class UpdateDeliveryOrderCommandHandler
             });
         }
 
+        if (_schedules is not null)
+        {
+            var allocation = await _schedules.AllocateAsync(deliveryOrder, request.Lines, companyId, employeeId, now, cancellationToken);
+            if (!allocation.Success) return OperationResult<Guid>.Fail(allocation.Message!);
+        }
         if (!await _warehouseRequests.SyncPendingAsync(deliveryOrder, cancellationToken, requestedLines))
             return OperationResult<Guid>.Fail("Không thể đồng bộ xuất kho: PRQ đã xử lý, có nhiều PRQ liên kết hoặc phiếu thiếu mã liên kết.");
         await _dbContext.SaveChangesAsync(cancellationToken);

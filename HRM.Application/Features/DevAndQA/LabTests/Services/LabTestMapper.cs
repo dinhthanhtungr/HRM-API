@@ -16,7 +16,7 @@ internal static class LabTestMapper
         x.TemplateVersion, x.CreatedDate, x.CreatedBy, x.UpdatedDate, x.UpdatedBy,
         x.Results.OrderBy(r => r.SortOrder).ThenBy(r => r.Id).Select(r => new LabTestResultDto(r.Id,
             r.EvaluationStandardId, r.CriterionCode, r.CriterionName, r.CriterionNameEn,
-            Configuration(r), r.Value, r.ObservedText, r.AttachmentCollectionId)).ToList());
+            Configuration(r), r.Value, null, r.AttachmentCollectionId)).ToList());
 
     public static LabTestResult Snapshot(EvaluationTemplateItem x, Guid parent, bool fromTemplate) => new()
     {

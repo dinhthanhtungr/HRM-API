@@ -26,8 +26,6 @@ public class LabTestResult
     public int SortOrder { get; set; }
     /// <summary>Giá trị đo dạng scalar; kiểu Attachment dùng nhóm tệp, không dùng Value.</summary>
     public string? Value { get; set; }
-    /// <summary>Quan sát dạng khoảng/ghi chú từ file nguồn; không suy thành số đo hoặc pass/fail.</summary>
-    public string? ObservedText { get; set; }
     public Guid? AttachmentCollectionId { get; set; }
     public LabTest LabTest { get; set; } = null!;
     public EvaluationStandard? EvaluationStandard { get; set; }

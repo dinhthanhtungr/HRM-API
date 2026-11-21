@@ -124,7 +124,7 @@ public sealed class ManufacturingStockActionTests
         Assert.Equal(ManufacturingFormulaOrigin.Improvement, options[0].Origin);
         Assert.True(options[0].RequiresFormulaReview);
         Assert.Equal(ManufacturingFormulaOrigin.Standard, options[1].Origin);
-        Assert.False(options[1].RequiresFormulaReview);
+        Assert.True(options[1].RequiresFormulaReview);
         Assert.Equal(f.Order.PlpuNote, options[0].PlpuNote);
         Assert.Equal(f.Order.LabNote, options[0].LabNote);
         Assert.Equal(f.Order.Requirement, options[0].Requirement);
@@ -223,7 +223,7 @@ public sealed class ManufacturingStockActionTests
             { MfgProductionOrderId = Order.MfgProductionOrderId, ProductionOrder = Order, Detail = Detail, IsActive = true });
             Store.Seed(nameof(Db.MerchandiseOrders), Sale);
             Store.Seed(nameof(Db.SchedualMfgs), Schedule);
-            Handler = new(Db, User, new CurrentUserPermissionService(User), new Clock(), Timeline);
+            Handler = new(Db, User, new CurrentUserPermissionService(User), new Clock(), Timeline, PromisedDeliveryTestFactory.Create(Db, User).Notifier);
         }
     }
     private sealed class Clock : IDateTimeProvider { public DateTime Now => new(2026, 10, 10, 12, 0, 0); }

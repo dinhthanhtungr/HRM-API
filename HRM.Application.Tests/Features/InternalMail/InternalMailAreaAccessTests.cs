@@ -215,7 +215,7 @@ public sealed partial class InternalMailAreaAccessTests
         Assert.DoesNotContain(areas, a => a.Code == "technical");
         Assert.True(Assert.Single(areas, a => a.Code == "pricing").CanCreate);
         dto.UnreadCount = 5;
-        Assert.Equal(5, Assert.Single(await new InternalMailAreaAccessService(store.Db, user).DescribeAsync(dto, default), a => a.Code == "general").UnreadCount);
+        Assert.Equal(3, Assert.Single(await new InternalMailAreaAccessService(store.Db, user).DescribeAsync(dto, default), a => a.Code == "general").UnreadCount);
     }
 
     [Theory]
@@ -386,6 +386,8 @@ public sealed partial class InternalMailAreaAccessTests
         if (member) child.Participants.Add(new() { EmployeeId = user.EmployeeId!.Value, IsActive = true });
         var db = DispatchProxy.Create<IInternalMailDbContext, MemoryStore>();
         var proxy = (MemoryStore)(object)db;
+        proxy.Values[nameof(db.QueryInternalMailNotificationLinks)] = new AsyncQuery<InternalMailNotificationLink>([]);
+        proxy.Values[nameof(db.QueryInternalConversationNotificationUnreadCounts)] = new AsyncQuery<InternalConversationNotificationUnreadCount>([]);
         proxy.Values[nameof(db.InternalConversations)] = new MemorySet<InternalConversation>([root, child]);
         proxy.Values[nameof(db.InternalMessages)] = new MemorySet<InternalMessage>([new() { InternalMessageId = Guid.NewGuid(), InternalConversationId = child.InternalConversationId, Conversation = child }]);
         return (db, root, child);
@@ -396,6 +398,38 @@ public sealed partial class InternalMailAreaAccessTests
         public Dictionary<string, object> Values { get; } = [];
         protected override object? Invoke(MethodInfo? method, object?[]? args)
         {
+            if (method!.Name == nameof(IInternalMailDbContext.QueryQuotationBadgeSuppressedNotificationIds))
+            {
+                IQueryable<T> Rows<T>(string name) where T : class => Values.TryGetValue(name, out var rows)
+                    ? (IQueryable<T>)rows : Array.Empty<T>().AsQueryable();
+                return new AsyncQuery<Guid>(QuotationBadgeNotificationQuery.Suppressed(
+                    Rows<InternalConversation>(nameof(IInternalMailDbContext.InternalConversations)),
+                    Rows<InternalMessage>(nameof(IInternalMailDbContext.InternalMessages)),
+                    Rows<Notification>(nameof(IInternalMailDbContext.Notifications)),
+                    Rows<NotificationUserState>(nameof(IInternalMailDbContext.NotificationUserStates)),
+                    Rows<InternalMailNotificationLink>(nameof(IInternalMailDbContext.QueryInternalMailNotificationLinks)),
+                    (Guid)args![0]!, (Guid)args[1]!));
+            }
+            if (method!.Name == nameof(IInternalMailDbContext.QueryLatestInternalMailBusinessEvents))
+            {
+                IQueryable<T> Rows<T>(string name) where T : class => Values.TryGetValue(name, out var rows)
+                    ? (IQueryable<T>)rows : Array.Empty<T>().AsQueryable();
+                var company = (Guid)args![0]!;
+                var ids = (Guid[])args[1]!;
+                var topics = (int[])args[2]!;
+                var conversations = Rows<InternalConversation>(nameof(IInternalMailDbContext.InternalConversations));
+                var events = from n in Rows<Notification>(nameof(IInternalMailDbContext.Notifications))
+                    join link in Rows<InternalMailNotificationLink>(nameof(IInternalMailDbContext.QueryInternalMailNotificationLinks)) on n.Id equals link.NotificationId
+                    join message in Rows<InternalMessage>(nameof(IInternalMailDbContext.InternalMessages))
+                        on new { link.ConversationId, link.MessageId }
+                        equals new { ConversationId = (Guid?)message.InternalConversationId, MessageId = (Guid?)message.InternalMessageId }
+                    where n.CompanyId == company && topics.Contains((int)n.Topic) && !message.IsDeleted && ids.Contains(message.InternalConversationId) &&
+                        conversations.Any(c => c.InternalConversationId == message.InternalConversationId && c.CompanyId == company)
+                    select new InternalMailBusinessEventRow { Id = n.Id, ConversationId = message.InternalConversationId,
+                        CreatedDate = n.CreatedDate, Topic = n.Topic };
+                return new AsyncQuery<InternalMailBusinessEventRow>(events.GroupBy(e => e.ConversationId)
+                    .Select(g => g.OrderByDescending(e => e.CreatedDate).ThenByDescending(e => e.Id).First()));
+            }
             if (Values.TryGetValue(method!.Name, out var configured)) return configured;
             if (method!.Name.StartsWith("get_"))
             {

@@ -83,6 +83,10 @@ namespace HRM.Application.Features.CRM.Quotations.Queries.GetQuotationById
                     QuotationDate = x.QuotationDate,
                     ValidUntil = x.ValidUntil,
                     SentDate = x.SentDate,
+                    LastSendRejectionAt = x.StatusHistories.Where(h => h.ToStatus == QuotationStatus.SendRejected)
+                        .OrderByDescending(h => h.ChangedDate).Select(h => (DateTime?)h.ChangedDate).FirstOrDefault(),
+                    LastSendRejectionReason = x.StatusHistories.Where(h => h.ToStatus == QuotationStatus.SendRejected)
+                        .OrderByDescending(h => h.ChangedDate).Select(h => h.Note).FirstOrDefault(),
                     PaymentTerms = x.PaymentTerms,
                     DeliveryTerms = x.DeliveryTerms,
                     Note = x.Note,

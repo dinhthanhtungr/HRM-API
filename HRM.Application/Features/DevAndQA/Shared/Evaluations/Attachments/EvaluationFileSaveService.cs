@@ -21,8 +21,8 @@ internal sealed partial class EvaluationFileSaveService(IEvaluationFileSaveDbCon
     {
         var company = access.Company(true);
         var employee = await access.EmployeeAsync(company, ct);
-        if (resource is not (EvaluationFileResource.Iqc or EvaluationFileResource.Coa))
-            throw new EvaluationRequestException("Chỉ kết quả IQC/COA được lưu tệp đính kèm.");
+        if (resource is not (EvaluationFileResource.Iqc or EvaluationFileResource.Coa or EvaluationFileResource.Lab))
+            throw new EvaluationRequestException("Chỉ kết quả IQC/COA/LabTest được lưu tệp đính kèm.");
         var bindings = request.Attachments ?? [];
         ValidateManifest(bindings, uploads);
         var paths = new List<string>();
@@ -105,6 +105,8 @@ internal sealed partial class EvaluationFileSaveService(IEvaluationFileSaveDbCon
 
     private static object RefreshCollectionIds(object record, List<EvaluationFileGroupDto> groups) => record switch
     {
+        HRM.Application.Features.DevAndQA.LabTests.Dtos.BasicLabTestDto lab =>
+            lab with { Results = lab.Results.Select(x => x with { AttachmentCollectionId = groups.Single(g => g.OwnerId == x.Id).AttachmentCollectionId }).ToList() },
         HRM.Application.Features.DevAndQA.CoaCertificates.Dtos.CoaCertificateDto coa =>
             coa with { Results = coa.Results.Select(x => x with { AttachmentCollectionId = groups.Single(g => g.OwnerId == x.Id).AttachmentCollectionId }).ToList() },
         _ => record

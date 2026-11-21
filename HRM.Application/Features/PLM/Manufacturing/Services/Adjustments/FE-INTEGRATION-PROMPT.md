@@ -68,7 +68,7 @@ RangeInput:
 - batchFrom, batchTo: số nguyên dương
 - trialNo?: số nguyên dương|null (null để BE chọn lần tiếp theo)
 - adjustmentType: 0=SetQuantity, 1=AddQuantity
-- status: 0=Draft, 1=Testing, 2=Accepted, 3=Rejected, 4=AppliedToNextBatch
+- status: 0=Draft, 1=Testing, 2=Accepted (legacy), 3=Rejected, 4=AppliedToNextBatch, 5=Approved. Lưu phiếu/lần chỉnh ghi Approved; vẫn đọc Accepted cũ.
 - takenQuantityGram?: number|null
 - applyToNextBatches: boolean
 - note?: string|null

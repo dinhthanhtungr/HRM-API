@@ -1,5 +1,9 @@
 # Delivery Orders
 
+- [Lịch giao nhiều đợt, phân bổ một dòng phiếu vào nhiều đợt và cờ tương thích](../../PLM/SaleOrders/DeliverySchedules/README.md). Mặc định tắt; không tạo migration hoặc thay DB. Source model được người dùng đồng bộ tại F:/Backend.
+
+- [Dashboard báo cáo giao hàng hoàn tất: quyền cá nhân/toàn công ty, nguồn Excel và contract](FINISH-DASHBOARD.md).
+
 ## Bắt đầu đọc module
 
 ### Kế hoạch giao hàng trên trang Đơn hàng
@@ -41,6 +45,34 @@ POST/PUT/PATCH lưu phiếu tự đồng bộ RealQuantity và trạng thái dò
 
 ## In PDF và xuất Excel từng phiếu
 
+### Mã và tên hiển thị từ Product
+
+GET `selectable-lines`, danh sách `delivery-orders` và detail `delivery-orders/{id}` bổ sung
+`lines[].productDisplayCode`/`productDisplayName`: Product.ColourCode/Name hiện tại qua ProductId,
+cùng company; hỗ trợ cả Product inactive của chứng từ lịch sử. Thiếu Product/khác company trả null,
+không dùng snapshot thay thế. Ví dụ rút gọn một dòng:
+
+```json
+{"productExternalId":"OLD","productName":"Tên đã lưu","productDisplayCode":"CURRENT","productDisplayName":"Tên hiện tại"}
+```
+
+`productExternalId` vẫn là mã snapshot để đối chiếu tồn/Lot và tương thích payload cũ; `productName`
+vẫn là tên snapshot legacy. FE chỉ dùng hai field display làm nhãn. Query projection lấy trực tiếp Product,
+không gọi riêng từng sản phẩm; quyền đọc, company, capability và che giá vốn giữ nguyên.
+
+Tên hiển thị trên danh sách/expand, detail và selectable-lines ưu tiên CustomerLabelDetail.FieldValue
+có FieldKey=Name (trim, không phân biệt hoa thường), detail/header active, Header.CustomerId + Header.ProductId
+khớp đúng khách hàng của phiếu/ĐHG và sản phẩm của dòng. Cả Customer và Product của header phải cùng company hiện tại.
+Tên rỗng/trắng hoặc không có nhãn hợp lệ thì giữ Product.Name hiện tại; không fallback snapshot.
+Nhiều header: ưu tiên UpdatedDate ?? CreatedDate mới nhất, rồi CreatedDate, Id header giảm dần,
+LineNo/Id detail tăng dần. Chọn Name không trống; không lấy màu hoặc tên của khách hàng khác.
+Query tên nhãn là subquery trong projection SQL hiện có, không gọi API/DB riêng cho từng dòng,
+không join làm nhân quantity/Lot hoặc đổi phân trang. Không thêm bảng/cột, không ghi Product/snapshot.
+FE căn giữa tên thành phẩm tại tạo/sửa, detail và expand; PDF căn giữa trong ô Tên SP, tự xuống dòng tên dài.
+Tìm kiếm danh sách nhận cả mã/tên hiện tại và snapshot; selectable-lines giữ quy tắc phân nhánh keyword hiện hành,
+nhánh tìm tổng quát nhận thêm tên Product hiện tại. Đổi nguồn hiển thị không sửa snapshot trong DB,
+không đổi ProductId, lượng, Lot/reserve hay dữ liệu các báo cáo tổng hợp/kế hoạch giao hàng khác.
+
 - `GET /api/v1/dispatch/delivery-orders/{id}/pdf`: file PDF A4, bảng hàng, tổng kg/bao và ô ký nhận.
 - `GET /api/v1/dispatch/delivery-orders/{id}/excel`: file XLSX một sheet `Phieu giao hang`, có filter,
   cố định hàng tiêu đề, số lượng/ngày là dữ liệu typed, thiết lập in A4 ngang.
@@ -52,7 +84,12 @@ POST/PUT/PATCH lưu phiếu tự đồng bộ RealQuantity và trạng thái dò
   Phiếu đã hủy còn active vẫn xuất được để đối chiếu; Excel hiển thị status, PDF giữ mẫu legacy không có ô status.
 - Cả hai định dạng dùng cùng `DeliveryOrderDocumentQuery` và DTO riêng không chứa giá vốn/giá giao;
   SQL không đọc `UnitCostSnapshot`, `TotalCostSnapshot`, `DeliveryPrice` ở bất kỳ role nào.
-- Thông tin phiếu, địa chỉ nhận, product là dữ liệu/snapshot đã lưu trên phiếu/dòng;
+- Tên sản phẩm trên PDF, Excel và POST in dùng cùng ưu tiên LabelDetail Name theo customerId/productId ở trên,
+  fallback `Product.Name`. Mã màu tiếp tục lấy trực tiếp `Product.ColourCode`
+  qua ProductId của dòng, cùng company với phiếu; kể cả Product đã ngừng hoạt động.
+  Thiếu Product hoặc Product khác company trả null/hiển thị trống, không fallback snapshot.
+  Đổi tên/mã Product sẽ đổi các lần xem/in sau, kể cả phiếu cũ; không sửa dữ liệu snapshot đã lưu.
+- Thông tin phiếu, địa chỉ nhận là dữ liệu/snapshot đã lưu trên phiếu/dòng;
   tên khách hàng, đơn vị phát hành và người giao lấy từ danh mục hiện tại; phone dùng snapshot, fallback customer.Phone khi trống. Ngày in hiển thị là
   **ngày tạo phiếu** trong Excel. PDF theo nhãn legacy: `Ngày tạo/Create Date` là ngày xuất file trên server,
   `Ngày giao (Delivery date)` lấy ngày tạo phiếu đã lưu, không phải ngày xác nhận giao xong. Thiếu ngày đã lưu thì để trống.
@@ -301,3 +338,21 @@ POST tạo, PUT và PATCH lưu phiếu tính RealQuantity của từng dòng DHG
 Đồng bộ trong cùng transaction với phiếu/PRQ. PUT đồng bộ cả DHG cũ bị bỏ khỏi phiếu; lưu lại nội dung giống hệt vẫn đồng bộ nhưng không tạo dòng lịch sử mới. Cancel/DELETE tính lại sau khi loại phiếu, không trừ theo HasPrinted. In lại không cộng lượng. Các điều kiện sửa Pending chưa in và hủy chưa in giữ nguyên.
 
 Phiếu cũ chưa in được tính khi một phiếu liên quan cùng DHG được lưu/hủy/xóa; không có backfill toàn database. RealQuantity trên DHG chịu tác động được đồng bộ theo các phiếu còn hiệu lực, không giữ lượng chỉnh tay không có phiếu nguồn. FE refresh DHG sau POST/PUT/PATCH thành công; status phiếu giao vẫn theo lifecycle riêng, không tự chuyển Completed và không xuất kho thực tế.
+## Theo dõi lệnh giao dành cho IMS
+
+Báo cáo hoàn thành giao hàng tại `/api/v1/dispatch/reports/finish-dashboard`
+yêu cầu `reports.delivery-finish.view` cho IMS. Chỉ dùng dòng đơn bán active
+cùng khách và công ty, loại khách nội bộ, khách inactive, đơn nội bộ và dòng
+đính kèm. Doanh thu không được tính và trả `null`. Lô, số PO và ghi chú trả
+`null`. Số lượng vẫn dùng ngày tạo phiếu theo quy ước của báo cáo.
+
+`GET /api/v1/dispatch/delivery-orders/tracking` trả danh sách tối đa 25 lệnh
+mỗi trang. `GET /api/v1/dispatch/delivery-orders/{id}/tracking` trả đầu lệnh
+và dòng hàng. Hai API yêu cầu `dispatch.delivery.tracking.view`, ngữ cảnh
+nhân viên/công ty và khách active cùng công ty. Khách nội bộ bị loại.
+
+Đầu lệnh gồm mã, tên khách, ngày tạo và trạng thái vận hành. Chi tiết gồm
+mã/tên và lượng của dòng active liên kết đơn bán active cùng công ty/cùng
+khách. Bỏ dòng đính kèm và đơn nội bộ. API không tải cước, thanh toán, ghi chú,
+lô hoặc công thức. API lệnh giao đầy đủ và các bản in/xuất yêu cầu tài khoản
+không mang hạn chế IMS. Token explicit cần role claim và refresh sau khi cấp.

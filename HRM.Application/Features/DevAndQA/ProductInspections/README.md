@@ -50,3 +50,14 @@ PATCH có semantics:
 ## PDF
 
 PDF dùng dữ liệu kết quả từ `ProductInspection`, thông số chuẩn từ `ProductStandard` và loại bao bì từ `ProductTest`. `templateOnly=true` giữ toàn bộ dòng kiểm tra nhưng để trống cột kết quả. Mẫu `COA-LG` hoặc bao bì có tên Long Giang dùng header/footer Long Giang.
+
+
+## Tìm kiếm gợi ý cho trang danh sách
+
+Danh sách kiểm sản phẩm gợi ý mã kiểm, lô, mã/tên sản phẩm trong công ty hiện tại.
+
+Contract tùy chọn `searchSelections`/`suggestionKeyword`, OR/AND badge, giới hạn 10 và hướng dẫn thêm field: [Searching](../../../Commons/Searching/README.md). Không mở rộng quyền hoặc áp dụng tự động cho lookup.
+
+## Theo dõi COA thành phẩm cho IMS
+
+IMSUser xem danh sách và đầu phiếu theo công ty hiện tại, gồm mã phiếu, sản phẩm, lô, khối lượng, ngày sản xuất, hạn dùng và kết quả duyệt giao hàng. Chi tiết kỹ thuật, tiêu chuẩn, ghi chú, API nguồn tạo phiếu, PDF và thao tác ghi chỉ dành cho luồng đầy đủ.

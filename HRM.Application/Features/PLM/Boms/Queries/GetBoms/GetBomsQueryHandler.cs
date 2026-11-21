@@ -30,18 +30,7 @@ internal sealed class GetBomsQueryHandler
             return [];
         }
 
-        var keyword = request.Keyword?.Trim();
-
-        return await _dbContext.BomDefinitions
-            .AsNoTracking()
-            .Where(x =>
-                x.CompanyId == companyId &&
-                x.BomType == request.BomType &&
-                x.IsActive &&
-                (!request.ProductId.HasValue || x.ProductId == request.ProductId) &&
-                (string.IsNullOrEmpty(keyword) ||
-                 EF.Functions.ILike(x.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
-                 EF.Functions.ILike(x.Name, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter)))
+        return await BomSearchQueryRules.Build(_dbContext, companyId, request.ProductId, request.BomType, request.Keyword, request, out _)
             .OrderBy(x => x.ExternalId)
             .Select(x => new BomListItemDto
             {

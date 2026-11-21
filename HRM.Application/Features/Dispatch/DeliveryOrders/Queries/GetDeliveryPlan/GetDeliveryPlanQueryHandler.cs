@@ -10,13 +10,14 @@ using HRM.Application.Features.PLM.SaleOrders.Dtos;
 using HRM.Application.Features.PLM.SaleOrders.Services;
 using HRM.Application.Abstractions.Persistence.CRM.CustomerCare;
 using HRM.Application.Features.CRM.CustomerCare.Visibility;
+using HRM.Application.Features.CRM.CustomerCare.Services.Search;
 
 namespace HRM.Application.Features.Dispatch.DeliveryOrders.Queries.GetDeliveryPlan;
 
 /// <summary>Kế hoạch PO theo ngày hứa MFG muộn nhất; giữ đơn đã giao đúng ngày và đơn quá hạn còn thiếu.</summary>
 internal sealed class GetDeliveryPlanQueryHandler(
     IDispatchReadDbContext db, ICurrentUser user, IDateTimeProvider clock, DeliveryPlanReadModel readModel,
-    ICustomerVisibilityService customerVisibility, ICustomerVisibilityReadDbContext customerDb)
+    ICustomerVisibilityService customerVisibility, ICustomerVisibilityReadDbContext customerDb, DeliverySchedulePlanService? schedules = null)
     : IRequestHandler<GetDeliveryPlanQuery, OperationResult<DeliveryPlanResponseDto>>
 {
     public async Task<OperationResult<DeliveryPlanResponseDto>> Handle(GetDeliveryPlanQuery request, CancellationToken ct)
@@ -40,7 +41,8 @@ internal sealed class GetDeliveryPlanQueryHandler(
         }
         var query = DeliveryPlanSourceQuery.Project(orders, db.MfgOrderPOs.AsNoTracking(),
             db.DeliveryOrderDetails.AsNoTracking(), companyId, db.Employees.AsNoTracking());
-        query = ForDate(query, date, request.IncludeOverdue, request.IncludeAllOrders);
+        query = schedules is null ? ForDate(query, date, request.IncludeOverdue, request.IncludeAllOrders)
+            : schedules.Filter(query, companyId, date, request.IncludeOverdue, request.IncludeAllOrders);
         if (request.CustomerId is { } customerId && customerId != Guid.Empty)
             query = query.Where(x => x.CustomerId == customerId);
         if (request.Progress.HasValue)
@@ -50,20 +52,35 @@ internal sealed class GetDeliveryPlanQueryHandler(
                 DeliveryPlanProgress.PartiallyDelivered => query.Where(x => x.RemainingQuantity > 0m && x.DeliveredQuantity > 0m),
                 _ => query.Where(x => x.RemainingQuantity > 0m && x.DeliveredQuantity <= 0m)
             };
-        if (request.NormalizedKeyword is { } keyword)
+        var smartSearch = HRM.Application.Commons.Searching.SmartSearch.For(query, fields => [
+            fields.Code("saleOrderCode", x => x.ExternalId, "Mã đơn hàng", "Order code"),
+            fields.Code("purchaseOrderNumber", x => x.PONo, "Số PO", "PO"),
+            fields.Name("customerName", x => x.CustomerName, "Tên KH", "Customer name"),
+            fields.CustomerTaxNumber(x => customerDb.Customers.Where(c => c.CustomerId == x.CustomerId && c.CompanyId == companyId)
+                .Select(c => c.TaxNumber).FirstOrDefault())
+        ]);
+        query = smartSearch.ApplyRequest(query, request.NormalizedKeyword, request, out var smartKeyword);
+        if (smartKeyword is { } keyword)
         {
             var pattern = PostgresSearchPattern.ContainsLiteral(keyword);
             query = query.Where(x => EF.Functions.ILike(x.ExternalId, pattern, PostgresSearchPattern.EscapeCharacter) ||
                 EF.Functions.ILike(x.PONo, pattern, PostgresSearchPattern.EscapeCharacter) ||
-                EF.Functions.ILike(x.CustomerName, pattern, PostgresSearchPattern.EscapeCharacter));
+                EF.Functions.ILike(x.CustomerName, pattern, PostgresSearchPattern.EscapeCharacter) ||
+                customerDb.Customers.Any(c => c.CompanyId == companyId && c.CustomerId == x.CustomerId &&
+                    EF.Functions.ILike(c.TaxNumber ?? "", pattern, PostgresSearchPattern.EscapeCharacter)));
         }
+        if (await smartSearch.SuggestionsAsync<DeliveryPlanItemDto>(query, request, ct) is { } suggestions)
+            return OperationResult<DeliveryPlanResponseDto>.Ok(new DeliveryPlanResponseDto(date, request.IncludeOverdue, suggestions, request.IncludeAllOrders));
         var count = await query.CountAsync(ct);
         var rows = await query.OrderByDescending(x => x.ExternalId).ThenByDescending(x => x.Id)
             .Skip((request.NormalizedPageNumber - 1) * request.NormalizedPageSize).Take(request.NormalizedPageSize).ToListAsync(ct);
         var linesByOrder = rows.Count == 0 ? new Dictionary<Guid, List<DeliveryPlanLineDto>>()
             : await readModel.LoadAsync(rows.Select(x => x.Id).ToArray(), companyId, ct);
         var now = clock.Now;
-        var items = rows.Select(row => Map(row, linesByOrder.GetValueOrDefault(row.Id) ?? [], date, now)).ToArray();
+        var scheduleDates = schedules is null ? new Dictionary<Guid, DateOnly?>()
+            : await schedules.NextPromisesAsync(rows.Select(x => x.Id).ToArray(), companyId, ct);
+        var items = rows.Select(row => Map(row, linesByOrder.GetValueOrDefault(row.Id) ?? [], date, now,
+            scheduleDates.ContainsKey(row.Id), scheduleDates.GetValueOrDefault(row.Id))).ToArray();
         return OperationResult<DeliveryPlanResponseDto>.Ok(new DeliveryPlanResponseDto(date, request.IncludeOverdue,
             new PagedResult<DeliveryPlanItemDto>(items, count, request.NormalizedPageNumber, request.NormalizedPageSize), request.IncludeAllOrders));
     }
@@ -83,9 +100,11 @@ internal sealed class GetDeliveryPlanQueryHandler(
     private static DateOnly Today(DateTime now)
         => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(now, TimeZoneInfo.FindSystemTimeZoneById("Asia/Bangkok")));
 
-    internal static DeliveryPlanItemDto Map(DeliveryPlanSource row, IReadOnlyList<DeliveryPlanLineDto> lines, DateOnly date, DateTime now)
+    internal static DeliveryPlanItemDto Map(DeliveryPlanSource row, IReadOnlyList<DeliveryPlanLineDto> lines, DateOnly date, DateTime now,
+        bool hasSchedule = false, DateOnly? scheduledPromise = null)
     {
         DateOnly? promised = row.PromisedDate is { } promisedDate ? DateOnly.FromDateTime(promisedDate) : null;
+        if (hasSchedule) promised = scheduledPromise;
         var remaining = lines.Sum(x => x.RemainingQuantity);
         var delivered = lines.Sum(x => x.DeliveredQuantity);
         var orderStatus = new SaleOrderListItemDto

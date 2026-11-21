@@ -25,7 +25,15 @@ internal sealed class PLPUAccountingHeaderReader(IReportReadDbContext reports, I
         if (query.MaterialId is { } material) orders = orders.Where(p => p.PurchaseOrderDetails.Any(d => d.IsActive && d.MaterialId == material));
         if (!string.IsNullOrWhiteSpace(query.Status)) orders = orders.Where(p => p.Status == query.Status);
         if (!string.IsNullOrWhiteSpace(query.OrderType)) orders = orders.Where(p => p.OrderType == query.OrderType);
-        orders = orders.WhereKeyword(query.Keyword, term => p =>
+        var search = SmartSearch.For(orders, f => [
+            f.Code("purchaseOrderCode", p => p.ExternalId, "Mã đơn mua", "Purchase order code"),
+            f.Code("supplierCode", p => p.Supplier != null && p.Supplier.CompanyId == company ? p.Supplier.ExternalId : "", "Mã NCC", "Supplier code"),
+            f.Name("supplierName", p => p.Supplier != null && p.Supplier.CompanyId == company ? p.Supplier.SupplierName : "", "Tên NCC", "Supplier name"),
+            f.Codes("materialCode", p => p.PurchaseOrderDetails.Where(d => d.IsActive), d => d.MaterialExternalIDSnapshot, "Mã NVL", "Material code"),
+            f.Names("materialName", p => p.PurchaseOrderDetails.Where(d => d.IsActive), d => d.MaterialNameSnapshot, "Tên NVL", "Material name")
+        ]);
+        orders = search.ApplyRequest(orders, query.Keyword, query, out var keyword);
+        orders = orders.WhereKeyword(keyword, term => p =>
             (p.ExternalId ?? "").Contains(term.Value)
             || p.PurchaseOrderSnapshot != null && (p.PurchaseOrderSnapshot.SupplierNameSnapshot ?? "").Contains(term.Value)
             || p.PurchaseOrderDetails.Any(d => d.IsActive && ((d.MaterialExternalIDSnapshot ?? "").Contains(term.Value)

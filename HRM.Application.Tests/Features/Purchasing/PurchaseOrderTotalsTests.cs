@@ -139,6 +139,39 @@ public sealed class PurchaseOrderTotalsTests
         Assert.True(store.Transaction.Committed);
     }
 
+    [Theory]
+    [InlineData(false, true, "Chi Vy")]
+    [InlineData(true, true, "Primary Contact")]
+    [InlineData(true, false, "Chi Vy")]
+    public async Task CreatePersistsTheActiveContactShownBySupplierLookup(bool primary, bool active, string expected)
+    {
+        var db = DispatchProxy.Create<IPurchaseOrderDbContext, CreateStore>();
+        var store = (CreateStore)db;
+        var user = new IqcWorkflowTests.User { Roles = ["Purchaser"] };
+        var supplier = new Supplier { SupplierId = Guid.NewGuid(), CompanyId = user.CompanyId, IsActive = true,
+            SupplierContacts = [
+                new() { ContactId = Guid.Parse("00000000-0000-0000-0000-000000000003"), FirstName = "Later", LastName = "Contact", IsActive = true },
+                new() { ContactId = Guid.Parse("00000000-0000-0000-0000-000000000001"), FirstName = "Primary", LastName = "Contact", IsPrimary = primary, IsActive = active },
+                new() { ContactId = Guid.Parse("00000000-0000-0000-0000-000000000000"), FirstName = "Hidden", IsPrimary = true, IsActive = false },
+                new() { ContactId = Guid.Parse("00000000-0000-0000-0000-000000000002"), FirstName = "Chi", LastName = "Vy", IsActive = true }
+            ] };
+        if (!primary) supplier.SupplierContacts.Single(x => x.FirstName == "Primary").IsActive = false;
+        var material = new Material { MaterialId = Guid.NewGuid(), CompanyId = user.CompanyId!.Value, IsActive = true };
+        store.Seed(nameof(db.Suppliers), supplier);
+        store.Seed(nameof(db.Materials), material);
+        store.Seed(nameof(db.Employees), new HRM.Domain.Entities.HrSchema.Employee { EmployeeId = user.EmployeeId!.Value, CompanyId = user.CompanyId });
+        var handler = new CreatePurchaseOrderCommandHandler(db, user, new CurrentUserPermissionService(user), new Ids(), new Clock());
+        var result = await handler.Handle(new(new CreatePurchaseOrderRequest { SupplierId = supplier.SupplierId, OrderType = "NCC", RequestDeliveryDate = new(2026, 11, 17),
+            Items = [new() { MaterialId = material.MaterialId, Quantity = 1, UnitPriceAgreed = 1 }] }), default);
+        Assert.True(result.Success, result.Message);
+        var saved = Assert.Single(store.Added.OfType<PurchaseOrder>());
+        var snapshot = Assert.Single(store.Added.OfType<PurchaseOrderSnapshot>());
+        Assert.Equal(snapshot.PurchaseOrderSnapshotId, saved.PurchaseOrderSnapshotId);
+        Assert.Equal(expected, snapshot.SupplierContactSnapshot);
+        Assert.Equal(expected, result.Data!.SupplierContact);
+        Assert.True(store.Transaction.Committed);
+    }
+
     private sealed class Ids : IExternalIdService
     {
         public Task<string> GenerateGlobalCodeAsync(Guid companyId, string prefix, CancellationToken ct = default) => Task.FromResult("DDH-TEST");

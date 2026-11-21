@@ -1,5 +1,19 @@
 # Lệnh sản xuất mẫu VU
 
+## Theo dõi dành cho IMS
+
+`GET /api/v1/plm/sample-production-orders/tracking` và
+`GET /api/v1/plm/sample-production-orders/{id}/tracking` dùng quyền
+`plm.sample-production-order.tracking.view`. List có tối đa 25 lệnh mỗi trang.
+Chỉ đọc lệnh liên kết theo đúng công thức và TP của một hồ sơ mẫu đang đọc được
+trong cùng công ty. Nếu nhiều hồ sơ khớp thì dùng hồ sơ được tạo gần nhất, với
+ID làm tiêu chí phụ. Lệnh không có liên kết đủ căn cứ hoặc có liên kết active
+đến hồ sơ ngoài phạm vi nằm ngoài kết quả.
+
+Các trường gồm ID lệnh, mã và ID yêu cầu mẫu, mã/tên TP, tổng lượng lưu trên
+lệnh, ngày tạo và trạng thái rút gọn. Tổng lượng `null` khi chưa ghi. Không
+trả mã/tên công thức, NVL, giá, số mẻ, ghi chú hoặc dữ liệu QC chi tiết.
+
 Feature quản lý lệnh sản xuất mẫu lưu tại
 `SampleRequests.ManufacturingVUFormula`. Mỗi lệnh tham chiếu một `Formula` VU và giữ
 snapshot vật tư trong `SampleRequests.FormulaMaterialSnapshots`.
@@ -103,3 +117,10 @@ nhận và footer biểu mẫu. PDF không hiển thị giá vật tư. Nếu sn
 công ty để hiển thị; thao tác export không ghi ngược dữ liệu vào database.
 
 Feature hiện không publish notification và không thay đổi SignalR/Web Push.
+
+
+## Tìm kiếm gợi ý cho trang danh sách
+
+Danh sách lệnh sản xuất mẫu gợi ý công thức, ColorCode, tên sản phẩm và TP liên quan.
+
+Contract tùy chọn `searchSelections`/`suggestionKeyword`, OR/AND badge, giới hạn 10 và hướng dẫn thêm field: [Searching](../../../Commons/Searching/README.md). Không mở rộng quyền hoặc áp dụng tự động cho lookup.

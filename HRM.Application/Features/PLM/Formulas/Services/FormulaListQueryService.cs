@@ -5,6 +5,8 @@ using HRM.Application.Features.PLM.Formulas.Queries.GetFormulas;
 using HRM.Application.Features.PLM.Shared.Authorization;
 using HRM.Domain.Enums.Products;
 using Microsoft.EntityFrameworkCore;
+using HRM.Application.Features.CRM.CustomerCare.SampleSharingGroups;
+using HRM.Application.Features.PLM.Shared.Rules;
 
 namespace HRM.Application.Features.PLM.Formulas.Services;
 
@@ -16,15 +18,17 @@ public sealed class FormulaListQueryService
     private readonly IPLMReadDbContext _dbContext;
     private readonly IPLMFieldVisibilityService _fieldVisibility;
     private readonly ICurrentUser _currentUser;
+    private readonly CustomerSampleSharingService _sampleSharing;
 
     public FormulaListQueryService(
         IPLMReadDbContext dbContext,
         IPLMFieldVisibilityService fieldVisibility,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser, CustomerSampleSharingService sampleSharing)
     {
         _dbContext = dbContext;
         _fieldVisibility = fieldVisibility;
         _currentUser = currentUser;
+        _sampleSharing = sampleSharing;
     }
 
     public async Task<FormulaList> GetAsync(
@@ -41,22 +45,38 @@ public sealed class FormulaListQueryService
         }
 
         var canViewFormulaPrices = _fieldVisibility.CanViewFormulaPrices();
+        var isSharedSource = false;
+        if (request.IsMerchadiseOrder && _sampleSharing.Enabled)
+        {
+            if (request.CustomerId is not { } customerId || customerId == Guid.Empty) return new FormulaList();
+            var owners = await _sampleSharing.ResolveOwnerIdsAsync(companyId, customerId, cancellationToken);
+            if (owners is null) return new FormulaList();
+            var code = await _dbContext.Customers.AsNoTracking().Where(x => x.CustomerId == customerId && x.CompanyId == companyId)
+                .Select(x => x.ExternalId).FirstOrDefaultAsync(cancellationToken);
+            if (!PLMCustomerRules.CanUseAllCustomersFormula(request.OrderType, PLMCustomerRules.IsInternalCustomerExternalId(code)))
+            {
+                var eligible = await _sampleSharing.EligibleProductsAsync(companyId, owners, [productId], cancellationToken);
+                if (eligible.Length == 0) return new FormulaList();
+                var own = await _sampleSharing.EligibleProductsAsync(companyId, [customerId], [productId], cancellationToken);
+                if (own.Length == 0) { canViewFormulaPrices = false; isSharedSource = true; }
+            }
+        }
 
         if (request.IsMerchadiseOrder)
         {
-            return new FormulaList
-            {
-                FormulaDevs = await GetFormulaDevsAsync(
+            var devs = await GetFormulaDevsAsync(
                     request,
                     productId,
                     companyId,
                     canViewFormulaPrices,
                     maxItemsPerGroup,
-                    cancellationToken)
-            };
+                    cancellationToken);
+            if (isSharedSource)
+                foreach (var formula in devs) { formula.Note = string.Empty; formula.CreatedByName = null; }
+            return new FormulaList { FormulaDevs = devs };
         }
 
-        return new FormulaList
+        var result = new FormulaList
         {
             FormulaSelects = await GetFormulaSelectsAsync(
                 request,
@@ -80,6 +100,10 @@ public sealed class FormulaListQueryService
                 maxItemsPerGroup,
                 cancellationToken)
         };
+        var sent = result.FormulaDevs.Where(x => x.Status == FormulaStatus.SampleSent.ToString()).ToArray();
+        var kinds = await FormulaLastDeliveryReader.ReadAsync(_dbContext, companyId, sent.Select(x => x.Id).ToArray(), cancellationToken);
+        foreach (var formula in sent) formula.LastDeliveryKind = kinds.GetValueOrDefault(formula.Id);
+        return result;
     }
 
     private async Task<Guid> ResolveProductIdAsync(

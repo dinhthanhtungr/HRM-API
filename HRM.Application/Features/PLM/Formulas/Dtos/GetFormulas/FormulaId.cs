@@ -8,6 +8,7 @@ namespace HRM.Application.Features.PLM.Formulas.Dtos.GetFormulas
         public string ExternalId { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
         public string Status { get; set; } = string.Empty;
+        public string? LastDeliveryKind { get; set; }
         public string Note { get; set; } = string.Empty;
         public string? CreatedByName { get; set; }
         public decimal? Price { get; set; }

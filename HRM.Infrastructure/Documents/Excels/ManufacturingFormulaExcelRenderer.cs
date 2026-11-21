@@ -21,8 +21,11 @@ namespace HRM.Infrastructure.Documents.Excels
             ws.Cell(1, 5).Value = "Mã NVL";
             ws.Cell(1, 6).Value = "Detail";
             ws.Cell(1, 7).Value = "Số std";
+            var includePrices = rows.Any(x => x.UnitPrice.HasValue);
+            var columns = includePrices ? 8 : 7;
+            if (includePrices) ws.Cell(1, 8).Value = "Đơn giá lưu trên VA (VND/kg)";
 
-            var header = ws.Range(1, 1, 1, 7);
+            var header = ws.Range(1, 1, 1, columns);
             header.Style.Font.Bold = true;
             header.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
             header.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
@@ -43,11 +46,12 @@ namespace HRM.Infrastructure.Documents.Excels
                 ws.Cell(row, 5).SetValue(r.MaterialCode ?? "");
                 ws.Cell(row, 6).SetValue(r.Detail ?? "");
                 ws.Cell(row, 7).SetValue(r.StdQuantity);
+                if (includePrices && r.UnitPrice.HasValue) ws.Cell(row, 8).SetValue(r.UnitPrice.Value);
             }
 
             // Border toàn bảng
             var lastRow = Math.Max(1, rows.Count + 1);
-            var table = ws.Range(1, 1, lastRow, 7);
+            var table = ws.Range(1, 1, lastRow, columns);
             table.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
             table.Style.Border.InsideBorder = XLBorderStyleValues.Thin;
             table.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
@@ -65,6 +69,7 @@ namespace HRM.Infrastructure.Documents.Excels
 
             // Format số std
             ws.Column(7).Style.NumberFormat.Format = "0.0000000";
+            if (includePrices) { ws.Column(8).Style.NumberFormat.Format = "#,##0.##"; ws.Column(8).Width = 30; }
 
             // AutoFit: chỉ auto-fit các cột ngắn
             ws.Columns(1, 5).AdjustToContents(); // TP..Mã NVL

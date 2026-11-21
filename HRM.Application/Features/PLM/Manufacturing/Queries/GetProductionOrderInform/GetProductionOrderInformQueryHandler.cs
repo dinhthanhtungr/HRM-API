@@ -58,6 +58,7 @@ internal sealed class GetProductionOrderInformQueryHandler(ISender sender, IManu
             && permissions.HasPermission(ApplicationPermissions.PLM.ManageManufacturingFormulas);
         var canMaterials = visibility.CanViewFormulaMaterials();
         var actions = ManufacturingEditorPolicy.Actions(order.Status, canManage, canMaterials, workspace.Data.CanCreateFormula, canEditFormula);
+        var formulaEditLock = await ManufacturingAccess.FormulaEditLockAsync(db, order, ct);
         var sources = new List<ProductionOrderFormulaSourceDto>();
         var selectedId = workspace.Data.Order.ManufacturingFormulaIdIsSelect;
         if (canMaterials)
@@ -82,9 +83,11 @@ internal sealed class GetProductionOrderInformQueryHandler(ISender sender, IManu
             EditableFields = actions.Length > 0
                 ? (canManage ? ManufacturingEditorPolicy.HeaderFields : ManufacturingEditorPolicy.FormulaNoteFields)
                     .Where(x => x != "formulaNote" || canEditFormula && canMaterials && selectedId.HasValue)
-                    .Where(x => x != "requirement" || permissions.HasPermission(ApplicationPermissions.PLM.EditProductionOrderRequirement)).ToArray()
+                    .Where(x => x != "requirement" || permissions.HasPermission(ApplicationPermissions.PLM.EditProductionOrderRequirement))
+                    .Where(x => formulaEditLock is null || x is not ("totalQuantity" or "numOfBatches")).ToArray()
                 : [],
-            CanEditItems = actions.Length > 0 && canMaterials,
+            CanEditItems = actions.Length > 0 && canMaterials && formulaEditLock is null,
+            FormulaEditLockReason = formulaEditLock,
             ReadOnlyReason = actions.Length > 0 ? null : "Không có quyền, thiếu liên kết active hoặc trạng thái chưa được nhận diện.",
             StepOptions = ManufacturingEditorPolicy.Steps, FormulaSources = sources
         });

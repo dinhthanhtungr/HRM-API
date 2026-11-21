@@ -21,7 +21,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace HRM.Application.Features.InternalMail.Commands.SendMessage;
 
-internal sealed class SendInternalMessageCommandHandler
+internal sealed partial class SendInternalMessageCommandHandler
     : IRequestHandler<SendInternalMessageCommand, OperationResult<SendInternalMessageResultDto>>
 {
     private const int MaxBodyLength = 2000;
@@ -36,6 +36,8 @@ internal sealed class SendInternalMessageCommandHandler
     private readonly IImageThumbnailGenerator _thumbnailGenerator;
     private readonly InternalMailMentionResolver _mentions;
     private readonly SampleRequestNotificationAudienceResolver _audience;
+    private readonly IVideoMediaService? _videoMedia;
+    private readonly List<(Guid Id, string Path)> _videoFiles = [];
 
     public SendInternalMessageCommandHandler(
         IInternalMailDbContext dbContext,
@@ -46,7 +48,8 @@ internal sealed class SendInternalMessageCommandHandler
         IImageThumbnailGenerator thumbnailGenerator,
         InternalMailAreaAccessService areas,
         InternalMailMentionResolver mentions,
-        SampleRequestNotificationAudienceResolver audience)
+        SampleRequestNotificationAudienceResolver audience,
+        IVideoMediaService? videoMedia = null)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
@@ -57,11 +60,16 @@ internal sealed class SendInternalMessageCommandHandler
         _thumbnailGenerator = thumbnailGenerator;
         _mentions = mentions;
         _audience = audience;
+        _videoMedia = videoMedia;
     }
 
-    public async Task<OperationResult<SendInternalMessageResultDto>> Handle(
+    public Task<OperationResult<SendInternalMessageResultDto>> Handle(
+        SendInternalMessageCommand request, CancellationToken cancellationToken)
+        => HandleCoreAsync(request, cancellationToken);
+
+    private async Task<OperationResult<SendInternalMessageResultDto>> HandleCoreAsync(
         SendInternalMessageCommand request,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, bool researchTransaction = false)
     {
         var body = request.Body?.Trim() ?? string.Empty;
         var attachments = request.Attachments ?? Array.Empty<AttachmentUploadFile>();
@@ -78,6 +86,9 @@ internal sealed class SendInternalMessageCommandHandler
         {
             return OperationResult<SendInternalMessageResultDto>.Fail(attachmentValidationError);
         }
+
+        if (request.AreaCode == InternalMailAreaAccessService.ResearchArea)
+            return await SendResearchAsync(request, cancellationToken);
 
         var companyId = _currentUser.CompanyId;
         var senderId = _currentUser.EmployeeId;
@@ -99,6 +110,18 @@ internal sealed class SendInternalMessageCommandHandler
         var group = (await _areas.GroupInfoAsync([conversation.InternalConversationId], cancellationToken))[conversation.InternalConversationId];
         if (request.AreaCode is not null && request.AreaCode != InternalMailAreaAccessService.AreaOf(group.GroupType))
             return OperationResult<SendInternalMessageResultDto>.Fail("The selected area does not match this conversation.");
+        if (!researchTransaction && conversation.RelatedExternalId == InternalMailAreaAccessService.ResearchMarker)
+        {
+            var selectedId = request.ConversationId;
+            var selectedArea = request.AreaCode;
+            try
+            {
+                request.ConversationId = group.RootConversationId;
+                request.AreaCode = InternalMailAreaAccessService.ResearchArea;
+                return await SendResearchAsync(request, cancellationToken);
+            }
+            finally { request.ConversationId = selectedId; request.AreaCode = selectedArea; }
+        }
         var businessContext = group.RootConversationId != conversation.InternalConversationId
             ? await _dbContext.InternalConversations.AsNoTracking().FirstAsync(c => c.InternalConversationId == group.RootConversationId &&
                 c.CompanyId == companyId.Value && c.IsActive, cancellationToken)
@@ -127,6 +150,52 @@ internal sealed class SendInternalMessageCommandHandler
             .Select(x => new { x.EmployeeId, x.IsMuted })
             .ToListAsync(cancellationToken);
 
+        var defaultSampleAudience = !InternalMailAreaAccessService.IsPrivateArea(conversation.RelatedType) &&
+            businessContext.RelatedType == InternalMailRelatedType.SampleRequest && businessContext.RelatedId.HasValue
+                ? await _audience.ResolveAsync(companyId.Value, businessContext.RelatedId.Value,
+                    TopicNotifications.SampleRequestMessageCreated, cancellationToken)
+                : null;
+        var eligibleTeamIds = defaultSampleAudience is null ? [] : await allowedRecipients
+            .Where(id => defaultSampleAudience.Contains(id)).ToArrayAsync(cancellationToken);
+        var storedParticipants = defaultSampleAudience is null ? [] : await _dbContext.InternalConversationParticipants.AsTracking()
+            .Where(p => p.InternalConversationId == conversation.InternalConversationId)
+            .ToListAsync(cancellationToken);
+        var needsTeamSync = eligibleTeamIds.Any(id => !storedParticipants.Any(p => p.EmployeeId == id)) ||
+            storedParticipants.Any(p => p.IsActive && p.Role == InternalConversationParticipantRole.Watcher && eligibleTeamIds.Contains(p.EmployeeId));
+        await using var teamTransaction = needsTeamSync && !request.HasGroupTransaction
+            ? await _dbContext.BeginTransactionAsync(cancellationToken) : null;
+        if (defaultSampleAudience is not null)
+        {
+            // Existing root threads may predate team-wide delivery. Enroll only newly eligible
+            // team recipients during the send; never revive an explicitly removed participant.
+            if (needsTeamSync)
+            {
+                await _dbContext.LockInternalConversationAsync(companyId.Value, conversation.InternalConversationId, cancellationToken);
+                storedParticipants = await _dbContext.InternalConversationParticipants.AsTracking()
+                    .Where(p => p.InternalConversationId == conversation.InternalConversationId)
+                    .ToListAsync(cancellationToken);
+            }
+            foreach (var participant in storedParticipants.Where(p => p.IsActive &&
+                p.Role == InternalConversationParticipantRole.Watcher && eligibleTeamIds.Contains(p.EmployeeId)))
+            {
+                participant.Role = InternalConversationParticipantRole.Member;
+                participant.IsMuted = false;
+                var index = participants.FindIndex(p => p.EmployeeId == participant.EmployeeId);
+                if (index >= 0) participants[index] = new { participant.EmployeeId, IsMuted = false };
+            }
+            foreach (var id in eligibleTeamIds.Except(storedParticipants.Select(p => p.EmployeeId)))
+            {
+                await _dbContext.InternalConversationParticipants.AddAsync(new InternalConversationParticipant
+                {
+                    InternalConversationId = conversation.InternalConversationId,
+                    EmployeeId = id,
+                    JoinedAt = _dateTimeProvider.Now,
+                    Role = InternalConversationParticipantRole.Member
+                }, cancellationToken);
+                participants.Add(new { EmployeeId = id, IsMuted = false });
+            }
+        }
+
         var now = _dateTimeProvider.Now;
         var mentionResult = await _mentions.ResolveAsync(companyId.Value, conversation.InternalConversationId,
             request.IsForwarded ? [] : request.MentionedEmployeeIds, cancellationToken);
@@ -134,7 +203,7 @@ internal sealed class SendInternalMessageCommandHandler
             return OperationResult<SendInternalMessageResultDto>.Fail(mentionResult.Message!);
         var mentions = mentionResult.Data!;
         var mentionedIds = mentions.Select(m => m.EmployeeId).Where(id => id != senderId.Value).ToArray();
-        var messageId = Guid.CreateVersion7();
+        var messageId = request.UploadMessageId ?? Guid.CreateVersion7();
         var payload = new InternalMailNotificationPayload
         {
             ConversationId = conversation.InternalConversationId,
@@ -206,11 +275,7 @@ internal sealed class SendInternalMessageCommandHandler
                 .Where(x => x.EmployeeId == senderId.Value)
                 .Select(x => x.FullName)
                 .FirstOrDefaultAsync(cancellationToken);
-            var defaultIds = !InternalMailAreaAccessService.IsPrivateArea(conversation.RelatedType) &&
-                businessContext.RelatedType == InternalMailRelatedType.SampleRequest && businessContext.RelatedId.HasValue
-                ? await _audience.ResolveAsync(companyId.Value, businessContext.RelatedId.Value,
-                    TopicNotifications.SampleRequestMessageCreated, cancellationToken)
-                : participants.Select(p => p.EmployeeId).ToArray();
+            var defaultIds = defaultSampleAudience ?? participants.Select(p => p.EmployeeId).ToArray();
             var targetUserIds = participants
                 .Where(x => x.EmployeeId != senderId.Value &&
                     (((InternalMailAreaAccessService.IsPrivateArea(conversation.RelatedType) || !x.IsMuted) &&
@@ -233,7 +298,8 @@ internal sealed class SendInternalMessageCommandHandler
                 Message = string.IsNullOrWhiteSpace(body) ? $"{attachments.Count} attachment(s)" : body,
                 Link = $"/internal-mail/conversations/{conversation.InternalConversationId}",
                 AggregateId = businessContext.RelatedId,
-                AggregateCode = conversation.RelatedExternalId,
+                AggregateCode = conversation.RelatedExternalId == InternalMailAreaAccessService.ResearchMarker
+                    ? businessContext.RelatedExternalId : conversation.RelatedExternalId,
                 ConversationId = conversation.InternalConversationId,
                 MessageId = messageId,
                 PayloadJson = message.PayloadJson,
@@ -241,6 +307,13 @@ internal sealed class SendInternalMessageCommandHandler
             }, cancellationToken);
 
             if (notificationId == Guid.Empty) await _dbContext.SaveChangesAsync(cancellationToken);
+            if (teamTransaction is not null) await teamTransaction.CommitAsync(cancellationToken);
+            if (_videoMedia is not null)
+                foreach (var video in _videoFiles)
+                {
+                    try { await _videoMedia.QueueAsync(video.Id, video.Path, CancellationToken.None); }
+                    catch (IOException) { /* Metadata request có thể đưa lại job vào hàng đợi. */ }
+                }
 
             return OperationResult<SendInternalMessageResultDto>.Ok(new SendInternalMessageResultDto
             {
@@ -335,6 +408,7 @@ internal sealed class SendInternalMessageCommandHandler
             savedPaths.Add(storagePath);
 
             var attachmentId = Guid.CreateVersion7();
+            if (AttachmentMediaRules.IsVideoFile(file.FileName)) _videoFiles.Add((attachmentId, storagePath));
             if (file.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
             {
                 var storedOriginal = await _fileStorage.OpenReadAsync(storagePath, cancellationToken);

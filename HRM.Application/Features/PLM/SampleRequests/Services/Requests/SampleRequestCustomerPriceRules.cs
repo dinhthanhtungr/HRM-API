@@ -1,5 +1,4 @@
 using HRM.Domain.Entities.SampleRequestSchema;
-using HRM.Domain.Enums.SampleRequests;
 
 namespace HRM.Application.Features.PLM.SampleRequests.Rules;
 
@@ -21,7 +20,8 @@ public static class SampleRequestCustomerPriceRules
     public static bool IsBlocked(SampleRequest request) =>
         string.Equals(request.Status, "WaitingCustomerPriceConfirmation", StringComparison.OrdinalIgnoreCase);
     public static string ResolveSubmittedStatus(string initialStatus, string? infoType) =>
-        IsColourSet(infoType) ? SampleRequestStatus.InProgress.ToString() : initialStatus;
+        // Loại yêu cầu không được bỏ qua điều kiện đủ tên và mã màu.
+        initialStatus;
 
     public static string ResolveStatusAfterPriceEvent(string currentStatus, bool revoke) =>
         !revoke && string.Equals(currentStatus, "WaitingCustomerPriceConfirmation", StringComparison.OrdinalIgnoreCase)
@@ -29,6 +29,9 @@ public static class SampleRequestCustomerPriceRules
 
     public static string? ValidateStatusPatch(string currentStatus, string? requestedStatus)
     {
+        if (string.Equals(currentStatus, "LabDeclined", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(requestedStatus?.Trim(), "LabDeclined", StringComparison.OrdinalIgnoreCase))
+            return "Use the Lab refusal or additional-work action to change a Lab-declined request.";
         if (requestedStatus is null || string.Equals(currentStatus, requestedStatus.Trim(), StringComparison.OrdinalIgnoreCase)) return null;
         if (string.Equals(requestedStatus.Trim(), "WaitingCustomerPriceConfirmation", StringComparison.OrdinalIgnoreCase) ||
             (string.Equals(currentStatus, "WaitingCustomerPriceConfirmation", StringComparison.OrdinalIgnoreCase) &&

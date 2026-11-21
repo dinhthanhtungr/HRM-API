@@ -9,6 +9,10 @@ namespace HRM.Application.Features.Notifications.Services;
 /// </summary>
 public interface INotificationService
 {
+    Task<NotificationStreamPageDto> GetSalesOrderStreamAsync(Guid? cursorId = null,
+        string direction = "initial", CancellationToken cancellationToken = default,
+        string streamKey = "sales-order-stream");
+
     /// <summary>
     /// Tạo notification, dòng audit người nhận, trạng thái inbox của user và outbox realtime.
     /// </summary>

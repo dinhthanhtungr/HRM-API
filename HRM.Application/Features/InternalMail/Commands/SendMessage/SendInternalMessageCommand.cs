@@ -17,10 +17,16 @@ public sealed class SendInternalMessageCommand : IRequest<OperationResult<SendIn
     public IReadOnlyList<Guid> MentionedEmployeeIds { get; set; } = Array.Empty<Guid>();
     public Guid? ReplyToMessageId { get; set; }
     public bool IsUrgent { get; set; }
+    [JsonIgnore]
+    internal Guid? UploadMessageId { get; set; }
 
     // Set only by the authorized forward handler; HTTP clients cannot bypass the normal body limit.
     [JsonIgnore]
     internal bool IsForwarded { get; init; }
+
+    // Trusted forward flow already owns the company/root transaction and lock.
+    [JsonIgnore]
+    internal bool HasGroupTransaction { get; init; }
 
     [JsonIgnore]
     internal IReadOnlyList<Guid> ForwardSourceConversationIds { get; init; } = Array.Empty<Guid>();

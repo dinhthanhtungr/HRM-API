@@ -31,7 +31,8 @@ internal sealed class PrintDeliveryOrderCommandHandler(
         if (order is null || order.Status is "Canceled" or "Cancelled")
             return OperationResult<DeliveryOrderFileDto>.Fail("Không tìm thấy phiếu giao hợp lệ để in.");
 
-        var document = await DeliveryOrderDocumentQuery.Project(read.DeliveryOrders.AsNoTracking(), request.Id, companyId)
+        var document = await DeliveryOrderDocumentQuery.Project(read.DeliveryOrders.AsNoTracking(), request.Id, companyId,
+            DeliveryCustomerLabelNames.Query(read.CustomerLabelDetails.AsNoTracking(), companyId))
             .SingleAsync(ct);
         await formulaDisplay.EnrichAsync(document, companyId, ct);
         // Render trong transaction: lỗi dựng PDF rollback HasPrinted; lượng giao đã được ghi nhận khi lưu.

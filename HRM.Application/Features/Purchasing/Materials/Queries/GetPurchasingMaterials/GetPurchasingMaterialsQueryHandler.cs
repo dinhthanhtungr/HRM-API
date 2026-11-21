@@ -23,7 +23,7 @@ internal sealed class GetPurchasingMaterialsQueryHandler(
         if (!user.IsAuthenticated || !(PurchaseOrderAccess.CanManage(permissions) || permissions.HasPermission(ApplicationPermissions.Purchasing.ManageCatalog)) || user.CompanyId is not { } companyId || companyId == Guid.Empty)
             throw new UnauthorizedAccessException("Không có quyền xem danh mục vật tư mua hàng.");
 
-        var query = PurchasingMaterialReadModel.Filter(db.Materials, companyId, request);
+        var query = PurchasingMaterialReadModel.Filter(db.Materials, companyId, request, includeKeyword: false);
         var canViewPrices = PurchaseOrderAccess.CanManage(permissions);
         var cutoff = clock.Now.AddDays(-request.NormalizedStaleAfterDays);
         if (request.PriceStatus.HasValue)
@@ -32,15 +32,13 @@ internal sealed class GetPurchasingMaterialsQueryHandler(
             if (!canViewPrices) throw new UnauthorizedAccessException("Không có quyền lọc theo giá NVL.");
             query = PurchasingMaterialPriceReview.Filter(query, companyId, cutoff, request.PriceStatus.Value);
         }
-        var total = await query.CountAsync(ct);
-        var items = await PurchasingMaterialReadModel.Order(query, request)
-            .Skip((request.NormalizedPageNumber - 1) * request.NormalizedPageSize)
-            .Take(request.NormalizedPageSize)
-            .Select(PurchasingMaterialReadModel.Summary(companyId)).ToListAsync(ct);
+        var (items, total, suggestions) = await PurchasingMaterialCatalogPage.ReadAsync(db, query, companyId, request, ct);
+        if (suggestions is not null)
+            return new([], 0, 1, 10) { SearchSuggestions = suggestions };
         foreach (var item in items) PurchasingMaterialReadModel.NormalizeAvailability(item);
         if (items.Count > 0 && PurchaseOrderAccess.CanManage(permissions))
         {
-            var ids = items.Select(x => x.MaterialId).ToArray();
+            var ids = items.Where(x => !x.IsSemiFinished).Select(x => x.MaterialId).ToArray();
             var purchasePrices = (await PurchasingMaterialLatestPriceQuery.PurchaseOrders(db, companyId, ids).ToListAsync(ct))
                 .ToDictionary(x => x.MaterialId);
             var supplierPrices = (await PurchasingMaterialLatestPriceQuery.Suppliers(db, companyId, ids).ToListAsync(ct))

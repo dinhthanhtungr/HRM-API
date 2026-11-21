@@ -12,6 +12,7 @@ using HRM.Domain.Enums.SampleRequests;
 using MediatR;
 using HRM.Application.Features.PLM.SampleRequests.Services.Requests;
 using Microsoft.EntityFrameworkCore;
+using HRM.Application.Features.CRM.CustomerCare.SampleSharingGroups;
 
 namespace HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestDetail;
 
@@ -23,19 +24,21 @@ internal sealed class GetSampleRequestDetailQueryHandler
     private readonly ICustomerVisibilityService _visibilityService;
     private readonly ICurrentUser _currentUser;
     private readonly ICurrentUserPermissionService _permissions;
+    private readonly CustomerSampleSharingService _sampleSharing;
 
     public GetSampleRequestDetailQueryHandler(
         IPLMReadDbContext dbContext,
         IPLMFieldVisibilityService fieldVisibility,
         ICustomerVisibilityService visibilityService,
         ICurrentUser currentUser,
-        ICurrentUserPermissionService permissions)
+        ICurrentUserPermissionService permissions, CustomerSampleSharingService sampleSharing)
     {
         _dbContext = dbContext;
         _fieldVisibility = fieldVisibility;
         _visibilityService = visibilityService;
         _currentUser = currentUser;
         _permissions = permissions;
+        _sampleSharing = sampleSharing;
     }
 
     public async Task<SampleRequestDetailDto?> Handle(
@@ -57,6 +60,7 @@ internal sealed class GetSampleRequestDetailQueryHandler
             detailScope = await HRM.Application.Features.PLM.SampleRequests.Services.SampleWorkPlanningVisibility.ForPlanningAsync(
                 detailScope, _currentUser, _dbContext.Employees, cancellationToken);
         string? saleOrderCustomerExternalId = null;
+        Guid[] sharedOwners = [];
 
         if (request.ForSaleOrder)
         {
@@ -85,6 +89,13 @@ internal sealed class GetSampleRequestDetailQueryHandler
             detailScope = canUseAllCustomersFormula
                 ? scope with { HasFullCustomerView = true, CanViewInternalCustomer = true }
                 : scope with { CanViewInternalCustomer = true };
+            if (_sampleSharing.Enabled)
+            {
+                var owners = await _sampleSharing.ResolveOwnerIdsAsync(scope.CompanyId, customerId, cancellationToken);
+                if (owners is null) return null;
+                sharedOwners = owners;
+                detailScope = detailScope with { HasFullCustomerView = true };
+            }
         }
 
         var sampleRequestSource = _dbContext.SampleRequests
@@ -120,6 +131,7 @@ internal sealed class GetSampleRequestDetailQueryHandler
                     : x.Status == completed) &&
                 (canUseAllCustomersFormula ||
                  x.CustomerId == request.CustomerId ||
+                 sharedOwners.Contains(x.CustomerId) ||
                  x.Customer.ExternalId == InternalCustomerRules.InternalCustomerExternalId));
         }
 
@@ -135,7 +147,7 @@ internal sealed class GetSampleRequestDetailQueryHandler
                 Hero = new SampleRequestDetailHeroDto
                 {
                     SampleRequestId = x.SampleRequestId,
-                    WorkflowMode = x.CreatedDate < HRM.Application.Features.PLM.SampleRequests.Services.Workflow.SampleFlowRules.StartsAt ? "Legacy" :
+                    WorkflowMode = (x.CreatedDate < HRM.Application.Features.PLM.SampleRequests.Services.Workflow.SampleFlowRules.StartsAt && !x.WorkflowEvents.Any(e => e.CompanyId == x.CompanyId && e.EventType == HRM.Application.Features.PLM.SampleRequests.Services.Workflow.SampleFollowUpRules.Started)) ? "Legacy" :
                         x.Customer.ExternalId == HRM.Application.Features.PLM.Shared.Rules.PLMCustomerRules.InternalCustomerExternalId ? "Internal" : "ChipAndSample",
                     ExternalId = x.ExternalId,
                     Status = x.Status,
@@ -236,7 +248,11 @@ internal sealed class GetSampleRequestDetailQueryHandler
             return null;
         }
 
-        var canViewFormulaPrices = _fieldVisibility.CanViewFormulaPrices();
+        var isSharedSource = request.ForSaleOrder && _sampleSharing.Enabled
+            && detail.QuickSummary.CustomerId != request.CustomerId
+            && sharedOwners.Contains(detail.QuickSummary.CustomerId)
+            && detail.Hero.CustomerExternalId != InternalCustomerRules.InternalCustomerExternalId;
+        var canViewFormulaPrices = !isSharedSource && _fieldVisibility.CanViewFormulaPrices();
 
         detail.Hero.CanDeactivate = _currentUser.IsAuthenticated &&
             _permissions.HasPermission(ApplicationPermissions.PLM.DeactivateSampleRequests) &&
@@ -259,6 +275,18 @@ internal sealed class GetSampleRequestDetailQueryHandler
             .ToListAsync(cancellationToken);
 
         detail.QuickSummary.DevelopmentFormulaCount = detail.FormulaLookups.Count;
+        if (isSharedSource)
+        {
+            // A sharing grant allows sample selection, not another customer's prices/requirements/files.
+            detail.Hero.CanDeactivate = false;
+            detail.Hero.ManagerByName = null;
+            detail.QuickSummary.ExpectedPrice = null;
+            detail.QuickSummary.AttachmentCollectionId = Guid.Empty;
+            detail.SampleRequestRequirement = new();
+            detail.TechnicalRequirement = new();
+            foreach (var formula in detail.FormulaLookups) formula.TotalPrice = null;
+            return detail;
+        }
 
         detail.Attachments = await _dbContext.AttachmentModels
             .AsNoTracking()

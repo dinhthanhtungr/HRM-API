@@ -4,6 +4,10 @@ using HRM.Application.Features.Work.MyTasks.Dtos;
 using HRM.Domain.Enums.WorkTaskEnums;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using HRM.Application.Commons.Searching;
+using HRM.Application.Abstractions.Persistence.CRM.CustomerCare;
+using HRM.Application.Features.CRM.CustomerCare.Visibility;
+using HRM.Domain.Entities.CustomerSchema;
 
 namespace HRM.Application.Features.Work.MyTasks.Queries.GetMyTasks;
 
@@ -16,10 +20,14 @@ internal sealed class GetMyTasksQueryHandler
     : IRequestHandler<GetMyTasksQuery, OperationResult<PagedResult<MyTaskDto>>>
 {
     private readonly MyTaskSupport _support;
+    private readonly ICustomerVisibilityReadDbContext _customerDb;
+    private readonly ICustomerVisibilityService _customerVisibility;
 
-    public GetMyTasksQueryHandler(MyTaskSupport support)
+    public GetMyTasksQueryHandler(MyTaskSupport support, ICustomerVisibilityReadDbContext customerDb, ICustomerVisibilityService customerVisibility)
     {
         _support = support;
+        _customerDb = customerDb;
+        _customerVisibility = customerVisibility;
     }
 
     public async Task<OperationResult<PagedResult<MyTaskDto>>> Handle(
@@ -34,7 +42,18 @@ internal sealed class GetMyTasksQueryHandler
 
         var query = request.Query;
         var today = _support.Now.Date;
-        var source = BuildFilteredDtoQuery(actorResult.Data, query, today);
+        var customers = _customerDb.Customers.AsNoTracking().Where(c => false);
+        if (query.SuggestionKeyword is not null || !string.IsNullOrWhiteSpace(query.NormalizedKeyword) ||
+            query.SearchSelections?.Contains("customerTaxNumber", StringComparison.Ordinal) == true)
+        {
+            var scope = await _customerVisibility.BuildReadScopeAsync(cancellationToken);
+            if (scope.CompanyId == actorResult.Data.CompanyId)
+                customers = _customerVisibility.ApplyCustomerVisibility(_customerDb.Customers.AsNoTracking(), scope)
+                    .Where(c => c.CompanyId == actorResult.Data.CompanyId);
+        }
+        var source = BuildFilteredDtoQuery(actorResult.Data, query, today, customers);
+        if (await MyTaskSmartSearch.Build(source, customers).SuggestionsAsync<MyTaskDto>(source, query, cancellationToken) is {} suggestions)
+            return OperationResult<PagedResult<MyTaskDto>>.Ok(suggestions);
         var total = await source.CountAsync(cancellationToken);
         var items = await ApplySort(source, query)
             .Skip((query.NormalizedPageNumber - 1) * query.NormalizedPageSize)
@@ -45,7 +64,7 @@ internal sealed class GetMyTasksQueryHandler
             new PagedResult<MyTaskDto>(items, total, query.NormalizedPageNumber, query.NormalizedPageSize));
     }
 
-    private IQueryable<MyTaskDto> BuildFilteredDtoQuery(MyTaskActor actor, MyTaskQuery query, DateTime today)
+    private IQueryable<MyTaskDto> BuildFilteredDtoQuery(MyTaskActor actor, MyTaskQuery query, DateTime today, IQueryable<Customer> customers)
     {
         IQueryable<MyTaskDto> source = query.SourceType switch
         {
@@ -56,14 +75,16 @@ internal sealed class GetMyTasksQueryHandler
                 .Concat(_support.ProjectTasks(ApplyTaskFilters(_support.BuildCustomerFollowUpTaskQuery(actor), query, today, false), today))
         };
 
-        if (!string.IsNullOrWhiteSpace(query.NormalizedKeyword))
+        source = MyTaskSmartSearch.Build(source, customers).ApplyRequest(source, query.NormalizedKeyword, query, out var smartKeyword);
+        if (!string.IsNullOrWhiteSpace(smartKeyword))
         {
-            var keyword = query.NormalizedKeyword;
+            var keyword = smartKeyword;
             source = source.Where(x =>
                 EF.Functions.ILike(x.Title, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
                 EF.Functions.ILike((x.Description ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
                 EF.Functions.ILike((x.CustomerName ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
-                EF.Functions.ILike((x.CustomerExternalId ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter));
+                EF.Functions.ILike((x.CustomerExternalId ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                customers.Any(c => c.CustomerId == x.CustomerId && EF.Functions.ILike(c.TaxNumber ?? "", PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter)));
         }
 
         return source;

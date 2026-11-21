@@ -37,6 +37,8 @@ public sealed class InternalConversationListItemDto
     public Guid? RelatedId { get; set; }
     public string? RelatedExternalId { get; set; }
     public Guid? LastMessageId { get; set; }
+    public string? RepresentativeTopicCode { get; set; }
+    public string? RepresentativeEventGroupCode { get; set; }
     public string? LastMessageBody { get; set; }
     public Guid? LastSenderEmployeeId { get; set; }
     public string? LastSenderName { get; set; }

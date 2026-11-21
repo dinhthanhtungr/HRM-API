@@ -65,13 +65,17 @@ internal static class InternalConversationReadScope
     }
 
     public static bool MatchesReadReceipt(
-        NotificationDto notification, Guid conversationId, IReadOnlySet<Guid> messageIds, DateTime readStartedAt)
+        NotificationDto notification, Guid conversationId, IReadOnlySet<Guid> messageIds, DateTime readStartedAt,
+        IReadOnlySet<Guid>? threadNotificationIds = null)
     {
         if (MatchesMessage(notification, conversationId, messageIds)) return true;
         // Pricing approval is a thread-level event: its publisher intentionally has no InternalMessage.
         if (notification.ConversationId != conversationId ||
             notification.Topic != TopicNotifications.QuotationPricingApproved ||
-            notification.MessageId.HasValue || notification.CreatedDate > readStartedAt ||
+            notification.MessageId.HasValue ||
+            (threadNotificationIds is not null
+                ? !threadNotificationIds.Contains(notification.Id)
+                : notification.CreatedDate > readStartedAt) ||
             string.IsNullOrWhiteSpace(notification.PayloadJson)) return false;
         try
         {

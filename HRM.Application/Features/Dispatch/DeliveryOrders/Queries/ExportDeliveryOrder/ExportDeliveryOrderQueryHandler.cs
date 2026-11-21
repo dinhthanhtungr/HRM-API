@@ -20,7 +20,8 @@ internal sealed class ExportDeliveryOrderQueryHandler(
             currentUser.CompanyId is not { } companyId || companyId == Guid.Empty)
             return null;
 
-        var document = await DeliveryOrderDocumentQuery.Project(db.DeliveryOrders.AsNoTracking(), request.Id, companyId)
+        var document = await DeliveryOrderDocumentQuery.Project(db.DeliveryOrders.AsNoTracking(), request.Id, companyId,
+            DeliveryCustomerLabelNames.Query(db.CustomerLabelDetails.AsNoTracking(), companyId))
             .SingleOrDefaultAsync(cancellationToken);
         if (document is null) return null;
         if (!request.Excel) await formulaDisplay.EnrichAsync(document, companyId, cancellationToken);

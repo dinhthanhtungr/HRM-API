@@ -167,9 +167,15 @@ internal sealed class PurchaseOrderWorkflowService(
         if (string.IsNullOrWhiteSpace(purchaseOrder.ExternalId))
             return OperationResult.Fail("Đơn mua hàng chưa có mã để liên kết với lệnh kho.");
 
+        if (await dbContext.WarehouseRequests.AnyAsync(item => item.CompanyId == actor.Value.CompanyId &&
+            item.IsActive && item.codeFromRequest == purchaseOrder.ExternalId && item.ReqType == WareHouseRequestType.ExportReturn &&
+            (item.ReqStatus == WarehouseRequestStatus.Pending || item.ReqStatus == WarehouseRequestStatus.Approved), cancellationToken))
+            return OperationResult.Fail("Yêu cầu xuất trả NCC chưa hoàn tất. Kho cần xử lý hoặc hủy yêu cầu trước khi hoàn tất ĐĐH.");
+
         var warehouseRequests = await dbContext.WarehouseRequests.Where(item =>
             item.CompanyId == actor.Value.CompanyId && item.codeFromRequest != null &&
-            item.codeFromRequest.Trim() == purchaseOrder.ExternalId!.Trim() && item.IsActive)
+            item.codeFromRequest.Trim() == purchaseOrder.ExternalId!.Trim() && item.IsActive &&
+            item.ReqType != WareHouseRequestType.ExportReturn)
             .ToListAsync(cancellationToken);
         if (warehouseRequests.Count == 0)
             return OperationResult.Fail("Không tìm thấy lệnh kho liên kết với đơn mua hàng.");

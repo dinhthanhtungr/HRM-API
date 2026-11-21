@@ -8,6 +8,8 @@ namespace HRM.Application.Features.Notifications.Dtos;
 /// </summary>
 public sealed class PublishNotificationRequest
 {
+    // Server-only opt-in for a personal task reminder. Validated against its sole owner recipient.
+    public Guid? PersonalReminderOwnerId { get; set; }
     // Server-owned audience policy; company Developer monitoring is always added. No public controller accepts this DTO.
     public bool UseExactAudience { get; set; }
     // Chỉ luồng chat người dùng bật cờ này; mute vẫn được kiểm tra lại khi dispatch.

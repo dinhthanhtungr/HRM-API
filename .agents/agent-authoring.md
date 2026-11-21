@@ -2,6 +2,8 @@
 
 Đọc file này khi tạo hoặc sửa `AGENTS.md` và `.agents/*`.
 
+Khi đổi trigger, nguồn chuẩn hoặc đường dẫn rule, đối chiếu và cập nhật [Bảng quản lý điều hướng](../docs/agents/README.md). Không bắt task thông thường đọc trang quản lý này.
+
 ## Nguyên Tắc
 
 - Root `AGENTS.md` là router kèm một nhóm nhỏ invariant an toàn; không bắt đọc mọi file con.

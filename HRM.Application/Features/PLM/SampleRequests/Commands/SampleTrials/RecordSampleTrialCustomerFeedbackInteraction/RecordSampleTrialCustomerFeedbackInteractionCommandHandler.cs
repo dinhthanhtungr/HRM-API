@@ -59,12 +59,23 @@ internal sealed class RecordSampleTrialCustomerFeedbackInteractionCommandHandler
             return OperationResult<Guid>.Fail("Current employee is not active in this company.");
         var scope = await _visibility.BuildScopeAsync(cancellationToken);
         var allowedOwners = SampleSaleWorkflowAccess.GetAllowedOwnerIds(_currentUser, _permissions, scope);
+        var companyWide = SampleSaleWorkflowAccess.HasCompanyWideAccess(_currentUser, scope);
         var parent = await _visibility.ApplySampleRequestVisibility(_dbContext.SampleRequests.AsNoTracking(), _dbContext.Customers.AsNoTracking(), scope)
-            .Where(x => x.SampleRequestId == command.SampleRequestId && x.CompanyId == companyId && x.IsActive && allowedOwners.Contains(x.ManagerBy))
+            .Where(x => x.SampleRequestId == command.SampleRequestId && x.CompanyId == companyId && x.IsActive && (companyWide || allowedOwners.Contains(x.ManagerBy)))
             .Select(x => new { x.CustomerId }).SingleOrDefaultAsync(cancellationToken);
         if (parent is null || !await _dbContext.SampleRequestSampleTrials.AsNoTracking().AnyAsync(x =>
                 x.SampleRequestSampleTrialId == command.SampleRequestSampleTrialId && x.SampleRequestId == command.SampleRequestId && x.IsActive, cancellationToken))
             return OperationResult<Guid>.Fail("Sample trial was not found or is outside your managed Sale scope.");
+
+        var paused = await _dbContext.SampleRequestWorkflowEvents.AsNoTracking()
+            .Where(x => x.CompanyId == companyId && x.SampleRequestId == command.SampleRequestId &&
+                (x.EventType == Services.Workflow.SampleRequestLabPauseRules.Rejected ||
+                 x.EventType == Services.Workflow.SampleRequestLabPauseRules.Resumed))
+            .OrderByDescending(x => x.RecordedAt).ThenByDescending(x => x.Id)
+            .Select(x => x.EventType == Services.Workflow.SampleRequestLabPauseRules.Rejected)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (paused)
+            return OperationResult<Guid>.Fail(Services.Workflow.SampleRequestLabPauseRules.PausedMessage);
 
         return await _sender.Send(new CreateSampleTrialInteractionCommand
         {

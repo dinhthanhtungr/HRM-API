@@ -5,11 +5,13 @@ using HRM.Domain.Entities.OrderSchema;
 using HRM.Domain.Entities.WarehouseSchema;
 using HRM.Domain.Entities.SampleRequestSchema;
 using Microsoft.EntityFrameworkCore;
+using HRM.Domain.Entities.PrintectSchema;
 
 namespace HRM.Application.Abstractions.Persistence.Dispatch;
 
 public interface IDispatchReadDbContext
 {
+    DbSet<CustomerLabelDetail> CustomerLabelDetails { get; }
     DbSet<Employee> Employees { get; }
     DbSet<DeliveryOrder> DeliveryOrders { get; }
     DbSet<DeliveryOrderDetail> DeliveryOrderDetails { get; }

@@ -52,7 +52,7 @@ internal static class WarehouseVoucherListQueryHelper
         GetWarehouseVouchersQuery request,
         IQueryable<WarehouseVoucherDetail> details,
         IQueryable<string> sampleProductColourCodes,
-        string? normalizedStatus)
+        string? normalizedStatus, bool includeKeyword = true, bool trackingOnly = false)
     {
         if (request.VoucherType.HasValue)
         {
@@ -85,13 +85,13 @@ internal static class WarehouseVoucherListQueryHelper
             query = query.Where(x => x.CreatedDate < request.ToDate.Value.Date.AddDays(1));
         }
 
-        if (request.NormalizedKeyword is not { } keyword) return query;
+        if (!includeKeyword || request.NormalizedKeyword is not { } keyword) return query;
 
         var pattern = PostgresSearchPattern.ContainsLiteral(keyword);
         return query.Where(x =>
             EF.Functions.ILike(x.VoucherCode, pattern, PostgresSearchPattern.EscapeCharacter) ||
             EF.Functions.ILike(x.RequestCode, pattern, PostgresSearchPattern.EscapeCharacter) ||
-            EF.Functions.ILike(x.RequestName, pattern, PostgresSearchPattern.EscapeCharacter) ||
+            (!trackingOnly && EF.Functions.ILike(x.RequestName, pattern, PostgresSearchPattern.EscapeCharacter)) ||
             EF.Functions.ILike(x.CodeFromRequest, pattern, PostgresSearchPattern.EscapeCharacter) ||
             details.Any(detail =>
                 detail.VoucherId == x.VoucherId &&

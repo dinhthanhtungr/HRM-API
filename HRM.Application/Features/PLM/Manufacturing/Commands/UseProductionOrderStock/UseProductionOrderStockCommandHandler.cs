@@ -13,6 +13,7 @@ using HRM.Domain.Enums.Logs;
 using HRM.Domain.Enums.Manufacturings;
 using HRM.Domain.Enums.Merchadises;
 using MediatR;
+using HRM.Application.Features.PLM.Manufacturing.Services.Notifications;
 using Microsoft.EntityFrameworkCore;
 
 namespace HRM.Application.Features.PLM.Manufacturing.Commands.UseProductionOrderStock;
@@ -23,7 +24,8 @@ internal sealed class UseProductionOrderStockCommandHandler(
     ICurrentUser user,
     ICurrentUserPermissionService permissions,
     IDateTimeProvider clock,
-    IEventLogWriter timeline
+    IEventLogWriter timeline,
+    PromisedDeliveryNotifier promisedDelivery
 ) : IRequestHandler<UseProductionOrderStockCommand, OperationResult>
 {
     public async Task<OperationResult> Handle(UseProductionOrderStockCommand command, CancellationToken ct)
@@ -91,6 +93,7 @@ internal sealed class UseProductionOrderStockCommandHandler(
             order.StepOfProduct = request.StepOfProduct;
             order.TotalQuantity = request.TotalQuantity;
             order.NumOfBatches = request.NumOfBatches;
+            var previousExpectedDate = order.ExpectedDate;
             order.ExpectedDate = request.ExpectedDate;
             PatchHelper.SetIfNotNull(request.PlpuNote, () => order.PlpuNote, v => order.PlpuNote = v);
             PatchHelper.SetIfNotNull(labNote, () => order.LabNote, v => order.LabNote = v);
@@ -144,6 +147,7 @@ internal sealed class UseProductionOrderStockCommandHandler(
             }
 
             await db.SaveChangesAsync(ct);
+            await promisedDelivery.PublishAsync(order.MfgProductionOrderId, order.ExternalId, previousExpectedDate, order.ExpectedDate, ct);
             await transaction.CommitAsync(ct);
             return OperationResult.Ok("Cập nhật lệnh dùng hàng tồn thành công.");
         }

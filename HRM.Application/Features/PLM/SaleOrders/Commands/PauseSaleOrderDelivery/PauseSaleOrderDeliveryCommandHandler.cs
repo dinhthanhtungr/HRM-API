@@ -51,23 +51,23 @@ internal sealed class PauseSaleOrderDeliveryCommandHandler
         PauseSaleOrderDeliveryCommand command,
         CancellationToken cancellationToken)
     {
-        if (!_currentUser.IsAuthenticated || !_currentUser.IsInAnyRole(ApplicationRoleSets.SaleOrderDelivery.Pausers))
+        if (!_currentUser.IsAuthenticated)
             return OperationResult<PauseSaleOrderDeliveryDto>.Fail("Bạn không có quyền tạm dừng giao hàng.");
         var employeeId = SaleOrderCurrentUserGuard.RequireEmployeeId(_currentUser);
         var companyId = SaleOrderCurrentUserGuard.RequireCompanyId(_currentUser);
         var request = command.Request;
 
         await using var transaction = await _dbContext.BeginTransactionAsync(cancellationToken);
-        var orders = _dbContext.MerchandiseOrders.AsQueryable();
-        if (!_currentUser.IsInAnyRole(ApplicationRoleSets.SaleOrderDelivery.CompanyPausers))
-        {
-            // Dùng đúng phạm vi danh sách timeline: Sale được tạm dừng đơn mình được xem.
-            var scope = await _visibility.BuildReadScopeAsync(cancellationToken);
-            if (scope.CompanyId != companyId || scope.EmployeeId != employeeId)
-                return OperationResult<PauseSaleOrderDeliveryDto>.Fail("Phạm vi khách hàng không hợp lệ.");
-            orders = _visibility.ApplyMerchandiseOrderVisibility(orders, _dbContext.Customers.AsNoTracking(), scope);
-        }
+        // Every actor uses the same record visibility as the timeline, including management.
+        var scope = await _visibility.BuildReadScopeAsync(cancellationToken);
+        if (scope.CompanyId != companyId || scope.EmployeeId != employeeId)
+            return OperationResult<PauseSaleOrderDeliveryDto>.Fail("Phạm vi khách hàng không hợp lệ.");
+        var orders = _visibility.ApplyMerchandiseOrderVisibility(
+            _dbContext.MerchandiseOrders.AsQueryable(), _dbContext.Customers.AsNoTracking(), scope);
         var order = await orders
+            // Visibility contains a no-tracking customer subquery. Override its query-wide
+            // tracking annotation so SaveChanges persists the mutation for scoped viewers.
+            .AsTracking()
             .FirstOrDefaultAsync(x => x.CompanyId == companyId && x.MerchandiseOrderId == request.MerchandiseOrderId && x.IsActive, cancellationToken);
         if (order is null)
         {
@@ -76,9 +76,9 @@ internal sealed class PauseSaleOrderDeliveryCommandHandler
         if (new[] { "Cancelled", "Canceled", "Delivered", "Completed" }.Contains(order.Status, StringComparer.OrdinalIgnoreCase))
             return OperationResult<PauseSaleOrderDeliveryDto>.Fail("Đơn đã hủy hoặc giao xong, không thể tạm dừng/mở lại.");
 
-        // A payment hold can only be released by management. Enforce this here so a Sale user cannot bypass the UI.
-        if (request.IsDeliveryPaused is false &&
-            order.IsDeliveryPaused &&
+        // Sale cannot alter an existing payment hold, including its type/date range,
+        // which could otherwise make the hold ineffective without explicitly resuming.
+        if (order.IsDeliveryPaused &&
             string.Equals(order.DeliveryPauseType, PaymentHoldPauseType, StringComparison.OrdinalIgnoreCase) &&
             IsSaleWithoutDebtReleasePermission())
         {
@@ -86,6 +86,7 @@ internal sealed class PauseSaleOrderDeliveryCommandHandler
                 "Đơn đang tạm dừng do công nợ. Sale không có quyền tiếp tục giao hàng.");
         }
 
+        var previousIsDeliveryPaused = order.IsDeliveryPaused;
         if (request.IsDeliveryPaused.HasValue)
         {
             PatchHelper.Set(request.IsDeliveryPaused.Value, () => order.IsDeliveryPaused, value => order.IsDeliveryPaused = value);
@@ -104,7 +105,7 @@ internal sealed class PauseSaleOrderDeliveryCommandHandler
 
         if (CanNotifySaleAboutPausedDelivery() && order.ManagerById != Guid.Empty && order.ManagerById != employeeId)
         {
-            await NotifySaleAboutPausedDeliveryAsync(order, cancellationToken);
+            await NotifySaleAboutPausedDeliveryAsync(order, previousIsDeliveryPaused, cancellationToken);
         }
 
         return OperationResult<PauseSaleOrderDeliveryDto>.Ok(new PauseSaleOrderDeliveryDto
@@ -132,7 +133,7 @@ internal sealed class PauseSaleOrderDeliveryCommandHandler
             && !_currentUser.IsInRole(AppRoles.Developer);
     }
 
-    private async Task NotifySaleAboutPausedDeliveryAsync(MerchandiseOrder order, CancellationToken cancellationToken)
+    private async Task NotifySaleAboutPausedDeliveryAsync(MerchandiseOrder order, bool previousIsDeliveryPaused, CancellationToken cancellationToken)
     {
         var leaderIds = await _dbContext.CustomerAssignments
             .AsNoTracking()
@@ -180,6 +181,7 @@ internal sealed class PauseSaleOrderDeliveryCommandHandler
                 customerId = order.CustomerId,
                 customerCode = order.CustomerExternalIdSnapshot,
                 customerName = order.CustomerNameSnapshot,
+                previousIsDeliveryPaused,
                 isDeliveryPaused = order.IsDeliveryPaused,
                 deliveryPausedFrom = order.DeliveryPausedFrom,
                 deliveryPausedTo = order.DeliveryPausedTo,

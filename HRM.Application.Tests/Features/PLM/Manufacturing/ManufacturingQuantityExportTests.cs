@@ -17,6 +17,45 @@ namespace HRM.Application.Tests.Features.PLM.Manufacturing;
 
 public sealed class ManufacturingQuantityExportTests
 {
+    [Theory]
+    [InlineData("Developer")]
+    [InlineData("President")]
+    public async Task PricedExcel_UsesStoredVaPriceAndNumericStd(string role)
+    {
+        var f = new Fixture();
+        f.User.Roles = [role];
+        f.Db.ManufacturingFormulaMaterials.Single().UnitPrice = 12345m;
+        var permissions = new CurrentUserPermissionService(f.User);
+        var handler = new HRM.Application.Features.PLM.Manufacturing.Queries.ExportManufacturingFormulaExcel.ExportManufacturingFormulaExcelQueryHandler(
+            f.Db, f.User, permissions, new PLMFieldVisibilityService(permissions), new ManufacturingFormulaExcelRenderer());
+        var result = await handler.Handle(new(f.Order.MfgProductionOrderId, true), default);
+        Assert.True(result.Success, result.Message);
+        using var workbook = new XLWorkbook(new MemoryStream(result.Data!));
+        Assert.Equal(12345m, workbook.Worksheet("Formula").Cell(2, 8).GetValue<decimal>());
+        Assert.Equal(.25m, workbook.Worksheet("Formula").Cell(2, 7).GetValue<decimal>());
+        f.Order.CompanyId = Guid.NewGuid();
+        Assert.False((await handler.Handle(new(f.Order.MfgProductionOrderId, true), default)).Success);
+    }
+
+    [Theory]
+    [InlineData("LabUser")]
+    [InlineData("PLPUUser")]
+    [InlineData("Admin")]
+    [InlineData("President-no-price")]
+    [InlineData("anonymous")]
+    public async Task PricedExcel_DeniesBeforeDatabaseAccess(string scenario)
+    {
+        var user = new ProductionOrderCreationTests.TestUser { Roles = [scenario] };
+        if (scenario == "anonymous") { user.Roles = ["Developer"]; user.IsAuthenticated = false; }
+        if (scenario == "President-no-price") {
+            user.Roles = ["President"]; user.HasExplicitPermissionSet = true;
+            user.Permissions = [ApplicationPermissions.PLM.ViewProductionOrders, ApplicationPermissions.PLM.ViewFormulaMaterials];
+        }
+        var permissions = new CurrentUserPermissionService(user);
+        var handler = new HRM.Application.Features.PLM.Manufacturing.Queries.ExportManufacturingFormulaExcel.ExportManufacturingFormulaExcelQueryHandler(
+            null!, user, permissions, new PLMFieldVisibilityService(permissions), null!);
+        Assert.False((await handler.Handle(new(Guid.NewGuid(), true), default)).Success);
+    }
     [Fact]
     public async Task Export_MultipliesRatioByTotalQuantityAndUsesCurrentMaterialName()
     {

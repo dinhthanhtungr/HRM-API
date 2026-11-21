@@ -9,9 +9,9 @@ internal static class SampleRequestWorkQueueAccess
         => user.IsAuthenticated && user.CompanyId.HasValue &&
            (user.IsInRole(ApplicationRoles.Admin) || (audience switch
            {
-               SampleRequestWorkAudience.Sale => user.IsInRole(ApplicationRoles.Sales.SaleUser),
-               SampleRequestWorkAudience.Lab => user.IsInRole(ApplicationRoles.Lab.LabUser) || user.IsInRole(ApplicationRoles.Lab.LabAdmin),
-               SampleRequestWorkAudience.LabAdmin => user.IsInRole(ApplicationRoles.Lab.LabAdmin),
+               SampleRequestWorkAudience.Sale => user.IsInAnyRole(ApplicationRoleSets.PLM.SampleSaleWorkReaders),
+               SampleRequestWorkAudience.Lab => user.IsInRole(ApplicationRoles.Developer) || user.IsInRole(ApplicationRoles.Lab.LabUser) || user.IsInRole(ApplicationRoles.Lab.LabAdmin),
+               SampleRequestWorkAudience.LabAdmin => user.IsInRole(ApplicationRoles.Developer) || user.IsInRole(ApplicationRoles.Lab.LabAdmin),
                _ => false
            }));
 }

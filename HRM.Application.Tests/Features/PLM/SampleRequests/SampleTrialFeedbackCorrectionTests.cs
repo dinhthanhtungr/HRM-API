@@ -29,7 +29,7 @@ public sealed class SampleTrialFeedbackCorrectionTests
     [InlineData("LabUser", false)]
     [InlineData("LabAdmin", false)]
     [InlineData("Admin", false)]
-    [InlineData("Developer", false)]
+    [InlineData("Developer", true)]
     public async Task CapabilityIsSeparateFromTechnicalAndAdministrativeRoles(string role, bool allowed)
     {
         var user = new User(role);
@@ -56,7 +56,7 @@ public sealed class SampleTrialFeedbackCorrectionTests
         Assert.NotNull(SampleTrialFeedbackCorrectionRules.Validate(new(2026, 11, 2), null, new string('a', 5001)));
         Assert.Null(SampleTrialFeedbackCorrectionRules.Validate(new(2026, 11, 2), new(2026, 11, 2, 15, 0, 0), null));
         Assert.DoesNotContain(typeof(CorrectSampleTrialFeedbackCommand).GetProperties(), x =>
-            x.Name is "Status" or "CustomerReplyStatus" or "FormulaId" or "SentDate");
+            x.Name is "CustomerReplyStatus" or "FormulaId" or "SentDate");
     }
 
     [Fact]
@@ -131,7 +131,7 @@ public sealed class SampleTrialFeedbackCorrectionTests
         {
             "BuildScopeAsync" or "BuildReadScopeAsync" => Task.FromResult(new ViewerScope(_user.CompanyId!.Value,
                 _user.EmployeeId!.Value, true, false, new HashSet<Guid>(), new HashSet<Guid>(), DateTime.Now)),
-            "ApplySampleRequestVisibility" => args![0],
+            "ApplySampleRequestVisibility" or "ApplyCustomerVisibility" => args![0],
             _ => throw new NotSupportedException(method.Name)
         };
     }

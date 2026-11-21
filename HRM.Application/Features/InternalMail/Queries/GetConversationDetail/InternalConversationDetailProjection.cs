@@ -10,9 +10,10 @@ internal static class InternalConversationDetailProjection
 {
     public static Expression<Func<InternalConversation, InternalConversationDetailDto>> ForEmployee(Guid employeeId,
         IQueryable<InternalMessage>? visibleMessages = null,
-        IQueryable<InternalConversation>? conversations = null)
+        IQueryable<InternalConversation>? conversations = null,
+        bool includeLegacyUnread = true)
     {
-        if (visibleMessages is null) return UnscopedForEmployee(employeeId);
+        if (visibleMessages is null) return UnscopedForEmployee(employeeId, includeLegacyUnread);
         var parents = conversations ?? visibleMessages.Select(message => message.Conversation);
         return x => new InternalConversationDetailDto
         {
@@ -27,9 +28,9 @@ internal static class InternalConversationDetailProjection
                         .Select(parent => (DateTime?)parent.CreatedAt).FirstOrDefault() : null) ?? x.CreatedAt,
             LastMessageId = visibleMessages.Where(m => m.InternalConversationId == x.InternalConversationId && !m.IsDeleted)
                 .OrderByDescending(m => m.SentAt).ThenByDescending(m => m.InternalMessageId).Select(m => (Guid?)m.InternalMessageId).FirstOrDefault(),
-            UnreadCount = visibleMessages.Count(m => m.InternalConversationId == x.InternalConversationId && !m.IsDeleted &&
+            UnreadCount = includeLegacyUnread ? visibleMessages.Count(m => m.InternalConversationId == x.InternalConversationId && !m.IsDeleted &&
                 (m.PayloadJson == null || !EF.Functions.JsonContains(m.PayloadJson, InternalMailMentions.AudienceMarker)) &&
-                m.SenderEmployeeId != employeeId && m.ReadStates.Any(s => s.EmployeeId == employeeId && !s.IsRead)),
+                m.SenderEmployeeId != employeeId && m.ReadStates.Any(s => s.EmployeeId == employeeId && !s.IsRead)) : 0,
             IsArchived = x.Participants.Where(p => p.EmployeeId == employeeId && p.IsActive).Select(p => p.IsArchived).FirstOrDefault(),
             IsMuted = x.Participants.Where(p => p.EmployeeId == employeeId && p.IsActive).Select(p => p.IsMuted).FirstOrDefault(),
             LastReadAt = x.Participants.Where(p => p.EmployeeId == employeeId && p.IsActive).Select(p => p.LastReadAt).FirstOrDefault(),
@@ -40,7 +41,7 @@ internal static class InternalConversationDetailProjection
         };
     }
 
-    private static Expression<Func<InternalConversation, InternalConversationDetailDto>> UnscopedForEmployee(Guid employeeId) =>
+    private static Expression<Func<InternalConversation, InternalConversationDetailDto>> UnscopedForEmployee(Guid employeeId, bool includeLegacyUnread) =>
         x => new InternalConversationDetailDto
             {
                 ConversationId = x.InternalConversationId,
@@ -53,10 +54,10 @@ internal static class InternalConversationDetailProjection
                 CreatedAt = x.CreatedAt,
                 LastMessageAt = x.LastMessageAt,
                 LastMessageId = x.LastMessageId,
-                UnreadCount = x.Messages.Count(message =>
+                UnreadCount = includeLegacyUnread ? x.Messages.Count(message =>
                     (message.PayloadJson == null || !EF.Functions.JsonContains(message.PayloadJson, InternalMailMentions.AudienceMarker)) &&
                     !message.IsDeleted && message.SenderEmployeeId != employeeId &&
-                    message.ReadStates.Any(state => state.EmployeeId == employeeId && !state.IsRead)),
+                    message.ReadStates.Any(state => state.EmployeeId == employeeId && !state.IsRead)) : 0,
                 IsArchived = x.Participants
                     .Where(participant => participant.EmployeeId == employeeId && participant.IsActive)
                     .Select(participant => participant.IsArchived)

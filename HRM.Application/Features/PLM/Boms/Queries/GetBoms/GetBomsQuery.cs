@@ -5,8 +5,10 @@ using MediatR;
 namespace HRM.Application.Features.PLM.Boms.Queries.GetBoms;
 
 /// <summary>Lấy danh sách BOM active theo loại trong công ty hiện tại.</summary>
-public sealed class GetBomsQuery : IRequest<IReadOnlyList<BomListItemDto>>
+public sealed class GetBomsQuery : IRequest<IReadOnlyList<BomListItemDto>>, HRM.Application.Commons.Searching.ISmartSearchRequest
 {
+    public string? SearchSelections { get; init; }
+    public string? SuggestionKeyword => null;
     public Guid? ProductId { get; init; }
     public string? Keyword { get; init; }
     public BomType BomType { get; init; } = BomType.Engineering;

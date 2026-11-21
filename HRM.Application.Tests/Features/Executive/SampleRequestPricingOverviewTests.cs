@@ -19,6 +19,27 @@ namespace HRM.Application.Tests.Features.Executive;
 
 public sealed class SampleRequestPricingOverviewTests
 {
+    [Fact]
+    public void ApplyFilters_ExcludesInternalSemiFinishedBeforePagingAndKeepsLegacyRequests()
+    {
+        var normal = new HRM.Domain.Entities.SampleRequestSchema.SampleRequest { RequestType = "New" };
+        var legacy = new HRM.Domain.Entities.SampleRequestSchema.SampleRequest { RequestType = null! };
+        var internalRequest = new HRM.Domain.Entities.SampleRequestSchema.SampleRequest { RequestType = "SemiFinished" };
+        var filtered = GetSampleRequestPricingOverviewQueryHandler.ApplyFilters(
+            new[] { internalRequest, normal, legacy }.AsQueryable(),
+            Array.Empty<HRM.Domain.Entities.CustomerSchema.QuotationLine>().AsQueryable(),
+            new GetSampleRequestPricingOverviewQuery(), includeKeyword: false);
+
+        Assert.Equal(2, filtered.Count());
+        Assert.Same(normal, filtered.Take(1).Single());
+        Assert.Contains(legacy, filtered);
+        using var db = CreateDbContext();
+        var sql = GetSampleRequestPricingOverviewQueryHandler.ApplyFilters(
+            db.SampleRequests, db.QuotationLines, new GetSampleRequestPricingOverviewQuery(), false).ToQueryString();
+        Assert.Contains("SemiFinished", sql, StringComparison.Ordinal);
+        Assert.Contains("RequestType", sql, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData(100_880, true, false)]
     [InlineData(101_000, true, false)]

@@ -10,6 +10,23 @@ namespace HRM.Application.Tests.Features.Purchasing;
 
 public sealed class PurchaseOrderPdfProjectionTests
 {
+    [Theory]
+    [InlineData(false, "Chi Vy")]
+    [InlineData(true, null)]
+    public void LegacyContactMatchesDetailAndPdfWithoutOverwritingExistingSnapshot(bool hasSnapshot, string? expected)
+    {
+        var (db, store) = HRM.Application.Tests.Features.DevAndQA.IQC.IqcTestStore.CreateContext<IPurchaseOrderDbContext>();
+        var company = Guid.NewGuid();
+        var po = new HRM.Domain.Entities.OrderSchema.PurchaseOrder { PurchaseOrderId = Guid.NewGuid(), CompanyId = company, IsActive = true,
+            Supplier = new() { CompanyId = company, SupplierContacts = [new() { FirstName = "Chi", LastName = "Vy", IsActive = true, IsPrimary = false }] },
+            PurchaseOrderSnapshot = hasSnapshot ? new() { SupplierContactSnapshot = null } : null };
+        store.Seed(nameof(db.PurchaseOrders), po);
+        var pdf = new ExportPurchaseOrderPdfQueryHandler(db, null!, null!, null!, null!).BuildQuery(po.PurchaseOrderId, company).Single();
+        var detail = new HRM.Application.Features.Purchasing.PurchaseOrders.Queries.GetPurchaseOrderById.GetPurchaseOrderByIdQueryHandler(db, null!, null!).BuildQuery(po.PurchaseOrderId, company).Single();
+        Assert.Equal(expected, pdf.SupplierContactSnapshot);
+        Assert.Equal(expected, detail.SupplierContact);
+        Assert.Null(po.PurchaseOrderSnapshot?.SupplierContactSnapshot);
+    }
     [Fact]
     public void Pdf_query_translates_to_postgresql_with_company_scope()
     {

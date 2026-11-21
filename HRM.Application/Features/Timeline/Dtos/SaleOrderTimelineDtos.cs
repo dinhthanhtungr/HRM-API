@@ -26,6 +26,8 @@ public sealed class SaleOrderTimelineCardDto
     /// Tổng tiền thanh toán của đơn, đã bao gồm VAT theo field <see cref="Vat"/>.
     /// </summary>
     public decimal? TotalPrice { get; set; }
+    public string? Currency { get; init; }
+    public decimal? ExchangeRate { get; init; }
     public decimal? Vat { get; init; }
     public bool IsDeliveryPaused { get; set; }
     public DateTime? DeliveryPausedFrom { get; init; }
@@ -42,6 +44,9 @@ public sealed class SaleOrderTimelineCardDto
 
 public sealed class SaleOrderTimelineDetailRowDto
 {
+    public string? CurrentMfgStatus { get; init; }
+    public Guid ProductId { get; init; }
+    public Guid FormulaId { get; init; }
     public string SaleOrderDetailStatus { get; init; } = string.Empty;
     public bool CanConfirmStandardSample { get; init; }
     public decimal ImportedQuantity { get; init; }

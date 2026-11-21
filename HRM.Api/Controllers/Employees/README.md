@@ -13,6 +13,9 @@ API quản lý nhân viên, lookup công ty/bộ phận, tài khoản đăng nh�
 
 ## Lookup
 
+Lookup nhân viên phân trang sắp theo FullName rồi EmployeeId để tên trùng không
+làm thứ tự trang thiếu ổn định; giữ nguyên company, active, part và group scope.
+
 ### Company
 
 ```http
@@ -278,6 +281,7 @@ Các endpoint list/detail/lookup Employee đều lọc company hiện tại; `De
 - `GET /api/v1/employees/groups/{groupId}/lookup`
 - `GET /api/v1/employees/{employeeId}`
 - `GET /api/v1/employees/{employeeId}/basic-info`
+  - Phiên IMS chỉ đọc ID, mã và tên của chính nhân viên trong công ty hiện tại.
 
 Detail đầy đủ chứa dữ liệu nhạy cảm chỉ cho nhóm quản trị Employee; user thường chỉ xem detail của chính mình.
 Role tạo động trở thành JWT role claim và có thể nhận capability qua màn cấu hình permission.

@@ -8,6 +8,7 @@ using HRM.Application.Commons.Pricing.Models;
 using HRM.Application.Features.PLM.Formulas.Dtos.Commons;
 using HRM.Application.Features.PLM.Materials.Dtos.Lookup;
 using HRM.Application.Features.PLM.Materials.Rules;
+using HRM.Application.Features.PLM.MaterialProcessing.Services;
 using HRM.Domain.Enums.Formulas;
 using HRM.Domain.Enums.Materials;
 using HRM.Domain.Enums.SampleRequests;
@@ -53,7 +54,7 @@ internal sealed class GetFormulaItemLookupQueryHandler
             return EmptyResult(request);
         }
 
-        var keyword = request.NormalizedKeyword;
+        var (keyword, processingType) = ProcessingLookupSearch.Parse(request.NormalizedKeyword);
         var sampleSentStatus = SampleRequestStatus.SampleSent.ToString();
         var completedStatus = SampleRequestStatus.Completed.ToString();
 
@@ -67,19 +68,29 @@ internal sealed class GetFormulaItemLookupQueryHandler
         var products = _dbContext.Products
             .AsNoTracking()
             .Where(x =>
-                includeProducts &&
+                (includeProducts || includeMaterials && x.SampleRequests.Any(s => s.CompanyId == companyId && s.IsActive && s.RequestType == "SemiFinished")) &&
                 x.CompanyId == companyId &&
                 x.IsActive &&
                 x.Name != null &&
                 x.ColourCode != null &&
                 x.SampleRequests.Any(sr =>
                     sr.IsActive &&
-                    (sr.Status == sampleSentStatus || sr.Status == completedStatus)));
+                    sr.CompanyId == companyId && (sr.RequestType == "SemiFinished" || sr.Status == sampleSentStatus || sr.Status == completedStatus)));
 
         if (request.CategoryId is { } categoryId && categoryId != Guid.Empty)
         {
             materials = materials.Where(x => x.CategoryId == categoryId);
             products = products.Where(x => x.CategoryId == categoryId);
+        }
+
+        if (processingType is not null)
+        {
+            var suffix = "-" + processingType;
+            var legacySuffix = "_" + processingType;
+            materials = materials.Where(x => x.ExternalId != null &&
+                (x.ExternalId.Trim().ToUpper().EndsWith(suffix) || x.ExternalId.Trim().ToUpper().EndsWith(legacySuffix)));
+            products = products.Where(x => x.ColourCode != null &&
+                (x.ColourCode.Trim().ToUpper().EndsWith(suffix) || x.ColourCode.Trim().ToUpper().EndsWith(legacySuffix)));
         }
 
         if (keyword is not null)
@@ -100,7 +111,7 @@ internal sealed class GetFormulaItemLookupQueryHandler
                 x.Formulas.Any(formula =>
                     formula.IsActive &&
                     formula.CompanyId == companyId &&
-                    EF.Functions.ILike(formula.ExternalId, $"%{keyword}%")));
+                    EF.Functions.ILike(formula.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter)));
         }
 
         var materialRows = materials.Select(x => new FormulaItemLookupRow
@@ -128,7 +139,8 @@ internal sealed class GetFormulaItemLookupQueryHandler
             ExpectedAvailableDate = x.PurchaseAvailability == null
                 ? null
                 : x.PurchaseAvailability.ExpectedAvailableDate,
-            CreatedDate = x.CreatedDate
+            CreatedDate = x.CreatedDate,
+            ProcessingType = null
         });
 
         var productRows = products.Select(x => new FormulaItemLookupRow
@@ -138,7 +150,7 @@ internal sealed class GetFormulaItemLookupQueryHandler
             ExternalId = x.SampleRequests
                 .Where(sr =>
                     sr.IsActive &&
-                    (sr.Status == sampleSentStatus || sr.Status == completedStatus))
+                    sr.CompanyId == companyId && (sr.RequestType == "SemiFinished" || sr.Status == sampleSentStatus || sr.Status == completedStatus))
                 .OrderByDescending(sr => sr.CreatedDate)
                 .Select(sr => sr.ExternalId)
                 .FirstOrDefault(),
@@ -146,7 +158,8 @@ internal sealed class GetFormulaItemLookupQueryHandler
             StockCode = x.ColourCode,
             Name = "[" + (x.ColourCode ?? string.Empty) + "] " + (x.Name ?? string.Empty),
             CategoryId = x.CategoryId,
-            CategoryCode = ProductCategoryCode,
+            CategoryCode = x.SampleRequests.Any(s => s.CompanyId == companyId && s.IsActive && s.RequestType == "SemiFinished")
+                ? x.Category != null && x.Category.CompanyId == companyId ? x.Category.ExternalId : null : ProductCategoryCode,
             Weight = x.Weight,
             Package = null,
             Unit = x.Unit,
@@ -154,16 +167,51 @@ internal sealed class GetFormulaItemLookupQueryHandler
             PurchaseStatusReason = null,
             PurchaseStatusEffectiveFrom = null,
             ExpectedAvailableDate = null,
-            CreatedDate = x.CreatedDate
+            CreatedDate = x.CreatedDate,
+            ProcessingType = null
         });
 
+        IQueryable<FormulaItemLookupRow> PreviewRows(string process)
+        {
+            var suffix = "-" + process;
+            return _dbContext.Materials.AsNoTracking().Where(x => includeMaterials && x.CompanyId == companyId && x.IsActive == true
+                && x.Category.CompanyId == companyId && x.Category.IsActive == true && x.Category.Types == "NVL"
+                && x.ExternalId != null && x.ExternalId.Trim().Length <= 254 && x.ExternalId.Trim() != ""
+                && !System.Text.RegularExpressions.Regex.IsMatch(x.ExternalId.Trim(), MaterialProcessingRules.ExistingSuffixPattern)
+                && x.Unit != null && x.Unit.Trim().ToLower() == "kg" && (x.Name == null || x.Name.Length <= 1000)
+                && !x.ExternalId.Trim().ToUpper().EndsWith("-N") && !x.ExternalId.Trim().ToUpper().EndsWith("-B")
+                && !x.ExternalId.Trim().ToUpper().EndsWith("-L") && !x.ExternalId.Trim().ToUpper().EndsWith("_N")
+                && !x.ExternalId.Trim().ToUpper().EndsWith("_B") && !x.ExternalId.Trim().ToUpper().EndsWith("_L")
+                && (!request.CategoryId.HasValue || request.CategoryId == Guid.Empty || x.CategoryId == request.CategoryId)
+                && (keyword == null || EF.Functions.ILike(x.ExternalId + suffix, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter)
+                    || EF.Functions.ILike(x.Name ?? "", PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter)
+                    || EF.Functions.ILike(x.CustomCode ?? "", PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter))
+                && !_dbContext.Products.Any(p => p.CompanyId == companyId && p.ColourCode != null && p.ColourCode.Trim().ToUpper() == (x.ExternalId.Trim() + suffix).ToUpper())
+                && !_dbContext.Materials.Any(m => m.CompanyId == companyId && m.ExternalId != null && m.ExternalId.Trim().ToUpper() == (x.ExternalId.Trim() + suffix).ToUpper())
+                && !_dbContext.SampleRequests.Any(s => s.CompanyId == companyId && s.ExternalId.ToUpper() == (x.ExternalId.Trim() + suffix).ToUpper()))
+                .Select(x => new FormulaItemLookupRow {
+                    ItemId = x.MaterialId, ItemType = ItemType.Product, ExternalId = x.ExternalId!.Trim() + suffix,
+                    StockCode = x.ExternalId.Trim() + suffix, CustomCode = x.CustomCode,
+                    Name = (x.Name ?? x.ExternalId) + (process == "N" ? " (Nghiền)" : " (Băm)"),
+                    CategoryId = x.CategoryId, CategoryCode = x.Category.ExternalId, Weight = x.Weight, Unit = x.Unit,
+                    Package = null, PurchaseStatus = null, PurchaseStatusReason = null,
+                    PurchaseStatusEffectiveFrom = null, ExpectedAvailableDate = null,
+                    ProcessingType = process, CreatedDate = x.CreatedDate
+                });
+        }
         var query = materialRows.Concat(productRows);
-        var totalCount = await query.CountAsync(cancellationToken);
+        if (processingType is not null)
+            query = query.Concat(PreviewRows(processingType));
+        // Count only identities: no latest sample-request/category/availability projection is needed.
+        var totalCount = await query.Select(x => x.ItemId).CountAsync(cancellationToken);
+        if (totalCount == 0) return EmptyResult(request);
 
         var rows = await query
             .OrderByDescending(x => x.CreatedDate)
             .ThenBy(x => x.ItemType)
             .ThenBy(x => x.Name)
+            .ThenBy(x => x.ItemId)
+            .ThenBy(x => x.ProcessingType)
             .Skip((request.NormalizedPageNumber - 1) * request.NormalizedPageSize)
             .Take(request.NormalizedPageSize)
             .ToListAsync(cancellationToken);
@@ -173,7 +221,7 @@ internal sealed class GetFormulaItemLookupQueryHandler
             : await _priceQueryService.LoadLatestPricingItemPriceInfoDictAsync(
                 companyId,
                 "VND",
-                rows.Select(x => new PriceItemRequest
+                rows.Where(x => x.ProcessingType == null).Select(x => new PriceItemRequest
                 {
                     ItemType = x.ItemType,
                     MaterialId = x.ItemType == ItemType.Material ? x.ItemId : null,
@@ -192,7 +240,8 @@ internal sealed class GetFormulaItemLookupQueryHandler
 
                 return new FormulaItemLookupDto
                 {
-                    ItemId = x.ItemId,
+                    ItemId = x.ProcessingType is null ? x.ItemId : ProcessingPreviewIdentity.Id(x.ItemId, x.ProcessingType),
+                    IsProcessingPreview = x.ProcessingType is not null,
                     ItemType = x.ItemType,
                     ExternalId = x.ExternalId,
                     StockCode = x.StockCode,
@@ -285,5 +334,6 @@ internal sealed class GetFormulaItemLookupQueryHandler
         public DateTime? PurchaseStatusEffectiveFrom { get; init; }
         public DateTime? ExpectedAvailableDate { get; init; }
         public DateTime? CreatedDate { get; init; }
+        public string? ProcessingType { get; init; }
     }
 }

@@ -20,6 +20,64 @@ ACCUser được cấp dev-and-qa.iqc.view như President; không cấp thêm de
 
 Tài liệu Codex FE: [Summary, detail, POST và PATCH IQC](FE_HANDOFF.md).
 
+### Summary ghép mẫu test độc lập
+
+Smart Search dùng `Services/Inspection/IqcReader.SmartSearch.cs`. Request gợi ý chỉ chiếu mã/tên/lô
+trên tập ID đã lọc, không dựng lại dòng chi tiết với category, người QC và QC mới nhất.
+Các bước xác định ID hợp lệ vẫn giữ company, ngày ledger, QC mới nhất và bộ lọc hiện có;
+lọc QC vẫn cần đọc QC mới nhất. Mẫu Lab dùng `BatchNumber` cho Số lô, đồng nhất gợi ý,
+badge và tìm tự do cùng hàng đang hiển thị. Giới hạn tổng 10 gợi ý và contract response giữ nguyên.
+Kiểm thử SQL translation không thay thế phép đo độ trễ API/DB trên môi trường đang chạy.
+Nguồn gợi ý NCC join phiếu kho → yêu cầu kho active → DDH → NCC theo tập dòng đang được lọc,
+thay vì truy vấn tương quan quét DDH lại cho từng dòng kho. Mọi nguồn vẫn cùng company;
+giữ nguyên tập DDH khớp hiện có, không thêm điều kiện active cho DDH/NCC của Smart Search.
+Chỉ thay cách lấy giá trị gợi ý, giữ service tìm kiếm dùng chung, badge/prefix, xếp hạng,
+quota và timeout FE. Không thêm cache, index hoặc migration.
+Tập ID chỉ ghép lịch sử kho khi có FromDate/ToDate. Không lọc ngày thì bỏ phép tổng hợp
+ledger khỏi tập ID; ngày nhập hiển thị và khóa sort của summary ghép vẫn đọc ledger như trước.
+Values gợi ý NCC dùng BuildSmartSupplierOrders: JOIN theo tập dòng kho đã scope qua yêu cầu
+kho active và DDH cùng company, Supplier cùng company. Không chạy lookup DDH tương quan
+cho từng dòng kho. Predicate badge/prefix giữ nguyên để bảo toàn semantics nhiều NCC/OR/AND.
+
+Chẩn đoán gợi ý trong Development: `IqcSuggestionRequestTimingMiddleware` chỉ nhận GET
+các route summary IQC có `suggestionKeyword`. `Server-Timing` trên response 200 đã xác thực
+có `iqc_suggestions` (dựng/dịch/thực thi query và đọc metadata) và `iqc_total` (đến lúc bắt đầu
+headers). Hai khoảng lồng nhau, không cộng để tính tổng. Không suy ra riêng thời gian DB
+từ `iqc_suggestions`. Nếu client hủy trước khi có response, logger category
+`HRM.Api.Diagnostics.IqcSuggestionRequestTimingMiddleware` ghi TotalMs/SuggestionMs,
+Outcome=completed/canceled/faulted và StatusCode (0 nếu headers chưa bắt đầu).
+Không ghi keyword, query string, ID, SQL, token hoặc dữ liệu nghiệp vụ. Ngoài Development
+không đo/ghi log này; thiếu quyền hoặc response lỗi không trả Server-Timing của IQC.
+Khi logger đang bị lọc mức Warning, chỉ bật Information cho category này để đọc phép đo.
+Không tăng timeout FE 5 giây hoặc bỏ cancellation để làm số đo đẹp hơn.
+Nguồn ID dùng projection scalar cho tên NCC: khi không có keyword NCC, EF bỏ lookup DDH/NCC
+thay vì giữ LEFT LATERAL cho mỗi dòng. Tìm tự do legacy vẫn lấy tên NCC của DDH active mới
+nhất qua yêu cầu kho active trong đúng company, giữ nguyên các điều kiện lọc hiện hành.
+
+`GET /api/v1/dev-and-qa/iqc?includeLabTests=true` ghép LabTest của company vào summary hiện có.
+Mặc định false giữ list legacy; export kho hiện có không thay đổi. Không bật lại grid/import LabTest.
+Reader `Services/Inspection/IqcReader.CombinedSummary.cs` union khóa hai nguồn trước count/order/page
+tại DB, chỉ tải metadata trang hiện tại; không gọi detail mỗi dòng hay tải kết quả chỉ tiêu.
+Sort kho join nguồn ledger đã GROUP BY VoucherDetailId/company; không tính scalar MAX ledger bằng
+subquery tương quan cho từng dòng ứng viên trước phân trang. Giữ nguyên khóa sort, filter và fallback.
+Test bảo vệ SQL translation/query shape; chưa có phép đo trước/sau trên DB runtime để khẳng định mức cải thiện.
+Warehouse sort theo ledger mới nhất (thiếu ledger dùng ngày tạo header chỉ để sắp xếp), LabTest theo
+CreatedDate; tie-break VoucherDetailId và LabTestId. InputDate vẫn null nếu không có ledger.
+
+Response giữ wrapper/page và field legacy, thêm `source` = Warehouse/LabTest, `labTestId`, `testDate`.
+Warehouse giữ VoucherDetailId thật; LabTest có VoucherDetailId=0, QCInputByQCId=null, InputDate=null.
+Mã/tên từ Code/SampleName; người tạo đã scope company; QCCreatedDate là thời điểm tạo test,
+TestDate là ngày test người dùng nhập. HasQC=true chỉ biểu thị phiếu đã lưu, không suy kết luận đạt.
+LotNumber lấy BatchNumber mẫu nhập tay; WeightKg nullable là khối lượng mẫu, Unit=kg khi đã nhập.
+CategoryName rỗng, QtyKg=0, VoucherType=0 là field kho không áp dụng: FE dùng WeightKg thay QtyKg cho mẫu,
+thiếu khối lượng hiển thị “—”, không biến null thành số 0.
+không suy tồn kho hoặc điều hướng bằng voucher=0. Mở bằng labTestId qua API BasicLabTests.
+
+LabTest tìm mã/tên/lot bằng keyword literal; warehouse giữ wildcard legacy. Lọc ngày áp TestDate inclusive
+cho mẫu, ledger timestamp inclusive cho kho. HasQC=false, VoucherDetailId, QCInputByQCId hoặc
+VoucherDetailType loại mẫu test vì không có ngữ nghĩa tương ứng. HasQC=true giữ mẫu đã lưu.
+Quyền ViewIqc/company scope giữ nguyên; không đổi entity, migration hay DB.
+
 Feature chuyển nghiệp vụ đang chạy từ `QCInputByQCFeatures` của hệ thống cũ. Folder feature là `DevAndQA/IQC`; entity `QCInputByQC`, bảng `devandqa.QCInputByQC` và tên field legacy được giữ nguyên, không đổi schema.
 
 ## Kiến trúc và phạm vi
@@ -266,3 +324,7 @@ Excel chi tiết giữ tên property nội bộ CreatedDate nhưng giá trị l�
 Nếu một dòng có nhiều ledger, dùng ngày mới nhất đúng semantics lịch sử kho; không tự lọc tăng/giảm hoặc chọn lần đầu.
 ToDate vẫn so trực tiếp <= timestamp; FE gửi cuối ngày nếu muốn lấy trọn ngày, không thay đổi timezone.
 Không ghi lại ngày trong DB, không migration. GET detail/mutation không phát sinh field ngày nhập mới.
+
+## Theo dõi IQC cho IMS
+
+IMSUser xem các dòng nhập kho thuộc IQC của công ty hiện tại, gồm vật tư, lô, số lượng, nhà cung cấp và tình trạng kiểm tra. Danh sách và gợi ý tìm kiếm không ghép mẫu Lab Test. Chi tiết không trả phương pháp nhập tự do, ghi chú hoặc thông tin tệp. Quyền IMS chỉ mở API danh sách và chi tiết dòng nhập, kể cả khi tài khoản có thêm role quản trị.

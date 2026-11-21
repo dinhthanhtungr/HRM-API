@@ -73,6 +73,6 @@ public sealed class MaterialTestGridTests
         var lab = db.Model.FindEntityType(typeof(LabTest))!;
         Assert.Contains(lab.GetIndexes(), x => x.IsUnique && x.Properties.Select(p => p.Name).SequenceEqual(["CompanyId", "ImportBatchId", "ImportRowNumber"]));
         Assert.DoesNotContain(lab.GetProperties(), x => x.IsShadowProperty());
-        Assert.Equal("observedtext", db.Model.FindEntityType(typeof(LabTestResult))!.FindProperty("ObservedText")!.GetColumnName());
+        Assert.Null(db.Model.FindEntityType(typeof(LabTestResult))!.FindProperty("ObservedText"));
     }
 }

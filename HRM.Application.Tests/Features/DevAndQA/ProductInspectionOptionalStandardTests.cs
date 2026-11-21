@@ -3,6 +3,7 @@ using HRM.Application.Abstractions.Persistence.PLM;
 using HRM.Application.Features.DevAndQA.ProductInspections;
 using HRM.Application.Features.DevAndQA.ProductInspections.Commands.CreateProductInspection;
 using HRM.Application.Features.DevAndQA.ProductInspections.Dtos;
+using HRM.Application.Features.DevAndQA.ProductInspections.Queries.GetProductInspectionById;
 using HRM.Application.Tests.Features.DevAndQA.IQC;
 using HRM.Domain.Entities.DevandqaSchema;
 using HRM.Domain.Entities.ManufacturingSchema;
@@ -62,6 +63,35 @@ public sealed class ProductInspectionOptionalStandardTests
         var foreign = new ProductInspection { CompanyId = Guid.NewGuid(), ProductStandardId = standardId };
         var unknown = new ProductInspection();
         Assert.Equal(new[] { owned, legacy }, new[] { owned, legacy, foreign, unknown }.AsQueryable().ForCompany(db, company));
+    }
+
+    [Fact]
+    public async Task ImsDetailProjectsHeaderAndRejectsForeignIdEvenWithPrivilegedRole()
+    {
+        var (db, store) = IqcTestStore.CreateContext<IPLMReadDbContext>();
+        var user = new IqcWorkflowTests.User { Roles = ["IMSUser", "Developer", "ACCUser"] };
+        var local = new ProductInspection
+        {
+            Id = Guid.NewGuid(), CompanyId = user.CompanyId, ProductCode = "TP-1", ProductName = "Resin",
+            BatchId = "B01", DeliveryAccepted = true, Notes = "internal note", Density = "internal result",
+            ProductStandardId = Guid.NewGuid(), MfgProductionOrderId = Guid.NewGuid()
+        };
+        var foreign = new ProductInspection { Id = Guid.NewGuid(), CompanyId = Guid.NewGuid() };
+        store.Seed("ProductInspections", local, foreign);
+        var handler = new GetProductInspectionByIdQueryHandler(db, user);
+
+        var result = await handler.Handle(new(local.Id), default);
+        Assert.True(result.Success);
+        var header = Assert.IsType<ProductInspectionDetailDto>(result.Data);
+        Assert.Equal("TP-1", header.ProductCode);
+        Assert.Equal("B01", header.BatchId);
+        Assert.True(header.DeliveryAccepted);
+        Assert.Null(header.Notes);
+        Assert.Null(header.Density);
+        Assert.Null(header.ProductStandardId);
+        Assert.Null(header.MfgProductionOrderId);
+        Assert.Null(header.Specifications);
+        Assert.False((await handler.Handle(new(foreign.Id), default)).Success);
     }
 
     private sealed class Codes : IExternalIdService

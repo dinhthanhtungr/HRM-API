@@ -109,7 +109,8 @@ public static class FormulaPriceCalculator
     }
 
     private static decimal Round(FormulaPricingPolicyDefinition policy, decimal value)
-        => PricingRoundingRules.RoundCalculatedPrice(value, policy.RoundingRule, policy.RoundingIncrement);
+        // Policy steps are retained for compatibility, but no longer quantize calculated prices.
+        => PricingRoundingRules.RoundCalculatedPrice(value);
 
     private static void Validate(
         FormulaPricingPolicyDefinition policy,
@@ -145,7 +146,5 @@ public static class FormulaPriceCalculator
         decimal profitMarginRate)
         => StandardSellingPriceCalculator.CalculateFromProfitMarginOnSellingPrice(
             costBase,
-            profitMarginRate,
-            policy.RoundingRule,
-            policy.RoundingIncrement);
+            profitMarginRate);
 }

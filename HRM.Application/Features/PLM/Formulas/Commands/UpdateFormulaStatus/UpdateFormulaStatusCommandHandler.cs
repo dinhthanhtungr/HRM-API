@@ -102,18 +102,27 @@ internal sealed class UpdateFormulaStatusCommandHandler
         HRM.Domain.Entities.SampleRequestSchema.SampleRequest? flowRequest = null;
         HRM.Application.Features.PLM.SampleRequests.Dtos.Reports.SampleFlowStateDto? flowState = null;
         // Kiểm tra hồ sơ đích trước mọi mutation; audit xác nhận lưu cùng snapshot Formula.
-        if (command.Request.SampleRequestId is { } targetRequestId)
+        if (targetStatus == FormulaStatus.Approved || command.Request.SampleRequestId.HasValue)
         {
             var scope = await _visibilityService.BuildScopeAsync(cancellationToken);
-            var target = await _visibilityService.ApplySampleRequestVisibility(
-                    _dbContext.SampleRequests, _dbContext.Customers.AsNoTracking(), scope)
-                .AsTracking()
-                .SingleOrDefaultAsync(x => x.SampleRequestId == targetRequestId && x.CompanyId == companyId &&
-                    x.IsActive && x.ProductId == formula.ProductId && x.Status != "Completed" &&
-                    x.Status != "Cancelled", cancellationToken);
-            if (target is null)
+            var visible = _visibilityService.ApplySampleRequestVisibility(
+                _dbContext.SampleRequests, _dbContext.Customers.AsNoTracking(), scope);
+            HRM.Domain.Entities.SampleRequestSchema.SampleRequest target;
+            try
+            {
+                target = await FormulaConfirmationTargetResolver.ResolveAsync(visible, companyId,
+                    formula.ProductId, command.Request.SampleRequestId, cancellationToken);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return OperationResult<FormulaWriteResultDto>.Fail(ex.Message);
+            }
+            // Hồ sơ hoàn thành vẫn được xác nhận công thức cải tiến, nhưng không mở lại luồng gửi mẫu.
+            if (target is null || !FormulaSampleSentRules.CanReceiveFormulaStatus(target.Status, targetStatus))
                 return OperationResult<FormulaWriteResultDto>.Fail("Sample request is not accessible or cannot receive a formula confirmation.");
             flowRequest = target;
+            if (await SampleRequestLabPauseRules.IsPausedAsync(_dbContext, companyId, target.SampleRequestId, cancellationToken))
+                return OperationResult<FormulaWriteResultDto>.Fail(SampleRequestLabPauseRules.PausedMessage);
         }
 
         if (FormulaConcurrencyRules.HasExpectedUpdatedDateConflictWithDatabasePrecision(
@@ -127,29 +136,39 @@ internal sealed class UpdateFormulaStatusCommandHandler
             x.CustomerId == flowRequest.CustomerId && x.CompanyId == companyId &&
             x.ExternalId == HRM.Application.Features.PLM.Shared.Rules.PLMCustomerRules.InternalCustomerExternalId, cancellationToken);
         if (targetStatus == FormulaStatus.SampleSent && flowRequest is not null &&
-            (SampleFlowRules.IsLegacy(flowRequest.CreatedDate) || !internalRequest))
+            (await SampleFollowUpRules.IsLegacyAsync(_dbContext, flowRequest, cancellationToken) || !internalRequest))
         {
             if (!_currentUser.IsAuthenticated || !_permissions.HasPermission(ApplicationPermissions.PLM.ManageSampleLabWorkflow))
                 return OperationResult<FormulaWriteResultDto>.Fail("You cannot send samples.");
             if (!await _dbContext.Employees.AsNoTracking().AnyAsync(x => x.EmployeeId == employeeId && x.CompanyId == companyId && x.IsActive, cancellationToken))
                 return OperationResult<FormulaWriteResultDto>.Fail("Current employee is not active in this company.");
-            if (SampleFlowRules.IsLegacy(flowRequest.CreatedDate))
-                return await _legacyDelivery.SendAsync(flowRequest, formula, employeeId, DateTime.Now, cancellationToken);
+            if (await SampleFollowUpRules.IsLegacyAsync(_dbContext, flowRequest, cancellationToken))
+                return await _legacyDelivery.SendAsync(flowRequest, formula, employeeId, DateTime.Now, command.Request.DeliveredSampleQuantityKg, cancellationToken);
             flowState = await SampleFlowStateReader.ReadAsync(_dbContext, _crm, flowRequest, true, false, cancellationToken, formula.FormulaId);
             if (!flowState.AllowedActions.Contains("Send"))
                 return OperationResult<FormulaWriteResultDto>.Fail("This request is not ready for delivery. Check customer feedback and price acceptance.");
+            if (await ChipThenSampleRules.BlockingPending(_dbContext.SampleRequestSampleTrials.AsNoTracking(),
+                flowState is { ChipBeforeSample: true, DeliveryKind: "TrialSample" })
+                .AnyAsync(x => x.SampleRequestId == flowRequest.SampleRequestId, cancellationToken))
+                return OperationResult<FormulaWriteResultDto>.Fail("Record feedback for the pending delivery before sending another delivery.");
             if (command.Request.FormulaUpdate is not null)
                 return OperationResult<FormulaWriteResultDto>.Fail("Save formula changes before sending a delivery.");
             if (command.Request.StepOfProduct.HasValue && command.Request.StepOfProduct != formula.StepOfProduct)
                 return OperationResult<FormulaWriteResultDto>.Fail("A delivery cannot change the finalized production route.");
-            if (flowRequest.SampleQuantity is > 0)
+            if (flowState.DeliveryKind == "TrialSample")
             {
                 if (command.Request.DeliveredSampleQuantityKg is not > 0)
                     return OperationResult<FormulaWriteResultDto>.Fail("A positive delivered quantity is required for a trial sample.");
             }
-            if (await _dbContext.SampleRequestSampleTrials.AnyAsync(x => x.IsActive && x.FormulaId == formula.FormulaId &&
+            var latestDelivery = await _dbContext.SampleRequestSampleTrials.AsNoTracking()
+                .Where(x => x.IsActive && x.SampleRequestId == flowRequest.SampleRequestId)
+                .OrderByDescending(x => x.TrialNo).FirstOrDefaultAsync(cancellationToken);
+            if (latestDelivery is not null && latestDelivery.FormulaId != formula.FormulaId && formula.Status != FormulaStatus.Approved.ToString())
+                return OperationResult<FormulaWriteResultDto>.Fail("Select a confirmed formula for the new delivery.");
+            if (!FormulaSampleSentRules.CanRetryFailedKg(latestDelivery, flowRequest.SampleRequestId, formula.FormulaId) &&
+                await _dbContext.SampleRequestSampleTrials.AnyAsync(x => x.IsActive && x.FormulaId == formula.FormulaId &&
                 x.SampleRequest.CompanyId == companyId && x.DeliveredSampleQuantityKg > 0 && x.SentDate != null, cancellationToken))
-                return OperationResult<FormulaWriteResultDto>.Fail("This formula has already been sent in kg. Create a new formula and request.");
+                return OperationResult<FormulaWriteResultDto>.Fail("This formula has already been sent in kg. Rework requires a failed delivery or another formula.");
         }
 
         if (targetStatus == FormulaStatus.Approved &&
@@ -166,7 +185,7 @@ internal sealed class UpdateFormulaStatusCommandHandler
                 "Formula can only be sent when its current status is Approved or SampleSent.");
         }
 
-        var isChip = flowRequest is not null && !internalRequest && !SampleFlowRules.IsLegacy(flowRequest.CreatedDate) && flowRequest.SampleQuantity is not > 0;
+        var isChip = flowRequest is not null && !internalRequest && !await SampleFollowUpRules.IsLegacyAsync(_dbContext, flowRequest, cancellationToken) && flowState?.DeliveryKind == "ColorChip";
         var deliveredQuantity = isChip ? 0 : command.Request.DeliveredSampleQuantityKg;
         var sampleSentValidationError = FormulaSampleSentRules.ValidateRequest(command.Request, isChip);
         if (sampleSentValidationError is not null)
@@ -176,6 +195,19 @@ internal sealed class UpdateFormulaStatusCommandHandler
 
         await using var deliveryTransaction = targetStatus == FormulaStatus.SampleSent
             ? await _dbContext.BeginTransactionAsync(cancellationToken) : null;
+        if (deliveryTransaction is not null && flowRequest is not null)
+        {
+            // Serialize different VUs sending to the same TP, as well as concurrent Sale plans/cancellation.
+            var locked = await _dbContext.SampleRequests.Where(x => x.SampleRequestId == flowRequest.SampleRequestId &&
+                x.CompanyId == companyId && x.IsActive && x.UpdatedDate == flowRequest.UpdatedDate)
+                .ExecuteUpdateAsync(set => set.SetProperty(x => x.UpdatedDate, x => x.UpdatedDate), cancellationToken);
+            if (locked != 1)
+                return OperationResult<FormulaWriteResultDto>.Fail("Request changed. Reload before sending.");
+            if (await ChipThenSampleRules.BlockingPending(_dbContext.SampleRequestSampleTrials.AsNoTracking(),
+                flowState is { ChipBeforeSample: true, DeliveryKind: "TrialSample" })
+                .AnyAsync(x => x.SampleRequestId == flowRequest.SampleRequestId, cancellationToken))
+                return OperationResult<FormulaWriteResultDto>.Fail("Record feedback for the pending delivery before sending another delivery.");
+        }
         var now = DateTime.Now;
         var materialsChanged = await _pricingReview.RequiresMaterialReviewAsync(
             formula, command.Request.FormulaUpdate, companyId, cancellationToken);
@@ -284,15 +316,32 @@ internal sealed class UpdateFormulaStatusCommandHandler
                 var sentEvent = SampleRequestWorkflowEvents.Create(target.SampleRequestId, companyId, employeeId, now,
                     SampleRequestWorkflowEvents.SampleSent, formulaId: formula.FormulaId, trialId: sampleTrial.SampleRequestSampleTrialId);
                 _dbContext.SampleRequestWorkflowEvents.Add(sentEvent);
+                var includeChip = false;
+                if (!isChip && flowState?.ChipBeforeSample == true)
+                {
+                    var planEvents = await _dbContext.SampleRequestWorkflowEvents.AsNoTracking().Where(e => e.CompanyId == companyId &&
+                        e.SampleRequestId == target.SampleRequestId).OrderByDescending(e => e.RecordedAt).ThenByDescending(e => e.Id).ToListAsync(cancellationToken);
+                    var previousTrials = await _dbContext.SampleRequestSampleTrials.AsNoTracking().Where(t =>
+                        t.SampleRequestId == target.SampleRequestId && t.IsActive).ToListAsync(cancellationToken);
+                    includeChip = ChipThenSampleRules.NeedsChipRecord(target, formula.FormulaId, planEvents, previousTrials);
+                    if (includeChip)
+                    {
+                        var chipNo = (await _dbContext.SampleRequestSampleTrials.Where(t => t.SampleRequestId == target.SampleRequestId)
+                            .Select(t => (int?)t.TrialNo).MaxAsync(cancellationToken) ?? 0) + 1;
+                        sampleTrial.TrialNo = chipNo + 1;
+                        HRM.Application.Features.PLM.SampleRequests.DeliveryOptions.CombinedSampleDelivery.AddChip(
+                            _dbContext, target, sampleTrial, chipNo, employeeId, now, sentEvent.Id);
+                    }
+                }
                 SampleRequestWorkflowNotificationQueue.Queue(_dbContext, sentEvent, new SendSampleRequestMessageCommand
                 {
                     SampleRequestId = target.SampleRequestId,
                     Type = SampleRequestNotificationType.GeneralMessage,
                     Message = isChip
                         ? $"Lab đã gửi chip cho yêu cầu {target.ExternalId}, lần {sampleTrial.TrialNo}. Công thức: {formula.ExternalId}. Sale vui lòng ghi nhận phản hồi màu."
-                        : $"Lab đã gửi {deliveredQuantity:0.####} kg mẫu cho yêu cầu {target.ExternalId}, lần {sampleTrial.TrialNo}. Công thức: {formula.ExternalId}. Sale vui lòng ghi nhận phản hồi khách.",
+                        : $"Lab đã gửi {deliveredQuantity:0.####} kg mẫu{(includeChip ? " kèm chip" : "")} cho yêu cầu {target.ExternalId}, lần {sampleTrial.TrialNo}. Công thức: {formula.ExternalId}. Sale vui lòng ghi nhận phản hồi khách.",
                     TopicOverride = TopicNotifications.SampleRequestSampleSent,
-                    TitleOverride = "Lab đã gửi mẫu"
+                    TitleOverride = isChip ? "Lab đã gửi chip" : "Lab đã gửi mẫu"
                 });
             }
             catch (InvalidOperationException ex)
@@ -305,9 +354,9 @@ internal sealed class UpdateFormulaStatusCommandHandler
         }
 
         var reviewQueued = true;
-        if (targetStatus == FormulaStatus.Approved && command.Request.SampleRequestId is { } confirmedRequestId)
+        if (targetStatus == FormulaStatus.Approved && flowRequest is not null)
         {
-            var confirmedEvent = SampleRequestLabConfirmation.Create(confirmedRequestId, formula.FormulaId, companyId, employeeId, now);
+            var confirmedEvent = SampleRequestLabConfirmation.Create(flowRequest.SampleRequestId, formula.FormulaId, companyId, employeeId, now);
             _dbContext.SampleRequestWorkflowEvents.Add(confirmedEvent);
             SampleRequestWorkflowNotificationQueue.Queue(_dbContext, confirmedEvent, materialsChanged: materialsChanged);
         }

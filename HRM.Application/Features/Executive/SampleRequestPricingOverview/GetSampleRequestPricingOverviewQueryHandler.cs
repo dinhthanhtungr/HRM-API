@@ -1,3 +1,4 @@
+using HRM.Application.Features.CRM.CustomerCare.Services.Search;
 using HRM.Application.Abstractions.Commons.Time;
 using HRM.Application.Abstractions.Persistence.Executive;
 using HRM.Application.Abstractions.Security;
@@ -17,6 +18,7 @@ using HRM.Application.Features.Executive.ProductPricingReview.Dtos;
 using HRM.Application.Features.Executive.ProductPricingReview.Services;
 using HRM.Application.Features.InternalMail.Services;
 using HRM.Application.Features.PLM.SampleRequests.Rules;
+using HRM.Application.Features.PLM.Shared.Rules;
 using HRM.Application.Features.Pricing.Authorization;
 using HRM.Domain.Entities.CustomerSchema;
 using HRM.Domain.Entities.InternalMailSchema;
@@ -50,6 +52,8 @@ internal sealed class GetSampleRequestPricingOverviewQueryHandler
         """{"contentType":"QuotationPricingRequestWithdrawn"}""";
     private const string LabPriceQuoteRequestedPayload =
         """{"contentType":"SampleRequestPriceQuoteRequested","priceQuoteRequest":{"formulaSelectionSource":"LabConfirmed"}}""";
+    private const string ExplicitPriceQuoteRequestedPayload =
+        """{"contentType":"SampleRequestPriceQuoteRequested","priceQuoteRequest":{"formulaSelectionSource":"Explicit"}}""";
     private const decimal MinimumViewPriceIncreasePercent = 1m;
 
     private readonly IExecutiveReadDbContext _dbContext;
@@ -122,10 +126,22 @@ internal sealed class GetSampleRequestPricingOverviewQueryHandler
             _dbContext.QuotationLines.AsNoTracking(),
             request,
             includeKeyword: false);
+        var smartSearch = HRM.Application.Commons.Searching.SmartSearch.For(sampleRequests, fields => [
+            fields.Code("sampleRequestCode", x => x.ExternalId, "TP Code", "Mã TP"),
+            fields.Code("customerCode", x => x.Customer.ExternalId, "Mã KH", "Customer code"),
+            fields.Name("customerName", x => x.Customer.CustomerName, "Tên KH", "Customer name"),
+            fields.CustomerTaxNumber(x => x.Customer.CompanyId == companyId ? x.Customer.TaxNumber : null),
+            fields.Code("colourCode", x => x.Product.ColourCode, "ColorCode", "Mã màu"),
+            fields.Name("productName", x => x.Product.Name, "Tên sản phẩm", "Product name"),
+            fields.Name("employeeName", x => x.ManagerByNavigation.FullName, "Nhân viên", "Employee"),
+            fields.Codes("formulaCode", x => x.Product.Formulas.Where(f => f.IsActive && f.CompanyId == companyId),
+                f => f.ExternalId, "Công thức", "Formula", "VU")
+        ]);
+        sampleRequests = smartSearch.ApplyRequest(sampleRequests, request.NormalizedKeyword, request, out var smartKeyword);
         sampleRequests = await ApplyKeywordFilterAsync(
             sampleRequests,
             _dbContext.QuotationLines.AsNoTracking(),
-            request.NormalizedKeyword,
+            smartKeyword,
             request.EffectiveSearchType,
             companyId,
             cancellationToken);
@@ -136,6 +152,8 @@ internal sealed class GetSampleRequestPricingOverviewQueryHandler
             request.NormalizedCurrency,
             scope,
             cancellationToken);
+        if (await smartSearch.SuggestionsAsync<SampleRequestPricingOverviewItemDto>(sampleRequests, request, cancellationToken) is { } suggestions)
+            return OperationResult<PagedResult<SampleRequestPricingOverviewItemDto>>.Ok(suggestions);
         var totalCount = await sampleRequests.CountAsync(cancellationToken);
         var projected = Project(
             sampleRequests,
@@ -232,6 +250,7 @@ internal sealed class GetSampleRequestPricingOverviewQueryHandler
                Status = x.Status,
                ProductCode = x.Product.Code ?? string.Empty,
                ProductName = x.Product.Name ?? string.Empty,
+               UsageRate = x.Product.UsageRate,
                ColourCode = x.Product.ColourCode,
                ColourName = x.Product.ColourName,
                CategoryId = x.Product.CategoryId,
@@ -277,6 +296,7 @@ internal sealed class GetSampleRequestPricingOverviewQueryHandler
                Status = x.Status,
                ProductCode = x.Product.Code ?? string.Empty,
                ProductName = x.Product.Name ?? string.Empty,
+               UsageRate = x.Product.UsageRate,
                ColourCode = x.Product.ColourCode,
                ColourName = x.Product.ColourName,
                CategoryId = x.Product.CategoryId,
@@ -311,6 +331,8 @@ internal sealed class GetSampleRequestPricingOverviewQueryHandler
         GetSampleRequestPricingOverviewQuery request,
         bool includeKeyword = true)
     {
+        query = query.Where(x => x.RequestType == null || x.RequestType != SemiFinishedRequestRules.RequestType);
+
         if (includeKeyword && request.NormalizedKeyword is { } keyword)
         {
             query = ApplyBroadKeywordFilter(query, quotationLines, keyword);
@@ -379,7 +401,8 @@ internal sealed class GetSampleRequestPricingOverviewQueryHandler
                     EF.Functions.ILike(
                         x.Customer.ExternalId,
                         PostgresSearchPattern.PrefixLiteral(keyword),
-                        PostgresSearchPattern.EscapeCharacter)),
+                        PostgresSearchPattern.EscapeCharacter) ||
+                    x.Customer.CompanyId == x.CompanyId && EF.Functions.ILike(x.Customer.TaxNumber ?? "", PostgresSearchPattern.PrefixLiteral(keyword), PostgresSearchPattern.EscapeCharacter)),
                 SampleRequestPricingOverviewSearchType.SampleRequest => query.Where(x =>
                     EF.Functions.ILike(
                         x.ExternalId,
@@ -470,6 +493,7 @@ internal sealed class GetSampleRequestPricingOverviewQueryHandler
             EF.Functions.ILike(x.Product.Code ?? string.Empty, pattern, PostgresSearchPattern.EscapeCharacter) ||
             EF.Functions.ILike(x.Product.ColourCode ?? string.Empty, pattern, PostgresSearchPattern.EscapeCharacter) ||
             EF.Functions.ILike(x.Customer.ExternalId, pattern, PostgresSearchPattern.EscapeCharacter) ||
+            x.Customer.CompanyId == x.CompanyId && EF.Functions.ILike(x.Customer.TaxNumber ?? "", pattern, PostgresSearchPattern.EscapeCharacter) ||
             (x.Formula != null && EF.Functions.ILike(
                 x.Formula.ExternalId,
                 pattern,
@@ -489,6 +513,7 @@ internal sealed class GetSampleRequestPricingOverviewQueryHandler
             EF.Functions.ILike(x.Product.ColourCode ?? string.Empty, pattern, PostgresSearchPattern.EscapeCharacter) ||
             EF.Functions.ILike(x.Customer.ExternalId, pattern, PostgresSearchPattern.EscapeCharacter) ||
             EF.Functions.ILike(x.Customer.CustomerName, pattern, PostgresSearchPattern.EscapeCharacter) ||
+            x.Customer.CompanyId == x.CompanyId && EF.Functions.ILike(x.Customer.TaxNumber ?? "", pattern, PostgresSearchPattern.EscapeCharacter) ||
             (x.CreatedByNavigation != null && EF.Functions.ILike(
                 x.CreatedByNavigation.FullName ?? string.Empty,
                 pattern,
@@ -916,7 +941,8 @@ internal sealed class GetSampleRequestPricingOverviewQueryHandler
                 .Where(message =>
                     !message.IsDeleted &&
                     message.PayloadJson != null &&
-                    EF.Functions.JsonContains(message.PayloadJson, LabPriceQuoteRequestedPayload))
+                    (EF.Functions.JsonContains(message.PayloadJson, LabPriceQuoteRequestedPayload) ||
+                     EF.Functions.JsonContains(message.PayloadJson, ExplicitPriceQuoteRequestedPayload)))
                 .Select(message => new LabPriceQuoteRequestRow
                 {
                     SampleRequestId = conversation.RelatedId!.Value,
@@ -924,6 +950,19 @@ internal sealed class GetSampleRequestPricingOverviewQueryHandler
                     MessageId = message.InternalMessageId
                 }));
 
+        var privateMessages = from root in conversations
+            join pricing in conversations on root.InternalConversationId equals pricing.RelatedId
+            where root.CompanyId == companyId && root.IsActive &&
+                root.RelatedType == InternalMailRelatedType.SampleRequest && root.RelatedId.HasValue &&
+                pricing.CompanyId == companyId && pricing.IsActive &&
+                pricing.RelatedType == InternalMailRelatedType.ConversationPricing
+            from message in pricing.Messages
+            where !message.IsDeleted && message.PayloadJson != null &&
+                (EF.Functions.JsonContains(message.PayloadJson, LabPriceQuoteRequestedPayload) ||
+                 EF.Functions.JsonContains(message.PayloadJson, ExplicitPriceQuoteRequestedPayload))
+            select new LabPriceQuoteRequestRow
+            { SampleRequestId = root.RelatedId!.Value, RequestedAt = message.SentAt, MessageId = message.InternalMessageId };
+        messages = messages.Concat(privateMessages);
         if (workflowEvents is null) return messages;
         var confirmations = workflowEvents.Where(evt => evt.CompanyId == companyId &&
             evt.EventType == SampleRequestWorkflowEvents.FormulaConfirmed && evt.FormulaId.HasValue);
@@ -1306,6 +1345,7 @@ internal sealed class GetSampleRequestPricingOverviewQueryHandler
                 ProductId = row.ProductId,
                 Code = row.ProductCode,
                 Name = row.ProductName,
+                UsageRate = row.UsageRate,
                 ColourCode = row.ColourCode,
                 ColorValue = row.ColourName,
                 ColorDisplayName = row.ColourName,

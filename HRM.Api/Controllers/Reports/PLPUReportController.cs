@@ -18,10 +18,18 @@ using HRM.Application.Features.Reports.PLPU.Queries.GetPLPUDrilldown;
 
 namespace HRM.Api.Controllers.Reports;
 [ApiController]
-[Authorize]
+[Authorize(Policy = HRM.Api.Security.Authorization.SensitiveDataAuthorization.PolicyName)]
 [Route("api/v1/reports/plpu")]
 public sealed class PLPUReportController(ISender sender, ICurrentUser user, ICurrentUserPermissionService permissions) : ControllerBase
 {
+    [HttpGet("suggestions")]
+    public async Task<IActionResult> GetSuggestions([FromQuery] HRM.Application.Features.Reports.PLPU.Queries.GetPLPUSearchSuggestionsQuery query, CancellationToken ct)
+    {
+        if (!PLPUReportAccess.CanRead(user, permissions, query.CompanyId)) return Forbid();
+        var result = await sender.Send(query, ct);
+        return result.Success ? Ok(result.Data) : BadRequest(result);
+    }
+
     [HttpGet("drilldown")]
     [ProducesResponseType(typeof(PLPUDrilldownDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]

@@ -29,6 +29,7 @@ public interface IInternalMailDbContext
     DbSet<InternalMessageReference> InternalMessageReferences { get; }
     DbSet<InternalMessageReadState> InternalMessageReadStates { get; }
     DbSet<NotificationUserState> NotificationUserStates { get; }
+    DbSet<Notification> Notifications { get; }
     DbSet<AttachmentCollection> AttachmentCollections { get; }
     DbSet<AttachmentModel> AttachmentModels { get; }
     DbSet<SampleRequest> SampleRequests { get; }
@@ -42,6 +43,11 @@ public interface IInternalMailDbContext
     DbSet<ApplicationUserRole> UserRoles { get; }
     DbSet<Microsoft.AspNetCore.Identity.IdentityRoleClaim<Guid>> RoleClaims { get; }
     IQueryable<InternalMailNotificationLink> QueryInternalMailNotificationLinks(Guid companyId);
+    IQueryable<Guid> QueryQuotationBadgeSuppressedNotificationIds(Guid companyId, Guid employeeId)
+        => global::HRM.Application.Features.InternalMail.Services.QuotationBadgeNotificationQuery.Suppressed(
+            InternalConversations, InternalMessages, Notifications, NotificationUserStates,
+            QueryInternalMailNotificationLinks(companyId), companyId, employeeId);
+    IQueryable<InternalMailBusinessEventRow> QueryLatestInternalMailBusinessEvents(Guid companyId, Guid[] conversationIds, int[] topics);
     Task LockInternalConversationAsync(Guid companyId, Guid conversationId, CancellationToken cancellationToken);
     Task<int> InsertMissingSilentWatchersAsync(Guid companyId, Guid conversationId, Guid[] employeeIds,
         DateTime joinedAt, CancellationToken cancellationToken);

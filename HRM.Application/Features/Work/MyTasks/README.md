@@ -1,5 +1,19 @@
 # My Tasks
 
+## Ghi chú riêng từ yêu cầu mẫu
+
+`MyTaskDto.sampleRequestId` trả định danh TP từ reference (null cho việc khác),
+để FE phân loại ghi chú vào cột hệ thống **Báo cáo mẫu**, độc lập với list cá nhân.
+Khi lưu ghi chú trên thẻ mẫu, tiêu đề task là `Product.ColourCode – nội dung ghi chú`
+(tối đa 250 ký tự); chưa có mã màu thì dùng mã TP. Description giữ nội dung đầy đủ.
+Task cũ được cập nhật tiêu đề khi lưu lại ghi chú; không backfill DB.
+
+Task chỉ có reference `SampleRequest = 10000` thuộc nhóm Personal, giới hạn đúng
+company, creator và assignee hiện tại. Nội dung note là Description; các API Work
+được sửa/hoàn thành task đó mà không đổi TP/VU. Reminder opt-in của TP nằm riêng ở
+SampleRequestUserPreference; cấu hình qua dialog note trên thẻ mẫu. CRM follow-up
+vẫn dùng rule và API hiện có. Không chia sẻ note TP cho assignee/team khác.
+
 ## Contract Hiện Tại
 
 Feature này phục vụ màn `Việc của tôi`: nhân viên hiện tại quản lý list/header cá nhân, tạo personal task không liên quan khách hàng, và đọc chung CRM follow-up task được giao cho mình. Work API chỉ sửa personal task; CRM follow-up task vẫn sửa bằng `/api/v1/crm/follow-up-tasks`.

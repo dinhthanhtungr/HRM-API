@@ -112,6 +112,7 @@ public sealed class ReorderMyTaskItemDto
 
 public sealed class MyTaskDto
 {
+    public Guid? SampleRequestId { get; init; }
     public Guid WorkTaskId { get; init; }
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public WorkTaskSourceType SourceType { get; init; }

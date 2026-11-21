@@ -5,6 +5,13 @@
     <Compile Remove="Features\DevAndQA\LabTests\Commands\**\*.cs" />
     <Compile Remove="Features\DevAndQA\LabTests\Queries\**\*.cs" />
     <Compile Remove="Features\DevAndQA\LabTests\Services\**\*.cs" />
+    <!-- Chỉ mở lại luồng cơ bản; import, grid Excel và service legacy vẫn tắt. -->
+    <Compile Include="Features\DevAndQA\LabTests\Services\Basic\**\*.cs" />
+    <Compile Include="Features\DevAndQA\LabTests\Commands\CreateBasicLabTest\**\*.cs" />
+    <Compile Include="Features\DevAndQA\LabTests\Commands\PatchBasicLabTest\**\*.cs" />
+    <Compile Include="Features\DevAndQA\LabTests\Queries\GetBasicLabTest\**\*.cs" />
+    <Compile Include="Features\DevAndQA\LabTests\Queries\ListBasicLabTests\**\*.cs" />
+    <Compile Include="Features\DevAndQA\LabTests\Queries\GetLabTestLookup\**\*.cs" />
   </ItemGroup>
 
   <ItemGroup>

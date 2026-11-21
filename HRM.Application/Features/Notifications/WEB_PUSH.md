@@ -1,5 +1,12 @@
 # Web Push cho Notification
 
+Worker loại nhân viên có role IMS active khỏi người nhận lúc phát. Subscription
+cũ được giữ nhưng không được dùng cho notification đầy đủ trong thời gian role
+còn active. Bộ lọc dùng company của thông báo và role assignment hiện hành.
+Web client tắt cấu hình desktop và âm thanh khi phiên mang IMS. Service
+worker đóng thông báo đã hiển thị khi scope thay đổi, bỏ sự kiện đến muộn
+và từ chối mở liên kết cũ sau khi scope bị tắt.
+
 ## Quyền khu vực (2026-10-04)
 
 Worker giao audience đã enqueue với `InternalMailAreaAccessService.DeliveryRecipients`: employee active cùng company, conversation và parent còn active, membership active/không mute và luật RD/color. Khu vực riêng không có quyền đọc mặc định theo role. Thu hồi membership trước khi dispatch loại người đó khỏi push. Payload vẫn chỉ có ID, tiêu đề chung và link; không có body/giá/công thức. [AREAS.md](../InternalMail/AREAS.md) mô tả contract dùng bảng hiện có, không migration.
@@ -91,6 +98,9 @@ BE vẫn có thể phát cả SignalR và Web Push cho cùng Notification:
 - Web Push dùng để hiện thông báo hệ điều hành khi phù hợp.
 - FE nên xem event SignalR là tín hiệu reload dữ liệu, không hiện thêm toast trùng nếu service
   worker đã hiện Web Push.
+- FE worker bỏ thẻ và âm thanh khi có tab HRM cùng tài khoản visible và focus; badge/inbox
+  vẫn cập nhật. Khi người dùng rời web mới báo theo preference. Ledger vẫn ghi ID sự kiện
+  đã nhận ở foreground để bản sao Push/SignalR đến muộn không phát lại khi rời tab.
 
 ## Retry và bảo mật
 

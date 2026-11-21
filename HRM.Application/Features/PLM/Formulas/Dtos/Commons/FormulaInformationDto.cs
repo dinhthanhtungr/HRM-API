@@ -22,6 +22,7 @@ namespace HRM.Application.Features.PLM.Formulas.Dtos.Commons
         public Guid? SentBy { get; set; }
         public string? SentByName { get; set; }
         public DateTime? SentDate { get; set; }
+        public string? LastDeliveryKind { get; set; }
 
         public decimal? TotalPrice { get; set; }
         public decimal? RealtimeMaterialCost { get; set; }

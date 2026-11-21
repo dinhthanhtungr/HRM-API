@@ -3,6 +3,7 @@ using HRM.Application.Abstractions.Persistence.PLM;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Models;
 using HRM.Application.Features.PLM.ColorChipRecords.Dtos;
+using HRM.Domain.Enums.SampleRequests;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -145,6 +146,10 @@ internal sealed class ExportColorChipRecordPdfQueryHandler
             DeltaE = data.ProductDeltaE ?? string.Empty,
             DevelopmentFormulaCodes = developmentFormulaCodes
         };
+
+        // Chỉ ColorChip mẫu của Lab bỏ phần chuẩn Tân Phú; phiếu sản xuất dùng nội dung đã lưu.
+        if (data.FormStyle == FormStyle.ChipsTanPhu)
+            model.StandardText = string.Empty;
 
         return OperationResult<ColorChipRecordPdfFileDto>.Ok(new ColorChipRecordPdfFileDto
         {

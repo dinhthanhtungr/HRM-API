@@ -25,9 +25,17 @@ public sealed partial class InternalMailAreaAccessTests
         var access = new InternalMailAreaAccessService(store.Db, user);
         var groups = (await access.QuickGroupsAsync([store.Root.InternalConversationId], default))[store.Root.InternalConversationId];
         Assert.Equal(4, Assert.Single(groups, g => g.Code == "technical").UnreadCount);
+        var knownZero = new Dictionary<Guid, int> { [store.Child.InternalConversationId] = 0 };
+        var reused = (await access.QuickGroupsAsync([store.Root.InternalConversationId], default, knownZero))[store.Root.InternalConversationId];
+        Assert.Equal(0, Assert.Single(reused, g => g.Code == "technical").UnreadCount);
+        var unknown = (await access.QuickGroupsAsync([store.Root.InternalConversationId], default,
+            new Dictionary<Guid, int>()))[store.Root.InternalConversationId];
+        Assert.Equal(4, Assert.Single(unknown, g => g.Code == "technical").UnreadCount);
         store.Child.Participants.Single().IsActive = false;
         groups = (await access.QuickGroupsAsync([store.Root.InternalConversationId], default))[store.Root.InternalConversationId];
         Assert.DoesNotContain(groups, g => g.Code == "technical");
+        var revoked = (await access.QuickGroupsAsync([store.Root.InternalConversationId], default, knownZero))[store.Root.InternalConversationId];
+        Assert.DoesNotContain(revoked, g => g.Code == "technical");
         Assert.All(groups, g => Assert.Equal(0, g.UnreadCount));
     }
 

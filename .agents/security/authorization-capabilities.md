@@ -28,7 +28,7 @@ không thay thế bất kỳ lớp backend nào.
 
 Feature mới hoặc feature đang sửa không được tự tạo danh sách role riêng cho cùng một capability đã có. Muốn đổi
 ai được quyền trong môi trường đã migrate, cập nhật role claim và test ma trận; không sửa từng handler. Khi thêm
-capability mới phải cập nhật cả baseline seed và fallback code để rollout trước/sau migration không lệch hành vi.
+capability mới phải giữ fallback code tương thích và ghi rõ nhu cầu cập nhật baseline permission để rollout không lệch hành vi. Chỉ sửa/tạo seed, rollback, migration hoặc ghi DB khi user yêu cầu/cho phép rõ theo root AGENTS; chưa được phép thì báo phần triển khai còn thiếu, không tự sinh script.
 
 Không đưa company, ownership, employee, group hoặc trạng thái record vào role mapping tĩnh. Các điều kiện phụ thuộc
 dữ liệu phải ở authorization/visibility service có DI hoặc query scope gần feature.
@@ -82,7 +82,7 @@ liệu dùng ở nhiều màn hình.
 Khi thêm/bớt role khỏi một capability:
 
 1. Tìm mọi consumer bằng tên capability và visibility service.
-2. Cập nhật `AspNetRoleClaims`; với baseline triển khai mới, cập nhật seed/rollback tương ứng.
+2. Xác định thay đổi `AspNetRoleClaims` và baseline triển khai cần có. Chỉ ghi DB hoặc tạo/sửa seed/rollback khi đã được user cho phép rõ; nếu chưa, thực hiện phần code trong phạm vi được giao và báo nhu cầu triển khai.
 3. Giữ fallback `ApplicationPermissionRoleSets` đồng bộ trong giai đoạn compatibility.
 4. Xác nhận tác động ở list, detail, options, export và mutation.
 5. Giữ nguyên company/ownership scope tại từng consumer.

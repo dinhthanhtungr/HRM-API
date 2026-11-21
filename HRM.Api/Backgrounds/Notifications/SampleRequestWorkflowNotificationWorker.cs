@@ -2,6 +2,10 @@ using HRM.Application.Features.PLM.SampleRequests.Commands.DispatchWorkflowNotif
 using HRM.Infrastructure.DatabaseContext.ApplicationDbs;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.SignalR;
+using HRM.Api.Hubs;
+using HRM.Application.Features.PLM.SampleRequests.Services.Workflow;
+using System.Text.Json;
 
 namespace HRM.Api.Backgrounds.Notifications;
 
@@ -12,45 +16,64 @@ public sealed class SampleRequestWorkflowNotificationWorker(IServiceProvider ser
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            try { await ProcessOneAsync(stoppingToken); }
+            try
+            {
+                // Bounded drain: one slow/error job cannot monopolize the queue.
+                for (var i = 0; i < 10 && !stoppingToken.IsCancellationRequested; i++)
+                    if (!await ProcessOneAsync(stoppingToken)) break;
+            }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { return; }
             catch (Exception) { logger.LogWarning("Workflow notification processing failed; pending work will be retried."); }
             await Task.Delay(TimeSpan.FromSeconds(3), stoppingToken);
         }
     }
 
-    private async Task ProcessOneAsync(CancellationToken ct)
+    private async Task<bool> ProcessOneAsync(CancellationToken ct)
     {
         using var scope = services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var id = await db.OutboxMessages.AsNoTracking().Where(x => x.Type == "SampleRequestWorkflowNotification" &&
-            x.ProcessedAt == null && x.Attempts < 5).OrderBy(x => x.CreatedAt).Select(x => (long?)x.Id).FirstOrDefaultAsync(ct);
-        if (!id.HasValue) return;
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        // Khóa hàng trong cùng transaction với message + notification; nhiều worker không phát trùng.
-        await db.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM \"notification\".\"outbox_messages\" WHERE \"id\"={id.Value} FOR UPDATE", ct);
-        var job = await db.OutboxMessages.SingleAsync(x => x.Id == id.Value, ct);
-        if (job.ProcessedAt.HasValue || job.Attempts >= 5) { await transaction.RollbackAsync(ct); return; }
+        var job = (await WorkflowNotificationJobQueries.ClaimPending(db.OutboxMessages).ToListAsync(ct)).SingleOrDefault();
+        if (job is null) return false;
         try
         {
-            var result = await scope.ServiceProvider.GetRequiredService<ISender>()
-                .Send(new DispatchSampleRequestWorkflowNotificationCommand(id.Value), ct);
-            if (!result.Success)
+            if (job.Type == SampleWorkRealtimeSignal.OutboxType)
             {
-                var code = Enum.TryParse<WorkflowNotificationFailureCode>(result.Message, out var parsed) && Enum.IsDefined(parsed)
-                    ? parsed : WorkflowNotificationFailureCode.Unknown;
-                await RecordFailureAsync(code);
-                return;
+                // Wake-up only: no request IDs, financial values, body or actor on the company channel.
+                using var payload = JsonDocument.Parse(job.PayloadJson);
+                var companyId = payload.RootElement.GetProperty("CompanyId").GetGuid();
+                if (companyId == Guid.Empty) throw new InvalidOperationException("Invalid sample work signal scope.");
+                await scope.ServiceProvider.GetRequiredService<IHubContext<NotificationHub>>()
+                    .Clients.Group($"company:{companyId:N}").SendAsync(SampleWorkRealtimeSignal.EventName, new { }, ct);
+            }
+            else
+            {
+                var result = await scope.ServiceProvider.GetRequiredService<ISender>()
+                    .Send(new DispatchSampleRequestWorkflowNotificationCommand(job.Id), ct);
+                if (!result.Success)
+                {
+                    var code = Enum.TryParse<WorkflowNotificationFailureCode>(result.Message, out var parsed) && Enum.IsDefined(parsed)
+                        ? parsed : WorkflowNotificationFailureCode.Unknown;
+                    await RecordFailureAsync(code);
+                    return false;
+                }
             }
             job.Attempts++;
             job.Error = null;
             job.ProcessedAt = DateTime.Now;
             await db.SaveChangesAsync(ct);
             await transaction.CommitAsync(ct);
+            return true;
         }
-        catch (Exception) when (!ct.IsCancellationRequested)
+        catch (Exception exception) when (!ct.IsCancellationRequested)
         {
-            await RecordFailureAsync(WorkflowNotificationFailureCode.Unknown);
+            var cause = exception is DbUpdateException update ? update.InnerException ?? exception : exception;
+            var code = cause is System.Data.Common.DbException { IsTransient: true }
+                ? WorkflowNotificationFailureCode.TransientDatabase
+                : cause is JsonException ? WorkflowNotificationFailureCode.InvalidPayload : WorkflowNotificationFailureCode.Unknown;
+            logger.LogWarning("Workflow job {JobId} raised {FailureType}", job.Id, cause.GetType().Name);
+            await RecordFailureAsync(code);
+            return false;
         }
 
         async Task RecordFailureAsync(WorkflowNotificationFailureCode code)
@@ -59,9 +82,11 @@ public sealed class SampleRequestWorkflowNotificationWorker(IServiceProvider ser
             await transaction.DisposeAsync();
             db.ChangeTracker.Clear();
             // Ghi lỗi kỹ thuật chung, không lưu message/note/secret của khách vào error log.
-            await db.OutboxMessages.Where(x => x.Id == id.Value && x.ProcessedAt == null && x.Attempts < 5)
+            await db.OutboxMessages.Where(x => x.Id == job.Id && x.Type == job.Type && x.ProcessedAt == null && x.Attempts < WorkflowNotificationJobQueries.MaximumAttempts)
                 .ExecuteUpdateAsync(set => set.SetProperty(x => x.Attempts, x => x.Attempts + 1)
                     .SetProperty(x => x.Error, "WorkflowNotification." + code.ToString()), ct);
+            logger.LogWarning("Workflow notification job {JobId} of type {JobType} failed with {FailureCode}; attempt {Attempt}/{MaximumAttempts}",
+                job.Id, job.Type, code, job.Attempts + 1, WorkflowNotificationJobQueries.MaximumAttempts);
         }
     }
 }

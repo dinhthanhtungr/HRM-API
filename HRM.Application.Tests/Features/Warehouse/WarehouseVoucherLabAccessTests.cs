@@ -6,6 +6,7 @@ using HRM.Application.Features.Warehouse.Queries.GetWarehouseVouchers;
 using HRM.Application.Features.Warehouse.Services;
 using HRM.Application.Tests.Features.PLM.ProductionOrders;
 using HRM.Domain.Entities.WarehouseSchema;
+using HRM.Domain.Entities.OrderSchema;
 using Xunit;
 
 namespace HRM.Application.Tests.Features.Warehouse;
@@ -52,22 +53,37 @@ public sealed class WarehouseVoucherLabAccessTests
         };
         var (db, store) = ProductionOrderTestStore.CreateContext<IWarehouseReadDbContext>();
         store.Seed(nameof(db.WarehouseVouchers),
-            new WarehouseVoucher { VoucherId = 1, VoucherCode = "LOCAL", CompanyId = user.CompanyId!.Value, RequestId = 1 },
+            new WarehouseVoucher { VoucherId = 1, VoucherCode = "LOCAL", VoucherType = 9, CompanyId = user.CompanyId!.Value, RequestId = 1 },
             new WarehouseVoucher { VoucherId = 2, VoucherCode = "FOREIGN", CompanyId = Guid.NewGuid(), RequestId = 2 });
         store.Seed(nameof(db.WarehouseVoucherDetails),
             new WarehouseVoucherDetail { VoucherDetailId = 1, VoucherId = 1, ProductCode = "ITEM", QtyKg = 7 });
+        store.Seed(nameof(db.WarehouseRequests), new WarehouseRequest
+            { RequestId = 1, CompanyId = user.CompanyId!.Value, codeFromRequest = "PO-A" });
+        store.Seed(nameof(db.PurchaseOrders), new PurchaseOrder
+        {
+            CompanyId = user.CompanyId!.Value, ExternalId = "PO-A",
+            PurchaseOrderSnapshot = new() { SupplierNameSnapshot = "Supplier A", SupplierExternalIdSnapshot = "SUP-A" }
+        });
         // Full-history readers must not ask the customer visibility service for a Sale scope.
         var visibility = new WarehouseStockVisibilityService(db, user, null!);
-        var list = await new GetWarehouseVouchersQueryHandler(db, user, visibility).Handle(new(), default);
+        var businessReader = new WarehouseVoucherBusinessReader(db, user, new CurrentUserPermissionService(user));
+        var list = await new GetWarehouseVouchersQueryHandler(db, user, visibility, businessReader).Handle(new(), default);
         Assert.True(list.Success);
         var local = Assert.Single(list.Data!.Items);
         Assert.Equal(1L, local.VoucherId);
         Assert.Equal(7m, Assert.Single(local.Details).QtyKg);
 
-        var detailHandler = new GetWarehouseVoucherByIdQueryHandler(db, user, visibility);
+        var detailHandler = new GetWarehouseVoucherByIdQueryHandler(db, user, visibility, businessReader);
         var detail = await detailHandler.Handle(new(1), default);
         Assert.True(detail.Success);
         Assert.Equal(7m, Assert.Single(detail.Data!.Details).QtyKg);
+        Assert.Equal("PurchaseGoodsReceipt", local.BusinessType.Code);
+        Assert.Equal(local.BusinessType, detail.Data.BusinessType);
+        Assert.Equal("PO-A", detail.Data.PurchaseOrderCode);
+        Assert.Equal(local.PurchaseOrderCode, detail.Data.PurchaseOrderCode);
+        Assert.False(detail.Data.CanViewSupplier);
+        Assert.Null(detail.Data.SupplierName);
+        Assert.Equal(local.SupplierName, detail.Data.SupplierName);
         Assert.False((await detailHandler.Handle(new(2), default)).Success);
     }
 

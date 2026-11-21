@@ -37,8 +37,8 @@ internal sealed class ArchiveMyTaskListCommandHandler
         }
 
         var fallbackListId = await _support.ResolveDefaultListIdAsync(actor, list.Id, cancellationToken);
-        await _support.WriteDbContext.WorkTasks
-            .Where(x => x.CompanyId == actor.CompanyId && x.AssignedToEmployeeId == actor.EmployeeId && x.WorkTaskListId == list.Id && !x.References.Any())
+        await _support.BuildWritablePersonalTaskQuery(actor)
+            .Where(x => x.WorkTaskListId == list.Id)
             .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.WorkTaskListId, fallbackListId), cancellationToken);
 
         list.IsActive = false;

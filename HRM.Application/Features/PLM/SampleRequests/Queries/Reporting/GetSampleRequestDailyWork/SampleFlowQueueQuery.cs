@@ -29,8 +29,7 @@ internal static class SampleFlowQueueQuery
                     (e.EventType == SampleRequestWorkflowEvents.PriceAccepted || e.EventType == SampleRequestWorkflowEvents.PriceRevoked ||
                      e.EventType == SampleFlowRules.PriceRejected || e.EventType == SampleFlowRules.PriceNoResponse))
                 .OrderByDescending(e => e.RecordedAt).ThenByDescending(e => e.Id)
-                .Select(e => e.EventType == SampleRequestWorkflowEvents.PriceAccepted &&
-                    e.FormulaId == ((row.SampleRequest.CreatedDate < SampleFlowRules.StartsAt ? row.SampleRequest.FormulaId : row.Trial != null ? row.Trial.FormulaId : null) ?? row.ConfirmedFormulaId ?? row.SampleRequest.FormulaId))
+                .Select(e => e.EventType == SampleRequestWorkflowEvents.PriceAccepted)
                 .FirstOrDefault()
         });
 

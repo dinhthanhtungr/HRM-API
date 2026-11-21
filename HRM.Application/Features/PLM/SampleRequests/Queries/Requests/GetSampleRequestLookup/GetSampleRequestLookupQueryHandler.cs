@@ -7,6 +7,7 @@ using HRM.Application.Features.PLM.Shared.Rules;
 using HRM.Domain.Enums.SampleRequests;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using HRM.Application.Features.CRM.CustomerCare.SampleSharingGroups;
 
 namespace HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestLookup;
 
@@ -16,15 +17,17 @@ internal sealed class GetSampleRequestLookupQueryHandler
     private readonly IPLMReadDbContext _dbContext;
     private readonly ICurrentUser _currentUser;
     private readonly ICustomerVisibilityService _visibilityService;
+    private readonly CustomerSampleSharingService _sampleSharing;
 
     public GetSampleRequestLookupQueryHandler(
         IPLMReadDbContext dbContext,
         ICurrentUser currentUser,
-        ICustomerVisibilityService visibilityService)
+        ICustomerVisibilityService visibilityService, CustomerSampleSharingService sampleSharing)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
         _visibilityService = visibilityService;
+        _sampleSharing = sampleSharing;
     }
 
     public async Task<IReadOnlyList<SampleRequestLookupItemDto>> Handle(
@@ -36,6 +39,7 @@ internal sealed class GetSampleRequestLookupQueryHandler
         var scope = await _visibilityService.BuildReadScopeAsync(cancellationToken);
         string? saleOrderCustomerExternalId = null;
         var canUseAllCustomersFormula = false;
+        Guid[] sharedOwners = [];
 
         if (request.ForSaleOrder)
         {
@@ -63,6 +67,16 @@ internal sealed class GetSampleRequestLookupQueryHandler
                 PLMCustomerRules.IsInternalCustomerExternalId(saleOrderCustomerExternalId));
         }
 
+        // Customer-scoped Sample Request lookups share only their minimal lookup
+        // data. The selected customer must still pass its own visibility check.
+        var useSharedCustomerScope = _sampleSharing.Enabled && request.CustomerId is { } lookupCustomer && lookupCustomer != Guid.Empty;
+        if (useSharedCustomerScope)
+        {
+            var owners = await _sampleSharing.ResolveOwnerIdsAsync(companyId, request.CustomerId!.Value, cancellationToken);
+            if (owners is null) return Array.Empty<SampleRequestLookupItemDto>();
+            sharedOwners = owners;
+        }
+
         // KH_VIETAUS chỉ tham gia kết quả khi người dùng chủ động tìm keyword.
         // Mode Sale Order vẫn áp giới hạn status riêng ở bên dưới.
         var visibilityScope = canUseAllCustomersFormula
@@ -71,10 +85,14 @@ internal sealed class GetSampleRequestLookupQueryHandler
                 ? scope with { CanViewInternalCustomer = true }
                 : scope;
 
+        if (useSharedCustomerScope)
+            visibilityScope = visibilityScope with { HasFullCustomerView = true, CanViewInternalCustomer = true };
+
         var query = _visibilityService.ApplySampleRequestVisibility(
-                _dbContext.SampleRequests
+                _dbContext.SampleRequests.Where(x => x.RequestType == null || x.RequestType != HRM.Application.Features.PLM.Shared.Rules.SemiFinishedRequestRules.RequestType)
                     .AsNoTracking()
                     .Where(x =>
+                        x.CompanyId == companyId &&
                         x.Product.IsActive &&
                         x.Product.CompanyId == companyId &&
                         x.Customer.IsActive == true &&
@@ -100,6 +118,7 @@ internal sealed class GetSampleRequestLookupQueryHandler
             {
                 query = query.Where(x =>
                     x.CustomerId == customerId ||
+                    (x.IsActive && sharedOwners.Contains(x.CustomerId)) ||
                     x.Customer.ExternalId == InternalCustomerRules.InternalCustomerExternalId);
             }
             else
@@ -108,6 +127,7 @@ internal sealed class GetSampleRequestLookupQueryHandler
                 {
                     query = query.Where(x =>
                         x.CustomerId == customerId ||
+                        sharedOwners.Contains(x.CustomerId) ||
                         x.Customer.ExternalId == InternalCustomerRules.InternalCustomerExternalId);
                 }
             }
@@ -143,7 +163,7 @@ internal sealed class GetSampleRequestLookupQueryHandler
                 PLMCustomerRules.IsInternalCustomerExternalId(saleOrderCustomerExternalId));
             query = allowsSampleSent
                 ? query.Where(x => x.Status == completed ||
-                    x.CreatedDate < Services.Workflow.SampleFlowRules.StartsAt && x.Status == sampleSent)
+                    (x.CreatedDate < Services.Workflow.SampleFlowRules.StartsAt && !x.WorkflowEvents.Any(e => e.CompanyId == x.CompanyId && e.EventType == HRM.Application.Features.PLM.SampleRequests.Services.Workflow.SampleFollowUpRules.Started)) && x.Status == sampleSent)
                 : query.Where(x => x.Status == completed);
         }
 

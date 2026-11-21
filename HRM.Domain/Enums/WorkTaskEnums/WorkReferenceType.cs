@@ -12,5 +12,6 @@ public enum WorkReferenceType
     PurchaseOrder = 4,
     Internal = 5,
     Custom = 6,
-    Other = 9999
+    Other = 9999,
+    SampleRequest = 10000
 }

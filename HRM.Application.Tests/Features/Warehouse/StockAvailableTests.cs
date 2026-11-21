@@ -21,6 +21,23 @@ namespace HRM.Application.Tests.Features.Warehouse;
 
 public sealed class StockAvailableTests
 {
+    [Fact]
+    public async Task InternalExactCodes_FilterBeforeTotalsAndDoNotBindFromHttp()
+    {
+        var f = new Fixture();
+        var other = f.Stock(2, StockType.RawMaterial, "B", 99);
+        other.Code = "OTHER";
+        f.Store.Seed(nameof(f.Db.WarehouseShelfStocks), f.Stock(1, StockType.RawMaterial, "A", 10), other);
+        var page = (await f.Handler.Handle(new() { ExactCodes = ["ITEM"] }, default)).Data!;
+        Assert.Equal("ITEM", Assert.Single(page.Items).Code);
+        Assert.Equal(10m, page.Items[0].TotalOnHandKg);
+        Assert.Equal(2, (await f.Handler.Handle(new(), default)).Data!.TotalCount);
+        Assert.Empty((await f.Handler.Handle(new() { ExactCodes = [] }, default)).Data!.Items);
+        var (bound, valid) = await Bind("?exactCodes=ITEM");
+        Assert.True(valid);
+        Assert.Null(bound.ExactCodes);
+    }
+
     [Theory]
     [InlineData(ApplicationRoles.Production.PLPUUser, true)]
     [InlineData(ApplicationRoles.Developer, true)]

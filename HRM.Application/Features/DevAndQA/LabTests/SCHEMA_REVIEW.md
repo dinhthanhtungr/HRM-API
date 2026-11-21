@@ -1,6 +1,8 @@
-> LabTest đang tạm dừng; tài liệu bên dưới giữ để khôi phục sau. Xem [trạng thái hiện tại](README.md#trạng-thái-hiện-tại-tạm-dừng).
+> Review dưới đây dành cho luồng Excel đang tạm dừng. Schema hiện hành của API cơ bản, gồm liên kết Material tùy chọn, xem [BASIC_API.md](BASIC_API.md); chưa áp dụng DB.
 
 # Review schema LabTest trước rollout
+
+ObservedText đã bỏ khỏi entity/mapping; không thêm cột này. Kết quả dùng Value theo chỉ tiêu IQC.
 
 Chỉ mô tả model cần triển khai. Chưa sinh/chạy migration/SQL hoặc kết nối DB.
 
@@ -17,7 +19,6 @@ Nếu chưa có bảng: cần LabTest và LabTestResult theo EF configurations, 
 | LabTest | isdeleted | boolean, NOT NULL default false |
 | LabTest | importbatchid | uuid, nullable |
 | LabTest | importrownumber | integer, nullable |
-| LabTestResult | observedtext | text, nullable |
 
 Unique index mới `(companyid, importbatchid, importrownumber)` chống import trùng; nullable trên phiếu tạo thủ công. Giữ unique `(companyid,code)`, `(labtestid,criterioncode)`, `(labtestid,evaluationstandardid)`, các FK Restrict và check snapshot hiện có. Không tự tạo/xóa danh mục hoặc cập nhật Value từ quan sát.
 

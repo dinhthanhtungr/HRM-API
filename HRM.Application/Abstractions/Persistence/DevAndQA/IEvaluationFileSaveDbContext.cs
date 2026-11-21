@@ -9,6 +9,8 @@ namespace HRM.Application.Abstractions.Persistence.DevAndQA;
 public interface IEvaluationFileSaveDbContext : IEvaluationDbContext
 {
     DbSet<AttachmentCollection> AttachmentCollections { get; }
+    DbSet<LabTest> LabTests { get; }
+    DbSet<LabTestResult> LabTestResults { get; }
     Task<IDbContextTransaction> BeginCombinedEvaluationSaveAsync(CancellationToken ct);
     void EndCombinedEvaluationSave();
 }

@@ -25,6 +25,7 @@ public sealed class NotificationTopicCatalogTests
     [InlineData(TopicNotifications.SampleRequestCancelled, "sample_request", "lifecycle")]
     [InlineData(TopicNotifications.MaterialPurchaseUnavailable, "material", "availability")]
     [InlineData(TopicNotifications.SampleRequestMessageReacted, "sample_request", "reaction")]
+    [InlineData(TopicNotifications.SampleRequestLabNoteRecorded, "sample_request", "message")]
     [InlineData(TopicNotifications.QuotationMessageReacted, "quotation", "reaction")]
     [InlineData(TopicNotifications.InternalMailMessageReacted, "internal_mail", "reaction")]
     public void Definition_SeparatesBusinessCategoryFromEventGroup(

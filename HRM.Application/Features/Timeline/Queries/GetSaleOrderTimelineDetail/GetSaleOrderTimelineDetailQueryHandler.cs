@@ -75,6 +75,7 @@ internal sealed class GetSaleOrderTimelineDetailQueryHandler
             .Select(x => new DetailRow(
                 x.MerchandiseOrderDetailId,
                 x.ProductId,
+                x.FormulaId,
                 x.Product.ColourCode ?? x.Product.Code ?? x.ProductExternalIdSnapshot,
                 x.Product.Name ?? x.ProductNameSnapshot,
                 x.UnitPriceAgreed,
@@ -97,6 +98,7 @@ internal sealed class GetSaleOrderTimelineDetailQueryHandler
             .Where(x =>
                 x.IsActive &&
                 detailIds.Contains(x.MerchandiseOrderDetailId) &&
+                x.ProductionOrder.CompanyId == scope.CompanyId &&
                 x.ProductionOrder.IsActive)
             .Select(x => new MfgLinkRow(
                 x.MerchandiseOrderDetailId,
@@ -104,7 +106,8 @@ internal sealed class GetSaleOrderTimelineDetailQueryHandler
                 x.ProductionOrder.ExternalId,
                 x.ProductionOrder.CreatedDate,
                 x.ProductionOrder.UpdatedDate,
-                x.ProductionOrder.ExpectedDate))
+                x.ProductionOrder.ExpectedDate,
+                x.ProductionOrder.Status))
             .ToListAsync(cancellationToken);
 
         var deliveries = await _dbContext.DeliveryOrderDetails
@@ -252,6 +255,11 @@ internal sealed class GetSaleOrderTimelineDetailQueryHandler
             return new SaleOrderTimelineDetailRowDto
             {
                 SaleOrderDetailStatus = detail.Status,
+                CurrentMfgStatus = rowMfgs.OrderByDescending(x => x.UpdatedDate)
+                    .ThenByDescending(x => x.CreatedDate).ThenByDescending(x => x.MfgProductionOrderId)
+                    .Select(x => x.Status).FirstOrDefault(),
+                ProductId = detail.ProductId,
+                FormulaId = detail.FormulaId,
                 CanConfirmStandardSample = detail.CanConfirmStandardSample,
                 MerchandiseOrderDetailId = detail.MerchandiseOrderDetailId,
                 ExternalId = string.Join(", ", rowMfgs
@@ -304,6 +312,7 @@ internal sealed class GetSaleOrderTimelineDetailQueryHandler
     private sealed record DetailRow(
         Guid MerchandiseOrderDetailId,
         Guid ProductId,
+        Guid FormulaId,
         string ProductCode,
         string ProductName,
         decimal UnitPrice,
@@ -319,7 +328,8 @@ internal sealed class GetSaleOrderTimelineDetailQueryHandler
         string ExternalId,
         DateTime CreatedDate,
         DateTime UpdatedDate,
-        DateTime? ExpectedDate);
+        DateTime? ExpectedDate,
+        string Status);
 
     private sealed record DeliveryRow(
         Guid DeliveryOrderDetailId,

@@ -10,6 +10,7 @@ using HRM.Domain.Enums.Logs;
 using HRM.Domain.Enums.Merchadises;
 using HRM.Domain.Enums.Orders;
 using Microsoft.EntityFrameworkCore;
+using HRM.Application.Features.CRM.Quotations.Services;
 
 namespace HRM.Application.Features.PLM.SaleOrders.Services;
 
@@ -64,6 +65,9 @@ internal sealed class SaleOrderApprovalService
             return OperationResult.Fail("Chỉ đơn hàng ở trạng thái New mới được duyệt.");
         }
 
+        var currency = string.IsNullOrWhiteSpace(order.Currency) ? "VND" : order.Currency.Trim().ToUpperInvariant();
+        if (!QuotationPricingCurrencyConverter.TryValidateQuotationCurrency(currency, order.ExchangeRate ?? 0m, out _))
+            return OperationResult.Fail("Đơn ngoại tệ phải có tỷ giá lớn hơn 0 để đối chiếu giá chuẩn.");
         var priceWarning = await GetApprovedPriceWarningAsync(order, activeDetails, cancellationToken);
 
         var existingLinkedDetailIds = await _dbContext.MfgOrderPOs
@@ -124,7 +128,12 @@ internal sealed class SaleOrderApprovalService
         }
 
         var productIds = activeDetails.Select(x => x.ProductId).Distinct().ToArray();
-        var approvedPrices = await _dbContext.ProductPricingVersions
+        var currency = string.IsNullOrWhiteSpace(order.Currency) ? "VND" : order.Currency.Trim().ToUpperInvariant();
+        decimal ApplicablePrice(decimal quantity, decimal standard, IEnumerable<HRM.Domain.Entities.CustomerSchema.ProductPricingTier> tiers)
+            => SaleOrderApprovalPriceWarningRules.ConvertApprovedPrice(
+                SaleOrderApprovalPriceWarningRules.ResolveApprovedPrice(quantity, standard, tiers),
+                currency, order.ExchangeRate ?? 1m);
+        var approvedVersionIds = await _dbContext.ProductPricingVersions
             .AsNoTracking()
             .Where(x =>
                 x.CompanyId == order.CompanyId &&
@@ -137,20 +146,38 @@ internal sealed class SaleOrderApprovalService
             .Select(group => group
                 .OrderByDescending(x => x.Version)
                 .ThenByDescending(x => x.ApprovedAt ?? x.UpdatedDate ?? x.CreatedDate)
-                .Select(x => new { x.ProductId, StandardSellingPrice = x.StandardSellingPrice!.Value })
+                .Select(x => x.ProductPricingVersionId)
                 .First())
-            .ToDictionaryAsync(x => x.ProductId, x => x.StandardSellingPrice, cancellationToken);
+            .ToArrayAsync(cancellationToken);
+        var approvedPrices = await _dbContext.ProductPricingVersions
+            .AsNoTracking()
+            .Where(x => x.CompanyId == order.CompanyId && approvedVersionIds.Contains(x.ProductPricingVersionId))
+            .Select(x => new
+            {
+                x.ProductId,
+                StandardSellingPrice = x.StandardSellingPrice!.Value,
+                PriceTiers = x.PriceTiers.Where(t => t.IsActive).ToList()
+            })
+            .ToDictionaryAsync(x => x.ProductId, cancellationToken);
 
         var belowStandardLines = activeDetails
             .Where(detail =>
-                approvedPrices.TryGetValue(detail.ProductId, out var standardSellingPrice) &&
+                approvedPrices.TryGetValue(detail.ProductId, out var pricing) &&
                 SaleOrderApprovalPriceWarningRules.IsBelowApprovedStandardPrice(
                     detail.UnitPriceAgreed,
-                    standardSellingPrice))
+                    ApplicablePrice(
+                        detail.ExpectedQuantity, pricing.StandardSellingPrice, pricing.PriceTiers)))
             .Select(detail =>
             {
-                var standardSellingPrice = approvedPrices[detail.ProductId];
-                return $"{detail.ProductExternalIdSnapshot}: giá chốt {detail.UnitPriceAgreed:N0} thấp hơn giá chuẩn {standardSellingPrice:N0}";
+                var pricing = approvedPrices[detail.ProductId];
+                var standardSellingPrice = ApplicablePrice(
+                    detail.ExpectedQuantity, pricing.StandardSellingPrice, pricing.PriceTiers);
+                var quantity = detail.ExpectedQuantity.ToString("0.############################", System.Globalization.CultureInfo.InvariantCulture);
+                if (currency == "VND")
+                    return $"{detail.ProductExternalIdSnapshot} ({quantity} kg): giá chốt {detail.UnitPriceAgreed:N0} thấp hơn giá chuẩn {standardSellingPrice:N0}";
+                var agreed = detail.UnitPriceAgreed.ToString("0.############################", System.Globalization.CultureInfo.InvariantCulture);
+                var standard = standardSellingPrice.ToString("0.############################", System.Globalization.CultureInfo.InvariantCulture);
+                return $"{detail.ProductExternalIdSnapshot} ({quantity} kg): giá chốt {agreed} {currency} thấp hơn giá chuẩn {standard} {currency}";
             })
             .ToArray();
 

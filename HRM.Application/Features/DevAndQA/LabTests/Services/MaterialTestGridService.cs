@@ -52,7 +52,7 @@ internal sealed class MaterialTestGridService(ILabTestDbContext db, EvaluationAc
             {
                 var key = Key(x.EvaluationStandardId, x.CriterionCode);
                 columns.TryAdd(key, new(key, x.CriterionCode, x.CriterionName, x.CriterionNameEn, x.DataType, x.Unit, x.SortOrder));
-                return new MaterialTestCellDto(key, x.Id, x.EvaluationStandardId, x.Value, x.ObservedText,
+                return new MaterialTestCellDto(key, x.Id, x.EvaluationStandardId, x.Value, null,
                     LabTestMapper.Configuration(x), x.AttachmentCollectionId);
             }).ToList();
             rows[(MaterialTestSource.LabTest, lab.Id)] = new(MaterialTestSource.LabTest, lab.Id, null,

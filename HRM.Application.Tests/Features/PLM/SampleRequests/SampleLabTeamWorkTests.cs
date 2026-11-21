@@ -1,4 +1,7 @@
 using HRM.Application.Commons.Authorization;
+using HRM.Application.Abstractions.Persistence.CRM.CustomerCare;
+using HRM.Application.Tests.Features.PLM.ProductionOrders;
+using HRM.Domain.Entities.HrSchema;
 using HRM.Application.Features.PLM.SampleRequests.Rules;
 using HRM.Application.Features.PLM.SampleRequests.Services;
 using HRM.Domain.Entities.CompanySchema;
@@ -10,6 +13,42 @@ namespace HRM.Application.Tests.Features.PLM.SampleRequests;
 
 public sealed class SampleLabTeamWorkTests
 {
+    [Theory]
+    [InlineData("LabAdmin", "QAQC.RD", SampleLabTeamFilter.All)]
+    [InlineData("LabAdmin", "QAQC.MAU", SampleLabTeamFilter.All)]
+    [InlineData("LabAdmin", "", SampleLabTeamFilter.All)]
+    [InlineData("LabUser", "QAQC.RD", SampleLabTeamFilter.Mine)]
+    [InlineData("LabUser", "QAQC.MAU", SampleLabTeamFilter.Mine)]
+    [InlineData("LabUser", "", SampleLabTeamFilter.All)]
+    public async Task RoleOnlyChangesTheDefaultAndNeverOverridesExplicitTeam(string role, string team, SampleLabTeamFilter expected)
+    {
+        var user = new SampleTrialFeedbackCorrectionTests.User(role);
+        var (db, store) = ProductionOrderTestStore.CreateContext<ICRMReadDbContext>();
+        store.Seed(nameof(db.Employees), new Employee { EmployeeId = user.EmployeeId!.Value, CompanyId = user.CompanyId!.Value, IsActive = true });
+        store.Seed(nameof(db.MemberInGroups), new MemberInGroup { Profile = user.EmployeeId.Value, IsActive = true,
+            Group = new Group { CompanyId = user.CompanyId.Value, GroupType = team } });
+        var context = await new SampleRequestLabTeamScope(db, user).ReadAsync(default);
+        Assert.Equal(expected, context.DefaultFilter);
+        Assert.True(context.CanViewAll);
+        Assert.Equal(2, SampleRequestLabTeamScope.Apply(Samples(), context, SampleLabTeamFilter.Color).Count());
+        Assert.Equal(2, SampleRequestLabTeamScope.Apply(Samples(), context, SampleLabTeamFilter.Rd).Count());
+        Assert.Equal(5, SampleRequestLabTeamScope.Apply(Samples(), context, SampleLabTeamFilter.All).Count());
+    }
+
+    [Theory]
+    [InlineData("QAQC.RD", SampleLabTeamFilter.Color, 2)]
+    [InlineData("QAQC.MAU", SampleLabTeamFilter.Rd, 2)]
+    [InlineData("QAQC.RD", SampleLabTeamFilter.All, 5)]
+    [InlineData("QAQC.MAU", SampleLabTeamFilter.All, 5)]
+    [InlineData("", SampleLabTeamFilter.Rd, 2)]
+    [InlineData("", SampleLabTeamFilter.Color, 2)]
+    [InlineData("", SampleLabTeamFilter.All, 5)]
+    public void EveryLabMembershipCanChooseEachExplicitTeam(string team, SampleLabTeamFilter selected, int expected)
+    {
+        var context = new SampleLabTeamContext(team.Length == 0 ? [] : [team], true, SampleLabTeamFilter.Mine);
+        Assert.Equal(expected, SampleRequestLabTeamScope.Apply(Samples(), context, selected).Count());
+    }
+
     private static IQueryable<SampleRequest> Samples() => new[] { "PHM", "CMP", "GCO", "OTHER", "" }
         .Select((code, i) => new SampleRequest { ExternalId = i.ToString(), Product = new Product { Category = new HRM.Domain.Entities.MaterialSchema.Category { ExternalId = code } } }).AsQueryable();
 

@@ -2,6 +2,7 @@ using HRM.Application.Features.PLM.Formulas.Queries.GetManufacturingFormulaMater
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using HRM.Api.Security.Authorization;
 using HRM.Application.Commons.Authorization.PLM;
 using HRM.Application.Features.PLM.Manufacturing.Queries.ExportProductionOrderQuantity;
 using HRM.Application.Features.PLM.Manufacturing.Commands.CreateLabManufacturingFormula;
@@ -17,7 +18,7 @@ using HRM.Application.Features.PLM.Manufacturing.Queries.GetManufacturingFormula
 namespace HRM.Api.Controllers.PLM;
 
 [ApiController]
-[Authorize]
+[Authorize(Policy = SensitiveDataAuthorization.PolicyName)]
 [Route("api/v1/plm/manufacturing-formulas")]
 public sealed class ManufacturingFormulasController : ControllerBase
 {
@@ -87,9 +88,9 @@ public sealed class ManufacturingFormulasController : ControllerBase
 
     [HttpGet("production-orders/{orderId:guid}/excel")]
     [Authorize(Policy = PlmPolicies.ViewFormulaMaterials)]
-    public async Task<IActionResult> ExportFormula(Guid orderId, CancellationToken ct)
+    public async Task<IActionResult> ExportFormula(Guid orderId, CancellationToken ct, [FromQuery] bool includePrices = false)
     {
-        var result = await _sender.Send(new ExportManufacturingFormulaExcelQuery(orderId), ct);
+        var result = await _sender.Send(new ExportManufacturingFormulaExcelQuery(orderId, includePrices), ct);
         return result.Success && result.Data is not null
             ? File(result.Data, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", $"formula-{orderId:N}.xlsx")
             : BadRequest(result);

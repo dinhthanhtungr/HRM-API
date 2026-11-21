@@ -5,6 +5,12 @@ namespace HRM.Application.Features.DevAndQA.IQC.Dtos;
 
 public class GetSummaryQCInput
 {
+    /// <summary>Warehouse hoặc LabTest. LabTest không có voucher (VoucherDetailId=0).</summary>
+    public string Source { get; set; } = "Warehouse";
+    public Guid? LabTestId { get; set; }
+    public DateOnly? TestDate { get; set; }
+    /// <summary>Khối lượng mẫu test nhập tay; không phải tồn kho. Null nếu chưa nhập.</summary>
+    public decimal? WeightKg { get; set; }
     public long VoucherDetailId { get; set; }
 
     public string ExternalId { get; set; } = string.Empty; // ProductCode

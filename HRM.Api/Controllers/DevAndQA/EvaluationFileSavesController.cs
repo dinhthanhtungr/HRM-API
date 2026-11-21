@@ -18,6 +18,13 @@ namespace HRM.Api.Controllers.DevAndQA;
 [RequestFormLimits(MultipartBodyLengthLimit = 55_000_000)]
 public sealed class EvaluationFileSavesController(IEvaluationFileSaveService saves) : ControllerBase
 {
+    [HttpPost("lab-tests/save-with-attachments")]
+    [Consumes("multipart/form-data")]
+    public Task<IActionResult> CreateLab(CancellationToken ct) => Save(EvaluationFileResource.Lab, null, true, ct);
+
+    [HttpPatch("lab-tests/{id:guid}/save-with-attachments")]
+    [Consumes("multipart/form-data")]
+    public Task<IActionResult> PatchLab(Guid id, CancellationToken ct) => Save(EvaluationFileResource.Lab, id.ToString(), false, ct);
     [HttpPost("iqc/save-with-attachments")]
     [Consumes("multipart/form-data")]
     public Task<IActionResult> CreateIqc(CancellationToken ct) => Save(EvaluationFileResource.Iqc, null, true, ct);

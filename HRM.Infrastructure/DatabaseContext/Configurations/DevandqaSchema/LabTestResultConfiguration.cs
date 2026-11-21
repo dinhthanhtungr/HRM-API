@@ -19,7 +19,6 @@ public sealed class LabTestResultConfiguration : IEntityTypeConfiguration<LabTes
         entity.Property(x => x.SourceTemplateItemId).HasColumnName("sourcetemplateitemid");
         EvaluationSnapshotConfiguration.Configure(entity);
         entity.Property(x => x.Value).HasColumnName("value").HasColumnType("text");
-        entity.Property(x => x.ObservedText).HasColumnName("observedtext").HasColumnType("text");
         entity.Property(x => x.AttachmentCollectionId).HasColumnName("attachmentcollectionid");
         entity.HasIndex(x => new { x.LabTestId, x.CriterionCode }).IsUnique();
         entity.HasIndex(x => new { x.LabTestId, x.EvaluationStandardId }).IsUnique();

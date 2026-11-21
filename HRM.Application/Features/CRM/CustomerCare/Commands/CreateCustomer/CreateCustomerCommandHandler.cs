@@ -90,7 +90,8 @@ internal sealed class CreateCustomerCommandHandler
             scope.CompanyId,
             request.TaxNumber,
             excludedCustomerId: null,
-            cancellationToken);
+            cancellationToken,
+            creatingGroupId: groupId.Value);
         if (taxConflict is not null)
         {
             return OperationResult<CustomerCreateResultDto>.Fail(

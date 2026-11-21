@@ -34,10 +34,12 @@ namespace HRM.Infrastructure.DatabaseContext.ApplicationDbs
         IdentityUserClaim<Guid>, ApplicationUserRole, IdentityUserLogin<Guid>,
         IdentityRoleClaim<Guid>, IdentityUserToken<Guid>>
     {
-        public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
+        private readonly bool _conversationSummaryEnabled;
+        public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options,
+            Microsoft.Extensions.Options.IOptions<HRM.Application.Features.PLM.SampleRequests.Services.ConversationSummary.ConversationSummaryOptions>? summaryOptions = null)
             : base(options)
         {
-
+            _conversationSummaryEnabled = summaryOptions?.Value.Enabled == true;
         }
 
         public DbSet<IdCounter> IdCounters { get; set; } = default!;

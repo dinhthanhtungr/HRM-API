@@ -1,5 +1,6 @@
 using HRM.Application.Abstractions.FileStorage;
 using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Formats;
 using SixLabors.ImageSharp.Formats.Webp;
 using SixLabors.ImageSharp.Processing;
 
@@ -17,19 +18,31 @@ internal sealed class ImageSharpThumbnailGenerator : IImageThumbnailGenerator
     {
         try
         {
-            using var image = await Image.LoadAsync(source, cancellationToken);
+            var options = new DecoderOptions { MaxFrames = 1 };
+            // Reject oversized dimensions before decoding pixels on seekable storage streams.
+            if (source.CanSeek)
+            {
+                var start = source.Position;
+                var info = await Image.IdentifyAsync(options, source, cancellationToken);
+                source.Position = start;
+                if ((long)info.Width * info.Height > MaxPixelCount) return null;
+            }
+            using var image = await Image.LoadAsync(options, source, cancellationToken);
             if ((long)image.Width * image.Height > MaxPixelCount)
             {
                 return null;
             }
 
-            image.Mutate(context => context
-                .AutoOrient()
-                .Resize(new ResizeOptions
+            image.Mutate(context =>
+            {
+                context.AutoOrient();
+                if (image.Width <= maxWidth && image.Height <= maxHeight) return;
+                context.Resize(new ResizeOptions
                 {
                     Mode = ResizeMode.Max,
                     Size = new Size(maxWidth, maxHeight)
-                }));
+                });
+            });
 
             var output = new MemoryStream();
             await image.SaveAsWebpAsync(

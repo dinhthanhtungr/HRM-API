@@ -17,15 +17,18 @@ internal sealed class GetWarehouseVouchersQueryHandler
     private readonly IWarehouseReadDbContext _dbContext;
     private readonly ICurrentUser _currentUser;
     private readonly IWarehouseStockVisibilityService _stockVisibilityService;
+    private readonly IWarehouseVoucherBusinessReader _businessReader;
 
     public GetWarehouseVouchersQueryHandler(
         IWarehouseReadDbContext dbContext,
         ICurrentUser currentUser,
-        IWarehouseStockVisibilityService stockVisibilityService)
+        IWarehouseStockVisibilityService stockVisibilityService,
+        IWarehouseVoucherBusinessReader businessReader)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
         _stockVisibilityService = stockVisibilityService;
+        _businessReader = businessReader;
     }
 
     public async Task<OperationResult<PagedResult<WarehouseVoucherListItemDto>>> Handle(
@@ -52,10 +55,12 @@ internal sealed class GetWarehouseVouchersQueryHandler
             return OperationResult<PagedResult<WarehouseVoucherListItemDto>>.Fail("ReqType không hợp lệ.");
         }
 
+        var isIms = HRM.Application.Commons.Authorization.ImsAccountRestrictions.AppliesTo(_currentUser);
         var companyId = _currentUser.CompanyId!.Value;
         var vouchers = _dbContext.WarehouseVouchers
             .AsNoTracking()
             .Where(x => x.CompanyId == companyId && x.RequestId != null);
+        if (isIms) vouchers = ImsWarehouseVoucherScope.Apply(_dbContext, vouchers, companyId);
         var requests = _dbContext.WarehouseRequests
             .AsNoTracking()
             .Where(x => x.CompanyId == companyId);
@@ -77,14 +82,20 @@ internal sealed class GetWarehouseVouchersQueryHandler
                       PostgresSearchPattern.EscapeCharacter)
             select product.ColourCode;
 
-        var visibleDetails = await _stockVisibilityService.ApplyVoucherDetailsAsync(
+        if (isIms) sampleProductColourCodes = sampleProductColourCodes.Where(_ => false);
+
+        var visibleDetails = isIms ? _dbContext.WarehouseVoucherDetails.AsNoTracking() : await _stockVisibilityService.ApplyVoucherDetailsAsync(
             _dbContext.WarehouseVoucherDetails.AsNoTracking(),
             companyId,
             request.NormalizedKeyword,
             cancellationToken);
 
+        var smartSearch = WarehouseVoucherSmartSearch.Build(headers, visibleDetails);
+        headers = smartSearch.ApplyRequest(headers, request.NormalizedKeyword, request, out var smartKeyword);
         var filteredHeaders = WarehouseVoucherListQueryHelper.ApplyFilters(
-            headers, request, visibleDetails, sampleProductColourCodes, normalizedStatus);
+            headers, request, visibleDetails, sampleProductColourCodes, normalizedStatus, includeKeyword: smartKeyword is not null, trackingOnly: isIms);
+        if (await smartSearch.SuggestionsAsync<WarehouseVoucherListItemDto>(filteredHeaders, request, cancellationToken) is { } suggestions)
+            return OperationResult<PagedResult<WarehouseVoucherListItemDto>>.Ok(suggestions);
 
         var totalCount = await filteredHeaders.CountAsync(cancellationToken);
         var pageHeaders = await filteredHeaders
@@ -114,7 +125,7 @@ internal sealed class GetWarehouseVouchersQueryHandler
         var voucherDetailIds = detailEntities.Select(x => x.VoucherDetailId).ToArray();
         var movementDates = await _dbContext.WarehouseShelfLedgers
             .AsNoTracking()
-            .Where(x => x.VoucherDetailId != null && voucherDetailIds.Contains(x.VoucherDetailId.Value))
+            .Where(x => (!isIms || x.CompanyId == companyId) && x.VoucherDetailId != null && voucherDetailIds.Contains(x.VoucherDetailId.Value))
             .GroupBy(x => x.VoucherDetailId!.Value)
             .Select(x => new
             {
@@ -122,10 +133,13 @@ internal sealed class GetWarehouseVouchersQueryHandler
                 MovementDate = x.Max(y => y.CreatedAt)
             })
             .ToDictionaryAsync(x => x.VoucherDetailId, x => x.MovementDate, cancellationToken);
-        var detailsByVoucher = detailEntities
+        var mappedDetails = detailEntities
             .Select(x => WarehouseVoucherReadModelMapper.ToDetailDto(
                 x,
-                movementDates.GetValueOrDefault(x.VoucherDetailId)))
+                movementDates.GetValueOrDefault(x.VoucherDetailId), isIms))
+            .ToList();
+        if (!isIms) await WarehouseDefectReasonReader.EnrichVouchersAsync(_dbContext, companyId, mappedDetails, cancellationToken);
+        var detailsByVoucher = mappedDetails
             .GroupBy(x => x.VoucherId)
             .ToDictionary(
                 x => x.Key,
@@ -140,38 +154,26 @@ internal sealed class GetWarehouseVouchersQueryHandler
             .AsNoTracking()
             .Where(x => employeeIds.Contains(x.EmployeeId) && x.CompanyId == companyId)
             .ToDictionaryAsync(x => x.EmployeeId, x => x.FullName, cancellationToken);
-        var importOtherCodes = pageHeaders
-            .Where(x => x.ReqType == WareHouseRequestType.ImportOther && x.CodeFromRequest != string.Empty)
-            .Select(x => x.CodeFromRequest).Distinct().ToArray();
-        var suppliers = await (
-            from purchaseOrder in _dbContext.PurchaseOrders.AsNoTracking()
-            join snapshot in _dbContext.PurchaseOrderSnapshots.AsNoTracking()
-                on purchaseOrder.PurchaseOrderSnapshotId equals snapshot.PurchaseOrderSnapshotId
-            where purchaseOrder.CompanyId == companyId
-                  && purchaseOrder.ExternalId != null
-                  && importOtherCodes.Contains(purchaseOrder.ExternalId)
-            select new
-            {
-                purchaseOrder.ExternalId,
-                snapshot.SupplierNameSnapshot,
-                snapshot.SupplierExternalIdSnapshot,
-                purchaseOrder.Comment
-            })
-            .ToDictionaryAsync(x => x.ExternalId!, x => x, cancellationToken);
+        var businessInfo = await _businessReader.ReadAsync(companyId,
+            pageHeaders.Select(x => new WarehouseVoucherBusinessInput(x.VoucherId, x.VoucherType, x.CodeFromRequest)).ToArray(),
+            cancellationToken);
 
         var items = pageHeaders.Select(header =>
         {
-            suppliers.TryGetValue(header.CodeFromRequest, out var supplier);
+            var business = businessInfo[header.VoucherId];
             return new WarehouseVoucherListItemDto
             {
                 VoucherId = header.VoucherId,
                 VoucherCode = header.VoucherCode,
                 VoucherType = header.VoucherType,
+                BusinessType = business.BusinessType,
+                PurchaseOrderCode = business.PurchaseOrderCode,
+                CanViewSupplier = business.CanViewSupplier,
                 Status = header.Status,
                 CreatedDate = header.CreatedDate,
                 RequestId = header.RequestId,
                 RequestCode = header.RequestCode,
-                RequestName = header.RequestName,
+                RequestName = isIms ? string.Empty : header.RequestName,
                 ReqStatus = header.ReqStatus,
                 ReqType = header.ReqType,
                 CodeFromRequest = header.CodeFromRequest,
@@ -179,9 +181,9 @@ internal sealed class GetWarehouseVouchersQueryHandler
                 CompanyName = companyNames.GetValueOrDefault(header.CompanyId, string.Empty),
                 CreatedBy = header.CreatedBy,
                 CreatedByName = employeeNames.GetValueOrDefault(header.CreatedBy, string.Empty),
-                SupplierName = supplier?.SupplierNameSnapshot ?? string.Empty,
-                SupplierExternalId = supplier?.SupplierExternalIdSnapshot ?? string.Empty,
-                Comments = supplier?.Comment ?? string.Empty,
+                SupplierName = business.SupplierName,
+                SupplierExternalId = business.SupplierExternalId,
+                Comments = business.Comments,
                 Details = detailsByVoucher.GetValueOrDefault(header.VoucherId, [])
             };
         }).ToList();

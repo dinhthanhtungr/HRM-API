@@ -176,6 +176,7 @@ public sealed class SampleRequestPricingOverviewLabRequestsTests
 
         Assert.Contains("SampleRequestPriceQuoteRequested", sql, StringComparison.Ordinal);
         Assert.Contains("LabConfirmed", sql, StringComparison.Ordinal);
+        Assert.Contains("Explicit", sql, StringComparison.Ordinal);
         Assert.Contains("@>", sql, StringComparison.Ordinal);
         Assert.Contains("IsDeleted", sql, StringComparison.Ordinal);
         Assert.Contains("RelatedType", sql, StringComparison.Ordinal);

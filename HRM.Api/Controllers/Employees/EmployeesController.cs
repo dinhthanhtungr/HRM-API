@@ -101,6 +101,7 @@ public sealed class EmployeesController : ControllerBase
         return Ok(result);
     }
 
+    [HRM.Api.Security.Authorization.AllowImsSession]
     [HttpGet("{id:guid}/basic-info")]
     public async Task<IActionResult> GetEmployeeBasicInfo(
         [FromRoute] Guid id,

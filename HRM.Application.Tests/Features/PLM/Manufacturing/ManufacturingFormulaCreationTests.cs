@@ -74,28 +74,51 @@ public sealed class ManufacturingFormulaCreationTests
             SourceItemId = source.ManufacturingFormulaMaterialId, ItemId = f.Material.MaterialId,
             ItemType = ItemType.Material, Quantity = 1, LotNo = "FORGED" }])), default);
         Assert.False(result.Success);
+        Assert.Contains($"[formulaItem:{f.Material.MaterialId:D}:0:FORGED]", result.Message);
+        Assert.Contains("Dòng NVL 1", result.Message);
+        Assert.Contains(f.Material.ExternalId!, result.Message);
+        Assert.Contains("Lot 'FORGED'", result.Message);
+        Assert.Contains("Hàng đạt", result.Message);
         Assert.Empty(f.Store.Added);
     }
 
     [Theory]
-    [InlineData(ManufacturingFormulaOrigin.FromVu, true)]
-    [InlineData(ManufacturingFormulaOrigin.Standard, true)]
-    [InlineData(ManufacturingFormulaOrigin.ProductionOld, false)]
-    [InlineData(ManufacturingFormulaOrigin.Production, false)]
-    [InlineData(ManufacturingFormulaOrigin.Improvement, false)]
-    public async Task Source_DeterminesSelectionStatusScheduleAndReservation(ManufacturingFormulaOrigin origin, bool effective)
+    [InlineData(ManufacturingFormulaOrigin.FromVu)]
+    [InlineData(ManufacturingFormulaOrigin.Standard)]
+    [InlineData(ManufacturingFormulaOrigin.ProductionOld)]
+    [InlineData(ManufacturingFormulaOrigin.Production)]
+    [InlineData(ManufacturingFormulaOrigin.Improvement)]
+    public async Task Source_DeterminesSchedulingOrQcReview(ManufacturingFormulaOrigin origin)
     {
         var f = new Fixture(origin);
+        var options = await ManufacturingFormulaOptionReader.ReadAsync(f.Db, f.Order, default);
+        var autoSchedule = origin == ManufacturingFormulaOrigin.FromVu;
+        Assert.Equal(!autoSchedule, options.Single(x => x.Origin == origin).RequiresFormulaReview);
         var result = await f.Handler.Handle(new(f.Order.MfgProductionOrderId, f.Request()), default);
         Assert.True(result.Success, result.Message);
+        Assert.Equal(autoSchedule, result.Data!.IsSelectionEffective);
         var formula = Assert.Single(f.Store.Added.OfType<ManufacturingFormula>());
         var selection = Assert.Single(f.Store.Added.OfType<ProductionSelectVersion>());
-        Assert.Equal(effective ? "Checking" : "New", formula.Status);
-        Assert.Equal(effective ? "Scheduling" : "FormulaRequested", f.Order.Status);
-        Assert.Equal(effective, selection.ValidFrom.HasValue);
+        Assert.Equal(autoSchedule ? "Checking" : "New", formula.Status);
+        Assert.Equal(autoSchedule ? "Scheduling" : "FormulaRequested", f.Order.Status);
+        Assert.Equal(autoSchedule ? Fixture.Now : (DateTime?)null, selection.ValidFrom);
         Assert.Null(selection.ValidTo);
-        Assert.Equal(effective ? 1 : 0, f.Store.Added.OfType<SchedualMfg>().Count());
-        Assert.Equal(effective ? 1 : 0, f.Store.Added.OfType<HRM.Domain.Entities.WarehouseSchema.WarehouseTempStock>().Count());
+        if (autoSchedule)
+        {
+            var schedule = Assert.Single(f.Store.Added.OfType<SchedualMfg>());
+            Assert.Equal(f.Order.MfgProductionOrderId, schedule.MfgProductionOrderId);
+            Assert.Equal("Scheduling", schedule.Status);
+            Assert.Equal(f.Order.StepOfProduct, schedule.StepOfProduct);
+            var reserve = Assert.Single(f.Store.Added.OfType<HRM.Domain.Entities.WarehouseSchema.WarehouseTempStock>());
+            Assert.Equal("CURRENT-MATERIAL", reserve.Code);
+            Assert.Equal(100m, reserve.QtyRequest);
+            Assert.Equal("Open", reserve.ReserveStatus);
+        }
+        else
+        {
+            Assert.Empty(f.Store.Added.OfType<SchedualMfg>());
+            Assert.Empty(f.Store.Added.OfType<HRM.Domain.Entities.WarehouseSchema.WarehouseTempStock>());
+        }
         Assert.Equal(12.5m, formula.TotalPrice);
         Assert.Equal("CURRENT-MATERIAL", Assert.Single(formula.ManufacturingFormulaMaterials).MaterialExternalIdSnapshot);
         Assert.Equal(Fixture.Now, f.Order.CreatedDate);
@@ -138,6 +161,36 @@ public sealed class ManufacturingFormulaCreationTests
     }
 
     [Fact]
+    public async Task FirstVu_UpdatesExistingScheduleAndDoesNotDuplicateOnRetry()
+    {
+        var f = new Fixture(ManufacturingFormulaOrigin.FromVu);
+        var schedule = new SchedualMfg { MfgProductionOrderId = f.Order.MfgProductionOrderId, Status = "New" };
+        f.Store.Seed(nameof(f.Db.SchedualMfgs), schedule);
+        var first = await f.Handler.Handle(new(f.Order.MfgProductionOrderId, f.Request()), default);
+        Assert.True(first.Success, first.Message);
+        Assert.Equal("Scheduling", schedule.Status);
+        Assert.Equal(f.Order.StepOfProduct, schedule.StepOfProduct);
+        Assert.Empty(f.Store.Added.OfType<SchedualMfg>());
+        var count = f.Store.Added.Count;
+        var retry = await f.Handler.Handle(new(f.Order.MfgProductionOrderId, f.Request()), default);
+        Assert.False(retry.Success);
+        Assert.Equal(count, f.Store.Added.Count);
+    }
+
+    [Fact]
+    public async Task FirstVu_SaveFailureRollsBackFormulaScheduleAndReservationTransaction()
+    {
+        var f = new Fixture(ManufacturingFormulaOrigin.FromVu);
+        f.Store.ThrowOnSave = true;
+        var result = await f.Handler.Handle(new(f.Order.MfgProductionOrderId, f.Request()), default);
+        Assert.False(result.Success);
+        Assert.True(f.Store.Transaction.RolledBack);
+        Assert.False(f.Store.Transaction.Committed);
+        Assert.Single(f.Store.Added.OfType<SchedualMfg>());
+        Assert.Single(f.Store.Added.OfType<HRM.Domain.Entities.WarehouseSchema.WarehouseTempStock>());
+    }
+
+    [Fact]
     public async Task SaveFailure_ReturnsFailureAndRollsBackTransaction()
     {
         var f = new Fixture(ManufacturingFormulaOrigin.FromVu);
@@ -148,12 +201,14 @@ public sealed class ManufacturingFormulaCreationTests
         Assert.False(f.Store.Transaction.Committed);
     }
 
-    [Fact]
-    public async Task ExistingEffectiveSelection_RejectsDuplicateFormulaCreation()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ExistingOpenSelection_RejectsDuplicateFormulaCreation(bool effective)
     {
         var f = new Fixture(ManufacturingFormulaOrigin.FromVu);
         f.Store.Seed(nameof(f.Db.ProductionSelectVersions), new ProductionSelectVersion
-        { MfgProductionOrderId = f.Order.MfgProductionOrderId, CompanyId = f.Order.CompanyId, ValidFrom = Fixture.Now });
+        { MfgProductionOrderId = f.Order.MfgProductionOrderId, CompanyId = f.Order.CompanyId, ValidFrom = effective ? Fixture.Now : null });
         Assert.False((await f.Handler.Handle(new(f.Order.MfgProductionOrderId, f.Request()), default)).Success);
         Assert.Empty(f.Store.Added);
     }
@@ -221,7 +276,7 @@ public sealed class ManufacturingFormulaCreationTests
             Notifications = (NotificationStub)(object)notifications;
             var prices = DispatchProxy.Create<IMaterialPriceQueryService, PriceStub>();
             Handler = new(Db, User, new CurrentUserPermissionService(User), new Clock(), new Codes(), new Timeline(),
-                new ManufacturingFormulaInputResolver(Db, prices, new Clock(), new CurrentUserPermissionService(User)), new ProductionOrderReservationService(Db), new ManufacturingWorkflowNotifier(notifications));
+                new ManufacturingFormulaInputResolver(Db, prices, new Clock(), new CurrentUserPermissionService(User)), new ManufacturingWorkflowNotifier(notifications), PromisedDeliveryTestFactory.Create(Db, User).Notifier, new ProductionOrderReservationService(Db));
         }
         public CreateProductionOrderFormulaRequest Request(Guid? sourceId = null, IReadOnlyList<ManufacturingFormulaInputItem>? items = null)
             => new() { SourceFormulaId = sourceId ?? SourceId, Origin = Origin, TotalQuantity = 100, NumOfBatches = 2,

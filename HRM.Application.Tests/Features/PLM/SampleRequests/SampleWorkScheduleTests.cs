@@ -9,7 +9,7 @@ public sealed class SampleWorkScheduleTests
     [InlineData("LabAdmin", true)]
     [InlineData("Admin", true)]
     [InlineData("Developer", true)]
-    [InlineData("LabUser", false)]
+    [InlineData("LabUser", true)]
     [InlineData("SaleUser", false)]
     [InlineData("President", false)]
     public async Task ScheduleCapabilityIsIndependentFromTechnicalAndSaleWork(string role, bool allowed)

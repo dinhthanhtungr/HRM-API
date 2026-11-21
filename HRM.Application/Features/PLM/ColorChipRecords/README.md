@@ -69,7 +69,7 @@ PDF giữ nguyên model, quy tắc lấy dữ liệu và source renderer QuestPD
 
 - `Chips2`, `Chips2_NonStandard`: portrait.
 - `Chips3` và giá trị fallback: landscape.
-- `ChipsTanPhu`: Tân Phú và để trống `StandardText` như code cũ.
+- `ChipsTanPhu`: ColorChip mẫu của Lab để trống `StandardText` tại handler xuất PDF như code cũ. Renderer dùng chung giữ dữ liệu đầu vào để ColorChip sản xuất có thể in Mã mẫu chuẩn đã lưu.
 - `ChipsTanPhuBacNinh`: Tân Phú Bắc Ninh.
 - `Chips5Options`: 5 options.
 - `ChipsTanPhuBacNinh3Thresholds`: 3 thresholds.

@@ -68,6 +68,7 @@ namespace HRM.Application.Features.Employees.Queries.GetEmployeeDropdown
 
             var projectedQuery = query
                 .OrderBy(x => x.FullName)
+                .ThenBy(x => x.EmployeeId)
                 .Select(x => new EmployeeLookupDto
                 {
                     EmployeeId = x.EmployeeId,

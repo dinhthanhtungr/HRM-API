@@ -74,7 +74,7 @@ public sealed class SampleRequestWorkflowTests
         Assert.DoesNotContain(ApplicationRoles.Lab.LabUser, ApplicationPermissionRoleSets.GetRoles(ApplicationPermissions.PLM.ConfirmCustomerPrice));
         Assert.Contains(ApplicationRoles.Lab.LabAdmin, ApplicationPermissionRoleSets.GetRoles(ApplicationPermissions.PLM.ReceiveLabStandard));
         Assert.DoesNotContain(ApplicationRoles.Sales.SaleUser, ApplicationPermissionRoleSets.GetRoles(ApplicationPermissions.PLM.ReceiveLabStandard));
-        Assert.DoesNotContain(ApplicationRoles.Lab.LabUser, ApplicationPermissionRoleSets.GetRoles(ApplicationPermissions.PLM.ReceiveLabStandard));
+        Assert.Contains(ApplicationRoles.Lab.LabUser, ApplicationPermissionRoleSets.GetRoles(ApplicationPermissions.PLM.ReceiveLabStandard));
     }
 
     [Fact]

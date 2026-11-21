@@ -23,7 +23,7 @@ internal sealed class GetSampleTrialFeedbackRevisionsQueryHandler(IPLMReadDbCont
         var scope = await visibility.BuildReadScopeAsync(ct);
         var parent = await visibility.ApplySampleRequestVisibility(db.SampleRequests.AsNoTracking(), db.Customers.AsNoTracking(), scope)
             .Where(x => x.SampleRequestId == request.SampleRequestId && x.CompanyId == company && x.IsActive)
-            .Select(x => new { x.ManagerBy, x.UpdatedDate }).SingleOrDefaultAsync(ct);
+            .SingleOrDefaultAsync(ct);
         if (parent is null) return null;
         var trials = db.SampleRequestSampleTrials.AsNoTracking().Where(x => x.SampleRequestId == request.SampleRequestId && x.IsActive);
         var trial = await trials.SingleOrDefaultAsync(x => x.SampleRequestSampleTrialId == request.TrialId, ct);
@@ -52,16 +52,24 @@ internal sealed class GetSampleTrialFeedbackRevisionsQueryHandler(IPLMReadDbCont
             .ToDictionaryAsync(x => x.EmployeeId, x => x.FullName, ct);
         var items = entries.Select(x => new SampleTrialFeedbackRevisionDto(x.AuditLogId, x.ChangedAt,
             x.ChangedBy is { } actor ? names.GetValueOrDefault(actor) : null,
-            Date(x.OldValues), Note(x.OldValues), Date(x.NewValues), Note(x.NewValues))).ToArray();
+            Date(x.OldValues), Note(x.OldValues), Date(x.NewValues), Note(x.NewValues))
+            { OldStatus = Status(x.OldValues), NewStatus = Status(x.NewValues), CorrectionReason = Text(x.NewValues, "CorrectionReason") }).ToArray();
+        var canEdit = SampleTrialFeedbackCorrectionRules.CanCorrect(canActForOwner && permissions.HasPermission(ApplicationPermissions.PLM.CorrectSampleTrialFeedback),
+            user.EmployeeId, parent.ManagerBy, trial.TrialNo, latestNo, trial.CustomerReplyDate.HasValue, canActForOwner);
+        var formula = canEdit ? await SampleTrialResultCorrection.EligibleFormulaAsync(db, parent, trial, ct) : null;
         return new(trial.SampleRequestSampleTrialId, trial.TrialNo, trial.CustomerReplyDate, trial.CustomerReplyNote,
             trial.SentDate, trial.UpdatedDate, parent.UpdatedDate,
-            SampleTrialFeedbackCorrectionRules.CanCorrect(canActForOwner && permissions.HasPermission(ApplicationPermissions.PLM.CorrectSampleTrialFeedback),
-                user.EmployeeId, parent.ManagerBy, trial.TrialNo, latestNo, trial.CustomerReplyDate.HasValue, canActForOwner),
-            new PagedResult<SampleTrialFeedbackRevisionDto>(items, count, page, size));
+            canEdit, new PagedResult<SampleTrialFeedbackRevisionDto>(items, count, page, size))
+            { Status = trial.Status, CanEditResult = formula is not null, FormulaUpdatedDate = formula?.UpdatedDate };
     }
 
     private static DateTime? Date(JsonDocument? value) => value?.RootElement.TryGetProperty("CustomerReplyDate", out var date) == true &&
         date.ValueKind == JsonValueKind.String && date.TryGetDateTime(out var parsed) ? parsed : null;
     private static string? Note(JsonDocument? value) => value?.RootElement.TryGetProperty("CustomerReplyNote", out var note) == true &&
         note.ValueKind == JsonValueKind.String ? note.GetString() : null;
+    private static string? Text(JsonDocument? value, string key) => value?.RootElement.TryGetProperty(key, out var item) == true &&
+        item.ValueKind == JsonValueKind.String ? item.GetString() : null;
+    private static HRM.Domain.Enums.SampleRequests.SampleTrialStatus? Status(JsonDocument? value)
+        => value?.RootElement.TryGetProperty("Status", out var item) == true && item.ValueKind == JsonValueKind.Number && item.TryGetInt32(out var status)
+            ? (HRM.Domain.Enums.SampleRequests.SampleTrialStatus)status : null;
 }

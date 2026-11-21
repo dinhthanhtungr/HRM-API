@@ -71,3 +71,10 @@ Danh mục/template/specification chỉ lưu kiểu Attachment và cấu hình; 
 Multipart-save kết quả IQC/COA hỗ trợ dữ liệu + file, metadata/content/download.
 Luồng JSON cũ giữ nguyên; form Attachment dùng multipart-save. Xem contract/giới hạn/quyền/rollback và schema
 cần cập nhật tại [ATTACHMENT_SAVE_API.md](ATTACHMENT_SAVE_API.md). Không tạo migration hoặc sửa DB.
+
+
+## Tìm kiếm gợi ý cho trang danh sách
+
+Danh sách tiêu chuẩn gợi ý mã/tên tiêu chuẩn (vi/en); COA gợi ý mã COA, mã/tên sản phẩm và lô. Không thay lookup hoặc xử lý phát hành chứng chỉ.
+
+Contract tùy chọn `searchSelections`/`suggestionKeyword`, OR/AND badge, giới hạn 10 và hướng dẫn thêm field: [Searching](../../../../Commons/Searching/README.md). Không mở rộng quyền hoặc áp dụng tự động cho lookup.

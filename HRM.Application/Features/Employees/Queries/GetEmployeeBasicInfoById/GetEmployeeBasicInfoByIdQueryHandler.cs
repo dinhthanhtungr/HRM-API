@@ -1,5 +1,6 @@
 ﻿using HRM.Application.Abstractions.Persistence.Employees;
 using HRM.Application.Abstractions.Security;
+using HRM.Application.Commons.Authorization;
 using HRM.Application.Features.Employees.Administration;
 using HRM.Application.Features.Employees.Dtos;
 using MediatR;
@@ -30,7 +31,13 @@ namespace HRM.Application.Features.Employees.Queries.GetEmployeeBasicInfoById
             CancellationToken cancellationToken)
         {
             var query = _dbContext.Employees.AsNoTracking();
-            if (!EmployeeAdministrationRules.CanManageAllCompanies(_currentUser))
+            var restricted = ImsAccountRestrictions.AppliesTo(_currentUser);
+            if (restricted &&
+                (_currentUser.EmployeeId != request.EmployeeId ||
+                 request.EmployeeId == Guid.Empty || _currentUser.CompanyId.GetValueOrDefault() == Guid.Empty))
+                return null;
+
+            if (restricted || !EmployeeAdministrationRules.CanManageAllCompanies(_currentUser))
             {
                 var companyId = _currentUser.CompanyId
                     ?? throw new UnauthorizedAccessException("Current user has no CompanyId.");

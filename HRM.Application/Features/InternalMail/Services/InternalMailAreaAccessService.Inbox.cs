@@ -3,11 +3,11 @@ namespace HRM.Application.Features.InternalMail.Services;
 public sealed partial class InternalMailAreaAccessService
 {
     // Quan sát không tạo participant/read-state và không cấp quyền gửi hay quản lý thành viên.
-    internal IQueryable<InternalConversationInboxRow> InboxConversations(bool? archived = null)
+    internal IQueryable<InternalConversationInboxRow> InboxConversations(bool? archived = null, Guid[]? conversationIds = null)
     {
         var employee = user.EmployeeId ?? Guid.Empty;
         // Scope đọc đã gồm participant và observer được cấp quyền; không ép membership lần hai.
-        var rows = Conversations().Select(conversation => new InternalConversationInboxRow
+        var rows = ConversationsForCandidates(conversationIds).Select(conversation => new InternalConversationInboxRow
         {
             InternalConversationId = conversation.InternalConversationId,
             Conversation = conversation,

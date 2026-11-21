@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 
 namespace HRM.Application.Commons.Pagination
 {
-    public class PaginationQuery
+    public class PaginationQuery : HRM.Application.Commons.Searching.ISmartSearchRequest
     {
         private const int DefaultPageNumber = 1;
         private const int DefaultPageSize = 15;
@@ -17,6 +17,9 @@ namespace HRM.Application.Commons.Pagination
         public int PageSize { get; init; } = DefaultPageSize;
 
         public string? Keyword { get; init; }
+
+        public string? SearchSelections { get; init; }
+        public string? SuggestionKeyword { get; init; }
 
         public string? SortBy { get; init; }
         public string? SortDirection { get; init; }

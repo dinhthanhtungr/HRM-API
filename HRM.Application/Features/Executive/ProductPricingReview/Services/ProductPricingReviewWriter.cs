@@ -130,6 +130,11 @@ internal sealed class ProductPricingReviewWriter
             calculation.Data,
             now);
         await _writeDbContext.ProductPricingVersions.AddAsync(entity, cancellationToken);
+        if (request.ApproveImmediately)
+            _writeDbContext.OutboxMessages.Add(QuotationPricingApprovalAutoSend.Create(
+                companyId, productId, entity.ProductPricingVersionId, context.Data.EmployeeId, now));
+        if (request.ApproveImmediately)
+            await _notificationService.QueueSampleRequestApprovalsAsync(entity, cancellationToken);
         var save = await SaveAsync(cancellationToken);
         if (save is not null)
             return OperationResult<PricingReviewVersionDto>.Fail(save);
@@ -293,6 +298,9 @@ internal sealed class ProductPricingReviewWriter
         entity.UpdatedBy = context.Data.EmployeeId;
         entity.UpdatedDate = now;
         entity.CalculatedAt = now;
+        _writeDbContext.OutboxMessages.Add(QuotationPricingApprovalAutoSend.Create(
+            context.Data.CompanyId, productId, entity.ProductPricingVersionId, context.Data.EmployeeId, now));
+        await _notificationService.QueueSampleRequestApprovalsAsync(entity, cancellationToken);
         var save = await SaveAsync(cancellationToken);
         if (save is not null)
             return OperationResult<PricingReviewVersionDto>.Fail(save);
@@ -382,6 +390,9 @@ internal sealed class ProductPricingReviewWriter
             now,
             request.InternalNote);
         await _writeDbContext.ProductPricingVersions.AddAsync(confirmed, cancellationToken);
+        _writeDbContext.OutboxMessages.Add(QuotationPricingApprovalAutoSend.Create(
+            context.Data.CompanyId, productId, confirmed.ProductPricingVersionId, context.Data.EmployeeId, now));
+        await _notificationService.QueueSampleRequestApprovalsAsync(confirmed, cancellationToken);
         var save = await SaveAsync(cancellationToken);
         if (save is not null)
             return OperationResult<PricingReviewVersionDto>.Fail(save);

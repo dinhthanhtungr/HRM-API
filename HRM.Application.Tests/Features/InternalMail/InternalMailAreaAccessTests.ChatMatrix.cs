@@ -5,11 +5,46 @@ using HRM.Domain.Entities.HrSchema;
 using HRM.Domain.Entities.InternalMailSchema;
 using HRM.Domain.Entities.Notifications;
 using HRM.Domain.Enums.InternalMailEnums;
+using HRM.Domain.Identity;
 
 namespace HRM.Application.Tests.Features.InternalMail;
 
 public sealed partial class InternalMailAreaAccessTests
 {
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void DispatchRechecksActiveImsAssignmentEvenForAnExistingRecipient(bool activeAssignment)
+    {
+        var user = new User("SaleUser");
+        var store = CreateStore(user, InternalMailRelatedType.ConversationTechnical, true);
+        var employeeId = user.EmployeeId!.Value;
+        var company = user.CompanyId!.Value;
+        var account = new ApplicationUser { Id = Guid.NewGuid(), EmployeeId = employeeId };
+        var role = new ApplicationRole { Id = Guid.NewGuid(), Name = "IMSUser", NormalizedName = "IMSUSER" };
+        var notification = new Notification { Id = Guid.NewGuid(), CompanyId = company };
+        var memory = (MemoryStore)(object)store.Db;
+        memory.Values["Employees"] = new MemorySet<Employee>([
+            new() { EmployeeId = employeeId, CompanyId = company, IsActive = true }
+        ]);
+        memory.Values["Users"] = new MemorySet<ApplicationUser>([account]);
+        memory.Values["Roles"] = new MemorySet<ApplicationRole>([role]);
+        memory.Values["UserRoles"] = new MemorySet<ApplicationUserRole>([
+            new() { UserId = account.Id, RoleId = role.Id, IsActive = activeAssignment }
+        ]);
+        memory.Values["NotificationUserStates"] = new MemorySet<NotificationUserState>([
+            new() { NotificationId = notification.Id, UserId = employeeId }
+        ]);
+        memory.Values["QueryInternalMailNotificationLinks"] = new[] {
+            new InternalMailNotificationLink { NotificationId = notification.Id }
+        }.AsQueryable();
+        var service = new InternalMailAreaAccessService(store.Db, user);
+
+        Assert.Equal(!activeAssignment, service.DeliveryRecipients(notification).Contains(employeeId));
+        Assert.Equal(!activeAssignment, service.RestrictRealtimeRecipients(new[] { employeeId }.AsQueryable(), company).Any());
+        Assert.Single(store.Db.NotificationUserStates);
+    }
+
     // 5 roles × 3 private areas × 32 distinct security states = 480 cases.
     public static IEnumerable<object[]> ChatAccessCases()
     {

@@ -1,6 +1,6 @@
 using HRM.Application.Abstractions.Persistence.Dispatch;
 using HRM.Application.Abstractions.Security;
-using HRM.Application.Features.Dispatch.DeliveryOrders;
+using HRM.Application.Commons.Authorization;
 using HRM.Application.Features.Dispatch.DeliveryOrders.Queries.GetDeliveryPlan;
 using HRM.Domain.Enums.Deliveries;
 using HRM.Domain.Enums.Merchadises;
@@ -11,8 +11,9 @@ namespace HRM.Application.Features.Reports.DeliveryOtd;
 internal static class DeliveryOtdReader
 {
     internal static readonly DateTime OrderStartDate = new(2026, 3, 1);
-    internal static bool IsValid(DeliveryOtdFilter filter, ICurrentUser user, DateTime today)
-        => DeliveryOrderAccessRules.CanRead(user) && user.CompanyId is { } company && company != Guid.Empty
+    internal static bool IsValid(DeliveryOtdFilter filter, ICurrentUser user, DateTime today,
+        ICurrentUserPermissionService? permissions = null)
+        => DeliveryOtdAccess.CanRead(user, permissions) && user.CompanyId is { } company && company != Guid.Empty
         && Enum.IsDefined(filter.DateBasis) && filter.From != default && filter.To != default
         && filter.From.Date <= filter.To.Date && (filter.To.Date - filter.From.Date).Days <= 1095
         && filter.To.Date < DateTime.MaxValue.Date
@@ -20,7 +21,7 @@ internal static class DeliveryOtdReader
         && filter.CustomerId != Guid.Empty && filter.ProductId != Guid.Empty && filter.ManagerId != Guid.Empty;
 
     internal static async Task<List<DeliveryOtdDetailDto>> ReadAsync(IDispatchReadDbContext db,
-        DeliveryOtdFilter filter, Guid company, DateTime asOf, CancellationToken ct)
+        DeliveryOtdFilter filter, Guid company, DateTime asOf, CancellationToken ct, bool restricted = false)
     {
         var end = filter.To.Date.AddDays(1);
         var query = db.MerchandiseOrderDetails.AsNoTracking().Where(x => x.IsActive && x.ExpectedQuantity > 0
@@ -29,6 +30,11 @@ internal static class DeliveryOtdReader
             && x.MerchandiseOrder.OrderType == OrderType.Merchandise
             && x.Status != nameof(MerchadiseStatus.Cancelled)
             && x.MerchandiseOrder.Status != nameof(MerchadiseStatus.Cancelled));
+        if (restricted)
+        {
+            var visible = DeliveryOtdAccess.VisibleOrderIds(db.MerchandiseOrders.AsNoTracking(), company);
+            query = query.Where(line => visible.Contains(line.MerchandiseOrderId));
+        }
         if (filter.CustomerId.HasValue) query = query.Where(x => x.MerchandiseOrder.CustomerId == filter.CustomerId);
         if (filter.ProductId.HasValue) query = query.Where(x => x.ProductId == filter.ProductId);
         if (filter.ManagerId.HasValue) query = query.Where(x => x.MerchandiseOrder.ManagerById == filter.ManagerId);
@@ -55,18 +61,23 @@ internal static class DeliveryOtdReader
         // Use a subquery rather than a large client-generated IN list; never load unrelated company deliveries.
         var ids = datedLines.Select(x => x.Detail.MerchandiseOrderDetailId);
         var cutoff = asOf.Date.AddDays(1);
-        var receipts = await db.DeliveryOrderDetails.AsNoTracking().Where(x => x.IsActive && !x.IsAttach
+        var receiptSource = db.DeliveryOrderDetails.AsNoTracking().Where(x => x.IsActive && !x.IsAttach
             && x.MerchandiseOrderDetailId.HasValue && ids.Contains(x.MerchandiseOrderDetailId.Value)
             && x.DeliveryOrder.IsActive && x.DeliveryOrder.CompanyId == company
             && x.DeliveryOrder.Status != nameof(DeliveryOrderStatus.Canceled)
-            && x.DeliveryOrder.CreatedDate.HasValue && x.DeliveryOrder.CreatedDate < cutoff && x.Quantity > 0)
+            && x.DeliveryOrder.CreatedDate.HasValue && x.DeliveryOrder.CreatedDate < cutoff && x.Quantity > 0);
+        if (restricted)
+            receiptSource = receiptSource.Where(line => line.MerchandiseOrderDetail != null &&
+                line.DeliveryOrder.CustomerId == line.MerchandiseOrderDetail.MerchandiseOrder.CustomerId);
+        var receipts = await receiptSource
             .Select(x => new { Id = x.MerchandiseOrderDetailId!.Value, Date = x.DeliveryOrder.CreatedDate!.Value, x.Quantity })
             .ToListAsync(ct);
         var lookup = receipts.ToLookup(x => x.Id, x => new DeliveryOtdReceipt(x.Date, x.Quantity));
         return lines.Select(x => DeliveryOtdCalculator.Evaluate(x, lookup[x.DetailId], asOf)).ToList();
     }
     internal static async Task<DeliveryOtdPoSummary> ReadPoSummaryAsync(IDispatchReadDbContext db,
-        IReadOnlyCollection<DeliveryOtdDetailDto> selectedLines, Guid company, DateTime asOf, CancellationToken ct)
+        IReadOnlyCollection<DeliveryOtdDetailDto> selectedLines, Guid company, DateTime asOf, CancellationToken ct,
+        bool restricted = false)
     {
         var orderIds = selectedLines.Select(x => x.OrderId).Distinct().ToArray();
         if (orderIds.Length == 0) return DeliveryOtdPoCalculator.Summarize([], asOf);
@@ -81,6 +92,9 @@ internal static class DeliveryOtdReader
             && x.DeliveryOrder.IsActive && x.DeliveryOrder.CompanyId == company
             && x.DeliveryOrder.Status != nameof(DeliveryOrderStatus.Canceled)
             && x.DeliveryOrder.CreatedDate.HasValue && x.DeliveryOrder.CreatedDate < cutoff);
+        if (restricted)
+            deliveries = deliveries.Where(line => line.DeliveryOrder.CustomerId ==
+                line.MerchandiseOrderDetail!.MerchandiseOrder.CustomerId);
         var dates = await db.MerchandiseOrders.AsNoTracking()
             .Where(x => x.IsActive && x.CompanyId == company && x.OrderType == OrderType.Merchandise
                 && x.CreateDate >= OrderStartDate
@@ -91,9 +105,9 @@ internal static class DeliveryOtdReader
                 deliveries.Where(d => d.MerchandiseOrderDetail!.MerchandiseOrderId == x.MerchandiseOrderId)
                     .Max(d => d.DeliveryOrder.CreatedDate),
                 x.IsDeliveryPaused || x.DeliveryPausedFrom.HasValue || x.DeliveryPausedTo.HasValue
-                    || x.DeliveryPausedBy.HasValue
+                    || (!restricted && (x.DeliveryPausedBy.HasValue
                     || (x.DeliveryPauseReason != null && x.DeliveryPauseReason.Trim() != "")
-                    || (x.DeliveryPauseType != null && x.DeliveryPauseType.Trim() != "")))
+                    || (x.DeliveryPauseType != null && x.DeliveryPauseType.Trim() != "")))))
             .ToListAsync(ct);
         return DeliveryOtdPoCalculator.Summarize(dates, asOf);
     }

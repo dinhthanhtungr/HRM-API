@@ -11,6 +11,7 @@ using HRM.Domain.Entities.AuditSchema;
 using HRM.Domain.Enums.Audits;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using HRM.Domain.Enums.SampleRequests;
 
 namespace HRM.Application.Features.PLM.SampleRequests.Commands.CorrectSampleTrialFeedback;
 
@@ -28,10 +29,13 @@ internal sealed class CorrectSampleTrialFeedbackCommandHandler(IPLMWriteDbContex
             return OperationResult<Guid>.Fail("Current employee is not active in this company.");
         var scope = await visibility.BuildScopeAsync(ct);
         var allowedOwners = SampleSaleWorkflowAccess.GetAllowedOwnerIds(user, permissions, scope);
+        var companyWide = SampleSaleWorkflowAccess.HasCompanyWideAccess(user, scope);
         var parents = visibility.ApplySampleRequestVisibility(db.SampleRequests.AsNoTracking(), db.Customers.AsNoTracking(), scope)
-            .Where(x => x.SampleRequestId == request.SampleRequestId && x.CompanyId == company && x.IsActive && allowedOwners.Contains(x.ManagerBy));
+            .Where(x => x.SampleRequestId == request.SampleRequestId && x.CompanyId == company && x.IsActive && (companyWide || allowedOwners.Contains(x.ManagerBy)));
         var parent = await parents.SingleOrDefaultAsync(ct);
         if (parent is null) return OperationResult<Guid>.Fail("Sample request is outside your scope.");
+        if (await Services.Workflow.SampleRequestLabPauseRules.IsPausedAsync(db, company, parent.SampleRequestId, ct))
+            return OperationResult<Guid>.Fail(Services.Workflow.SampleRequestLabPauseRules.PausedMessage);
         if (parent.UpdatedDate != request.ExpectedRequestUpdatedDate)
             return OperationResult<Guid>.Fail("Sample request changed. Reload before saving.");
 
@@ -42,10 +46,20 @@ internal sealed class CorrectSampleTrialFeedbackCommandHandler(IPLMWriteDbContex
             return OperationResult<Guid>.Fail("Only the latest trial with recorded customer feedback can be corrected.");
         if (latest.UpdatedDate != request.ExpectedTrialUpdatedDate)
             return OperationResult<Guid>.Fail("Sample trial changed. Reload before saving.");
+        if (await db.SampleRequestWorkflowEvents.AsNoTracking().AnyAsync(e => e.CompanyId == company && e.SampleRequestId == parent.SampleRequestId &&
+            e.SampleRequestSampleTrialId == request.TrialId && e.EventType == SampleRequestWorkflowEvents.SampleSent && e.RelatedEventId != null &&
+            db.SampleRequestWorkflowEvents.Any(b => b.Id == e.RelatedEventId && b.EventType == DeliveryOptions.SampleDeliveryRules.BatchSent), ct))
+            return OperationResult<Guid>.Fail("Correct this option through its delivery batch.");
         var note = string.IsNullOrWhiteSpace(request.CustomerReplyNote) ? null : request.CustomerReplyNote.Trim();
         var error = SampleTrialFeedbackCorrectionRules.Validate(request.CustomerReplyDate, latest.SentDate, note);
         if (error is not null) return OperationResult<Guid>.Fail(error);
-        if (latest.CustomerReplyDate == request.CustomerReplyDate && latest.CustomerReplyNote == note)
+        var result = request.Status ?? latest.Status;
+        var resultChanged = result != latest.Status;
+        var reason = request.CorrectionReason?.Trim();
+        if (resultChanged && (result is not (SampleTrialStatus.Approved or SampleTrialStatus.Failed) ||
+            string.IsNullOrWhiteSpace(reason) || reason.Length > 2000))
+            return OperationResult<Guid>.Fail("Choose Approved or Failed and provide a correction reason (maximum 2000 characters).");
+        if (!resultChanged && latest.CustomerReplyDate == request.CustomerReplyDate && latest.CustomerReplyNote == note)
             return OperationResult<Guid>.Ok(request.TrialId, "No feedback fields changed.");
 
         await using var transaction = await db.BeginTransactionAsync(ct);
@@ -53,12 +67,37 @@ internal sealed class CorrectSampleTrialFeedbackCommandHandler(IPLMWriteDbContex
         var parentChanged = await parents.Where(x => x.UpdatedDate == request.ExpectedRequestUpdatedDate)
             .ExecuteUpdateAsync(set => set.SetProperty(x => x.UpdatedDate, now).SetProperty(x => x.UpdatedBy, employee), ct);
         if (parentChanged != 1) return OperationResult<Guid>.Fail("Sample request changed. Reload before saving.");
+        // Recheck progression after taking the parent lock, not only when opening the form.
+        string? oldFormulaStatus = null;
+        string? newFormulaStatus = null;
+        var oldRequestStatus = parent.Status;
+        if (resultChanged)
+        {
+            var formula = await SampleTrialResultCorrection.EligibleFormulaAsync(db, parent, latest, ct);
+            if (formula is null || formula.UpdatedDate != request.ExpectedFormulaUpdatedDate)
+                return OperationResult<Guid>.Fail("FeedbackResultCorrectionBlocked");
+            oldFormulaStatus = formula.Status;
+            var states = SampleTrialResultCorrection.States(latest.DeliveryKind, result);
+            newFormulaStatus = states.Formula;
+            var formulaChanged = await db.Formulas.Where(x => x.FormulaId == formula.FormulaId &&
+                x.CompanyId == company && x.ProductId == parent.ProductId && x.IsActive &&
+                x.UpdatedDate == formula.UpdatedDate && x.Status == formula.Status)
+                .ExecuteUpdateAsync(set => set.SetProperty(x => x.Status, states.Formula)
+                    .SetProperty(x => x.UpdatedDate, now).SetProperty(x => x.UpdatedBy, employee), ct);
+            if (formulaChanged != 1) return OperationResult<Guid>.Fail("FeedbackResultCorrectionBlocked");
+            await db.SampleRequests.Where(x => x.SampleRequestId == parent.SampleRequestId && x.CompanyId == company)
+                .ExecuteUpdateAsync(set => set.SetProperty(x => x.Status, states.Request), ct);
+            parent.Status = states.Request;
+        }
         // Kiểm tra lại token và lần mới nhất ngay trong UPDATE sau khi khóa hồ sơ cha.
         var changed = await db.SampleRequestSampleTrials.Where(x => x.SampleRequestSampleTrialId == request.TrialId &&
                 x.SampleRequestId == parent.SampleRequestId && x.IsActive && x.UpdatedDate == request.ExpectedTrialUpdatedDate &&
                 !db.SampleRequestSampleTrials.Any(newer => newer.SampleRequestId == x.SampleRequestId && newer.IsActive && newer.TrialNo > x.TrialNo))
             .ExecuteUpdateAsync(set => set.SetProperty(x => x.CustomerReplyDate, request.CustomerReplyDate)
                 .SetProperty(x => x.CustomerReplyNote, note).SetProperty(x => x.UpdatedBy, employee)
+                .SetProperty(x => x.Status, result)
+                .SetProperty(x => x.CustomerReplyStatus, resultChanged ? (result == SampleTrialStatus.Approved ? "APPROVED" : "FAIL") : latest.CustomerReplyStatus)
+                .SetProperty(x => x.CustomerReplyByEmployeeId, resultChanged ? employee : latest.CustomerReplyByEmployeeId)
                 .SetProperty(x => x.UpdatedDate, now), ct);
         if (changed != 1) return OperationResult<Guid>.Fail("Sample trial changed. Reload before saving.");
         db.AuditLogs.Add(new AuditLog
@@ -66,9 +105,15 @@ internal sealed class CorrectSampleTrialFeedbackCommandHandler(IPLMWriteDbContex
             CompanyId = company, SchemaName = "SampleRequests", TableName = SampleTrialFeedbackCorrectionRules.AuditTable,
             RecordId = request.TrialId, ActionType = AuditActionType.Update, ChangedBy = employee, ChangedAt = now,
             Reason = SampleTrialFeedbackCorrectionRules.AuditReason, CorrelationId = parent.SampleRequestId,
-            OldValues = JsonSerializer.SerializeToDocument(new { latest.CustomerReplyDate, latest.CustomerReplyNote }),
-            NewValues = JsonSerializer.SerializeToDocument(new { request.CustomerReplyDate, CustomerReplyNote = note })
+            OldValues = JsonSerializer.SerializeToDocument(new { latest.CustomerReplyDate, latest.CustomerReplyNote, latest.Status,
+                FormulaStatus = oldFormulaStatus, RequestStatus = oldRequestStatus }),
+            NewValues = JsonSerializer.SerializeToDocument(new { request.CustomerReplyDate, CustomerReplyNote = note, Status = result,
+                CorrectionReason = resultChanged ? reason : null, FormulaStatus = newFormulaStatus, RequestStatus = parent.Status })
         });
+        if (resultChanged)
+            db.SampleRequestWorkflowEvents.Add(SampleRequestWorkflowEvents.Create(parent.SampleRequestId, company,
+                employee, now, SampleTrialResultCorrection.EventType, request.CustomerReplyDate, note,
+                latest.FormulaId, latest.SampleRequestSampleTrialId));
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         return OperationResult<Guid>.Ok(request.TrialId);

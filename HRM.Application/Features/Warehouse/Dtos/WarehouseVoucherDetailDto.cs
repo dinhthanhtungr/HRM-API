@@ -4,6 +4,7 @@ namespace HRM.Application.Features.Warehouse.Dtos;
 
 public sealed class WarehouseVoucherDetailDto
 {
+    public IReadOnlyList<DefectReasonDto> DefectReasons { get; set; } = [];
     public long VoucherDetailId { get; init; }
     public long VoucherId { get; init; }
     public int LineNo { get; init; }

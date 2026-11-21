@@ -10,6 +10,27 @@ namespace HRM.Application.Tests.Features.NotificationHub;
 public sealed class NotificationHubLatestEventQueryTests
 {
     [Fact]
+    public void RestrictingQuotationThreadsDoesNotFilterTopicsBeforeWinnerOrDropStandalone()
+    {
+        var oldQuote = Event(TopicNotifications.QuotationRequested, 1);
+        var newerDifferentCategory = Event(TopicNotifications.InternalMailMessageCreated, 2);
+        var standalone = Event(TopicNotifications.QuotationRequested, 3);
+        var inbox = new[] { oldQuote, newerDifferentCategory, standalone }.AsQueryable();
+        var thread = Guid.NewGuid();
+        var links = new[] {
+            new InternalMailNotificationLink { NotificationId = oldQuote.Id, ConversationId = thread, HasConversation = true },
+            new InternalMailNotificationLink { NotificationId = newerDifferentCategory.Id, ConversationId = thread, HasConversation = true },
+            new InternalMailNotificationLink { NotificationId = standalone.Id, HasConversation = false }
+        }.AsQueryable();
+        var topics = NotificationTopicCatalog.GetTopics(NotificationCategoryCodes.Quotation, null);
+        var baseline = NotificationHubLatestEventQuery.Apply(inbox, inbox, links, null).Where(n => topics.Contains(n.Topic));
+        var candidate = NotificationHubLatestEventQuery.Apply(inbox, inbox, links, null, [thread]).Where(n => topics.Contains(n.Topic));
+        Assert.Equal(baseline.Select(n => n.Id).ToArray(), candidate.Select(n => n.Id).ToArray());
+        Assert.Equal(standalone.Id, Assert.Single(candidate).Id);
+        Assert.Equal(standalone.Id, Assert.Single(NotificationHubLatestEventQuery.Apply(inbox, inbox, links, null, [])).Id);
+    }
+
+    [Fact]
     public void ChatDoesNotDisplaceBusinessEvent_AndOldRequestDoesNotSurviveFiltering()
     {
         var conversation = Guid.NewGuid();
@@ -57,6 +78,19 @@ public sealed class NotificationHubLatestEventQueryTests
     }
 
     [Fact]
+    public void UuidTieBreakerMatchesCanonicalOrderingAcrossSegments()
+    {
+        var ids = new[] { "ffffffff-ffff-ffff-ffff-ffffffffffff", "7fffffff-ffff-ffff-ffff-ffffffffffff",
+            "80000000-0000-0000-0000-000000000000", "00000000-ffff-ffff-ffff-ffffffffffff" };
+        var inbox = ids.Select(id => { var n = Event(TopicNotifications.QuotationRequested, 1); n.Id = Guid.Parse(id); return n; }).AsQueryable();
+        var conversationId = Guid.NewGuid();
+        var links = inbox.Select(n => new InternalMailNotificationLink
+            { NotificationId = n.Id, ConversationId = conversationId, HasConversation = true });
+        var expected = inbox.OrderByDescending(n => n.Id).First().Id;
+        Assert.Equal(expected, Assert.Single(NotificationHubLatestEventQuery.Apply(inbox, inbox, links, null)).Id);
+    }
+
+    [Fact]
     public void QueryTranslatesToPostgresWithInboxScopeAndPaging()
     {
         using var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>().UseNpgsql().Options);
@@ -69,7 +103,6 @@ public sealed class NotificationHubLatestEventQueryTests
             .Where(n => n.Topic == TopicNotifications.QuotationPricingApproved)
             .OrderByDescending(n => n.CreatedDate).ThenByDescending(n => n.Id).Take(20);
         var sql = query.ToQueryString();
-        Assert.Contains("NOT EXISTS", sql);
         Assert.Contains("GROUP BY", sql);
         Assert.Contains("max(", sql);
         Assert.Contains("user_id", sql);

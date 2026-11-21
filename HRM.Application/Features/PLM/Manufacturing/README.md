@@ -1,6 +1,35 @@
 # Manufacturing workflow
 
+## Theo dõi lệnh sản xuất dành cho IMS
+
+`GET /api/v1/plm/production-orders/tracking` và
+`GET /api/v1/plm/production-orders/{id}/tracking` yêu cầu
+`plm.production-order.tracking.view`. Scope gồm lệnh active, TP active, khách
+active bên ngoài cùng công ty. Lệnh bán thành phẩm, khách nội bộ và lệnh thiếu
+khách nằm ngoài phạm vi. List phân trang 25 dòng và tìm theo mã lệnh, mã/tên TP.
+
+`requestedQuantity` là lượng yêu cầu của lệnh. `productionQuantity` là tổng
+lượng sản xuất đã ghi trên lệnh, có thể là kế hoạch và không phải xác nhận đã
+nhập thành phẩm. `null` nghĩa là chưa có giá trị. Trạng thái chi tiết ngoài
+mới, hủy hoặc hoàn thành được gộp thành `InProgress`. Endpoint không trả công
+thức, NVL, giá, mẻ, lô, ghi chú hoặc thông số sản xuất.
+
+- [Bổ sung snapshot tên màu MFG còn NULL từ Product.ColourName](Commands/FillManufacturingColourNames/README.md): API xem trước/cập nhật riêng, không ghi đè snapshot đã có.
+
 ## Inform role/state access
+
+Khóa sửa công thức dựa vào yêu cầu xuất kho thực tế, không dựa trạng thái MFG.
+`OperationMaterialRequestLink` nối MFG/company tới `WarehouseRequest` bằng RequestId
+(fallback RequestCode khi RequestId trống). Phiếu xuất chưa Cancelled khóa NVL, Std,
+lot, loại hàng và totalQuantity/numOfBatches; phiếu đã Cancelled chỉ mở lại nếu chưa
+có `TempStockIssueLedger` dương liên quan. Done/Finished không tự mở khóa. Open
+reservation không phải yêu cầu xuất kho. Inform trả `formulaEditLockReason` và
+`canEditItems=false`, bỏ hai field khối lượng/số mẻ khỏi editableFields khi khóa;
+ghi chú/QC giữ quyền riêng. Các API tạo VA, xử lý VA, Information và nhập Excel
+kiểm tra cùng rule tại BE. Lệnh NVL nội bộ cũng từ chối lưu/hủy khi đã khóa.
+Mutation kiểm tra sau khi giữ khóa MFG trong transaction. Luồng tạo phiếu kho nằm
+ngoài module này cần cùng giữ khóa MFG để loại trừ hoàn toàn tranh chấp tạo phiếu
+đồng thời; không coi kiểm tra một lần ở FE là bảo đảm đồng thời.
 
 PLPUUser được sửa `labNote` (Yêu cầu QA/sản xuất thực hiện) theo trạng thái/quyền quản lý lệnh;
 `requirement` là Yêu cầu khách hàng và vẫn chỉ Developer được sửa.
@@ -63,6 +92,42 @@ triển khai. DTO/entity/helper đã được đưa sang **không đồng nghĩa
 hoàn thành. Các luồng tạo lệnh trước đó nằm ở [ProductionOrders](../ProductionOrders/README.md).
 
 ## Scope và quyền
+
+Lỗi đối chiếu lot khi lưu công thức trả message bắt đầu bằng
+`[formulaItem:{itemId}:{itemType}:{URI-encoded lot}]`, tiếp theo là dòng NVL theo
+thứ tự request, mã TP/NVL, mã kho/màu, lot, Hàng đạt/lỗi và lý do.
+FE dùng metadata để tìm đúng dòng (không coi số dòng request là index của form),
+ẩn prefix kỹ thuật và cuộn đến lot sai. Không thay đổi rule validation hoặc scope kho.
+
+### Dán công thức từ Excel (Developer)
+
+`POST /api/v1/plm/production-orders/{id}/excel-formula/resolve` chỉ đối chiếu,
+không ghi DB, không giữ chỗ hay tạo VA. Request:
+`{ "rows": [{ "colourCode": "BLUE", "name": "Tên tham khảo", "lotNo": "VA1", "quality": "TP lỗi" }] }`.
+Giới hạn 1–200 dòng, 4 cột bắt buộc, tối đa 500 ký tự/cột; không cần kg sản xuất.
+Developer được kiểm tra qua `ApplicationRoleSets.PLM.ProductionExcelImporters`,
+đồng thời cần manage MFG, xem vật tư/hàng lỗi, company/employee hợp lệ,
+lệnh active cùng company, liên kết đơn bán active và trạng thái cho sửa công thức.
+Không mở thêm quyền cho President/PLPU/Lab hoặc đổi role claims.
+
+Response thành công: `{ "success": true, "data": [{ "row": 1, "error": null,
+"item": { "itemId": "...", "itemType": 3, "categoryId": "...", "code": "TP_...",
+"name": "[BLUE] Tên hiện hành", "stockCode": "BLUE", "unit": "kg", "lotNo": "VA1",
+"stockType": 2, "stockKg": 100, "percent": 100 } }] }`.
+`stockKg` là tổng kg thực tế trên mọi kệ active của đúng mã màu/lot/loại hàng được warehouse
+visibility cho phép (không phải số từ Excel, không tự trừ reservation tổng mã).
+`percent = stockKg / tổng stockKg các dòng dán * 100`, cắt ở 10 chữ số thập phân;
+dòng cuối nhận phần bù để tổng chính xác 100. Chỉ tính khi tất cả dòng hợp lệ;
+có dòng lỗi thì percent tạm là 0 và FE không thêm dòng nào.
+Std hiển thị bằng percent/100; các dòng có sẵn không nằm trong mẫu số, giữ nguyên.
+Tên/mã dùng FormulaItemDisplayResolver;
+không tin tên Excel, không trả giá. Dòng lỗi có `item=null` và error code:
+InvalidQuality, ProductNotFound, AmbiguousProduct, NoStock, DuplicateItemLot,
+InvalidProduct. Không tự đổi lot/quality hay chọn đại sản phẩm trùng mã.
+HTTP 400 cho request/quyền/scope/state không hợp lệ; lỗi theo dòng vẫn HTTP 200
+để FE hiển thị toàn bộ lỗi và chưa thêm dòng nào. HTTP 401 khi chưa đăng nhập.
+FE thêm bản nháp, chỉ POST actions Save/SaveAndCreateFormula mới persist;
+BE vẫn resolve giá/lot/vật tư và kiểm tra revision tại thời điểm lưu.
 
 Tất cả endpoint mới có `[Authorize]`; handler kiểm tra capability và CompanyId
 của current user trước khi đọc dữ liệu. Không nhận CompanyId từ FE. Mutation còn
@@ -221,6 +286,8 @@ Status thay đổi còn đưa đơn hàng New/Approved sang Processing; status k
 parse được coi là New như legacy. Các trạng thái đơn hàng khác giữ nguyên.
 MFG, schedule, đơn hàng và timeline lưu trong cùng transaction.
 
+Thay đổi ExpectedDate có ngày mới khác ngày cũ phát thông báo ngày hứa giao topic 55 qua publisher chung với API notify-promised-delivery: giữ đúng Sale phụ trách/leader nhóm và payload ngày cũ/mới. So sánh chỉ phần ngày; ngày mới null hoặc không đổi không phát. Áp dụng cả information/kế hoạch, inform/công thức, tạo VA trên lệnh đã có và dùng hàng tồn. Publisher chạy trước commit trong cùng transaction; lỗi publish rollback. Không có liên kết/người nhận active thì không tạo thông báo và vẫn lưu chỉnh sửa hợp lệ. Xem [contract publisher](Services/Notifications/README.md).
+
 ## Kết thúc lệnh
 
 `PATCH /api/v1/plm/production-orders/{id}/finish` không cần body.
@@ -240,3 +307,7 @@ graph chỉnh màu. Regression kiểm tra quyền, company, che giá, nhiều PS
 checker, Scheduling/Processing, finish idempotent, transaction rollback và công
 thức tính lượng chỉnh màu. Chưa thay thế integration với dữ liệu PostgreSQL
 thật; không có truy cập/ghi DB production trong quá trình port.
+
+### Tự kích hoạt VA khi lưu Scheduling
+Mọi đường lưu trạng thái Scheduling qua editor/Inform và API information cũ đều tự đảm bảo VA đang chọn có ValidFrom. BE tải tracking các PSV mở (ValidTo=null), VA active cùng company: nếu có một lựa chọn đã hiệu lực thì giữ nguyên; nếu chưa có và chỉ có một VA chờ thì gán ValidFrom bằng thời điểm xử lý từ clock. Không sửa ngày đã có, không kích hoạt thêm các VA chờ khi đã có VA hiệu lực. Thiếu VA hoặc nhiều lựa chọn không xác định thì fail trong transaction, không báo lưu thành công.
+Gán ngày cùng transaction với đổi trạng thái, lịch, giữ chỗ và audit. Sau SaveChanges, trước publish/commit, Inform/information đọc lại để bảo đảm có lựa chọn VA hiệu lực active cùng company; không đạt thì trả lỗi và transaction không commit. Nhánh tạo VU lần đầu và sao chép dùng CreateSelection có ValidFrom=now từ trước. Quyền và điều kiện chuyển trạng thái giữ nguyên; tạo VA chờ vẫn có thể ValidFrom=null nếu chưa chuyển Scheduling. Không backfill DB cũ; API không nhận ngày hiệu lực từ FE cho thao tác này.

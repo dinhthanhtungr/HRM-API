@@ -19,6 +19,7 @@ public sealed class CreateSaleOrderResultDto
 /// </summary>
 public sealed record SaleOrderLineRequest
 {
+    public IReadOnlyList<HRM.Application.Features.PLM.SaleOrders.DeliverySchedules.DeliveryScheduleInput>? DeliverySchedules { get; init; }
     public bool StandardSampleReviewed { get; init; }
     public bool HasStandardSample { get; init; }
     public Guid MerchandiseOrderDetailId { get; init; }

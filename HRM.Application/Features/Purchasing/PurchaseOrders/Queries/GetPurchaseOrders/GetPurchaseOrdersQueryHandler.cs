@@ -5,6 +5,7 @@ using HRM.Application.Features.Purchasing.PurchaseOrders.Dtos;
 using HRM.Application.Features.Purchasing.PurchaseOrders.Services;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using HRM.Domain.Enums.WareHouses;
 namespace HRM.Application.Features.Purchasing.PurchaseOrders.Queries.GetPurchaseOrders;
 
 internal sealed class GetPurchaseOrdersQueryHandler : IRequestHandler<GetPurchaseOrdersQuery, PagedResult<PurchaseOrderListItemDto>>
@@ -22,7 +23,19 @@ internal sealed class GetPurchaseOrdersQueryHandler : IRequestHandler<GetPurchas
         if (!string.IsNullOrWhiteSpace(request.OrderType)) query = query.Where(x => x.OrderType == request.OrderType.Trim());
         if (request.From.HasValue) { var from = request.From.Value.Date; query = query.Where(x => x.CreateDate >= from); }
         if (request.To.HasValue) { var to = request.To.Value.Date.AddDays(1); query = query.Where(x => x.CreateDate < to); }
-        query = PurchaseOrderKeywordSearch.Apply(query, request.Keyword, companyId, request.IncludeInactive);
+        var smartSearch = HRM.Application.Commons.Searching.SmartSearch.For(query, fields => [
+            fields.Code("purchaseOrderCode", x => x.ExternalId, "Mã đơn mua", "Purchase order code"),
+            fields.Code("supplierCode", x => x.Supplier != null && x.Supplier.CompanyId == companyId ? x.Supplier.ExternalId : "", "Mã NCC", "Supplier code"),
+            fields.Name("supplierName", x => x.Supplier != null && x.Supplier.CompanyId == companyId ? x.Supplier.SupplierName : "", "Tên NCC", "Supplier name"),
+            fields.Codes("materialCode", x => x.PurchaseOrderDetails.Where(d => request.IncludeInactive || d.IsActive),
+                d => d.MaterialExternalIDSnapshot, "Mã NVL", "Material code"),
+            fields.Names("materialName", x => x.PurchaseOrderDetails.Where(d => request.IncludeInactive || d.IsActive),
+                d => d.MaterialNameSnapshot, "Tên NVL", "Material name")
+        ]);
+        query = smartSearch.ApplyRequest(query, request.Keyword, request, out var smartKeyword);
+        query = PurchaseOrderKeywordSearch.Apply(query, smartKeyword, companyId, request.IncludeInactive);
+        if (await smartSearch.SuggestionsAsync<PurchaseOrderListItemDto>(query, request, ct) is { } suggestions)
+            return suggestions;
         var count = await query.CountAsync(ct);
         var items = await query.OrderByDescending(x => x.CreateDate).ThenByDescending(x => x.PurchaseOrderId)
             .Skip((request.NormalizedPageNumber - 1) * request.NormalizedPageSize).Take(request.NormalizedPageSize)
@@ -67,9 +80,16 @@ internal sealed class GetPurchaseOrdersQueryHandler : IRequestHandler<GetPurchas
 
         var codes = items.Select(item => item.ExternalId.Trim()).Where(code => code.Length > 0).ToArray();
         var iqcDates = await _receiptReader.ReadIqcDatesAsync(companyId, codes, ct);
+        var normalizedCodes = codes.Select(PurchaseReturnReadModel.Normalize).ToArray();
+        var returnCodes = await _db.WarehouseRequests.AsNoTracking().Where(x => x.CompanyId == companyId &&
+            x.ReqType == WareHouseRequestType.ExportReturn && x.codeFromRequest != null &&
+            normalizedCodes.Contains(x.codeFromRequest.Trim().ToUpper()))
+            .Select(x => x.codeFromRequest.Trim().ToUpper()).Distinct().ToListAsync(ct);
+        var returns = await new PurchaseReturnReadModel(_db).ReadAsync(companyId, returnCodes, ct);
         foreach (var item in items)
         {
             item.RealDeliveryDate = iqcDates.TryGetValue(item.ExternalId.Trim(), out var iqcDate) ? iqcDate : null;
+            item.ReturnProgress = returns.TryGetValue(PurchaseReturnReadModel.Normalize(item.ExternalId), out var returned) ? returned.Progress : null;
 
         }
         return new PagedResult<PurchaseOrderListItemDto>(items, count, request.NormalizedPageNumber, request.NormalizedPageSize);

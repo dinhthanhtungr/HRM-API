@@ -121,7 +121,9 @@ internal sealed class GetMaterialPriceReviewsQueryHandler
                 x.CompanyId == companyId &&
                 x.IsActive == true);
 
-        if (request.NormalizedKeyword is { } keyword)
+        var smartSearch = MaterialPriceReviewSmartSearch.Build(materialsQuery, companyId, canViewDetails);
+        materialsQuery = smartSearch.ApplyRequest(materialsQuery, request.NormalizedKeyword, request, out var smartKeyword);
+        if (smartKeyword is { } keyword)
         {
             var pattern = PostgresSearchPattern.ContainsLiteral(keyword);
             materialsQuery = materialsQuery.Where(x =>
@@ -130,6 +132,9 @@ internal sealed class GetMaterialPriceReviewsQueryHandler
                 EF.Functions.ILike(x.Name ?? string.Empty, pattern, PostgresSearchPattern.EscapeCharacter));
         }
 
+        if ((!canViewDetails || request.PriceStatus is null) &&
+            await smartSearch.SuggestionsAsync<MaterialPriceReviewItemDto>(materialsQuery, request, cancellationToken) is { } fastSuggestions)
+            return fastSuggestions;
         var materialRows = canViewDetails
             ? await materialsQuery.Select(x => new MaterialRow
             {
@@ -190,6 +195,12 @@ internal sealed class GetMaterialPriceReviewsQueryHandler
                     staleCutoff) == requestedStatus)
                 .ToList();
 
+        if (request.SuggestionKeyword is not null)
+        {
+            var eligibleIds = filteredRows.Select(x => x.MaterialId).ToArray();
+            return (await smartSearch.SuggestionsAsync<MaterialPriceReviewItemDto>(
+                materialsQuery.Where(x => eligibleIds.Contains(x.MaterialId)), request, cancellationToken))!;
+        }
         var totalCount = filteredRows.Count;
         var pageRows = filteredRows
             .Skip((request.NormalizedPageNumber - 1) * request.NormalizedPageSize)

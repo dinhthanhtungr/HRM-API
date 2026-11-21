@@ -138,10 +138,8 @@ internal sealed class GetInternalMessageContextQueryHandler
                 IsEdited = x.IsEdited,
                 EditedAt = x.EditedAt,
                 IsDeleted = x.IsDeleted,
-                IsRead = x.ReadStates
-                    .Where(state => state.EmployeeId == employeeId.Value)
-                    .Select(state => state.IsRead)
-                    .FirstOrDefault(),
+                // Missing receipt means this employee has no unread delivery for this message.
+                IsRead = !x.ReadStates.Any(state => state.EmployeeId == employeeId.Value && !state.IsRead),
                 ReadAt = x.ReadStates
                     .Where(state => state.EmployeeId == employeeId.Value)
                     .Select(state => state.ReadAt)
@@ -170,6 +168,7 @@ internal sealed class GetInternalMessageContextQueryHandler
                 cancellationToken);
 
         await _areas.MaskPriceMessagesAsync(messages, cancellationToken);
+        await InternalMessageSampleWorkAudience.AttachAsync(messages, _dbContext, _areas, companyId.Value, cancellationToken);
         return new InternalMessageContextDto
         {
             TargetMessageId = target.InternalMessageId,

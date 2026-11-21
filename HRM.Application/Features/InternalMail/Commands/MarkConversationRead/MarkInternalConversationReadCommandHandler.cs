@@ -46,6 +46,19 @@ internal sealed class MarkInternalConversationReadCommandHandler
 
         // Giờ xử lý dùng cho audit; khi có ID mốc, thứ tự message lấy từ dữ liệu đã lưu.
         var readThrough = _dateTimeProvider.Now;
+        // Snapshot thread-only events before acknowledging messages. Their persisted
+        // timestamps may be ahead of this API clock; incoming rows after this snapshot
+        // must remain unread even when their timestamps are backdated.
+        var threadNotificationIds = request.ThroughMessageId.HasValue
+            ? await (from state in _areas.States()
+                     join link in _dbContext.QueryInternalMailNotificationLinks(companyId.Value)
+                         on state.NotificationId equals link.NotificationId
+                     where link.ConversationId == request.ConversationId && !link.MessageId.HasValue &&
+                         state.UserId == employeeId.Value && !state.IsRead && !state.IsArchived &&
+                         state.Notification.CompanyId == companyId.Value &&
+                         state.Notification.Topic == HRM.Domain.Enums.Notifications.TopicNotifications.QuotationPricingApproved
+                     select state.NotificationId).ToArrayAsync(cancellationToken)
+            : [];
         var participants = _dbContext.InternalConversationParticipants
             .Where(x =>
                 x.InternalConversationId == request.ConversationId &&
@@ -90,7 +103,7 @@ internal sealed class MarkInternalConversationReadCommandHandler
                 companyId.Value, employeeId.Value, request.ConversationId, messageIds, readThrough, cancellationToken);
         await MarkNotificationsReadAsync(
             companyId.Value, employeeId.Value, request.ConversationId,
-            readThrough, request.ThroughMessageId.HasValue, messageIds.ToHashSet(), request.AreaCode, cancellationToken);
+            readThrough, request.ThroughMessageId.HasValue, messageIds.ToHashSet(), threadNotificationIds.ToHashSet(), request.AreaCode, cancellationToken);
 
         // Request cũ hoàn tất sau request mới không được kéo LastReadAt lùi lại.
         if (isParticipant)
@@ -103,7 +116,7 @@ internal sealed class MarkInternalConversationReadCommandHandler
 
     private async Task MarkNotificationsReadAsync(
         Guid companyId, Guid employeeId, Guid conversationId, DateTime readThrough, bool hasMessageBoundary,
-        IReadOnlySet<Guid> messageIds, string? areaCode, CancellationToken cancellationToken)
+        IReadOnlySet<Guid> messageIds, IReadOnlySet<Guid> threadNotificationIds, string? areaCode, CancellationToken cancellationToken)
     {
         const int batchSize = 200;
         var conversationNotificationIds = _dbContext.QueryInternalMailNotificationLinks(companyId)
@@ -147,7 +160,8 @@ internal sealed class MarkInternalConversationReadCommandHandler
 
             var ids = batch
                 .Where(notification => InternalConversationReadScope.MatchesReadReceipt(
-                    notification, conversationId, messageIds, readThrough))
+                    notification, conversationId, messageIds, readThrough,
+                    hasMessageBoundary ? threadNotificationIds : null))
                 .Select(notification => notification.Id)
                 .ToArray();
             if (ids.Length > 0)

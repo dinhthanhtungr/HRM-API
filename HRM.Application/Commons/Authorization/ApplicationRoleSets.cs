@@ -2,6 +2,13 @@
 
 public static class ApplicationRoleSets
 {
+    public static class DeliverySchedules
+    {
+        public static readonly string[] RequestEditors = [ApplicationRoles.President, ApplicationRoles.Developer,
+            ApplicationRoles.Sales.SaleUser, ApplicationRoles.Sales.SaleAdmin, ApplicationRoles.Leader];
+        public static readonly string[] PromiseEditors = [ApplicationRoles.President, ApplicationRoles.Developer,
+            ApplicationRoles.Dispatch.DispatchUser, ApplicationRoles.Production.PLPUUser];
+    }
     public static class SaleOrderDelivery
     {
         public static readonly string[] SalesPausers = [ApplicationRoles.Sales.SaleUser,
@@ -13,6 +20,9 @@ public static class ApplicationRoleSets
     }
     public static class Warehouse
     {
+        public static readonly string[] InactiveShelfFieldViewers =
+            [ApplicationRoles.Production.PLPUUser, ApplicationRoles.Developer];
+        public static readonly string[] VoucherSupplierViewers = [ApplicationRoles.Production.PLPUUser];
         public static readonly string[] MixingStockViewers =
             [ApplicationRoles.Production.PLPUUser, ApplicationRoles.Developer, ApplicationRoles.President];
     }
@@ -53,6 +63,7 @@ public static class ApplicationRoleSets
 
     public static class DevAndQA
     {
+        public static readonly string[] MaterialPlanningViewers = [ApplicationRoles.Developer, ApplicationRoles.Production.PLPUUser];
         public static readonly string[] WorkflowNotificationJobAdministrators = [ApplicationRoles.Developer];
         public static readonly string[] CatalogSyncManagers = [ApplicationRoles.Developer, ApplicationRoles.Quality.QCUser, ApplicationRoles.Lab.LabUser];
         public static readonly string[] NonDraftTemplateEditors = [ApplicationRoles.Developer, ApplicationRoles.Quality.QCUser, ApplicationRoles.Lab.LabUser];
@@ -234,6 +245,8 @@ public static class ApplicationRoleSets
 
     public static class CRM
     {
+        public static readonly string[] SampleSharingCompanyManagers = [ApplicationRoles.Admin, ApplicationRoles.President, ApplicationRoles.Developer];
+        public static readonly string[] SampleSharingManagers = [ApplicationRoles.Admin, ApplicationRoles.President, ApplicationRoles.Developer, ApplicationRoles.Sales.SaleUser, ApplicationRoles.Sales.SaleAdmin, ApplicationRoles.Leader];
         public const string DirectorReaderRolesCsv =
             $"{ApplicationRoles.President},{ApplicationRoles.Developer},{ApplicationRoles.Admin},{ApplicationRoles.Accounting.ACCUser}";
 
@@ -358,8 +371,11 @@ public static class ApplicationRoleSets
 
     public static class PLM
     {
+        public static readonly string[] ProductionExcelImporters = [ApplicationRoles.Developer];
+        public static readonly string[] ManufacturingPricedExcelExporters = [ApplicationRoles.President, ApplicationRoles.Developer];
+        public static readonly string[] SampleWorkLabOperators = [ApplicationRoles.Lab.LabUser, ApplicationRoles.Lab.LabAdmin];
         public static readonly string[] LabStandardReceivers =
-            [ApplicationRoles.Lab.LabAdmin, ApplicationRoles.Developer, ApplicationRoles.President, ApplicationRoles.Admin];
+            [.. SampleWorkLabOperators, ApplicationRoles.Developer, ApplicationRoles.President, ApplicationRoles.Admin];
         public static readonly string[] SampleRequestDeactivators = [ApplicationRoles.Sales.SaleUser];
         public static readonly string[] SampleTrialFeedbackCorrectors = [ApplicationRoles.Sales.SaleUser, ApplicationRoles.Sales.SaleAdmin];
         public static readonly string[] ManufacturingDefectiveLotViewers = [ApplicationRoles.Developer, ApplicationRoles.Quality.QCUser, ApplicationRoles.Lab.LabUser];
@@ -375,6 +391,8 @@ public static class ApplicationRoleSets
             ApplicationRoles.Quality.QCUser, ApplicationRoles.Lab.LabUser];
         // Legacy formula editor allows LabUser and Developer to edit laboratory data.
         public static readonly string[] ManufacturingFormulaEditors = [ApplicationRoles.Lab.LabUser, ApplicationRoles.Developer];
+        public static readonly string[] MaterialProcessingCreators =
+            [ApplicationRoles.Production.PLPUUser, ApplicationRoles.Lab.LabUser, ApplicationRoles.Developer];
         public static readonly string[] ProductionOrderViewers =
         [ApplicationRoles.Admin, ApplicationRoles.Developer, ApplicationRoles.President,
             ApplicationRoles.Accounting.ACCUser,
@@ -471,6 +489,7 @@ public static class ApplicationRoleSets
 
         public static readonly string[] FormulaMaterialViewers =
         [
+            ApplicationRoles.Lab.LabAdmin,
             ApplicationRoles.Admin,
             ApplicationRoles.Production.PLPUUser,
             ApplicationRoles.Developer,
@@ -601,6 +620,7 @@ public static class ApplicationRoleSets
 
         public static readonly string[] ProductTechnicalEditors =
         [
+            ApplicationRoles.Lab.LabAdmin,
             ApplicationRoles.Admin,
             ApplicationRoles.Developer,
             ApplicationRoles.President,
@@ -624,7 +644,10 @@ public static class ApplicationRoleSets
             [.. FormulaSelectors, ApplicationRoles.Sales.SaleAdmin];
 
         public static readonly string[] ManagedSampleSaleWorkflowEditors =
-            [ApplicationRoles.Sales.SaleAdmin];
+            [ApplicationRoles.Sales.SaleAdmin, ApplicationRoles.Sales.SaleUser];
+
+        public static readonly string[] SampleSaleWorkReaders =
+            [ApplicationRoles.Sales.SaleUser, ApplicationRoles.Sales.SaleAdmin];
 
         public static readonly string[] SampleRequestExpectedPriceQuoteDateEditors =
         [
@@ -646,6 +669,7 @@ public static class ApplicationRoleSets
         [
             ApplicationRoles.Admin,
             ApplicationRoles.Lab.LabUser,
+            ApplicationRoles.Lab.LabAdmin,
             ApplicationRoles.Developer,
             ApplicationRoles.President
         ];
@@ -654,6 +678,7 @@ public static class ApplicationRoleSets
         [
             ApplicationRoles.Admin,
             ApplicationRoles.Developer,
+            ApplicationRoles.Lab.LabUser,
             ApplicationRoles.Lab.LabAdmin
         ];
 

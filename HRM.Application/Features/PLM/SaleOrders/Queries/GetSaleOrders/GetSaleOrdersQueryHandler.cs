@@ -2,6 +2,7 @@ using HRM.Application.Abstractions.Commons.Time;
 using HRM.Application.Abstractions.Persistence.PLM.SaleOrders;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Pagination;
+using HRM.Application.Commons.Searching;
 using HRM.Application.Features.PLM.SaleOrders.Dtos;
 using HRM.Application.Features.PLM.SaleOrders.Services;
 using HRM.Domain.Enums.Merchadises;
@@ -73,10 +74,13 @@ internal sealed class GetSaleOrdersQueryHandler
             query = query.Where(x => x.Status == status);
         }
 
-        if (request.NormalizedKeyword is { } keyword)
+        var smartSearch = SaleOrderSmartSearch.Build(query, companyId);
+        query = smartSearch.ApplyRequest(query, request.NormalizedKeyword, request, out var smartKeyword);
+        if (smartKeyword is { } keyword)
         {
             query = query.Where(x =>
                 EF.Functions.ILike(x.CustomerNameSnapshot, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                x.Customer != null && x.Customer.CompanyId == x.CompanyId && EF.Functions.ILike(x.Customer.TaxNumber ?? "", PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
                 EF.Functions.ILike(x.CustomerExternalIdSnapshot, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
                 EF.Functions.ILike(x.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
                 EF.Functions.ILike(x.PONo, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
@@ -100,6 +104,8 @@ internal sealed class GetSaleOrdersQueryHandler
                     EF.Functions.ILike(d.Formula.ExternalId, $"%{keyword}%")));
         }
 
+        if (await smartSearch.SuggestionsAsync<SaleOrderListItemDto>(query, request, cancellationToken) is { } suggestions)
+            return suggestions;
         var totalCount = await query.CountAsync(cancellationToken);
         var items = await query
             .OrderByDescending(x => x.CreateDate)

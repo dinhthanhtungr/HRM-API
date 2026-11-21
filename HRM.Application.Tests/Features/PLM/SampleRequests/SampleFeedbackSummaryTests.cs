@@ -8,6 +8,20 @@ namespace HRM.Application.Tests.Features.PLM.SampleRequests;
 public sealed class SampleFeedbackSummaryTests
 {
     private static readonly DateTime Now = new(2026, 11, 4, 9, 0, 0);
+    [Fact]
+    public void MetadataUsesTheActualEventActorAndNeverTheCurrentTrialEditor()
+    {
+        var actor = Guid.NewGuid(); var trialId = Guid.NewGuid();
+        var trial = new SampleRequestSampleTrial { SampleRequestSampleTrialId = trialId, TrialNo = 1,
+            CustomerReplyDate = Now.AddDays(-1), DeliveredSampleQuantityKg = 1, Status = SampleTrialStatus.Approved };
+        var summary = Assert.Single(SampleFlowStateReader.BuildFeedbackSummaries([trial],
+            [new() { EventType = SampleRequestWorkflowEvents.FeedbackRecorded, SampleRequestSampleTrialId = trialId,
+                RecordedByEmployeeId = actor, RecordedAt = Now }]));
+        Assert.Equal(actor, summary.RecordedByEmployeeId);
+        Assert.Equal(Now, summary.RecordedAt);
+        var historical = Assert.Single(SampleFlowStateReader.BuildFeedbackSummaries([trial], []));
+        Assert.Null(historical.RecordedByEmployeeId); Assert.Null(historical.RecordedAt);
+    }
     [Theory]
     [InlineData(SampleRequestWorkflowEvents.PriceAccepted, "Accepted")]
     [InlineData(SampleFlowRules.PriceRejected, "Rejected")]

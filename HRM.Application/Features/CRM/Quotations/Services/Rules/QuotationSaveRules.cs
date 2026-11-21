@@ -68,7 +68,7 @@ internal static class QuotationSaveRules
 
     public static string? ValidateStatus(Quotation quotation, SaveQuotationRequest request)
     {
-        if (quotation.Status is not (QuotationStatus.Draft or QuotationStatus.PendingApproval or QuotationStatus.Approved or QuotationStatus.PendingSendConfirmation))
+        if (quotation.Status is not (QuotationStatus.Draft or QuotationStatus.PendingApproval or QuotationStatus.Approved or QuotationStatus.PendingSendConfirmation or QuotationStatus.SendRejected))
             return "Only an unsent draft, pricing-pending, approved or send-pending quotation can be saved.";
         if (request.Lines is not null && quotation.Status != QuotationStatus.Draft)
             return "Only a draft quotation can have its lines replaced.";

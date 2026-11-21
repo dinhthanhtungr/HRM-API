@@ -15,9 +15,9 @@ public sealed class SampleRequestNotificationAudienceResolver(
     ICRMReadDbContext crm, IInternalMailDbContext db)
 {
     public async Task<IReadOnlyCollection<Guid>> ResolveAsync(
-        Guid companyId, Guid sampleRequestId, TopicNotifications topic, CancellationToken ct)
+        Guid companyId, Guid sampleRequestId, TopicNotifications topic, CancellationToken ct, string? workflowEventType = null)
     {
-        var audience = SampleRequestNotificationAudienceRules.For(topic);
+        var audience = SampleRequestNotificationAudienceRules.For(topic, workflowEventType);
         if (audience == SampleRequestNotificationAudience.None) return Array.Empty<Guid>();
 
         var request = await db.SampleRequests.AsNoTracking()
@@ -49,7 +49,7 @@ public sealed class SampleRequestNotificationAudienceResolver(
         {
             var groupTypes = SampleRequestRecipientRules.ResolveDefaultLeaderGroupTypes(request.Category);
             recipients.UnionWith(await db.MemberInGroups.AsNoTracking()
-                .Where(m => m.IsActive && m.IsAdmin == true && m.Group.CompanyId == companyId &&
+                .Where(m => m.IsActive && m.Group.CompanyId == companyId &&
                     m.Group.GroupType != null && groupTypes.Contains(m.Group.GroupType) &&
                     m.ProfileNavigation != null && m.ProfileNavigation.CompanyId == companyId && m.ProfileNavigation.IsActive)
                 .Select(m => m.Profile!.Value).Distinct().ToArrayAsync(ct));

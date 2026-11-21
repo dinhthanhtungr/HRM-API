@@ -1,4 +1,5 @@
 using HRM.Application.Features.CRM.Quotations.Commands.ConfirmQuotationSent;
+using HRM.Application.Features.CRM.Quotations.Commands.RejectQuotationSent;
 using HRM.Application.Features.CRM.Quotations.Commands.DeleteQuotation;
 using HRM.Application.Features.CRM.Quotations.Commands.WithdrawSendConfirmation;
 using HRM.Application.Commons.Concurrency;
@@ -35,6 +36,7 @@ using HRM.Application.Features.CRM.Quotations.Queries.GetFormulaPricingPolicies;
 using HRM.Application.Features.CRM.Quotations.Queries.PreviewFormulaPricingPolicy;
 using HRM.Domain.Enums.CustomerEnum;
 using HRM.Domain.Enums.Formulas;
+using HRM.Api.Security.Authorization;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -45,7 +47,7 @@ namespace HRM.Api.Controllers.CRM.CustomerCare;
 /// API báo giá theo luồng nháp, cập nhật lại giá và ghi nhận đã gửi khách hàng.
 /// </summary>
 [ApiController]
-[Authorize]
+[Authorize(Policy = SensitiveDataAuthorization.PolicyName)]
 [Route("api/v1/crm/quotations")]
 public sealed class QuotationsController : ControllerBase
 {
@@ -153,6 +155,14 @@ public sealed class QuotationsController : ControllerBase
         Guid quotationId, [FromBody] ConfirmQuotationSentRequest request, CancellationToken cancellationToken)
     {
         var result = await _sender.Send(new ConfirmQuotationSentCommand(quotationId, request), cancellationToken);
+        return result.Success ? NoContent() : MutationFailure(result);
+    }
+
+    [HttpPost("{quotationId:guid}/reject-sent")]
+    public async Task<IActionResult> RejectQuotationSent(Guid quotationId, [FromBody] RejectQuotationSentRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new RejectQuotationSentCommand(quotationId, request), cancellationToken);
         return result.Success ? NoContent() : MutationFailure(result);
     }
 
@@ -409,11 +419,13 @@ public sealed class QuotationsController : ControllerBase
         [FromQuery] bool download,
         CancellationToken cancellationToken)
     {
+        Response.Headers.CacheControl = "no-store";
         var result = await _sender.Send(
             new ExportQuotationPdfQuery(quotationId),
             cancellationToken);
         if (!result.Success || result.Data is null)
         {
+            if (result is QuotationPdfBlockedFailure) return Conflict(result);
             return NotFound(result);
         }
 

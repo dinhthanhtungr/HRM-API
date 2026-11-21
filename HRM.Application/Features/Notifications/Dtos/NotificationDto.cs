@@ -8,7 +8,12 @@ namespace HRM.Application.Features.Notifications.Dtos;
 /// </summary>
 public sealed class NotificationDto
 {
+    public IReadOnlyList<NotificationSalesOrderInfoDto> SalesOrderInfo { get; internal set; } = [];
     public Guid Id { get; set; }
+    public string? StreamKey { get; internal set; }
+    public int? StreamUnreadCount { get; internal set; }
+    /// <summary>Authoritative visible-message unread count for quotation conversations, including zero.</summary>
+    public int? ConversationUnreadCount { get; internal set; }
     public string? AreaCode { get; set; }
     public TopicNotifications Topic { get; set; }
     public string TopicCode => NotificationTopicCodes.GetCode(Topic);
@@ -48,3 +53,5 @@ public sealed class NotificationContextDto
     public Guid? AggregateId { get; set; }
     public string? AggregateCode { get; set; }
 }
+
+public sealed record NotificationSalesOrderInfoDto(Guid Id, string ExternalId, string CustomerCode, string CustomerName, IReadOnlyList<string> ProductCodes);

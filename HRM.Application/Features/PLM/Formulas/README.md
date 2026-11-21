@@ -1,13 +1,36 @@
 # Giá công thức
 
-Luồng Formula gắn Sample Request tuân thủ [quy trình mẫu và theo dõi giá](../SampleRequests/WORKFLOW.md).
-Contract phân nhánh được mô tả tại [legacy/chip/kg](../SampleRequests/CHIP_SAMPLE_FLOW.md).
+Lookup `/api/v1/plm/formulas/lookup` giữ company/active/source/status scope.
+Khi client chỉ định ngữ cảnh Product/SampleRequest nhưng không resolve được Product,
+trả trang rỗng; không bỏ điều kiện ngữ cảnh để tìm trên toàn công ty.
+
+Danh sách VU phát triển và chi tiết trả LastDeliveryKind cho VU SampleSent,
+lấy lần giao thực tế mới nhất cùng company còn active. Chip Đạt giữ trạng thái
+SampleSent; FE hiện “Đã gửi chip”, không đưa VU về Approved hoặc tự hoàn thành.
+Không có Trial đã gửi thì LastDeliveryKind=null, không suy từ kế hoạch/số kg yêu cầu.
+
+Lookup item có thể trả NVL nội bộ -N/-B dự kiến (isProcessingPreview=true). GET không ghi DB;
+chỉ khi lưu VU mới resolve reference sang Product thật, tạo/dùng lại hồ sơ SemiFinished và công thức mặc định.
+Create/update lưu cả bộ dữ liệu và FormulaVersion trong transaction; lỗi rollback. Quyền/scope/khóa công thức giữ nguyên.
+
+Sau khách từ chối giá, Lab chỉnh NVL/định lượng VU Approved đang là nguồn giá chuẩn rồi
+Lưu dùng lại QueueMaterialChangeAsync: lưu sự kiện xác nhận công thức và outbox yêu cầu
+BGD duyệt lại. Composition không đổi không gửi trùng; không cần thêm thao tác hoàn thành.
+Theo dõi mẫu chờ BGD khi có sự kiện xác nhận mới mà giá Approved vẫn là bản cũ.
+BGD cũng có thể điều chỉnh giá trực tiếp mà không chờ Lab thay thành phần.
+
+Mẫu kg Failed được Lab làm lại trên cùng yêu cầu: sửa/xác nhận công thức cũ hoặc công thức
+khác rồi gửi Trial tiếp theo. Chỉ cho gửi lại VU từng gửi kg khi Trial mới nhất đúng hồ sơ,
+đúng VU là Failed; lịch sử Trial cũ giữ nguyên. Luồng duyệt giá khi chỉnh/xác nhận không đổi.
+
+Luồng Formula gắn Sample Request tuân thủ [quy trình mẫu và theo dõi giá](../SampleRequests/docs/workflow/WORKFLOW.md).
+Contract phân nhánh được mô tả tại [legacy/chip/kg](../SampleRequests/docs/workflow/CHIP_SAMPLE_FLOW.md).
 Chip có phản hồi thực sự mở Formula Rework; kg đã gửi luôn khóa thành phần. VU Completed sau chip
 có thể gửi kg đúng điều kiện trên hồ sơ còn mở. UpdatedDate hiện có làm concurrency token, không thêm migration.
-POST/PUT công thức Draft không tự tạo Trial. Giá không chặn chip/legacy; gửi kg hiện hành cần khách đồng ý giá đúng VU;
+POST/PUT công thức Draft không tự tạo Trial. Xác nhận công thức và gửi là hai thao tác riêng. Gửi kg hiện hành không chờ khách đồng ý giá;
 hồ sơ cũ giữ nguyên, không bắt xác nhận lại.
 Gửi mẫu dùng Draft phù hợp hoặc tạo Trial tiếp theo, chuyển thẳng WaitingCustomerFeedback;
-không tạo nút Sale nhận mẫu. Sample Request không tự gắn FormulaId khi gửi; chỉ gắn khi khách duyệt.
+không tạo nút Sale nhận mẫu. Sample Request không tự gắn FormulaId khi gửi; kg hiện hành chỉ chọn/gắn khi Sale xác nhận Complete sau cả giá và mẫu đạt đúng VU. Chip/legacy theo contract riêng.
 
 Status/status-transition so sánh expectedUpdatedDate theo độ chính xác microsecond của PostgreSQL,
 để timestamp trả về từ lần ghi trước không gây lỗi concurrency giả do phần tick dưới microsecond.
@@ -15,15 +38,37 @@ Thay đổi từ một microsecond trở lên vẫn bị từ chối khi client 
 
 ## Xác nhận công thức cho công việc Lab
 
+GET chi tiết VU và nhóm VU phát triển bổ sung `lastDeliveryKind` (ColorChip/TrialSample/
+Unknown hoặc null) từ lần gửi active có SentDate gần nhất, cùng company; không suy từ
+kg yêu cầu của TP. Danh sách dùng một truy vấn theo lô và lookup mới nhất từng VU.
+Field chỉ dùng hiển thị Đã gửi chip/Đã gửi mẫu; trạng thái kỹ thuật SampleSent và luồng
+phản hồi không đổi. Công thức chưa có chứng từ gửi không được suy thành đã gửi chip.
+
+Khi xác nhận Approved, BE luôn xác định TP trước mọi thay đổi. Có `sampleRequestId`
+thì kiểm tra đúng company, Product, active, không hủy và visibility của người gọi.
+Không gửi ID thì truy TP qua Product của VU trong cùng scope: đúng một TP mới tự dùng;
+không có hoặc nhiều hơn một TP trả lỗi, yêu cầu mở/chọn đúng TP. Không chọn TP mới nhất
+hoặc phát thông báo cho tất cả TP cùng Product. Sự kiện/job dùng ID đã được BE xác định,
+lưu cùng snapshot, nên không còn nhánh Approved thành công mà bỏ job vì thiếu ID.
+
+Khôi phục phiên bản chỉ khôi phục nội dung/NVL/giá, luôn đặt trạng thái hiện tại và
+snapshot mới về Draft, xóa CheckBy/CheckDate/SentBy/SentDate hiện hành. Snapshot nguồn
+và lịch sử Trial/thông báo giữ nguyên. Restore không phát tin xác nhận; Lab xác nhận lại
+qua luồng trên. Công việc Draft không dùng phản hồi giá/lần xác nhận cũ để bỏ qua Lab.
+Không mở khóa restore trên VU đã gửi/Completed/Cancelled vốn bị chặn sửa thành phần.
+
 PATCH status/POST status-transition chỉ xác nhận `Approved` từ `Draft` hoặc `Approved`.
 Không đưa công thức đã gửi/kết thúc/hủy về Approved để vượt khóa sửa thành phần; lần làm lại
 dùng công thức mới hoặc sao chép. Công thức Approved vẫn được sửa bình thường theo quyền hiện có.
 
-PATCH status `Approved` có `sampleRequestId` kiểm tra hồ sơ còn mở trong đúng company,
+PATCH status `Approved` có `sampleRequestId` cho phép hồ sơ còn mở hoặc đã `Completed` để Lab
+xác nhận công thức cải tiến; hồ sơ `Cancelled` vẫn bị chặn. Việc xác nhận không mở lại hồ sơ,
+không thay FormulaId khách đã chọn, không tạo Trial và không cho gửi mẫu trên hồ sơ đã hoàn thành.
+Backend kiểm tra đúng company,
 customer visibility và Product trước khi lưu. Sự kiện `LabFormulaConfirmed` liên kết chính
 xác Sample Request–Formula, lưu cùng snapshot để báo cáo Lab không phụ thuộc notification
 gửi thành công. Không đổi Sample Request thành Completed. Chi tiết nguồn dữ liệu cũ và
-quy tắc mở lại việc nằm tại [Công việc Lab](../SampleRequests/LAB_WORK.md).
+quy tắc mở lại việc nằm tại [Công việc Lab](../SampleRequests/docs/work/LAB_WORK.md).
 
 ACCUser được xem chi tiết công thức, NVL, giá, phiên bản, BOM và export như President. ViewFormulaDetail dùng ProductTechnicalViewers; quyền sửa vẫn dùng ProductTechnicalEditors/FormulaManagers hiện có. Dữ liệu và reference vẫn được scope theo công ty; claim kỹ thuật mới cần seed rồi login/refresh với token dùng permission DB.
 

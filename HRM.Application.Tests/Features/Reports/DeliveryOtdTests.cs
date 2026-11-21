@@ -1,5 +1,6 @@
 using HRM.Application.Abstractions.Persistence.Dispatch;
 using HRM.Application.Abstractions.Security;
+using HRM.Application.Commons.Authorization;
 using HRM.Application.Features.Reports.DeliveryOtd;
 using HRM.Application.Features.Reports.DeliveryOtd.Queries.GetDeliveryOtdHeader;
 using HRM.Application.Features.Reports.DeliveryOtd.Queries.GetDeliveryOtdDetails;
@@ -287,6 +288,24 @@ public sealed class DeliveryOtdTests
     }
 
     [Fact]
+    public void ImsOtdRequiresItsOwnPermissionAndEmployeeContext()
+    {
+        var user = new User(ApplicationRoles.InternalSystems.IMSUser)
+        {
+            EmployeeId = Guid.NewGuid(),
+            AdditionalRole = ApplicationRoles.Accounting.ACCUser,
+            HasExplicitPermissionSet = true,
+        };
+        var filter = new DeliveryOtdFilter { From = Due, To = Due };
+        Assert.False(DeliveryOtdReader.IsValid(filter, user, Due, new CurrentUserPermissionService(user)));
+
+        var allowed = user with { Permissions = [ApplicationPermissions.Reports.ViewDeliveryOtd] };
+        Assert.True(DeliveryOtdReader.IsValid(filter, allowed, Due, new CurrentUserPermissionService(allowed)));
+        var missingEmployee = allowed with { EmployeeId = null };
+        Assert.False(DeliveryOtdReader.IsValid(filter, missingEmployee, Due, new CurrentUserPermissionService(missingEmployee)));
+    }
+
+    [Fact]
     public async Task MissingPromise_IsDiagnosticOnly_AndHeaderMatchesDetails()
     {
         var (db, store) = ProductionOrderTestStore.CreateContext<IDispatchReadDbContext>();
@@ -365,11 +384,14 @@ public sealed class DeliveryOtdTests
     {
         public bool IsAuthenticated { get; init; } = true;
         public Guid UserId => Guid.NewGuid();
-        public Guid? EmployeeId => null;
+        public Guid? EmployeeId { get; init; }
         public Guid? CompanyId { get; init; } = Guid.NewGuid();
         public string? UserName => null;
         public string? Email => null;
-        public IReadOnlyCollection<string> Roles => [Role];
-        public bool IsInRole(string role) => role == Role;
+        public string? AdditionalRole { get; init; }
+        public IReadOnlyCollection<string> Permissions { get; init; } = [];
+        public bool HasExplicitPermissionSet { get; init; }
+        public IReadOnlyCollection<string> Roles => AdditionalRole is { } extra ? [Role, extra] : [Role];
+        public bool IsInRole(string role) => Roles.Contains(role);
     }
 }

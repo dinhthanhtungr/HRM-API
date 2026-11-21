@@ -28,6 +28,11 @@ kể cả khi không upload thêm để validation file đầy đủ. Danh mục
 | PATCH | `/iqc/{voucherDetailId}/save-with-attachments` | PatchQCInputByQC, gồm evaluation.results |
 | POST | `/coa-certificates/save-with-attachments` | CreateCoaCertificateCommand + results tùy chọn |
 | PATCH | `/coa-certificates/{id}/save-with-attachments` | PatchCoaCertificateCommand + results tùy chọn |
+| POST | `/lab-tests/save-with-attachments` | BasicLabTestWriteRequest |
+| PATCH | `/lab-tests/{id}/save-with-attachments` | BasicLabTestWriteRequest |
+
+LabTest dùng resource `Lab` (6), quyền IQC và snapshot độc lập. Chỉ API cơ bản được mở lại;
+grid/import vẫn tạm dừng. Xem [contract cơ bản](../../LabTests/BASIC_API.md).
 
 COA results dùng `{evaluationStandardId,resultId?,sourceTemplateItemId?,value?,clearValue?,configuration?}`;
 dòng đã có được PATCH, dòng chưa có thêm từ danh mục. Null/bỏ results giữ nguyên. Không xóa dòng khi results=[].

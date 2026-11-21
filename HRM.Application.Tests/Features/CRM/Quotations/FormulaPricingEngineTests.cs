@@ -10,7 +10,7 @@ namespace HRM.Application.Tests.Features.CRM.Quotations;
 public sealed class FormulaPricingEngineTests
 {
     [Fact]
-    public async Task ResolveAsync_UsesPolicyRoundingAndKeepsManualTierEmpty()
+    public async Task ResolveAsync_IgnoresPolicyRoundingAndKeepsManualTierEmpty()
     {
         var companyId = Guid.NewGuid();
         var policy = new ResolvedFormulaPricingPolicy(Guid.NewGuid(), 4, new FormulaPricingPolicyDefinition(
@@ -25,10 +25,10 @@ public sealed class FormulaPricingEngineTests
         }, CancellationToken.None);
 
         Assert.True(result.Success);
-        Assert.Equal(110m, result.Data!.MaterialCost);
-        Assert.Equal(150m, result.Data.StandardSellingPrice);
+        Assert.Equal(101m, result.Data!.MaterialCost);
+        Assert.Equal(139m, result.Data.StandardSellingPrice);
         Assert.Equal(4, result.Data.FormulaPricingPolicyVersion);
-        Assert.Equal(160m, result.Data.SuggestedTiers[0].UnitPrice);
+        Assert.Equal(144m, result.Data.SuggestedTiers[0].UnitPrice);
         Assert.Null(result.Data.SuggestedTiers[1].UnitPrice);
         Assert.True(result.Data.SuggestedTiers[1].RequiresManualPrice);
     }

@@ -4,6 +4,8 @@ namespace HRM.Application.Features.DevAndQA.IQC.Dtos;
 public sealed class IqcPagedResult<T>
 {
     public IReadOnlyList<T> Items { get; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<HRM.Application.Commons.Searching.SmartSearchSuggestion>? SearchSuggestions { get; init; }
     public int TotalCount { get; }
     public int Page { get; }
     public int PageSize { get; }

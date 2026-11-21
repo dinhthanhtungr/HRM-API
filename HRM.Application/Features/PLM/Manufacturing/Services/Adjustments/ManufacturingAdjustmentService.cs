@@ -93,6 +93,7 @@ internal sealed partial class ManufacturingAdjustmentService(
             return Fail("Mỗi lần lưu chỉ được tạo tối đa 100 mẻ.");
         }
 
+        request = ManufacturingAdjustmentInputNormalization.Normalize(request);
         await using var transaction = await db.BeginTransactionAsync(ct);
         try
         {
@@ -178,11 +179,6 @@ internal sealed partial class ManufacturingAdjustmentService(
                 entity.ManufacturingFormula = formula;
             }
 
-            if (request.Status.HasValue)
-            {
-                entity.Status = request.Status.Value.ToString();
-            }
-
             if (request.Note is not null)
             {
                 entity.Note = Clean(request.Note);
@@ -212,6 +208,8 @@ internal sealed partial class ManufacturingAdjustmentService(
                 foreach (var batch in batches)
                 {
                     entity.Batches.Add(batch);
+                    if (id.HasValue)
+                        await db.ManufacturingFormulaAdjustmentBatches.AddAsync(batch, ct);
                 }
             }
 
@@ -220,6 +218,7 @@ internal sealed partial class ManufacturingAdjustmentService(
                 await db.ManufacturingFormulaAdjustments.AddAsync(entity, ct);
             }
 
+            ApproveSaved(entity, now);
             await NotifyAsync(entity, ct);
             await db.SaveChangesAsync(ct);
             await transaction.CommitAsync(ct);
@@ -229,6 +228,17 @@ internal sealed partial class ManufacturingAdjustmentService(
         {
             await transaction.RollbackAsync(ct);
             return Fail("Không thể lưu phiếu chỉnh màu. Vui lòng tải lại dữ liệu.");
+        }
+    }
+
+    private void ApproveSaved(ManufacturingFormulaAdjustment entity, DateTime now)
+    {
+        entity.Status = nameof(AdjustmentStatus.Approved);
+        foreach (var batch in entity.Batches.Where(x => x.IsActive && x.Status != nameof(AdjustmentStatus.Approved)))
+        {
+            batch.Status = nameof(AdjustmentStatus.Approved);
+            batch.UpdatedBy = Employee;
+            batch.UpdatedDate = now;
         }
     }
 

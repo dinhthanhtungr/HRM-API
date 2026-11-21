@@ -10,6 +10,34 @@ namespace HRM.Application.Tests.Features.PLM.SampleRequests;
 
 public sealed class SampleRequestWorkflowNotificationTests
 {
+    [Theory]
+    [InlineData("CustomerPriceAccepted")]
+    [InlineData("CustomerPriceRejected")]
+    [InlineData("CustomerPriceNoResponse")]
+    [InlineData("CustomerPriceAcceptanceRevoked")]
+    [InlineData("CustomerPriceConfirmed")]
+    [InlineData("CustomerPriceConfirmationRevoked")]
+    public void PricingOutcomeOnlyDoesNotQueueChatButExplicitNotesDo(string eventType)
+    {
+        using var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>().UseNpgsql().Options);
+        var evt = new SampleRequestWorkflowEvent { Id = Guid.NewGuid(), EventType = eventType,
+            PriceReference = "BBG-1", FormulaId = Guid.NewGuid(), Note = "  " };
+        SampleRequestWorkflowNotificationQueue.Queue(db, evt);
+        Assert.Empty(db.OutboxMessages.Local);
+        evt.Note = "Private pricing context";
+        SampleRequestWorkflowNotificationQueue.Queue(db, evt);
+        Assert.Single(db.OutboxMessages.Local);
+    }
+
+    [Fact]
+    public void SharedLabFeedbackAndExistingMessageRetriesRemainPublishable()
+    {
+        Assert.True(HRM.Application.Features.PLM.SampleRequests.Rules.SampleRequestWorkflowPublicationRules.ShouldPublishMessage(
+            new() { EventType = SampleFlowRules.PriceFeedbackShared, Note = "Customer response" }));
+        Assert.True(HRM.Application.Features.PLM.SampleRequests.Rules.SampleRequestWorkflowPublicationRules.ShouldPublishMessage(
+            new() { EventType = "CustomerPriceAccepted", MessageId = Guid.NewGuid() }));
+    }
+
     [Fact]
     public void PublicJsonCannotDeferNotificationOrImpersonateInitialSummary()
     {

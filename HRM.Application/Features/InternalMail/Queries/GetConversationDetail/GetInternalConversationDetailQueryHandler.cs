@@ -49,7 +49,9 @@ internal sealed class GetInternalConversationDetailQueryHandler
                 x.InternalConversationId == request.ConversationId &&
                 x.CompanyId == companyId.Value &&
                 x.IsActive)
-            .Select(InternalConversationDetailProjection.ForEmployee(employeeId.Value, _dbContext.InternalMessages, _dbContext.InternalConversations))
+            // DescribeAsync below supplies the canonical unread count; do not also count legacy read states here.
+            .Select(InternalConversationDetailProjection.ForEmployee(employeeId.Value, _dbContext.InternalMessages,
+                _dbContext.InternalConversations, includeLegacyUnread: false))
             .FirstOrDefaultAsync(cancellationToken);
 
         if (conversation is null)
@@ -84,7 +86,7 @@ internal sealed class GetInternalConversationDetailQueryHandler
             conversation.CreatedBy = Guid.Empty;
             conversation.CreatedByName = null;
         }
-        if (request.AreaCode != null)
+        if (request.AreaCode != null || conversation.RelatedExternalId == InternalMailAreaAccessService.ResearchMarker)
         {
             var memberIds = conversation.Participants.Select(p => p.EmployeeId).ToArray();
             var eligible = await _areas.EligibleParticipantsAsync(companyId.Value, request.ConversationId,

@@ -52,11 +52,14 @@ internal sealed class GetSaleOrderTimelineQueryHandler
             query = query.Where(x => x.CustomerId == customerId);
         }
 
-        if (request.NormalizedKeyword is { } keyword)
+        var smartSearch = HRM.Application.Features.PLM.SaleOrders.Services.SaleOrderSmartSearch.Build(query, scope.CompanyId);
+        query = smartSearch.ApplyRequest(query, request.NormalizedKeyword, request, out var smartKeyword);
+        if (smartKeyword is { } keyword)
         {
             query = query.Where(x =>
                 EF.Functions.ILike(x.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
                 EF.Functions.ILike(x.CustomerNameSnapshot, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                x.Customer != null && x.Customer.CompanyId == x.CompanyId && EF.Functions.ILike(x.Customer.TaxNumber ?? "", PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
                 EF.Functions.ILike(x.CustomerExternalIdSnapshot, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
                 EF.Functions.ILike(x.CreatedByNavigation!.FullName, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
                 x.MerchandiseOrderDetails.Any(d =>
@@ -131,6 +134,8 @@ internal sealed class GetSaleOrderTimelineQueryHandler
                 line.SourceMerchandiseOrderDetail.MerchandiseOrderId == order.MerchandiseOrderId));
         }
 
+        if (await smartSearch.SuggestionsAsync<SaleOrderTimelineCardDto>(query, request, cancellationToken) is { } suggestions)
+            return suggestions;
         var totalCount = await query.CountAsync(cancellationToken);
         var items = await query
             .OrderByDescending(x => x.CreateDate)
@@ -150,6 +155,8 @@ internal sealed class GetSaleOrderTimelineQueryHandler
                 CustomerName = x.CustomerNameSnapshot,
                 CustomerExternalId = x.CustomerExternalIdSnapshot,
                 TotalPrice = x.TotalPrice,
+                Currency = x.Currency,
+                ExchangeRate = x.ExchangeRate,
                 Vat = x.Vat,
                 IsDeliveryPaused = x.IsDeliveryPaused,
                 DeliveryPausedFrom = x.DeliveryPausedFrom,

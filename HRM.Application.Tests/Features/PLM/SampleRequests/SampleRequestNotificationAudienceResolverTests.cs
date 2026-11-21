@@ -71,6 +71,9 @@ public sealed class SampleRequestNotificationAudienceResolverTests
         var admin = Employee(company);
         var foreignAdmin = Employee(Guid.NewGuid());
         var ordinaryLab = Employee(company);
+        var colorMember = Employee(company);
+        var inactiveMember = Employee(company);
+        inactiveMember.IsActive = false;
         var db = DispatchProxy.Create<IInternalMailDbContext, InternalMailAreaAccessTests.MemoryStore>();
         var crm = DispatchProxy.Create<ICRMReadDbContext, InternalMailAreaAccessTests.MemoryStore>();
         var request = new SampleRequest
@@ -79,13 +82,15 @@ public sealed class SampleRequestNotificationAudienceResolverTests
             Product = new() { CompanyId = company, Category = new() { CompanyId = company, ExternalId = category } }
         };
         Set(db, "SampleRequests", request);
-        Set(db, "Employees", rd, color, admin, foreignAdmin, ordinaryLab);
+        Set(db, "Employees", rd, color, admin, foreignAdmin, ordinaryLab, colorMember, inactiveMember);
         var rdGroup = new Group { GroupId = Guid.NewGuid(), CompanyId = company, GroupType = "QAQC.RD" };
         var colorGroup = new Group { GroupId = Guid.NewGuid(), CompanyId = company, GroupType = "QAQC.MAU" };
         Set(db, "MemberInGroups",
             new MemberInGroup { GroupId = rdGroup.GroupId, Group = rdGroup, Profile = rd.EmployeeId, ProfileNavigation = rd, IsAdmin = true },
             new MemberInGroup { GroupId = colorGroup.GroupId, Group = colorGroup, Profile = color.EmployeeId, ProfileNavigation = color, IsAdmin = true },
-            new MemberInGroup { GroupId = rdGroup.GroupId, Group = rdGroup, Profile = ordinaryLab.EmployeeId, ProfileNavigation = ordinaryLab, IsAdmin = false });
+            new MemberInGroup { GroupId = rdGroup.GroupId, Group = rdGroup, Profile = ordinaryLab.EmployeeId, ProfileNavigation = ordinaryLab, IsAdmin = false },
+            new MemberInGroup { GroupId = colorGroup.GroupId, Group = colorGroup, Profile = colorMember.EmployeeId, ProfileNavigation = colorMember, IsAdmin = false },
+            new MemberInGroup { GroupId = rdGroup.GroupId, Group = rdGroup, Profile = inactiveMember.EmployeeId, ProfileNavigation = inactiveMember, IsAdmin = false });
         var role = new ApplicationRole { Id = Guid.NewGuid(), Name = "LabAdmin" };
         var users = new[] { admin, foreignAdmin }.Select(e => new ApplicationUser { Id = Guid.NewGuid(), EmployeeId = e.EmployeeId }).ToArray();
         Set(db, "Roles", role);
@@ -97,7 +102,18 @@ public sealed class SampleRequestNotificationAudienceResolverTests
         Assert.Equal(colorExpected, recipients.Contains(color.EmployeeId));
         Assert.Contains(admin.EmployeeId, recipients);
         Assert.DoesNotContain(foreignAdmin.EmployeeId, recipients);
-        Assert.DoesNotContain(ordinaryLab.EmployeeId, recipients);
+        Assert.Equal(rdExpected, recipients.Contains(ordinaryLab.EmployeeId));
+        Assert.Equal(colorExpected, recipients.Contains(colorMember.EmployeeId));
+        Assert.DoesNotContain(inactiveMember.EmployeeId, recipients);
+        var finalizationRecipients = await new SampleRequestNotificationAudienceResolver(crm, db).ResolveAsync(
+            company, request.SampleRequestId, TopicNotifications.SampleRequestMessageCreated, default,
+            HRM.Application.Features.PLM.SampleRequests.Services.Workflow.SampleFlowRules.LabFinalizationRequested);
+        Assert.Equal(rdExpected, finalizationRecipients.Contains(rd.EmployeeId));
+        Assert.Equal(colorExpected, finalizationRecipients.Contains(color.EmployeeId));
+        Assert.Contains(admin.EmployeeId, finalizationRecipients);
+        Assert.DoesNotContain(foreignAdmin.EmployeeId, finalizationRecipients);
+        Assert.Equal(rdExpected, finalizationRecipients.Contains(ordinaryLab.EmployeeId));
+        Assert.Equal(colorExpected, finalizationRecipients.Contains(colorMember.EmployeeId));
     }
 
     private static Employee Employee(Guid company) => new() { EmployeeId = Guid.NewGuid(), CompanyId = company, IsActive = true };

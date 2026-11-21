@@ -41,10 +41,26 @@ internal sealed class ProductPricingRealtimeSourceQueryService
         _pricingEngine = pricingEngine;
     }
 
-    public async Task<IReadOnlyDictionary<Guid, IReadOnlyList<ProductPricingSourceOptionDto>>> LoadAsync(
+    public Task<IReadOnlyDictionary<Guid, IReadOnlyList<ProductPricingSourceOptionDto>>> LoadAsync(
         IReadOnlyCollection<Guid> productIds,
         Guid companyId,
         string currency,
+        CancellationToken cancellationToken)
+        => LoadCoreAsync(productIds, companyId, currency, null, cancellationToken);
+
+    /// <summary>Chọn nguồn như luồng mẫu hiện hành trước khi nạp nguyên liệu/tính giá; không đổi eligibility hoặc thứ tự fallback.</summary>
+    public Task<IReadOnlyDictionary<Guid, IReadOnlyList<ProductPricingSourceOptionDto>>> LoadForSampleTrialsAsync(
+        IReadOnlyCollection<(Guid ProductId, Guid? FormulaId)> trials,
+        Guid companyId,
+        string currency,
+        CancellationToken cancellationToken)
+        => LoadCoreAsync(trials.Select(x => x.ProductId).Distinct().ToArray(), companyId, currency, trials, cancellationToken);
+
+    private async Task<IReadOnlyDictionary<Guid, IReadOnlyList<ProductPricingSourceOptionDto>>> LoadCoreAsync(
+        IReadOnlyCollection<Guid> productIds,
+        Guid companyId,
+        string currency,
+        IReadOnlyCollection<(Guid ProductId, Guid? FormulaId)>? trials,
         CancellationToken cancellationToken)
     {
         if (productIds.Count == 0)
@@ -56,6 +72,24 @@ internal sealed class ProductPricingRealtimeSourceQueryService
         if (sourceRows.Count == 0)
         {
             return new Dictionary<Guid, IReadOnlyList<ProductPricingSourceOptionDto>>();
+        }
+
+        // Giá TP lồng nhau dùng bộ resolve đệ quy có memoization theo batch. Giữ batch cũ
+        // để không đổi kết quả khi dữ liệu có vòng tham chiếu và nhiều công thức fallback.
+        if (trials is not null && !await HasProductIngredientsAsync(sourceRows, companyId, cancellationToken))
+        {
+            var formulaIdsByProduct = trials.GroupBy(x => x.ProductId)
+                .ToDictionary(x => x.Key, x => x.Select(y => y.FormulaId).Distinct().ToArray());
+            sourceRows = sourceRows.GroupBy(x => x.ProductId).SelectMany(group =>
+            {
+                var ordered = group.OrderByDescending(x => x.IsCustomerSelected)
+                    .ThenBy(x => x.SourceType).ThenByDescending(x => x.UpdatedDate).ThenBy(x => x.ExternalId)
+                    .ToArray();
+                return formulaIdsByProduct[group.Key].Select(formulaId =>
+                    (formulaId.HasValue ? ordered.FirstOrDefault(x =>
+                        x.SourceType == ProductPricingSourceType.Formula && x.SourceId == formulaId.Value && x.IsEligible) : null)
+                    ?? ordered.First(x => x.IsEligible));
+            }).DistinctBy(x => (x.ProductId, x.Key)).ToArray();
         }
 
         var materialRows = await LoadMaterialRowsAsync(sourceRows, companyId, cancellationToken);
@@ -591,6 +625,29 @@ internal sealed class ProductPricingRealtimeSourceQueryService
                 .ThenByDescending(y => y.UpdatedDate)
                 .First())
             .ToArray();
+    }
+
+    private async Task<bool> HasProductIngredientsAsync(
+        IReadOnlyCollection<SourceRow> sources,
+        Guid companyId,
+        CancellationToken cancellationToken)
+    {
+        var formulaIds = sources.Where(x => x.SourceType == ProductPricingSourceType.Formula)
+            .Select(x => x.SourceId).Distinct().ToArray();
+        if (formulaIds.Length > 0 && await _dbContext.FormulaMaterials.AsNoTracking().AnyAsync(x =>
+                x.IsActive && formulaIds.Contains(x.FormulaId) &&
+                x.Formula.Product.IsActive && x.Formula.Product.CompanyId == companyId &&
+                x.itemType != ItemType.Material && x.itemType != ItemType.MaterialFailure,
+                cancellationToken))
+            return true;
+
+        var manufacturingIds = sources.Where(x => x.SourceType == ProductPricingSourceType.ManufacturingFormula)
+            .Select(x => x.SourceId).Distinct().ToArray();
+        return manufacturingIds.Length > 0 && await _dbContext.ManufacturingFormulaMaterials.AsNoTracking().AnyAsync(x =>
+            x.IsActive && manufacturingIds.Contains(x.ManufacturingFormulaId) &&
+            x.ManufacturingFormula.CompanyId == companyId &&
+            x.itemType != ItemType.Material && x.itemType != ItemType.MaterialFailure,
+            cancellationToken);
     }
 
     private async Task<IReadOnlyList<MaterialRow>> LoadMaterialRowsAsync(

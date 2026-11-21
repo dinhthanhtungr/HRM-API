@@ -19,6 +19,7 @@ internal sealed class GetInternalMailAttachmentContentQueryHandler
     private readonly IInternalConversationAccessService _conversationAccessService;
     private readonly IFileStorage _fileStorage;
     private readonly IImageThumbnailGenerator _thumbnailGenerator;
+    private readonly IVideoMediaService? _videoMedia;
 
     public GetInternalMailAttachmentContentQueryHandler(
         IInternalMailDbContext dbContext,
@@ -26,7 +27,8 @@ internal sealed class GetInternalMailAttachmentContentQueryHandler
         IInternalConversationAccessService conversationAccessService,
         IFileStorage fileStorage,
         IImageThumbnailGenerator thumbnailGenerator,
-        InternalMailAreaAccessService areas)
+        InternalMailAreaAccessService areas,
+        IVideoMediaService? videoMedia = null)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
@@ -34,6 +36,7 @@ internal sealed class GetInternalMailAttachmentContentQueryHandler
         _conversationAccessService = conversationAccessService;
         _fileStorage = fileStorage;
         _thumbnailGenerator = thumbnailGenerator;
+        _videoMedia = videoMedia;
     }
 
     public async Task<AttachmentContent?> Handle(
@@ -115,6 +118,25 @@ internal sealed class GetInternalMailAttachmentContentQueryHandler
         if (attachment is null)
         {
             return null;
+        }
+
+        if (request.VideoVariant is not null)
+        {
+            if (_videoMedia is null || !HRM.Domain.Security.Rules.Attachment.AttachmentMediaRules.IsVideoFile(attachment.FileName))
+                return null;
+            await _videoMedia.QueueAsync(request.AttachmentId, attachment.StoragePath, cancellationToken);
+            if (request.VideoVariant is "info" or "retry")
+            {
+                if (request.VideoVariant == "retry") await _videoMedia.RetryAsync(request.AttachmentId, cancellationToken);
+                var info = await _videoMedia.GetInfoAsync(request.AttachmentId, cancellationToken);
+                var bytes = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(info,
+                    new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+                return new AttachmentContent(new MemoryStream(bytes), "application/json", "video.json", bytes.Length);
+            }
+            if (request.VideoVariant is not ("poster" or "playback")) return null;
+            var variant = await _videoMedia.OpenAsync(request.AttachmentId, request.VideoVariant == "poster", cancellationToken);
+            return variant is null ? null : new AttachmentContent(variant.Stream, variant.ContentType,
+                variant.FileName, variant.Length);
         }
 
         if (request.Thumbnail)

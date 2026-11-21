@@ -21,16 +21,46 @@ namespace HRM.Application.Tests.Features.PLM.SampleRequests;
 public sealed class SamplePriceFeedbackPublicationTests
 {
     [Theory]
-    [InlineData(InternalMailRelatedType.SampleRequest)]
-    [InlineData(InternalMailRelatedType.ConversationTechnical)]
-    [InlineData(InternalMailRelatedType.ConversationPricing)]
-    public async Task PendingHistoricalPriceMessageOutsidePricingIsNotRepointedOrRepublished(InternalMailRelatedType area)
+    [InlineData("CustomerPriceAccepted")]
+    [InlineData("CustomerPriceRejected")]
+    [InlineData("CustomerPriceNoResponse")]
+    public async Task OldQueuedOutcomeWithoutPrivateNoteIsConsumedWithoutSending(string type)
+    {
+        var (db, store) = ProductionOrderTestStore.CreateContext<IPLMWriteDbContext>();
+        var company = Guid.NewGuid();
+        var actor = Guid.NewGuid();
+        var evt = new SampleRequestWorkflowEvent { Id = Guid.NewGuid(), CompanyId = company,
+            SampleRequestId = Guid.NewGuid(), EventType = type, RecordedByEmployeeId = actor,
+            Note = "  ", PriceReference = "BBG-1" };
+        store.Seed(nameof(db.SampleRequestWorkflowEvents), evt);
+        store.Seed(nameof(db.Employees), new Employee { EmployeeId = actor, CompanyId = company, IsActive = true });
+        store.Seed(nameof(db.OutboxMessages), new OutboxMessage { Id = 1,
+            Type = SampleRequestWorkflowNotificationQueue.OutboxType,
+            PayloadJson = JsonSerializer.Serialize(new WorkflowNotificationPayload(evt.Id, company)) });
+        var sender = DispatchProxy.Create<ISender, CaptureSender>();
+        var result = await new DispatchSampleRequestWorkflowNotificationCommandHandler(db, sender, null!, null!)
+            .Handle(new(1), default);
+        Assert.True(result.Success);
+        Assert.Empty(((CaptureSender)sender).Commands);
+        Assert.Null(evt.MessageId);
+        Assert.Null(evt.NotificationId);
+        Assert.Equal(type, evt.EventType);
+    }
+
+    [Theory]
+    [InlineData(InternalMailRelatedType.SampleRequest, SampleRequestWorkflowEvents.PriceAccepted)]
+    [InlineData(InternalMailRelatedType.ConversationTechnical, SampleRequestWorkflowEvents.PriceAccepted)]
+    [InlineData(InternalMailRelatedType.ConversationPricing, SampleRequestWorkflowEvents.PriceAccepted)]
+    [InlineData(InternalMailRelatedType.SampleRequest, SampleFlowRules.StandardPriceApproved)]
+    [InlineData(InternalMailRelatedType.ConversationTechnical, SampleFlowRules.StandardPriceApproved)]
+    [InlineData(InternalMailRelatedType.ConversationPricing, SampleFlowRules.StandardPriceApproved)]
+    public async Task PendingHistoricalPriceMessageOutsidePricingIsNotRepointedOrRepublished(InternalMailRelatedType area, string eventType)
     {
         var (db, store) = ProductionOrderTestStore.CreateContext<IPLMWriteDbContext>();
         var company = Guid.NewGuid(); var actor = Guid.NewGuid(); var request = Guid.NewGuid();
         var messageId = Guid.NewGuid(); var conversationId = Guid.NewGuid();
         var evt = new SampleRequestWorkflowEvent { Id = Guid.NewGuid(), CompanyId = company, SampleRequestId = request,
-            EventType = SampleRequestWorkflowEvents.PriceAccepted, RecordedByEmployeeId = actor,
+            EventType = eventType, RecordedByEmployeeId = actor,
             MessageId = messageId, ConversationId = conversationId, Note = "PRIVATE_PRICE" };
         store.Seed(nameof(db.SampleRequestWorkflowEvents), evt);
         store.Seed(nameof(db.OutboxMessages), new OutboxMessage { Id = 1, Type = SampleRequestWorkflowNotificationQueue.OutboxType,
@@ -42,7 +72,7 @@ public sealed class SamplePriceFeedbackPublicationTests
                 RelatedType = area, RelatedId = Guid.NewGuid() } }; // No matching request root: corrupt Pricing links fail closed too.
         store.Seed(nameof(db.InternalMessages), original);
         var sender = DispatchProxy.Create<ISender, CaptureSender>();
-        var handler = new DispatchSampleRequestWorkflowNotificationCommandHandler(db, sender, null!);
+        var handler = new DispatchSampleRequestWorkflowNotificationCommandHandler(db, sender, null!, null!);
         var result = await handler.Handle(new DispatchSampleRequestWorkflowNotificationCommand(1), default);
         Assert.False(result.Success);
         Assert.Equal(nameof(WorkflowNotificationFailureCode.HistoricalPricePublicationRequiresReview), result.Message);
@@ -83,7 +113,7 @@ public sealed class SamplePriceFeedbackPublicationTests
         store.Seed(nameof(db.Employees), new Employee { EmployeeId = actor, CompanyId = company, IsActive = true });
         var sender = DispatchProxy.Create<ISender, CaptureSender>();
         var capture = (CaptureSender)sender;
-        var handler = new DispatchSampleRequestWorkflowNotificationCommandHandler(db, sender, null!);
+        var handler = new DispatchSampleRequestWorkflowNotificationCommandHandler(db, sender, null!, null!);
         foreach (var id in new long[] { 1, 2, 1, 2 })
             Assert.True((await handler.Handle(new DispatchSampleRequestWorkflowNotificationCommand(id), default)).Success);
         Assert.Equal(2, capture.Commands.Count);

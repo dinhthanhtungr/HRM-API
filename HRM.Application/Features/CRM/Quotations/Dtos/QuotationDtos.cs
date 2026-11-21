@@ -140,6 +140,8 @@ public sealed class QuotationTotalsDto
 
 public sealed class QuotationListItemDto
 {
+    public DateTime? LastSendRejectionAt { get; init; }
+    public bool CanExportPdf => QuotationSendRejectionRules.CanExportPdf(Status, SentDate, LastSendRejectionAt);
     public QuotationDisplayStatusDto DisplayStatus => QuotationDisplayStatusResolver.Resolve(Status, [StandardPriceReview]);
     public Guid QuotationId { get; init; }
     public string ExternalId { get; init; } = string.Empty;
@@ -161,6 +163,9 @@ public sealed class QuotationListItemDto
 
 public sealed class QuotationDetailDto
 {
+    public DateTime? LastSendRejectionAt { get; init; }
+    public string? LastSendRejectionReason { get; init; }
+    public bool CanExportPdf => QuotationSendRejectionRules.CanExportPdf(Status, SentDate, LastSendRejectionAt);
     public QuotationDisplayStatusDto DisplayStatus => QuotationDisplayStatusResolver.Resolve(
         Status, Lines.Select(x => x.StandardPriceReview));
     public bool CanConfirmSent { get; set; }

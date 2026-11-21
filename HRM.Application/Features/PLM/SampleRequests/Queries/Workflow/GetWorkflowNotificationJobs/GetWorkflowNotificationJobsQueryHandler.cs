@@ -46,6 +46,8 @@ internal sealed class GetWorkflowNotificationJobsQueryHandler(IPLMReadDbContext 
                                  on evt.SampleRequestId equals sample.SampleRequestId
                              select new { Event = evt, sample.ExternalId }).ToDictionaryAsync(x => x.Event.Id, ct);
         var mayRetry = permissions.HasPermission(ApplicationPermissions.DevAndQA.RetryWorkflowNotificationJobs);
+        var assessments = await WorkflowNotificationReplayAssessment.ReadAsync(db, company,
+            details.Values.Select(x => x.Event).ToArray(), ct);
         var items = rows.Select(job =>
         {
             var eventId = WorkflowNotificationJobRules.EventId(job.PayloadJson);
@@ -60,7 +62,8 @@ internal sealed class GetWorkflowNotificationJobsQueryHandler(IPLMReadDbContext 
                 mayRetry && job.ProcessedAt.HasValue && job.Error == "No handler for type SampleRequestWorkflowNotification" &&
                     detail.Event.EventType == "SampleRequestWorkflowCreated" && detail.Event.MessageId is null &&
                     detail.Event.NotificationId is null && WorkflowNotificationJobRules.InitialSummary(job.PayloadJson) is not null,
-                detail.Event.MessageId.HasValue, mayRetry && detail.Event.EventType == "SampleRequestWorkflowCreated");
+                detail.Event.MessageId.HasValue, mayRetry && detail.Event.EventType == "SampleRequestWorkflowCreated",
+                assessments.GetValueOrDefault(eventId));
         }).OfType<WorkflowNotificationJobDto>().ToArray();
         return new PagedResult<WorkflowNotificationJobDto>(items, total, page, size);
     }

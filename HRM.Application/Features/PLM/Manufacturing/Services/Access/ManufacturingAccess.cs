@@ -1,17 +1,45 @@
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Authorization;
+using HRM.Application.Abstractions.Persistence.PLM.Manufacturing;
+using HRM.Domain.Entities.ManufacturingSchema;
+using HRM.Domain.Enums.WareHouses;
+using Microsoft.EntityFrameworkCore;
 
 namespace HRM.Application.Features.PLM.Manufacturing.Services.Access;
 
 internal static class ManufacturingAccess
 {
-    public static string? ValidateFormulaEditState(string status)
-        => status is "Scheduling" or "Scheduled" or "Unassign" or "Getback"
-            or "QCinprogress" or "QCInProgress" or "QCPassed" or "QCFail" or "BTPNew"
-            or "Weighting" or "Weighted" or "Mixing" or "Mixed" or "Started" or "Canceled"
-            or "Running" or "Change" or "Unassignfrommd" or "UnassignFromMD" or "Reported"
-            ? "Lệnh đã yêu cầu xuất kho; nguyên vật liệu và Std bị khóa đến khi lệnh về Done hoặc Finished."
-            : null;
+    public static async Task<string?> FormulaEditLockAsync(IManufacturingDbContext db, MfgProductionOrder order, CancellationToken ct)
+    {
+        // Reservations alone are not issue requests. Retain the lock after an actual issue,
+        // even if the request was subsequently cancelled or the MFG was completed.
+        var links = db.OperationMaterialRequestLinks.AsNoTracking().Where(x => x.CompanyId == order.CompanyId
+            && x.MfgProductionOrderId == order.MfgProductionOrderId);
+        var requestCode = await IssueRequestCodes(db, order).FirstOrDefaultAsync(ct);
+        if (requestCode is not null)
+            return $"Đã có yêu cầu xuất kho {requestCode}; không thể thay đổi NVL, Std, lot, loại hàng hoặc khối lượng sản xuất.";
+        var issued = await db.TempStockIssueLedgers.AsNoTracking().AnyAsync(x => x.CompanyId == order.CompanyId && x.QtyKg > 0
+            && (order.ExternalId != "" && x.VaCode == order.ExternalId || links.Any(l => l.RequestCode != "" && l.RequestCode == x.RequestCode
+                || l.VaExternalId != null && l.VaExternalId != "" && l.VaExternalId == x.VaCode)
+                || db.ProductionSelectVersions.Any(v => v.CompanyId == order.CompanyId && v.MfgProductionOrderId == order.MfgProductionOrderId
+                    && v.ManufacturingFormula != null && v.ManufacturingFormula.CompanyId == order.CompanyId
+                    && v.ManufacturingFormula.ExternalId == x.VaCode)), ct);
+        return issued ? "Lệnh đã có dữ liệu xuất kho thực tế; không thể thay đổi công thức hoặc khối lượng sản xuất." : null;
+    }
+
+    internal static IQueryable<string> IssueRequestCodes(IManufacturingDbContext db, MfgProductionOrder order)
+        => from link in db.OperationMaterialRequestLinks.AsNoTracking()
+            from request in db.WarehouseRequests.AsNoTracking()
+            where link.CompanyId == order.CompanyId && link.MfgProductionOrderId == order.MfgProductionOrderId
+                && request.CompanyId == order.CompanyId
+                && (link.RequestId == request.RequestId || link.RequestId == null && link.RequestCode != "" && link.RequestCode == request.RequestCode)
+                && (request.ReqType == WareHouseRequestType.ExportRawMaterial || request.ReqType == WareHouseRequestType.ExportDefectiveRawMaterial
+                    || request.ReqType == WareHouseRequestType.ExportFinishedGood || request.ReqType == WareHouseRequestType.ExportDefectiveFinishedGood
+                    || request.ReqType == WareHouseRequestType.ExportOther || request.ReqType == WareHouseRequestType.ExportMaterial)
+                && (request.ReqStatus != WarehouseRequestStatus.Cancelled || request.WarehouseVouchers.Any(v => v.CompanyId == order.CompanyId
+                    && v.Details.Any(d => d.IsApplied && !d.IsIncrease && d.QtyKg > 0)))
+            orderby request.RequestId
+            select request.RequestCode;
 
     public static bool IsInformOperator(ICurrentUser user)
         => user.IsInAnyRole(ApplicationRoleSets.PLM.ProductionInformOperators);

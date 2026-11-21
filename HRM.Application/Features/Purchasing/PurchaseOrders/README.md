@@ -1,5 +1,8 @@
 # Purchase orders — tương thích PurchaseFeatures
 
+Luồng [yêu cầu xuất hàng trả NCC](RETURN_REQUESTS.md): chọn NVL/Lot QC không đạt hoặc hàng đã đạt phát hiện lỗi sau, nhập kg và lý do;
+tạo ExportReturn (12) liên kết ĐĐH, không tự trừ tồn.
+
 Ngày giao thực tế list/detail lấy ngày lập IQC mới nhất của phiếu nhập liên kết; chưa có IQC trả null.
 POST/PATCH bỏ qua ngày thực tế từ client và clear ngày, không báo lỗi chỉ vì field này;
 chi tiết trong [EDIT_CONTRACT.md](EDIT_CONTRACT.md). Không backfill ngày lịch sử.
@@ -72,6 +75,7 @@ Ví dụ summary rút gọn:
 - **Ảnh hưởng FE:** list `totalPrice`/`totalAmount` nay có cùng ý nghĩa tổng có VAT như detail, không còn là tổng trước VAT; FE dùng `subtotal` khi cần tổng trước thuế, không cộng VAT lần nữa vào totalPrice. `realTotalPrice`/`realTotalAmount` vẫn là tiền QC chấp nhận chưa VAT, không đổi nghiệp vụ; list giữ fallback đơn giá legacy, detail dùng đơn giá lưu.
 - Phạm vi tổng: mặc định chỉ dòng active; GET list/detail mới có `includeInactive=true` tính cả dòng inactive để đọc lịch sử. Snapshot persist vẫn giữ nguyên theo chứng từ đã lưu nên có thể chênh với phạm vi dòng được chọn. Đọc không ghi DB, không khôi phục dòng/link hoặc mở quyền in/sửa đơn inactive.
 - `supplierName`, `supplierExternalId` ở UI lấy NCC hiện tại; `purchaseOrderSnapshot.*` là dữ liệu NCC/người lập tại lúc tạo đơn. PDF ưu tiên tên NCC snapshot. Snapshot null nghĩa PO legacy chưa có snapshot; các field snapshot null không được hiểu là đã xác nhận dữ liệu.
+- Tên liên hệ khi tạo snapshot đồng bộ lookup NCC: chỉ liên hệ active, ưu tiên IsPrimary=true rồi ContactId tăng dần, ghép FirstName + LastName và trim. Không có mặc định vẫn dùng liên hệ active đầu tiên; không có liên hệ active thì null. GET/PDF legacy chưa có snapshot và PATCH khởi tạo snapshot dùng cùng thứ tự. Snapshot đã lưu (kể cả contact null) không tự bị thay bằng danh bạ hiện tại; không backfill đơn cũ hoặc nhận tên liên hệ từ FE. Nếu danh bạ đổi giữa lúc chọn và lưu, server dùng dữ liệu tại lúc lưu.
 - `createDate`: ngày tạo PO; `updatedDate` ngày sửa; `requestDeliveryDate`: ngày giao yêu cầu. Summary `realDeliveryDate` lấy ngày ledger dương mới nhất của các loại phiếu nhập RawMaterial/Other/Material; không có ledger trả null. Detail giữ ngày PO đã lưu nếu chưa có ledger, còn có ledger thì dùng ngày mới nhất. Ledger chỉ dùng cho ngày nhập và báo cáo nhập kho, **không thay kết quả QC trên PO**.
 - `details` summary và `items` detail mặc định chứa dòng active, bật includeInactive thì gồm cả dòng lịch sử. Alias detail `purchaseOrderDetails` trỏ cùng items; mã/tên alias `materialExternalIDSnapshot`, `materialNameSnapshot` cùng giá trị materialCode/materialName. `merchandiseOrderCodes`, `merchediseListExternalId` summary và `merchadiseOrderList` detail là chuỗi mã đơn bán liên kết. Không có dữ liệu là collection rỗng hoặc chuỗi rỗng; không phải record tạm.
 - `baseCostSnapshot`, `baseDateSnapshot` lấy giá NCC trước khi đồng bộ giá mới. Server snapshot NCC/người lập, mã vật tư và tổng có VAT theo quy tắc trên, làm tròn trước khi lưu để create response khớp DB. Tạo mới bắt buộc ít nhất một dòng, lượng > 0, giá >= 0, không trùng vật tư, VAT trong 0–100. Client không cung cấp tổng; không đổi schema cột cũ.
@@ -197,3 +201,10 @@ POST mới vẫn từ chối các reference không còn hợp lệ: FE yêu cầ
 ## Dialog tiến độ nhập kho
 
 GET `/{purchaseOrderId}/receipt-progress`: [contract, nguồn liên kết ĐĐH và chống cộng trùng ledger/QC](RECEIPT_PROGRESS.md). Endpoint chỉ đọc, cùng quyền mua hàng và company scope.
+
+
+## Tìm kiếm gợi ý cho trang danh sách
+
+Danh sách đơn mua gợi ý mã đơn, mã/tên NCC và mã/tên NVL từ các dòng được phép xem; bộ lọc thời gian/trạng thái/loại đơn vẫn giữ.
+
+Contract tùy chọn `searchSelections`/`suggestionKeyword`, OR/AND badge, giới hạn 10 và hướng dẫn thêm field: [Searching](../../../Commons/Searching/README.md). Không mở rộng quyền hoặc áp dụng tự động cho lookup.

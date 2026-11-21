@@ -35,22 +35,22 @@ internal static class PlmAuthorizationPolicies
 
         options.AddPolicy(PlmPolicies.ViewFormulaDetail, policy =>
         {
-            policy.RequireRole(ApplicationRoleSets.PLM.ProductTechnicalViewers);
+            policy.RequireRole(ApplicationRoleSets.PLM.ProductTechnicalViewers).RequireUnrestrictedAccount();
         });
 
         options.AddPolicy(PlmPolicies.ViewFormulaMaterials, policy =>
         {
-            policy.RequireRole(ApplicationRoleSets.PLM.FormulaMaterialViewers);
+            policy.RequireRole(ApplicationRoleSets.PLM.FormulaMaterialViewers).RequireUnrestrictedAccount();
         });
 
         options.AddPolicy(PlmPolicies.ViewFormulaPrices, policy =>
         {
-            policy.RequireRole(ApplicationRoleSets.PLM.FormulaPriceViewers);
+            policy.RequireRole(ApplicationRoleSets.PLM.FormulaPriceViewers).RequireUnrestrictedAccount();
         });
 
         options.AddPolicy(PlmPolicies.UpdateMaterialSupplierPrice, policy =>
         {
-            policy.RequireRole(ApplicationRoleSets.PLM.MaterialSupplierPriceEditors);
+            policy.RequireRole(ApplicationRoleSets.PLM.MaterialSupplierPriceEditors).RequireUnrestrictedAccount();
         });
 
         options.AddPolicy(PlmPolicies.ManageMaterialPurchaseAvailability, policy =>
@@ -70,12 +70,12 @@ internal static class PlmAuthorizationPolicies
 
         options.AddPolicy(PlmPolicies.ManageFormula, policy =>
         {
-            policy.RequireRole(ApplicationRoleSets.PLM.FormulaManagers);
+            policy.RequireRole(ApplicationRoleSets.PLM.FormulaManagers).RequireUnrestrictedAccount();
         });
 
         options.AddPolicy(PlmPolicies.UpdateFormulaPricing, policy =>
         {
-            policy.RequireRole(ApplicationRoleSets.PLM.FormulaPricingEditors);
+            policy.RequireRole(ApplicationRoleSets.PLM.FormulaPricingEditors).RequireUnrestrictedAccount();
         });
 
         options.AddPolicy(PlmPolicies.EditProductTechnicalInfo, policy =>
@@ -85,29 +85,29 @@ internal static class PlmAuthorizationPolicies
 
         options.AddPolicy(PlmPolicies.SelectFormula, policy =>
         {
-            policy.RequireRole(ApplicationRoleSets.PLM.FormulaSelectors);
+            policy.RequireRole(ApplicationRoleSets.PLM.FormulaSelectors).RequireUnrestrictedAccount();
         });
 
         options.AddPolicy(PlmPolicies.ViewSampleProductionOrders, policy =>
         {
-            policy.RequireRole(ApplicationRoleSets.PLM.FormulaMaterialViewers);
+            policy.RequireRole(ApplicationRoleSets.PLM.FormulaMaterialViewers).RequireUnrestrictedAccount();
         });
 
         options.AddPolicy(PlmPolicies.ManageSampleProductionOrders, policy =>
         {
-            policy.RequireRole(ApplicationRoleSets.PLM.ProductTechnicalEditors);
+            policy.RequireRole(ApplicationRoleSets.PLM.ProductTechnicalEditors).RequireUnrestrictedAccount();
         });
 
         options.AddPolicy(PlmPolicies.ViewBom, policy =>
-            policy.RequireRole(ApplicationRoleSets.PLM.BomViewers));
+            policy.RequireRole(ApplicationRoleSets.PLM.BomViewers).RequireUnrestrictedAccount());
         options.AddPolicy(PlmPolicies.ManageBomDraft, policy =>
-            policy.RequireRole(ApplicationRoleSets.PLM.BomDraftManagers));
+            policy.RequireRole(ApplicationRoleSets.PLM.BomDraftManagers).RequireUnrestrictedAccount());
         options.AddPolicy(PlmPolicies.ReleaseBom, policy =>
-            policy.RequireRole(ApplicationRoleSets.PLM.BomReleasers));
+            policy.RequireRole(ApplicationRoleSets.PLM.BomReleasers).RequireUnrestrictedAccount());
         options.AddPolicy(PlmPolicies.ObsoleteBom, policy =>
-            policy.RequireRole(ApplicationRoleSets.PLM.BomReleasers));
+            policy.RequireRole(ApplicationRoleSets.PLM.BomReleasers).RequireUnrestrictedAccount());
         options.AddPolicy(PlmPolicies.AssignStandardBom, policy =>
-            policy.RequireRole(ApplicationRoleSets.PLM.BomStandardAssigners));
+            policy.RequireRole(ApplicationRoleSets.PLM.BomStandardAssigners).RequireUnrestrictedAccount());
         options.AddPolicy(PlmPolicies.ManageBomLossTypes, policy =>
             policy.RequireRole(ApplicationRoleSets.PLM.BomLossManagers));
         options.AddPolicy(PlmPolicies.UpdateProductionLoss, policy =>

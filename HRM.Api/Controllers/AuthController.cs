@@ -30,6 +30,7 @@ public sealed class AuthController : ControllerBase
         _logger = logger;
     }
 
+    [HRM.Api.Security.Authorization.AllowImsSession(AllowsSessionPost = true)]
     [HttpPost("login")]
     [AllowAnonymous]
     public async Task<IActionResult> Login([FromBody] LoginHttpRequest request, CancellationToken cancellationToken)
@@ -67,6 +68,7 @@ public sealed class AuthController : ControllerBase
         }
     }
 
+    [HRM.Api.Security.Authorization.AllowImsSession(AllowsSessionPost = true)]
     [HttpPost("refresh-token")]
     [AllowAnonymous]
     public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenRequestDto request, CancellationToken cancellationToken)
@@ -96,6 +98,7 @@ public sealed class AuthController : ControllerBase
         return Ok(result);
     }
 
+    [HRM.Api.Security.Authorization.AllowImsSession(AllowsSessionPost = true)]
     [HttpPost("logout")]
     [AllowAnonymous]
     public async Task<IActionResult> Logout(CancellationToken cancellationToken)
@@ -116,6 +119,7 @@ public sealed class AuthController : ControllerBase
         return Ok(new { message = "Logged out successfully." });
     }
 
+    [HRM.Api.Security.Authorization.AllowImsSession]
     [HttpGet("me")]
     [Authorize]
     public IActionResult Me()

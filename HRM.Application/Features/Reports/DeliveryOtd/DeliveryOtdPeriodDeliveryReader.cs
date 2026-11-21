@@ -8,7 +8,7 @@ namespace HRM.Application.Features.Reports.DeliveryOtd;
 internal static class DeliveryOtdPeriodDeliveryReader
 {
     internal static async Task<decimal> ReadAsync(IDispatchReadDbContext db, DeliveryOtdFilter filter,
-        Guid company, DateTime asOf, CancellationToken ct)
+        Guid company, DateTime asOf, CancellationToken ct, bool restricted = false)
     {
         var start = filter.From.Date;
         var last = filter.To.Date < asOf.Date ? filter.To.Date : asOf.Date;
@@ -25,6 +25,12 @@ internal static class DeliveryOtdPeriodDeliveryReader
             && x.MerchandiseOrderDetail.MerchandiseOrder.OrderType == OrderType.Merchandise
             && x.MerchandiseOrderDetail.MerchandiseOrder.CreateDate >= DeliveryOtdReader.OrderStartDate
             && x.MerchandiseOrderDetail.MerchandiseOrder.Status != nameof(MerchadiseStatus.Cancelled));
+        if (restricted)
+        {
+            var visible = DeliveryOtdAccess.VisibleOrderIds(db.MerchandiseOrders.AsNoTracking(), company);
+            query = query.Where(line => visible.Contains(line.MerchandiseOrderDetail!.MerchandiseOrderId) &&
+                line.DeliveryOrder.CustomerId == line.MerchandiseOrderDetail.MerchandiseOrder.CustomerId);
+        }
         if (filter.CustomerId.HasValue)
             query = query.Where(x => x.MerchandiseOrderDetail!.MerchandiseOrder.CustomerId == filter.CustomerId);
         if (filter.ProductId.HasValue)

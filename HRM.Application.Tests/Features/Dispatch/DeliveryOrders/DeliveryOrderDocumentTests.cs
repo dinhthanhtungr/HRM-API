@@ -16,6 +16,43 @@ namespace HRM.Application.Tests.Features.Dispatch.DeliveryOrders;
 public sealed class DeliveryOrderDocumentTests
 {
     [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void DocumentUsesCurrentProductEvenAfterRenameOrDeactivation(bool active)
+    {
+        var order = Order();
+        var product = new HRM.Domain.Entities.SampleRequestSchema.Product
+        {
+            ProductId = Guid.NewGuid(), CompanyId = order.CompanyId, ColourCode = "CURRENT", Name = "Current name", IsActive = active
+        };
+        order.Details = [new() { Product = product, ProductId = product.ProductId,
+            ProductExternalIdSnapShot = "OLD", ProductNameSnapShot = "Old name", Quantity = 12, LotNoList = "LOT" }];
+        var line = Assert.Single(DeliveryOrderDocumentQuery.Project(new[] { order }.AsQueryable(), order.Id, order.CompanyId).Single().Lines);
+        Assert.Equal("CURRENT", line.ProductCode);
+        Assert.Equal("Current name", line.ProductName);
+        Assert.Equal(12, line.Quantity);
+        product.ColourCode = "RENAMED";
+        product.Name = "Renamed name";
+        line = Assert.Single(DeliveryOrderDocumentQuery.Project(new[] { order }.AsQueryable(), order.Id, order.CompanyId).Single().Lines);
+        Assert.Equal("RENAMED", line.ProductCode);
+        Assert.Equal("Renamed name", line.ProductName);
+        Assert.Equal("OLD", order.Details.Single().ProductExternalIdSnapShot);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void DocumentDoesNotFallBackToSnapshotOrExposeForeignProduct(bool foreign)
+    {
+        var order = Order();
+        order.Details = [new() { ProductExternalIdSnapShot = "OLD", ProductNameSnapShot = "Old name", Quantity = 12,
+            Product = foreign ? new HRM.Domain.Entities.SampleRequestSchema.Product { CompanyId = Guid.NewGuid(), ColourCode = "SECRET", Name = "Foreign" } : null }];
+        var line = Assert.Single(DeliveryOrderDocumentQuery.Project(new[] { order }.AsQueryable(), order.Id, order.CompanyId).Single().Lines);
+        Assert.Null(line.ProductCode);
+        Assert.Null(line.ProductName);
+        Assert.Equal(12, line.Quantity);
+    }
+    [Theory]
     [InlineData(false, "DispatchUser", true)]
     [InlineData(true, "Guest", true)]
     [InlineData(true, "DispatchUser", false)]

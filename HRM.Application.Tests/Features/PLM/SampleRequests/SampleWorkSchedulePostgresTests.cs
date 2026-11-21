@@ -16,7 +16,7 @@ using Npgsql;
 
 namespace HRM.Application.Tests.Features.PLM.SampleRequests;
 
-/// <summary>Isolated PostgreSQL verifies atomic date/audit persistence without any workflow/notification tables.</summary>
+/// <summary>Isolated PostgreSQL verifies atomic date/audit persistence and reads the TP pause gate.</summary>
 public sealed class SampleWorkSchedulePostgresTests(IsolatedGroupStoragePostgres postgres) : IClassFixture<IsolatedGroupStoragePostgres>
 {
     [PostgresGroupStorageFact]
@@ -24,7 +24,7 @@ public sealed class SampleWorkSchedulePostgresTests(IsolatedGroupStoragePostgres
     {
         await using var connection = await postgres.OpenAsync();
         await using var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>().UseNpgsql(connection).Options);
-        foreach (var type in new[] { typeof(SampleRequest), typeof(Employee), typeof(AuditLog), typeof(Customer) })
+        foreach (var type in new[] { typeof(SampleRequest), typeof(Employee), typeof(AuditLog), typeof(Customer), typeof(SampleRequestWorkflowEvent) })
         {
             var entity = db.Model.FindEntityType(type)!;
             var table = StoreObjectIdentifier.Table(entity.GetTableName()!, entity.GetSchema());
@@ -39,7 +39,7 @@ public sealed class SampleWorkSchedulePostgresTests(IsolatedGroupStoragePostgres
             await using var create = new NpgsqlCommand($"CREATE SCHEMA IF NOT EXISTS \"{table.Schema}\"; CREATE TABLE \"{table.Schema}\".\"{table.Name}\" ({string.Join(',', columns)}, PRIMARY KEY (\"{key}\"));", connection);
             await create.ExecuteNonQueryAsync();
         }
-        var user = new SampleTrialFeedbackCorrectionTests.User("LabAdmin");
+        var user = new SampleTrialFeedbackCorrectionTests.User("LabUser");
         var oldToken = new DateTime(2026, 11, 3, 8, 0, 0);
         var clock = new Clock();
         var sample = new SampleRequest { SampleRequestId = Guid.NewGuid(), CompanyId = user.CompanyId!.Value,
@@ -110,7 +110,7 @@ public sealed class SampleWorkSchedulePostgresTests(IsolatedGroupStoragePostgres
         protected override object? Invoke(MethodInfo? method, object?[]? args) => method!.Name switch
         {
             "BuildScopeAsync" or "BuildReadScopeAsync" => Task.FromResult(new ViewerScope(_user.CompanyId!.Value,
-                _user.EmployeeId!.Value, false, false, new HashSet<Guid>(), new HashSet<Guid>(), DateTime.Now)),
+                _user.EmployeeId!.Value, _user.IsInRole("LabUser"), false, new HashSet<Guid>(), new HashSet<Guid>(), DateTime.Now)),
             "ApplySampleRequestVisibility" => _real.ApplySampleRequestVisibility((IQueryable<SampleRequest>)args![0]!,
                 (IQueryable<Customer>)args[1]!, (ViewerScope)args[2]!),
             _ => throw new NotSupportedException(method.Name)

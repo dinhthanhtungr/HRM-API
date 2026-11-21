@@ -16,6 +16,7 @@ public sealed class WarehouseVouchersController : ControllerBase
 
     public WarehouseVouchersController(ISender sender) => _sender = sender;
 
+    [HRM.Api.Security.Authorization.AllowImsSession]
     [HttpGet]
     public async Task<IActionResult> GetList(
         [FromQuery] GetWarehouseVouchersQuery query,
@@ -25,6 +26,7 @@ public sealed class WarehouseVouchersController : ControllerBase
         return result.Success ? Ok(result) : BadRequest(result);
     }
 
+    [HRM.Api.Security.Authorization.AllowImsSession]
     [HttpGet("{voucherId:long}")]
     public async Task<IActionResult> GetById(
         [FromRoute] long voucherId,

@@ -11,6 +11,19 @@ namespace HRM.Api.Controllers.PLM;
 [Route("api/v1/dev/workflow-notification-jobs")]
 public sealed class WorkflowNotificationJobsController(ISender sender) : ControllerBase
 {
+    public sealed record RecoverReadyBody(string? SampleRequestCode);
+
+    [HttpPost("recover-ready")]
+    public async Task<IActionResult> RecoverReady([FromBody] RecoverReadyBody body, CancellationToken ct)
+    {
+        try
+        {
+            var result = await sender.Send(new RecoverReadyWorkflowNotificationsCommand(body.SampleRequestCode), ct);
+            return result is null ? Forbid() : Ok(result);
+        }
+        catch (ArgumentException) { return BadRequest(new { code = "InvalidFilter" }); }
+    }
+
     [HttpGet("{jobId:long}/silent-watchers")]
     public async Task<IActionResult> PreviewWatchers(long jobId, CancellationToken ct)
     {

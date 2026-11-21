@@ -10,6 +10,7 @@ using HRM.Domain.Entities.Notifications;
 using HRM.Domain.Enums.InternalMailEnums;
 using HRM.Domain.Enums.Notifications;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace HRM.Application.Features.Notifications.Services;
 
@@ -26,6 +27,8 @@ internal sealed partial class NotificationService : INotificationService, IInter
     private readonly InternalMailAreaAccessService _areas;
     private readonly NotificationFeedConversationInfoResolver _feedConversationInfo;
     private readonly HRM.Application.Abstractions.Persistence.InternalMail.IInternalMailDbContext? _reactionDb;
+    private readonly ILogger<NotificationService>? _queryLogger;
+    private readonly HRM.Application.Abstractions.Persistence.PLM.SaleOrders.ISaleOrderDbContext? _saleOrderDb;
 
     public NotificationService(
         INotificationDbContext dbContext,
@@ -34,7 +37,9 @@ internal sealed partial class NotificationService : INotificationService, IInter
         INotificationInboxArchiver inboxArchiver,
         InternalMailAreaAccessService areas,
         NotificationFeedConversationInfoResolver feedConversationInfo,
-        HRM.Application.Abstractions.Persistence.InternalMail.IInternalMailDbContext? reactionDb = null)
+        HRM.Application.Abstractions.Persistence.InternalMail.IInternalMailDbContext? reactionDb = null,
+        ILogger<NotificationService>? queryLogger = null,
+        HRM.Application.Abstractions.Persistence.PLM.SaleOrders.ISaleOrderDbContext? saleOrderDb = null)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
@@ -43,6 +48,8 @@ internal sealed partial class NotificationService : INotificationService, IInter
         _areas = areas;
         _feedConversationInfo = feedConversationInfo;
         _reactionDb = reactionDb;
+        _queryLogger = queryLogger;
+        _saleOrderDb = saleOrderDb;
     }
 
     public async Task<Guid> PublishAsync(
@@ -68,6 +75,7 @@ internal sealed partial class NotificationService : INotificationService, IInter
             throw new InvalidOperationException("CreatedBy is required to publish notification.");
         }
 
+        var personalReminder = PersonalReminderAudience.IsOwnerOnly(request, createdBy);
         var now = DateTime.Now;
         var isPrivateArea = request.ConversationId.HasValue && await _dbContext.InternalConversations.AnyAsync(c =>
             c.InternalConversationId == request.ConversationId && c.CompanyId == companyId &&
@@ -95,9 +103,9 @@ internal sealed partial class NotificationService : INotificationService, IInter
             c.InternalConversationId == request.ConversationId && c.CompanyId == companyId && c.IsActive &&
             (!isPrivateArea || _dbContext.InternalConversations.Any(parent => parent.InternalConversationId == c.RelatedId &&
                 parent.CompanyId == companyId && parent.IsActive)), cancellationToken);
-        var developerEmployeeIds = validObserverScope
+        var developerEmployeeIds = validObserverScope && !personalReminder
             ? await ResolveActiveDeveloperEmployeeIdsAsync(companyId, cancellationToken) : [];
-        if (request.Topic == TopicNotifications.SampleRequestCustomerPriceFeedbackRecorded)
+        if (request.Topic is TopicNotifications.SampleRequestCustomerPriceFeedbackRecorded or TopicNotifications.SampleRequestReferencePriceAvailable)
             developerEmployeeIds = await _areas.PricingCapableEmployeesAsync(companyId, developerEmployeeIds, cancellationToken);
         var targetUserIds = NormalizeIds(request.TargetUserIds)
             .Concat(developerEmployeeIds)
@@ -163,8 +171,9 @@ internal sealed partial class NotificationService : INotificationService, IInter
             silentUserIds,
             Array.Empty<string>(),
             cancellationToken);
-        var allowedRecipients = await _areas.Recipients(companyId, null, request.ConversationId)
-            .ToHashSetAsync(cancellationToken);
+        var allowedRecipients = personalReminder
+            ? resolvedEmployeeIds.ToHashSet()
+            : await _areas.Recipients(companyId, null, request.ConversationId).ToHashSetAsync(cancellationToken);
         if (isPrivateArea)
             allowedRecipients.IntersectWith(await _dbContext.InternalConversationParticipants
                 .Where(p => p.InternalConversationId == request.ConversationId && p.IsActive &&
@@ -281,6 +290,9 @@ internal sealed partial class NotificationService : INotificationService, IInter
         var companyId = GetCurrentCompanyId();
         var employeeId = GetCurrentEmployeeId();
         var normalizedTake = Math.Clamp(take, 1, 100);
+        using var timing = new NotificationQueryTiming(_queryLogger,
+            unreadOnly && NotificationTopicCatalog.NormalizeCode(categoryCode) == NotificationCategoryCodes.Quotation
+                ? "quotation-feed-unread" : "notification-feed", enabled: true);
 
         var inbox = _dbContext.Notifications.AsNoTracking().Where(x =>
             x.CompanyId == companyId &&
@@ -297,26 +309,90 @@ internal sealed partial class NotificationService : INotificationService, IInter
             if (urgentIds.Length == 0) return [];
             inbox = inbox.Where(notification => urgentIds.Contains(notification.Id));
         }
-        var visible = _areas.Notifications(inbox);
+        Guid[]? personalMessageIds = null;
+        Guid[]? personalEventIds = null;
         if (mentionedOnly)
         {
-            visible = _areas.MentionedHubEvents(visible);
+            // Bound the in-memory shortlist. Large personal histories retain the
+            // original query; every shortlisted message is reauthorized below.
+            const int maxPersonalMessageCandidates = 4096;
+            var candidateIds = await timing.RunAsync("personal-message-keys", async () =>
+            {
+                var messages = await _areas.PersonalMentionCandidatesAsync(maxPersonalMessageCandidates, cancellationToken);
+                return await messages.Select(message => new { Id = message.InternalMessageId, ConversationId = message.InternalConversationId })
+                    .Take(maxPersonalMessageCandidates + 1).ToArrayAsync(cancellationToken);
+            });
+            if (candidateIds.Length <= maxPersonalMessageCandidates)
+            {
+                personalMessageIds = candidateIds.Select(message => message.Id).ToArray();
+                var personalConversationIds = candidateIds.Select(message => message.ConversationId).Distinct().ToArray();
+                var eventIds = await timing.RunAsync("personal-event-keys", () => _areas.PersonalInboxCandidates(
+                        inbox, personalMessageIds, personalConversationIds)
+                    .Select(notification => notification.Id).Take(maxPersonalMessageCandidates + 1)
+                    .ToArrayAsync(cancellationToken));
+                if (eventIds.Length == 0) return [];
+                if (eventIds.Length <= maxPersonalMessageCandidates)
+                {
+                    personalEventIds = eventIds;
+                    inbox = inbox.Where(notification => eventIds.Contains(notification.Id));
+                }
+            }
+        }
+        var personalConversationScope = personalEventIds is null ? null
+            : await timing.RunAsync("personal-conversation-keys", () =>
+                _areas.HubConversationIdsForEvents(personalEventIds).ToArrayAsync(cancellationToken));
+        (Guid[] ConversationIds, IReadOnlyDictionary<Guid, int>? LegacyCounts)? initialUnreadKeys = null;
+        if (unreadOnly && !mentionedOnly)
+            initialUnreadKeys = await timing.RunAsync("unread-keys",
+                () => _areas.UnreadHubConversationIdsAsync(inbox, cancellationToken));
+        var unreadConversationScope = initialUnreadKeys?.ConversationIds is { Length: <= 4096 } boundedUnreadIds
+            ? boundedUnreadIds : null;
+        var readScope = await timing.RunAsync("feed-scope", () => _areas.DefaultLabInboxSelectionAsync(
+            inbox, cancellationToken, excludeReactions: !mentionedOnly,
+            candidateConversationIds: personalConversationScope ?? unreadConversationScope,
+            candidateEventIds: personalEventIds));
+        var visible = readScope.Query;
+        if (mentionedOnly)
+        {
+            visible = personalMessageIds is not null
+                ? _areas.MentionedVisibleHubEvents(visible, personalMessageIds, personalEventIds)
+                : _areas.MentionedHubEvents(visible);
             inbox = visible;
         }
+        Guid[]? candidateConversationIds = null;
+        Guid[]? unreadStandaloneIds = null;
+        IReadOnlyDictionary<Guid, int>? unreadLegacyCounts = null;
+        if (unreadOnly && NotificationTopicCatalog.NormalizeCode(categoryCode) == NotificationCategoryCodes.Quotation)
+            candidateConversationIds = await timing.RunAsync("quotation-threads",
+                () => _areas.QuotationHubConversationIds(inbox).ToArrayAsync(cancellationToken));
         if (unreadOnly)
         {
-            // Resolve unread eligibility once instead of nesting the unread message,
-            // JSON link and access subqueries inside the latest-event query.
-            // Keep the full inbox below: a read latest event may represent a
-            // conversation whose older notification/message is still unread.
-            var unreadIds = await _areas.UnreadHubEvents(visible, inbox)
-                .Select(notification => notification.Id)
-                .ToArrayAsync(cancellationToken);
-            if (unreadIds.Length == 0) return [];
-            visible = visible.Where(notification => unreadIds.Contains(notification.Id));
+            // Resolve one key per unread conversation, not one ID per historical notification.
+            // Standalone unread stays in SQL; keep the full inbox for winner selection below.
+            var unreadKeys = initialUnreadKeys ?? await timing.RunAsync("unread-keys",
+                () => _areas.UnreadHubConversationIdsAsync(inbox, cancellationToken));
+            var unreadConversationIds = unreadKeys.ConversationIds;
+            unreadLegacyCounts = unreadKeys.LegacyCounts;
+            if (candidateConversationIds is not null)
+                unreadConversationIds = unreadConversationIds.Intersect(candidateConversationIds).ToArray();
+            var unreadScope = await timing.RunAsync("unread-filter", () =>
+                _areas.UnreadHubEventsForConversationsAsync(visible, inbox, unreadConversationIds, cancellationToken));
+            visible = unreadScope.Visible;
+            unreadStandaloneIds = unreadScope.StandaloneIds;
+            // The outer unread predicate admits linked events only from these threads.
+            // Rank their FULL inbox history, not the entire company's read conversations.
+            candidateConversationIds = unreadConversationIds;
         }
         if ((latestForHub || unreadOnly || mentionedOnly) && NotificationTopicCatalog.NormalizeCode(categoryCode) != NotificationCategoryCodes.LegacyData)
-            visible = _areas.LatestHubEvents(visible, inbox, NotificationTopicCatalog.NormalizeCode(eventGroupCode));
+        {
+            visible = mentionedOnly && !unreadOnly && personalEventIds is not null
+                ? await timing.RunAsync("personal-latest", () => _areas.LatestPersonalHubEventsAsync(
+                    visible, personalEventIds, NotificationTopicCatalog.NormalizeCode(eventGroupCode), cancellationToken))
+                : unreadOnly && candidateConversationIds is not null
+                    ? await timing.RunAsync("unread-latest", () => _areas.LatestUnreadHubEventsAsync(
+                        visible, inbox, NotificationTopicCatalog.NormalizeCode(eventGroupCode), candidateConversationIds, cancellationToken, unreadStandaloneIds))
+                    : _areas.LatestHubEvents(visible, inbox, NotificationTopicCatalog.NormalizeCode(eventGroupCode), candidateConversationIds);
+        }
         var query = visible
             .Select(x => new NotificationDto
             {
@@ -365,25 +441,25 @@ internal sealed partial class NotificationService : INotificationService, IInter
                 (x.CreatedDate == afterCreated.Value && x.Id.CompareTo(afterId.Value) < 0));
         }
 
-        var items = await query
+        var items = await timing.RunAsync("feed-page", () => query
             .OrderByDescending(x => x.CreatedDate)
             .ThenByDescending(x => x.Id)
             .Take(normalizedTake)
-            .ToListAsync(cancellationToken);
+            .ToListAsync(cancellationToken));
 
         foreach (var item in items)
         {
             NotificationPayloadPresentation.Apply(item);
         }
-        await EnrichReactionNotificationsAsync(items, cancellationToken);
+        await timing.RunAsync("reactions", () => EnrichReactionNotificationsAsync(items, cancellationToken));
 
-        await ApplyConversationTitlesAsync(items, companyId, employeeId, cancellationToken);
+        await timing.RunAsync("titles", () => ApplyConversationTitlesAsync(items, companyId, employeeId, cancellationToken));
 
         // Hub items đã enrich theo chính trang kết quả; không chạy lại cùng phần metadata ở feed nền.
         if (!latestForHub)
         {
-            var info = await _feedConversationInfo.ResolveAsync(
-                items.Select(item => item.ConversationId).OfType<Guid>(), companyId, cancellationToken);
+            var info = await timing.RunAsync("conversation-metadata", () => _feedConversationInfo.ResolveAsync(
+                items.Select(item => item.ConversationId).OfType<Guid>(), companyId, cancellationToken));
             foreach (var item in items)
                 if (item.ConversationId is { } id)
                 {
@@ -393,9 +469,18 @@ internal sealed partial class NotificationService : INotificationService, IInter
         }
 
         if (mentionedOnly)
-            await ApplyPersonalActivityAsync(items, employeeId, cancellationToken);
+            // Urgent selection excludes some reactions in the same conversation;
+            // its count must still use the complete authorized inbox.
+            await ApplyPersonalActivityAsync(items, employeeId, cancellationToken,
+                urgentOnly ? null : readScope);
 
-        await _areas.MaskPriceNotificationsAsync(items, cancellationToken);
+        await timing.RunAsync("masking", () => _areas.MaskPriceNotificationsAsync(items, cancellationToken));
+        await ApplySalesOrderStreamMetadataAsync(items, cancellationToken);
+        var quotationBadges = await timing.RunAsync("badges", () => _areas.PageQuotationBadgeCountsAsync(
+            items.Select(i => i.ConversationId).OfType<Guid>().Distinct().ToArray(), cancellationToken, unreadLegacyCounts));
+        foreach (var item in items)
+            if (item.ConversationId is { } conversationId && quotationBadges.TryGetValue(conversationId, out var count))
+                item.ConversationUnreadCount = count;
         return items;
     }
 
@@ -445,18 +530,7 @@ internal sealed partial class NotificationService : INotificationService, IInter
 
     public async Task<int> GetUnreadCountAsync(CancellationToken cancellationToken = default)
     {
-        var companyId = GetCurrentCompanyId();
-        var employeeId = GetCurrentEmployeeId();
-
-        var reactionTopics = InternalMailPersonalActivity.ReactionTopics;
-        return await _areas.States().Where(s => !reactionTopics.Contains(s.Notification.Topic))
-            .AsNoTracking()
-            .CountAsync(x =>
-                x.UserId == employeeId &&
-                !x.IsRead &&
-                !x.IsArchived &&
-                x.Notification.CompanyId == companyId,
-                cancellationToken);
+        return (await GetUnreadSummaryAsync(cancellationToken)).TotalUnread;
     }
 
     public async Task<NotificationUnreadSummaryDto> GetUnreadSummaryAsync(
@@ -465,10 +539,11 @@ internal sealed partial class NotificationService : INotificationService, IInter
         var companyId = GetCurrentCompanyId();
         var employeeId = GetCurrentEmployeeId();
 
+        using var timing = new NotificationQueryTiming(_queryLogger, "unread-summary", enabled: true);
         var reactionTopics = InternalMailPersonalActivity.ReactionTopics;
-        var personalReactionCount = await _areas.States().CountAsync(s => !s.IsRead && !s.IsArchived &&
-            reactionTopics.Contains(s.Notification.Topic), cancellationToken);
-        var topicCounts = await _areas.States().Where(s => !reactionTopics.Contains(s.Notification.Topic))
+        var personalReactionCount = await timing.RunAsync("summary-reactions", () =>
+            _areas.PersonalReactionUnreadCountAsync(cancellationToken));
+        var topicCounts = await timing.RunAsync("summary-topics", () => _areas.BadgeStates().Where(s => !reactionTopics.Contains(s.Notification.Topic))
             .AsNoTracking()
             .Where(x =>
                 x.UserId == employeeId &&
@@ -486,7 +561,7 @@ internal sealed partial class NotificationService : INotificationService, IInter
                 group.Key.IsLegacyData,
                 UnreadCount = group.Count()
             })
-            .ToListAsync(cancellationToken);
+            .ToListAsync(cancellationToken));
 
         var categoryCounts = NotificationTopicCatalog.GetCategoryCodes()
             .ToDictionary(categoryCode => categoryCode, _ => 0, StringComparer.Ordinal);
@@ -508,9 +583,28 @@ internal sealed partial class NotificationService : INotificationService, IInter
             }
         }
 
+        // Same disjoint legacy fallback as list/detail/quick groups, never all participants' raw read states.
+        var legacyCounts = await timing.RunAsync("summary-legacy",
+            () => _areas.LegacyUnreadCountsByTypeAsync(cancellationToken));
+        foreach (var legacy in legacyCounts)
+        {
+            var category = legacy.Key switch
+            {
+                InternalMailRelatedType.SampleRequest => NotificationCategoryCodes.SampleRequest,
+                InternalMailRelatedType.Quotation => NotificationCategoryCodes.Quotation,
+                InternalMailRelatedType.MfgProductionOrder => NotificationCategoryCodes.Production,
+                InternalMailRelatedType.MerchandiseOrder => NotificationCategoryCodes.SalesOrder,
+                InternalMailRelatedType.Customer => NotificationCategoryCodes.Customer,
+                _ => NotificationCategoryCodes.InternalMail
+            };
+            categoryCounts[category] += legacy.Value;
+            var key = (category, "message");
+            eventGroupCounts[key] = eventGroupCounts.GetValueOrDefault(key) + legacy.Value;
+        }
+
         return new NotificationUnreadSummaryDto
         {
-            TotalUnread = topicCounts.Sum(x => x.UnreadCount),
+            TotalUnread = topicCounts.Sum(x => x.UnreadCount) + legacyCounts.Values.Sum(),
             UnreadMentionCount = personalReactionCount + await _areas.MentionedMessages().CountAsync(
                 m => m.ReadStates.Any(s => s.EmployeeId == employeeId && !s.IsRead), cancellationToken),
             Categories = NotificationTopicCatalog.GetCategoryCodes()
@@ -570,6 +664,7 @@ internal sealed partial class NotificationService : INotificationService, IInter
             NotificationPayloadPresentation.Apply(result);
             await EnrichReactionNotificationsAsync([result], cancellationToken);
             await _areas.MaskPriceNotificationsAsync([result], cancellationToken);
+            await ApplySalesOrderStreamMetadataAsync([result], cancellationToken);
         }
 
         return result;

@@ -1,3 +1,4 @@
+using HRM.Application.Features.CRM.CustomerCare.Services.Search;
 using HRM.Application.Abstractions.Persistence.CRM.CustomerCare;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Authorization;
@@ -113,9 +114,21 @@ internal sealed class GetCustomersQueryHandler
             query = query.Where(x => x.NextFollowUpDate < toExclusive);
         }
 
-        if (!string.IsNullOrWhiteSpace(request.NormalizedKeyword))
+        var smartSearch = HRM.Application.Commons.Searching.SmartSearch.For(query, fields => [
+            fields.Code("customerCode", x => x.ExternalId, "Mã KH", "Customer code"),
+            fields.Name("customerName", x => x.CustomerName, "Tên KH", "Customer name"),
+            fields.CustomerTaxNumber(x => x.TaxNumber),
+            fields.Names("employeeName", x => x.CustomerAssignments.Where(a => a.IsActive && a.CompanyId == scope.CompanyId &&
+                    a.Employee.CompanyId == scope.CompanyId && (!restrictAssignmentsToLeaderGroups || leaderGroupIds.Contains(a.GroupId))),
+                a => a.Employee.FullName, "Nhân viên", "Employee"),
+            fields.Names("groupName", x => x.CustomerAssignments.Where(a => a.IsActive && a.CompanyId == scope.CompanyId &&
+                    a.Group.CompanyId == scope.CompanyId && (!restrictAssignmentsToLeaderGroups || leaderGroupIds.Contains(a.GroupId))),
+                a => a.Group.Name, "Nhóm", "Group")
+        ]);
+        query = smartSearch.ApplyRequest(query, request.NormalizedKeyword, request, out var smartKeyword);
+        if (!string.IsNullOrWhiteSpace(smartKeyword))
         {
-            var keyword = request.NormalizedKeyword;
+            var keyword = smartKeyword;
 
             query = query.Where(x =>
                 EF.Functions.ILike(x.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
@@ -126,6 +139,8 @@ internal sealed class GetCustomersQueryHandler
                 EF.Functions.ILike((x.TaxNumber ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter));
         }
 
+        if (await smartSearch.SuggestionsAsync<CustomerListItemDto>(query, request, cancellationToken) is { } suggestions)
+            return suggestions;
         query = ApplySorting(query, request);
 
         var projected = query

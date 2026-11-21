@@ -9,6 +9,11 @@ namespace HRM.Application.Commons.Pagination
     public class PagedResult<T>
     {
         public IReadOnlyList<T> Items { get; }
+        /// <summary>Optional scoped category counts before paging; omitted for existing consumers.</summary>
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public IReadOnlyDictionary<string, IReadOnlyDictionary<string, int>>? Facets { get; init; }
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public IReadOnlyList<HRM.Application.Commons.Searching.SmartSearchSuggestion>? SearchSuggestions { get; init; }
         public int TotalCount { get; }
         public int PageNumber { get; }
         public int PageSize { get; }

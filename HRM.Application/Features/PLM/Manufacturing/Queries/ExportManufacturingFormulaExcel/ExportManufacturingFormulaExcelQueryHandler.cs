@@ -27,6 +27,10 @@ internal sealed class ExportManufacturingFormulaExcelQueryHandler(
             return Fail(error ?? "Không có quyền xem vật tư công thức.");
         }
 
+        if (request.IncludePrices && (!user.IsInAnyRole(ApplicationRoleSets.PLM.ManufacturingPricedExcelExporters)
+            || !visibility.CanViewFormulaPrices()))
+            return Fail("Bạn không có quyền xuất Excel có giá công thức.");
+
         if (request.OrderId == Guid.Empty)
         {
             return Fail("Lệnh sản xuất không hợp lệ.");
@@ -68,8 +72,10 @@ internal sealed class ExportManufacturingFormulaExcelQueryHandler(
             order.ProductExternalIdSnapshot,
             order.ProductNameSnapshot,
             0,
-            ct
+            ct,
+            request.IncludePrices
         );
+        if (request.IncludePrices && rows.Count == 0) return Fail("VA chưa có dòng NVL để xuất Excel.");
         try
         {
             var bytes = renderer.Render(rows);

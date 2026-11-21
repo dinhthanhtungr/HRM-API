@@ -23,6 +23,8 @@ using HRM.Application.Features.InternalMail.Queries.SearchMessages;
 using HRM.Application.Features.InternalMail.Queries.SearchGroupMembers;
 using HRM.Application.Features.InternalMail.Commands.SetReaction;
 using HRM.Application.Features.InternalMail.Queries.GetReactions;
+using HRM.Application.Features.InternalMail.Queries.GetConversationReadState;
+using HRM.Application.Features.InternalMail.Queries.GetRelatedProducts;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -82,6 +84,20 @@ public sealed class InternalMailController : ControllerBase
             ConversationId = conversationId
         }, cancellationToken);
 
+        return result is null ? NotFound() : Ok(result);
+    }
+
+    [HttpGet("conversations/{conversationId:guid}/sample-request-summary")]
+    public async Task<IActionResult> GetSampleRequestSummary(Guid conversationId, CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new HRM.Application.Features.InternalMail.Queries.GetSampleRequestSummary.GetSampleRequestConversationSummaryQuery(conversationId), cancellationToken);
+        return result is null ? NotFound() : Ok(result);
+    }
+
+    [HttpGet("conversations/{conversationId:guid}/related-products")]
+    public async Task<IActionResult> GetRelatedProducts(Guid conversationId, CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new GetInternalConversationRelatedProductsQuery(conversationId), cancellationToken);
         return result is null ? NotFound() : Ok(result);
     }
 
@@ -420,7 +436,7 @@ public sealed class InternalMailController : ControllerBase
     [HttpPost("conversations/{conversationId:guid}/read")]
     public async Task<IActionResult> MarkRead(
         Guid conversationId, CancellationToken cancellationToken, [FromQuery] Guid? throughMessageId = null,
-        [FromQuery] string? areaCode = null)
+        [FromQuery] string? areaCode = null, [FromQuery] bool returnState = false)
     {
         var result = await _sender.Send(new MarkInternalConversationReadCommand
         {
@@ -429,7 +445,15 @@ public sealed class InternalMailController : ControllerBase
             ThroughMessageId = throughMessageId
         }, cancellationToken);
 
-        return result.Success ? NoContent() : BadRequest(result);
+        if (!result.Success) return BadRequest(result);
+        if (!returnState) return NoContent();
+        var state = await _sender.Send(new GetInternalConversationReadStateQuery
+        {
+            ConversationId = conversationId,
+            AreaCode = areaCode,
+            ThroughMessageId = throughMessageId
+        }, cancellationToken);
+        return state is null ? NotFound() : Ok(state);
     }
 
     [HttpPatch("conversations/{conversationId:guid}/preferences")]

@@ -146,7 +146,11 @@ internal sealed class GetQuotationProductPricingOptionsQueryHandler
                     line.Quotation.CompanyId == companyId));
         }
 
-        if (request.NormalizedKeyword is { } keyword)
+        var smartSearch = Services.Queries.ProductPricingSmartSearch.Build(productQuery, eligibleRequests, companyId,
+            canViewSensitivePricing ? null : _crmDbContext.ProductPricingVersions.AsNoTracking().Where(v => v.CompanyId == companyId && v.IsActive &&
+                v.Status == ProductPricingStatus.Approved && v.Currency == request.NormalizedCurrency));
+        productQuery = smartSearch.ApplyRequest(productQuery, request.NormalizedKeyword, request, out var smartKeyword);
+        if (smartKeyword is { } keyword)
         {
             if (IsQuotationExternalIdKeyword(keyword))
             {
@@ -180,7 +184,8 @@ internal sealed class GetQuotationProductPricingOptionsQueryHandler
                     EF.Functions.ILike((product.Name ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
                     eligibleRequests.Any(sampleRequest =>
                         sampleRequest.ProductId == product.ProductId &&
-                        EF.Functions.ILike(sampleRequest.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter)) ||
+                        (EF.Functions.ILike(sampleRequest.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                         sampleRequest.Customer.CompanyId == companyId && EF.Functions.ILike(sampleRequest.Customer.TaxNumber ?? "", PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter))) ||
                     _dbContext.Formulas.Any(formula =>
                         formula.IsActive &&
                         formula.CompanyId == companyId &&
@@ -189,6 +194,8 @@ internal sealed class GetQuotationProductPricingOptionsQueryHandler
             }
         }
 
+        if (await smartSearch.SuggestionsAsync<QuotationProductPricingOptionDto>(productQuery, request, cancellationToken) is { } suggestions)
+            return OperationResult<PagedResult<QuotationProductPricingOptionDto>>.Ok(suggestions);
         var totalCount = await productQuery.CountAsync(cancellationToken);
         productQuery = ApplySorting(productQuery, eligibleRequests, request);
 

@@ -1,5 +1,63 @@
 # InternalMail API và luồng Notification
 
+## Icon sự kiện trên danh sách hội thoại
+
+Icon Hòm thư biểu thị loại notification cuối cùng trong feed đã tải, không dò ngược lịch sử để ưu tiên sự kiện nghiệp vụ cũ hơn chat. `GetInternalConversations` không gọi query `icons`; hai field optional `representativeTopicCode`/`representativeEventGroupCode` được giữ để tương thích nhưng trả null. Dòng chỉ có conversation chưa có notification trong feed dùng icon loại hội thoại ở FE. Badge, quyền, thứ tự và phân trang giữ nguyên; không thêm cache/index/schema.
+
+Đo trước thay đổi nghiệp vụ ngày 12/11/2026: query icon riêng từng tốn khoảng 212 ms warm ở trang Báo giá đại diện; bước đó hiện đã bỏ khỏi handler. Đây không phải phép đo HTTP sau thay đổi hoặc xác nhận tiến trình API đã nạp mã mới.
+
+## Đo từng bước Notification Hub items
+
+`GET /api/v1/notification-hub/items` trả `Server-Timing` cho response 200 đã xác thực theo cùng cơ chế feed/conversations. `nm_hub_feed` bao gồm các phase feed lồng bên trong (`nm_feed_scope`, `nm_feed_page`, `nm_titles`...); `nm_hub_conversations`, `nm_hub_badges`, `nm_hub_groups`, `nm_hub_parents`, `nm_hub_samples`, `nm_hub_quotations`, `nm_hub_quick_groups`, `nm_hub_masking` tách phần enrichment. `nm_handler` là tổng handler ngoài cùng; không cộng nó hoặc `nm_hub_feed` với các phase con. Header/log chỉ chứa tên phase cố định và thời lượng, không chứa ID, nội dung, bộ lọc hoặc SQL. Không thêm API call FE, cache hay thay đổi body/cursor.
+
+Query chọn sự kiện mới nhất gom ngày lớn nhất theo hội thoại, sau đó gom UUID lớn nhất trong các dòng hòa ngày (UUID canonical dạng text), thay cho probe `NOT EXISTS` trên lịch sử cho từng dòng. Giữ inbox người nhận/company/archived, phạm vi visible ở ngoài, standalone, loại business/message và thứ tự lọc category/event/cursor hiện hành.
+
+Đối chiếu ngày 12/11/2026 trên cùng transaction repeatable-read chỉ đọc, tài khoản đại diện với role từ DB và cấu hình GroupStorage/Reactions hiện hành, 30 dòng/trang: median 3 lượt warm query phối mẫu Tất cả trang 1 **2757 → 767 ms**, trang 2 **2735 → 764 ms**; lọc `quotation` trang 1 **1239 → 721 ms**, trang 2 **1213 → 696 ms**. Hai bản trả cùng ID/topic/ngày/thứ tự ở cả bốn trang. Đây là query EF, không phải HTTP/browser hoặc phiên user trong ảnh. Handler mới warm đo riêng khoảng 1,10 giây (Tất cả) và 1,03 giây (`quotation`); không dùng các số này để khẳng định tiến trình HTTP đã nạp code. Thử truyền ID trang sâu vào query badge cho kết quả đúng nhưng chậm hơn (khoảng 80 → 133–138 ms), nên không áp dụng thay đổi đó. Không thêm index/schema/cache.
+
+## Phạm vi truy vấn hội thoại chưa đọc
+
+Notification Hub dùng các bước đọc riêng trong `InternalMailAreaAccessService.UnreadKeys.cs`
+để lấy khóa unread, standalone và sự kiện đại diện. Các tập suppression, standalone và
+lịch sử cạnh tranh được giới hạn 4.096 ứng viên mỗi tập; gặp phần tử thứ 4.097 thì quay
+về truy vấn SQL đầy đủ, không cắt lịch sử hay trang kết quả. Winner vẫn xét full inbox,
+ngày rồi UUID; kiểm quyền ở truy vấn trả dữ liệu cuối cùng được giữ nguyên.
+Nhánh Chưa đọc thông thường xác định khóa unread trước rồi giới hạn các tập quyền
+phụ thuộc vào đúng các hội thoại đó; tập trên 4.096 khóa vẫn dùng scope đầy đủ. Các
+khóa chỉ là ứng viên, không cấp quyền; standalone và winner xét đầy đủ lịch sử như cũ.
+
+`PageNotificationUnreadCountsAsync` trong `InternalMailAreaAccessService.UnreadCounts.cs`
+tách đếm notification và fallback legacy, rồi cộng theo các ID của trang được phép xem.
+Legacy chỉ tính message không có notification state của chính employee, kể cả state
+đã đọc/archive vẫn chặn fallback. Hub tái dùng `ConversationUnreadCount` khác null mà
+feed đã tính cho quotation, bao gồm giá trị 0; các hội thoại còn lại vẫn được đếm.
+Trong một lần tải unread, kết quả legacy đã kiểm quyền được dùng lại cho badge feed,
+và page scope vẫn được kiểm tra. Không lưu kết quả qua request, đổi quyền hay phiên đăng nhập.
+Các đường detail/summary dùng truy vấn hiện hành; body, thứ tự, cursor và quyền không đổi.
+
+`ConversationsForCandidates` giao các tập phân vùng/quyền theo conversation ID với cùng
+tập ứng viên trước khi nối dữ liệu. Các gate company/active/member/observer/research/R&D
+vẫn được đánh giá trong SQL; đây không phải cache quyền. Feed cá nhân truyền tập event
+đầy đủ đã giới hạn vào các truy vấn JSON link để tránh mở rộng lịch sử ngoài tập đó.
+Quick groups dùng lại count canonical có sẵn của trang; chỉ các nhóm còn thiếu mới được
+đếm qua đường page-batched, với cùng notification/legacy và quyền hiện hành.
+
+Với group storage canonical, `GetInternalConversationsQueryHandler` truyền relatedType đang lọc vào truy vấn khóa
+chưa đọc. Predicate root/child giống bộ lọc của inbox; không mất Kỹ thuật/Giá/nhóm riêng
+của đúng loại hồ sơ. Không truyền loại thì giữ hành vi mọi loại. Unread vẫn xét trước
+COUNT/phân trang và giữ kiểm tra company/membership/observer/legacy hiện hành. Không
+thay đổi DTO, thứ tự, số chưa đọc, icon hoặc quick groups. Kết quả và đo paired baseline
+được mô tả tại [Notifications](../Notifications/UNREAD_PERFORMANCE.md).
+
+`QuickGroupsAsync` lấy ID nhóm được phép xem trong các root của trang một lần cho mỗi
+lời gọi, rồi tái dùng trong query root và nhóm con. Scope company/active/membership,
+observer, phân vùng và mapping vẫn chạy trong SQL trước khi đọc ID. Tập ID không được
+cache qua request; lần gọi sau kiểm tra quyền lại. Nhóm con đã có nhưng không được xem
+vẫn chặn preview tạo thay thế, và số chưa đọc tiếp tục lấy từ nguồn đếm hiện hành.
+Các tập quyền phụ thuộc được giới hạn bằng đầy đủ ID nhóm của root đang đọc; quá
+4.096 nhóm thì dùng truy vấn đầy đủ. Metadata màu chỉ xét root của trang. Đường
+Notification Hub truyền ID hội thoại vào `InboxConversations` để giữ cùng bộ lọc
+quyền trên tập của trang; caller không truyền ID vẫn dùng hành vi hiện hành.
+
 ## Phản hồi khách và thông tin giá của yêu cầu mẫu
 
 Sự kiện giá gốc giữ ghi chú giá/căn cứ riêng. Dispatcher chỉ dùng sự kiện DB đã
@@ -25,9 +83,27 @@ Cảm xúc tin nhắn, API, quyền, realtime không tăng badge và hướng d�
 
 ## API đồng bộ thành viên nhóm mặc định
 
+### Sản phẩm liên quan trong hội thoại Báo giá
+
+`GET /api/v1/internal-mail/conversations/{conversationId}/related-products` yêu cầu đăng nhập và quyền đọc chính hội thoại Báo giá cùng company. Nguồn không tồn tại, không còn active, không phải Báo giá hoặc không được phép đọc trả `404`.
+
+Response chỉ là dữ liệu điều hướng, không gồm giá/cost/payload:
+
+```json
+[{ "productId": "<id>", "productCode": "P001", "productName": "Tên sản phẩm đã lưu trên BBG",
+   "conversations": [{ "conversationId": "<general-conversation-id>", "sampleRequestId": "<id>", "requestCode": "TP_001" }] }]
+```
+
+Mỗi sản phẩm xuất hiện một lần theo thứ tự dòng báo giá (SortOrder rồi ID); code/name lấy snapshot của dòng đầu tiên. Chỉ xét dòng còn active, sản phẩm cùng company và báo giá active; sản phẩm về sau inactive vẫn giữ snapshot của BBG lịch sử. `conversations` là các hội thoại **Chung** hiện có, được phép đọc, của yêu cầu mẫu active cùng company và đúng ProductId:
+
+- Khi dòng BBG có `SampleRequestId`, chỉ dùng liên kết tường minh đó. Liên kết sai, thiếu dữ liệu hoặc bị thu hồi quyền không được thay bằng yêu cầu mẫu khác.
+- Khi `SampleRequestId` của dòng là `null` (BBG chỉ lưu sản phẩm), liệt kê **tất cả** yêu cầu mẫu đúng ProductId có hội thoại Chung được phép đọc; không tự chọn yêu cầu mới nhất. Không đối chiếu bằng mã/tên, không giới hạn theo khách hàng BBG vì đây là liên kết sản phẩm và quyền của từng hội thoại vẫn được kiểm tra riêng.
+
+Nhiều dòng trùng sản phẩm gộp các đích hợp lệ của từng dòng, loại trùng và sắp theo requestCode/ID; nếu có cả dòng liên kết và dòng null thì đích fallback của dòng null vẫn được gộp. Không tự tạo nhóm. Danh sách sản phẩm rỗng nghĩa là không có dòng hợp lệ; `conversations: []` nghĩa là chưa có đích hợp lệ hoặc không có quyền xem, không tiết lộ ID nhóm bị ẩn. GET không đổi unread, membership, giá hoặc phát notification.
+
 `POST /api/v1/internal-mail/conversations/{conversationId}/areas/ensure-defaults` (đã có, không cần body) đồng bộ theo một hồ sơ phối mẫu. Truyền ID conversation Chung hoặc nhóm con, không phải ID SampleRequest. Với TP_31054, ID Chung đã khảo sát là `01a190e7-1f19-7b41-a791-f4e9c4626166`.
 
-- Kỹ thuật: LabUser, Leader Lab theo loại sản phẩm và President active cùng công ty.
+- Kỹ thuật: LabUser, member/leader team Lab theo loại sản phẩm và President active cùng công ty.
 - Giá: giữ SaleUser/SaleAdmin trong Chung và President active cùng công ty.
 - API yêu cầu đăng nhập và quyền đọc conversation cùng company; có khóa/transaction và kiểm tra lại quyền. Tạo nhóm còn thiếu và chỉ thêm membership chưa tồn tại; không kích hoạt lại người đã bị loại, không đổi mute/archive, không mở rộng quyền đọc nguồn forward.
 - Response success có `data: { "changed": true }` khi đã lưu thay đổi; `false` khi không cần thay đổi. Gọi lại không tạo thành viên trùng. FE nên tải lại detail/inbox sau đồng bộ có thay đổi.
@@ -39,7 +115,7 @@ Ví dụ gọi bằng API client đã đăng nhập:
 POST /api/v1/internal-mail/conversations/01a190e7-1f19-7b41-a791-f4e9c4626166/areas/ensure-defaults
 ```
 
-Inbox `GET /api/v1/internal-mail/conversations` bổ sung `quickGroups[].unreadCount`, ví dụ `{"code":"technical","conversationId":"<group-id>","unreadCount":2}`. Số đếm dành riêng employee đang đăng nhập, chỉ trả cho nhóm được phép xem; nhóm mặc định chưa tạo có ID null và số đếm 0. Cách tính giữ cùng contract area/detail: max giữa notification unread và message unread lịch sử thiếu audience marker, không cộng hai nguồn. Query theo lô các nhóm của trang, không gọi detail từng hồ sơ hay tạo nhóm. FE dùng số này cho badge Kỹ thuật/Giá; không thay đổi audience, quyền, mute hoặc dữ liệu lịch sử.
+Inbox `GET /api/v1/internal-mail/conversations` bổ sung `quickGroups[].unreadCount`, ví dụ `{"code":"technical","conversationId":"<group-id>","unreadCount":2}`. Số đếm dành riêng employee đang đăng nhập, chỉ trả cho nhóm được phép xem; nhóm mặc định chưa tạo có ID null và số đếm 0. Cách tính dùng chung với area/detail và summary: notification unread cộng message lịch sử đủ điều kiện chưa có notification state của employee; loại trùng trước khi cộng. Query theo lô các nhóm của trang, không gọi detail từng hồ sơ hay tạo nhóm. FE dùng số này cho badge Kỹ thuật/Giá; không thay đổi audience hay dữ liệu lịch sử.
 
 Bảng nhóm riêng, code đợt 2 và script triển khai thủ công: [group-storage](design/group-storage/README.md).
 Code chuyển nguồn đọc nhóm đã có, mặc định tắt; thứ tự migration/backfill do người vận hành tự chạy và cách bật/rollback: [CUTOVER](design/group-storage/CUTOVER.md).
@@ -48,6 +124,21 @@ Entity/EF và bộ đọc mapping đã được bổ sung, nhưng endpoint hiệ
 Không có startup migration, backfill tự động hoặc query bảng mới trong luồng quyền/badge hiện hành.
 
 ## Tạo nhóm riêng không cần tin nhắn
+
+### Nhóm riêng R&D mặc định, tạo khi gửi tin đầu tiên
+
+`GET conversations/{rootId}/participants?areaCode=rd` xem trước danh sách @ từ thành viên R&D active cùng công ty, sau khi kiểm tra quyền đọc root phối mẫu và quyền dùng nhóm R&D. Không tạo nhóm, participant hay notification khi xem trước; `JoinedAt` chưa có membership dùng giá trị mặc định DTO. FE dùng danh sách này trước tin đầu tiên và gửi `mentionedEmployeeIds` cùng bản nháp; gửi tin vẫn kiểm tra lại team hiện hành trong transaction tạo nhóm.
+
+Với tin Chung mới, Watcher hệ thống thuộc đúng team nhận tin được chuyển thành Member, bỏ mute mặc định trong cùng transaction gửi; mute của Member có sẵn không bị đổi. Đồng bộ người còn thiếu dùng khóa company/conversation hiện có để tránh thêm participant trùng khi hai người gửi đồng thời. Luồng gửi nghiệp vụ phối mẫu cũng chuyển Watcher của team sản phẩm, không chuyển Watcher của team khác.
+
+Hòm thư của member/leader R&D và Màu mặc định lọc phối mẫu theo `SampleRequestLabTeamRules` trước count/phân trang, gồm cả nhóm con được phép đọc. Có từ khóa tìm kiếm thì bỏ bộ lọc loại sản phẩm, giữ nguyên company/authorization. Thành viên active R&D/Màu được đọc nhóm Chung của phối mẫu cùng công ty qua tìm kiếm hoặc ID, kể cả chưa có participant; quyền này không tự cấp quyền gửi/quản lý hay đọc nhóm riêng/Giá. Feed dùng cùng bộ lọc mặc định, không sửa read-state hoặc badge tổng. Gửi tin Chung mới resolve toàn team Lab theo sản phẩm; hồ sơ cũ chỉ bổ sung người nhận chưa từng có participant, không tự khôi phục người đã bị gỡ.
+
+- Với hồ sơ phối mẫu được phép đọc, thành viên active của nhóm nhân viên `QAQC.RD` cùng công ty thấy sẵn tab R&D. Developer dùng capability quan sát hiện có, không tự thêm vào danh sách thành viên hay cấp quyền mới. President và các observer phòng ban khác không có ngoại lệ đọc nhóm này.
+- Tab ảo trả về trong `areas` với `code: "rd"`, `conversationId: null`, `canSend: true`. Chỉ xem tab không tạo nhóm, participant, message hay notification. FE mở ô nhập tin đầu tiên; gửi thành công chuyển sang lịch sử chat bình thường.
+- Gửi vào `POST /api/v1/internal-mail/conversations/{rootId}/messages` với `areaCode: "rd"` dùng transaction và khóa company → root hiện có. Nhóm Custom, thành viên R&D hiện hành và tin đầu tiên được commit cùng nhau; lỗi gửi rollback, hai yêu cầu đồng thời dùng chung nhóm. Không backfill 25k hồ sơ, không thêm enum, constraint, bảng/cột hay migration.
+- Nhóm được nhận diện bằng marker server `internal-mail:sample-request:rd:v1` trong `RelatedExternalId` hiện có, không dựa vào tên R&D. Nhóm người dùng tự đặt cùng tên vẫn theo quyền Custom cũ; forward tạo nhóm khác không sao chép marker này.
+- Thành viên được đồng bộ từ nhân viên active trong team R&D khi gửi tin, chỉ trong nhóm đang gửi và cùng transaction; mở xem không ghi membership. Thành viên R&D mới được đọc/gửi theo team hiện hành. Quyền đọc, eligibility và delivery luôn kiểm tra lại team: rời R&D mất quyền kể cả participant cũ còn active. Không thêm người ngoài R&D qua invite; danh sách thành viên loại người không còn eligible.
+- Notification của tin nhắn và unread tiếp tục theo luồng chat riêng; không phát thông báo chỉ vì tab ảo xuất hiện. Developer giữ cơ chế observer/delivery/privacy sẵn có. Attachment, tìm kiếm và truy cập bằng ID dùng chung scope BE, không chỉ ẩn tab ở FE.
 
 Nút + tại thanh nhóm gọi endpoint `groups/forward` hiện có với `name`, `employeeIds` và `messageIds: []`.
 Tên 1–100 ký tự, tổng 2–50 thành viên gồm người tạo; người tạo phải có quyền gửi source (gồm observer Developer đã có capability gửi; President phải là participant active). Với nhóm rỗng, có thể chọn nhân viên active cùng công ty, vẫn theo eligibility sản phẩm hiện hành
@@ -68,6 +159,18 @@ FE tìm DB mặc định khi mở và khi gõ từ khóa, debounce 350ms, abort 
 được dùng cho luồng forward tin cũ. Tìm không dấu chỉ được chuẩn hóa trên danh sách đã tải; DB ILIKE giữ dấu.
 
 ## Định tuyến thông báo và tag tên
+
+Thread messages và message context trả thêm `senderSampleWorkAudience: "Sale" | "Lab" | null` cho
+tin thuộc yêu cầu mẫu. Đây chỉ là gợi ý phía nghiệp vụ để FE mở Theo dõi mẫu theo người gửi khi người
+xem là Ban giám đốc/Developer; không trả danh sách role và không cấp quyền mở hồ sơ.
+API bổ sung metadata theo batch sau kiểm tra company, conversation/area và che thông tin giá.
+Sự kiện workflow gắn đúng message, conversation, hồ sơ và người ghi được ưu tiên để phân biệt tài khoản
+kiêm Sale/Lab. Tin không có sự kiện dùng role nghiệp vụ không mâu thuẫn của sender active cùng company;
+thiếu hoặc mâu thuẫn dữ kiện trả null. Không đọc body/JSON người dùng để đoán phía gửi, không sửa lịch sử,
+không thêm người nhận/thông báo/realtime và không thêm bảng/cột.
+`sampleWorkTrackingEligible` dùng ngày tạo của hồ sơ cha đã kiểm tra company, trả true khi thuộc
+nhóm Tất cả mẫu (`CreatedDate >= 01/11/2026`), false cho hồ sơ cũ và null cho tin không xác định được
+hồ sơ mẫu. FE mở chi tiết hồ sơ khi false/unknown, tránh điều hướng tới danh sách trống; không suy từ ngày gửi tin.
 
 [NOTIFICATION_ROUTING.md](NOTIFICATION_ROUTING.md) là contract audience Sample Request, mentionedEmployeeIds,
 edit mention và badge cần chú ý. Message mới có notificationAudienceVersion=1 lấy badge từ notification unread;
@@ -138,6 +241,8 @@ không yêu cầu membership lần hai với Developer. Company, nhóm active, n
 
 ## Đồng bộ unread, lưu trữ và xóa tin
 
+Inbox trả thêm `representativeTopicCode` và `representativeEventGroupCode` cho icon: sự kiện nghiệp vụ mới nhất liên kết chính xác với message chưa xóa trong conversation/area được phép đọc. Chỉ trả mã catalog, không trả payload hoặc mở quyền đọc inbox của người khác. Chat/reaction không thay thế icon nghiệp vụ; không có metadata thì FE dùng icon loại hồ sơ. Query theo lô trang hiện tại, không thêm HTTP request từng dòng.
+
 Quyền xóa: mapping fallback tại `ApplicationPermissionRoleSets` chỉ gồm Developer; mapping DB ở
 `AspNetRoleClaims`. Khi triển khai với token dùng permission DB, chạy script idempotent
 `seed-message-delete-permission.sql` trên bảng Identity hiện có rồi login/refresh token.
@@ -145,14 +250,26 @@ Token có tập permission tường minh nhưng thiếu capability bị từ ch�
 API thành công trả `204` không body; thất bại giữ contract `400` với OperationResult như trước.
 
 `GET /api/v1/internal-mail/conversations/{id}` trả `unreadCount` của employee hiện tại, cùng quy tắc với list:
-lấy giá trị lớn hơn giữa số message chưa xóa, không phải do chính employee gửi và có read-state chưa đọc,
-và số inbox notification chưa đọc/chưa archive liên kết conversation của employee trong cùng company.
-Không cộng hai số vì cùng sự kiện có thể tồn tại ở cả hai nguồn. Notification được đếm trên toàn bộ dữ liệu,
+lấy số inbox notification chưa đọc/chưa archive cộng phần message lịch sử chưa có notification state của chính employee.
+Message lịch sử phải chưa xóa, khác người gửi, chưa có audience marker, có read-state chưa đọc và thuộc inbox chưa archive.
+Người xem im lặng/mute không nhận fallback ở nhóm Chung; nhóm riêng vẫn giữ quy tắc unread khi mute.
+Notification state đã đọc hoặc archived cũng chặn fallback của cùng message. Hai tập được loại trùng trước khi cộng;
+list, detail, quick groups và tổng dùng cùng quy tắc. Notification được đếm trên toàn bộ dữ liệu,
 không phụ thuộc trang feed FE đã tải; conversation và participant phải active. Vì vậy notification cũ thiếu
 message read-state hoặc chỉ liên kết thread vẫn hiện badge trên thẻ. Đây là query đọc, không tự đánh dấu đã đọc/backfill.
 Ví dụ sau khi đọc: `{ "conversationId": "...", "unreadCount": 0, "lastMessageId": "..." }`.
 Số 0 là không còn tin chưa đọc tại thời điểm query; tin đến sau request có thể làm số này tăng lại.
-FE dùng detail sau mutation để cập nhật cả conversation đang nằm ở trang cũ.
+`POST /api/v1/internal-mail/conversations/{id}/read` giữ mặc định `204`; caller mới có thể gửi
+`returnState=true` cùng `areaCode`/`throughMessageId` để nhận `200` gồm `conversationId`, `areaCode`,
+`throughMessageId`, `unreadCount`, `lastMessageId`, `lastMessageAt`, `areaUnreadCounts`.
+Query trạng thái kiểm tra lại quyền sau mutation, chỉ đếm các sibling được phép xem và không tải participants,
+capabilities hoặc metadata mẫu/báo giá. Thu hồi quyền trong lúc xử lý trả `404`, không dùng snapshot để vượt quyền.
+FE có snapshot detail hợp lệ chỉ vá unread vào snapshot; giữ preview/identity tin, tên và quyền tab, không đưa
+ID tin mới từ receipt vào preview cũ. BE cũ trả `204` hoặc caller chưa có snapshot tiếp tục đọc detail sau mutation.
+
+Detail dùng số unread thống nhất từ `DescribeAsync`; bước projection ban đầu bỏ phép đếm read-state lịch sử
+vốn sẽ bị ghi đè ngay sau đó. Helper projection giữ mặc định legacy cho các consumer chưa đi qua bước đối soát này;
+không đổi field, quyền hay nội dung response.
 
 PATCH preferences với `isArchived: true` đồng thời archive notification hiện có của thread cho chính employee,
 trong cùng transaction; mute không thay đổi nếu bỏ field. Khôi phục conversation không tự khôi phục notification
@@ -223,7 +340,9 @@ Base route: `/api/v1/internal-mail`
 Các filter chính của `GET /conversations`:
 
 - `relatedType`: enum `InternalMailRelatedType`; bỏ trống để lấy tất cả.
-- `unreadOnly`: chỉ lấy conversation có message hoặc inbox notification chưa đọc; lọc trước phân trang.
+- `unreadOnly`: chỉ lấy conversation có message hoặc inbox notification chưa đọc; lọc bằng kiểm tra tồn tại trước phân trang, không GROUP BY/COUNT để quyết định có unread. Số badge chính xác được đếm sau khi có ID trang hiện tại và truyền các ID đó vào nguồn query. Company/membership/observer và điều kiện fallback lịch sử giữ cùng quy tắc với số đếm.
+
+Với `unreadOnly`, handler tách lấy DISTINCT conversation keys đủ điều kiện ra khỏi câu SQL đếm tổng không phân trang. COUNT và lấy trang sau đó vẫn áp dụng đầy đủ outer company/role/group scope với tập key này; không trả key ra client, không bỏ kiểm tra quyền hoặc giả số tổng. Không có key thì trả trang rỗng sớm. Metadata icon join trực tiếp message được phép xem → link đúng conversation/message → notification cùng company, chỉ lấy ID/thời điểm/topic thuộc catalog nghiệp vụ; không join recipient state, không DISTINCT hoặc kéo body/payload. Metadata của message được phép xem không mở quyền inbox hay thay đổi unread. Các phase `unread-keys`, `total-count`, `page` ghi warning nếu mất từ 1.000 ms hoặc lỗi; log chỉ có phase, thời gian, số dòng hoặc loại exception, không SQL/parameter/ID/payload và không tự retry/tăng timeout.
 - `archived`: lấy inbox thường hoặc archive cá nhân.
 - `keyword` hoặc `search`, `pageNumber`, `pageSize`: search và phân trang. Search không phân biệt hoa/thường theo subject, mã liên kết, nội dung tin nhắn; với conversation `SampleRequest` còn tìm theo mã/tên khách hàng và tên Sale phụ trách (`SampleRequest.ManagerBy`). Metadata nguồn luôn bị giới hạn cùng company và Sample Request active.
 
@@ -312,8 +431,10 @@ Snapshot lấy trực tiếp từ message, không yêu cầu có sẵn read-stat
 SQL upsert truyền `ReadAt` bằng tham số PostgreSQL `timestamp without time zone`, đúng convention hiện có.
 Giữ nguyên giờ địa phương; không để raw SQL suy kiểu `timestamptz` rồi từ chối `DateTimeKind.Local`.
 Riêng `QuotationPricingApproved = 48` là sự kiện cấp conversation, publisher không tạo message tương ứng.
-Khi đọc thread, notification này được xác nhận nếu đúng conversation và được tạo không muộn hơn lúc request
-bắt đầu. Payload phải thiếu `messageId` hoặc có giá trị null; ID hỏng hoặc ID ngoài snapshot không được bỏ qua.
+Khi đọc thread với `throughMessageId`, API chụp ID notification duyệt giá đã tồn tại của đúng employee/company/conversation
+trước khi acknowledge. Notification trong tập này được xác nhận ngay cả khi CreatedDate lệch về tương lai so với đồng hồ API.
+Notification đến sau tập chụp vẫn chưa đọc, kể cả CreatedDate bị ghi lùi. Client cũ không gửi mốc message giữ giới hạn giờ request.
+Payload phải thiếu `messageId` hoặc có giá trị null; ID hỏng hoặc ID ngoài snapshot không được bỏ qua.
 Các topic khác vẫn yêu cầu liên kết message hợp lệ. Không thêm recipient hoặc phát lại notification.
 
 Mở lại thread vẫn đối chiếu các message đã đọc trước đó để sửa notification còn sót, kể cả notification không
@@ -322,11 +443,20 @@ unread-summary và inbox; không suy số tổng từ feed phân trang. Đây kh
 
 ## Reply Và Attachment
 
+Luồng video dùng chung attachment, upload có thể tiếp tục, enum media, API phát, worker FFmpeg,
+realtime và hướng dẫn cấu hình/release: [Đính kèm ảnh/video](media/README.md).
+`thumbnailUrl` vẫn chỉ dành cho ảnh; video dùng `posterUrl`, `videoInfoUrl`, `videoRetryUrl` và `playbackUrl`.
+
 Mỗi item từ API messages và message context trả thêm `replyTo` cùng `attachments`. `replyTo` là preview tối đa 300 ký tự của message gốc, người gửi, loại message và trạng thái xóa; nó có `null` nếu message không phải reply. Khi message gốc đã xóa, `replyTo.isDeleted = true` và `bodyPreview` rỗng để không trả lại nội dung đã xóa.
 
 Mỗi attachment trả `attachmentId`, `fileName`, `sizeBytes`, `contentType`, `kind`, `isImage`, `contentUrl`, `thumbnailUrl` và `downloadUrl`. Với ảnh, FE dùng `thumbnailUrl` để render danh sách/grid và chỉ dùng `contentUrl` khi người dùng mở ảnh gốc. File không phải ảnh có `thumbnailUrl = null`. Không dùng storage path nội bộ.
 
 Thumbnail được tạo WebP tối đa 480x480, giữ tỉ lệ và lưu trong storage cạnh file gốc. Ảnh mới tạo thumbnail ngay lúc upload; ảnh lịch sử được tạo và cache ở lần gọi thumbnail đầu tiên. Endpoint thumbnail vẫn kiểm tra company và participant active như endpoint file gốc, không public storage path và không cần migration.
+
+Bộ sinh ảnh thu nhỏ dùng chung với Gallery PLM chỉ lấy khung đầu của ảnh động,
+không phóng lớn ảnh nhỏ và kiểm tra giới hạn 40 triệu pixel trước khi decode với
+stream seekable. Ảnh gốc và thumbnail đã lưu giữ nguyên; quy tắc này áp dụng khi
+sinh thumbnail mới. Không thay quyền xem file, route hoặc nội dung tin nhắn.
 
 Sidebar ảnh/file dùng `GET /conversations/{conversationId}/attachments?kind=Image|File&pageNumber=1&pageSize=30`. API này đọc toàn bộ attachment chat trong conversation và, nếu conversation liên kết `SampleRequest`, tự gộp thêm tệp gốc của yêu cầu phối mẫu. Mỗi item có `source = Chat|SampleRequest`; item `Chat` kèm `messageId`, sender và `sentAt` để FE gọi message context rồi scroll về tin gốc, còn item `SampleRequest` có `messageId = null` và dùng nhãn nguồn `SampleRequest`.
 
@@ -502,3 +632,83 @@ but require a status-90 quotation save to replace their snapshot. The button is 
 confirm-sent authoritatively rechecks effective approved pricing and full comparison snapshot, so expiry or a
 source change can still reject confirmation and require reload/save. New comparison metadata is documented in
 quotation README section 12.
+
+### Đo hai API Báo giá chưa đọc
+
+`UnreadConversationIdsAsync` (17/11/2026) là đường lấy khóa của bộ lọc `conversations?unreadOnly=true` khi bật group storage. Tách own unread notification/badge policy → DISTINCT conversation ID trong SQL → đầy đủ `Conversations()` và membership (hoặc company observer), rồi hợp với tin legacy theo đúng mute/area/ownership và chống trùng liên kết. Reaction bị loại từ đầu như query cũ, không đổi chính sách actor/tác giả của inbox cá nhân. Handler vẫn áp dụng scope inbox, bộ lọc và sort trước phân trang như cũ. Không giới hạn số unread, không cache hoặc thay count; chỉ giữ khóa hội thoại trong bộ nhớ, không tải toàn bộ ID notification lịch sử ra Application. `LegacyUnreadCountsByConversationAsync` dùng chung bước legacy với summary để tránh hai chính sách fallback khác nhau. Nhánh storage cũ giữ query cũ; không tự bật/tắt config. Xem số đo và giới hạn tại `../Notifications/UNREAD_PERFORMANCE.md`.
+
+Fixture PostgreSQL cô lập với dữ liệu giả, 5 mẫu warm cho Developer/LabUser/SaleUser: conversations giảm từ 2.374–2.401 ms xuống 173–181 ms; feed giảm từ 261–262 ms xuống 127–129 ms. Đây là thời gian handler trên fixture, không phải HTTP server thật. Bottleneck chính của conversations là query icon nhân bản theo recipient rồi loại trùng; feed giới hạn candidate conversation thuộc Báo giá trước khi chọn sự kiện mới nhất, vẫn xét toàn bộ sự kiện trong mỗi thread để không làm hiện lại thông báo cũ. Test đối chiếu ID/thứ tự/nội dung feed, icon, unread và scope role trước/sau.
+
+Danh sách conversations ở mọi bộ lọc ghi một warning tổng khi từ 1.000 ms hoặc lỗi,
+với tên nhánh như `sample-conversations-all`, `sample-conversations-unread`,
+`quotation-conversations-all` và `quotation-conversations-unread`. Các phase gồm
+total-count, page, icons, badges, group-info, parents, sample-info, quotation-info,
+quick-groups và masking; unread-keys chỉ chạy khi lọc chưa đọc. Feed Báo giá chưa đọc
+tiếp tục có timing riêng. Không log SQL, parameter, ID hoặc nội dung; không tăng
+timeout, tự retry hay đổi DB. Dùng warning này để phân biệt truy vấn chậm với thời
+gian HTTP/mạng khi triển khai.
+
+### Xem thời gian ngay trong Network
+
+GET `/api/v1/internal-mail/conversations` và GET `/api/v1/notifications/feed` trả
+header `Server-Timing` cho người đã đăng nhập khi response HTTP 200, cả Development
+và môi trường triển khai. Không đổi body, query, quyền hoặc CORS. Đây chỉ là tên
+metric cố định và số mili giây, không có SQL, ID, keyword hay nội dung nghiệp vụ.
+
+- `app_pre_dispatch`: từ middleware đo thời gian đến sau CORS/authentication/
+  authorization, trước khi dispatch vào MVC; không gọi đây là thời gian auth thuần.
+- `nm_handler`: thời gian đoạn xử lý nghiệp vụ được đo trong Application.
+- `nm_total_count`, `nm_page`, `nm_badges`, `nm_sample_info`,
+  `nm_quick_groups`, v.v.: các phase thật sự đã chạy. Feed dùng `nm_feed_page`,
+  `nm_titles`, `nm_conversation_metadata`, v.v. Không cộng các tổng lồng nhau.
+- `app_total`: từ lúc vào middleware đến lúc bắt đầu gửi response headers, gồm
+  downstream pipeline và serialization trước headers. Không gồm thời gian chờ trước
+  middleware ở proxy/server, truyền qua mạng, tải hết body hoặc render FE.
+
+Trong DevTools mở Network → chọn đúng request → Timing hoặc Response Headers →
+`Server-Timing`. Nếu Network chờ lâu nhưng `app_total` ngắn, kiểm tra phần ngoài
+đoạn pipeline này; nếu `nm_handler` dài, dùng các phase để khoanh query. Header
+không tự xác nhận nguyên nhân mạng/DB, và cần triển khai bản BE này mới xuất hiện.
+
+Danh sách dùng lại số chưa đọc đã tính của các hội thoại trong trang để hiển thị
+nhóm nhanh Kỹ thuật/Giá. Bao gồm cả số 0 đã biết; nhóm chưa nằm trong trang vẫn
+được đếm riêng theo scope hiện hành. Chỉ dùng lại trong một request, không cache
+giữa người dùng/lần tải và không bỏ kiểm tra quyền nhóm. Không giả số badge về 0.
+
+Fixture SampleRequest dùng đúng handler danh sách, metadata thật và nhóm nhanh,
+kiểm tra cả GroupStorage bật/tắt trên PostgreSQL cô lập. Với 600 hội thoại và 4.800
+sự kiện giả, chế độ nhóm mới mất khoảng 0,34–0,47 giây; tăng lịch sử lên 38.400 sự
+kiện cho LabUser lên khoảng 1,60 giây. Đây là số đo handler trên fixture, không phải
+thời gian HTTP server thật. Chi phí tập trung ở icon và badge, không phải tên khách/
+Sale/category. Chưa dùng số đo này để khẳng định nguyên nhân mọi request 4 giây.
+
+Thử nghiệm đổi phép nối chuỗi UUID thành phép nối UUID có guard trên fixture lịch sử
+lớn giữ được link/count ở ca đối chiếu nhưng làm full handler timeout ở bước icon;
+đã loại, không áp dụng vào SQL production. Không suy ra cách tối ưu từ kiểu cột mà
+chưa kiểm chứng toàn query và dữ liệu trả về.
+
+### Thử nghiệm icon nghiệp vụ trước khi đổi sang notification cuối cùng
+
+Đoạn này lưu kết quả thử nghiệm cũ; handler danh sách hiện không chạy query icon riêng.
+Query icon cũ chọn toàn bộ bản ghi scalar chiến thắng trong mỗi nhóm, để EF sinh
+`ROW_NUMBER` thay cho lấy riêng Topic bằng scalar `First` tương quan. Vẫn chọn
+CreatedDate mới nhất, hòa thời gian thì ID lớn nhất; chỉ lấy ID/thời gian/topic/
+conversation ID. Nguồn dữ liệu vẫn kiểm tra quyền, company, message chưa xóa và
+đúng cặp conversation/message; không thêm recipient-state hoặc bỏ lịch sử.
+
+Phép đo xen kẽ 5 mẫu trên PostgreSQL cô lập, 38.400 sự kiện giả ở GroupStorage bật,
+50 dòng: query icon scalar cũ median 748,54 ms, bản xếp hạng 335,20 ms, cùng icon
+cho từng hội thoại. Đây là thời gian query fixture, không phải cam kết thời gian
+HTTP server thật. Handler hiện tại không còn xuất phase `nm_icons`.
+
+Tin chưa đọc trong DTO messages/context: chỉ `IsRead=false` khi tồn tại ReadState của employee hiện tại với IsRead=false. Không có ReadState không đồng nghĩa chưa đọc (ví dụ người xem im lặng hoặc tin lịch sử). Không tạo ReadState khi đọc query; giữ nguyên scope/quyền.
+
+### Badge BBG theo tin hiển thị — 13/11/2026
+
+- BBG và nhóm con của BBG chỉ tính notification unread liên kết đúng InternalMessage còn tồn tại, chưa xóa, trong đúng hội thoại và không phải tin do employee hiện tại gửi. Nhiều notification cùng tin chỉ tính một lần; đại diện summary là notification unread mới nhất theo CreatedDate/Id, bỏ reaction như trước.
+- Sự kiện cấp thread như QuotationPricingApproved thiếu MessageId không cộng badge chat, tổng chuông, category/event-group và không tự làm hội thoại lọt vào Chưa đọc. Không xóa notification, đổi recipient hay tự ghi trạng thái đọc khi query. Cách phát thông báo và lịch sử vẫn giữ nguyên.
+- Quyền company/membership/observer và fallback tin lịch sử giữ nguyên. Module khác và cách chọn sự kiện/icon đại diện không đổi.
+- SQL badge đếm distinct message cho BBG. Query suppression dùng window theo message, trả ID của các notification không được tính; summary và khóa unread cùng sử dụng policy. Không migration hoặc sửa dữ liệu lịch sử.
+- Feed bổ sung `conversationUnreadCount` nullable cho hội thoại BBG trong trang và được phép xem. FE phải nhận cả 0; khi có list/detail thì dùng `conversation.unreadCount`, không lấy Math.max với số notification ẩn. Chỉ đọc metadata trang hiện tại, không gọi API riêng từng thẻ.
+- GET unread-count dùng cùng tổng với unread-summary. Tổng toàn hệ thống vẫn do BE tính, không cộng từ một trang FE.
+- Test `QuotationBadgesCountOnlyDistinctVisibleMessages` dùng PostgreSQL cô lập, đủ President/Developer/LabUser/SaleUser và legacy/canonical storage. Bao gồm 1 tin với nhiều thông báo, thread-only, sai liên kết, deleted/own, module khác, feed và count/summary/category/keys trước sau đọc. SQL được đối chiếu với policy LINQ tham chiếu; notification ẩn vẫn còn nguyên.

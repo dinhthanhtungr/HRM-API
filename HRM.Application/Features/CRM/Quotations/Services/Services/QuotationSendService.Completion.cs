@@ -17,7 +17,7 @@ internal sealed partial class QuotationSendService
     private async Task<OperationResult> CompleteSentAsync(Quotation quotation, QuotationStatus previousStatus,
         CustomerInteractionType interactionType, string? reason, InternalConversation conversation, Guid[] participantIds,
         IReadOnlyCollection<Guid> recipientEmployeeIds, Guid actorId, string actorName, DateTime now,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, bool automatic = false)
     {
         quotation.Status = QuotationStatus.Sent;
         quotation.SentDate = now;
@@ -52,7 +52,8 @@ internal sealed partial class QuotationSendService
             SenderEmployeeId = actorId,
             MessageType = InternalMessageType.Action,
             Body =
-                $"{actorName} đã gửi báo giá {quotation.ExternalId} cho khách hàng " +
+                (automatic ? $"Hệ thống tự động đánh dấu đã gửi báo giá {quotation.ExternalId} sau khi {actorName} duyệt giá chuẩn. Khách hàng: "
+                    : $"{actorName} đã gửi báo giá {quotation.ExternalId} cho khách hàng ") +
                 $"{quotation.Customer.CustomerName}.\n\n{interactionContent}" +
                 (string.IsNullOrWhiteSpace(reason) ? string.Empty : $"\nLý do: {reason.Trim()}"),
             IsUrgent = false,
@@ -78,7 +79,7 @@ internal sealed partial class QuotationSendService
             QuotationId = quotation.QuotationId,
             FromStatus = previousStatus,
             ToStatus = QuotationStatus.Sent,
-            Note = null,
+            Note = automatic ? reason : null,
             ChangedBy = actorId,
             ChangedDate = now
         };
@@ -141,7 +142,8 @@ internal sealed partial class QuotationSendService
                 Severity = NotificationSeverity.Info,
                 Title = $"Đã gửi báo giá {quotation.ExternalId}",
                 Message =
-                    $"{actorName} đã gửi báo giá {quotation.ExternalId} cho " +
+                    (automatic ? $"Hệ thống tự động đánh dấu đã gửi báo giá {quotation.ExternalId} sau khi duyệt giá chuẩn. Khách hàng: "
+                        : $"{actorName} đã gửi báo giá {quotation.ExternalId} cho ") +
                     $"{quotation.Customer.CustomerName}.",
                 Link = $"/crm/quotations/{quotation.QuotationId}",
                 AggregateId = quotation.QuotationId,

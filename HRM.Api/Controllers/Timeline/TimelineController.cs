@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace HRM.Api.Controllers.Timeline;
 
 [ApiController]
-[Authorize]
+[Authorize(Policy = HRM.Api.Security.Authorization.SensitiveDataAuthorization.PolicyName)]
 [Route("api/v1/timeline")]
 public sealed class TimelineController : ControllerBase
 {

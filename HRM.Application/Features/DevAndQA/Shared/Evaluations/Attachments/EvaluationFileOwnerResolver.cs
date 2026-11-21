@@ -18,6 +18,13 @@ internal sealed class EvaluationFileOwnerResolver(IEvaluationFileSaveDbContext d
         if (parentId == Guid.Empty) throw new EvaluationRequestException("ParentId không hợp lệ.");
         switch (resource)
         {
+            case EvaluationFileResource.Lab:
+                access.Company(write, EvaluationTemplateType.Iqc);
+                var lab = await db.LabTests.Include(x => x.Results)
+                    .FirstOrDefaultAsync(x => x.Id == parentId && x.CompanyId == company, ct) ?? throw Missing();
+                return lab.Results.Select(x => new EvaluationFileOwner(x.Id, x.EvaluationStandardId,
+                    HRM.Application.Features.DevAndQA.LabTests.Services.Basic.BasicLabTestMapper.Configuration(x),
+                    x.AttachmentCollectionId, id => x.AttachmentCollectionId = id, true)).ToList();
             case EvaluationFileResource.Iqc:
                 access.Company(write, EvaluationTemplateType.Iqc);
                 var qc = await db.QCInputByQCs.FirstOrDefaultAsync(x => x.QCInputByQCId == parentId && x.WarehouseVoucherDetail.Voucher.CompanyId == company, ct)
@@ -55,7 +62,8 @@ internal sealed class EvaluationFileOwnerResolver(IEvaluationFileSaveDbContext d
         if (owner.CollectionId is not { } id) return;
         // Không cho metadata/file từ collection chung hoặc chat vượt scope qua một liên kết sai.
         var links = await db.IqcInspectionResults.CountAsync(x => x.AttachmentCollectionId == id, ct)
-            + await db.CoaCertificateResults.CountAsync(x => x.AttachmentCollectionId == id, ct);
+            + await db.CoaCertificateResults.CountAsync(x => x.AttachmentCollectionId == id, ct)
+            + await db.LabTestResults.CountAsync(x => x.AttachmentCollectionId == id, ct);
         if (links != 1 || await db.QCInputByQCs.AnyAsync(x => x.AttachmentCollectionId == id, ct) ||
             await db.AttachmentModels.AnyAsync(x => x.AttachmentCollectionId == id && x.Slot != HRM.Domain.Enums.Attachment.AttachmentSlot.EvaluationAttachment, ct))
             throw new EvaluationRequestException("Collection không thuộc riêng chỉ tiêu này.", 403);

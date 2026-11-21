@@ -5,7 +5,7 @@ namespace HRM.Application.Features.PLM.SampleRequests.SampleTrials;
 internal static class SampleTrialLifecycleRules
 {
     public static bool IsClosedRequest(string status)
-        => status is "Completed" or "Cancelled";
+        => status is "Completed" or "Cancelled" or "LabDeclined";
 
     public static string? ValidateCreate(string requestStatus, SampleTrialStatus status)
     {

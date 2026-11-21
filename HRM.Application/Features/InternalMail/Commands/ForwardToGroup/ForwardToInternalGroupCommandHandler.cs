@@ -56,7 +56,8 @@ internal sealed class ForwardToInternalGroupCommandHandler(
         {
             InternalConversationId = Guid.CreateVersion7(), CompanyId = user.CompanyId.Value,
             Subject = name, RelatedType = InternalMailRelatedType.ConversationCustom, RelatedId = rootId,
-            RelatedExternalId = source.RelatedExternalId, CreatedBy = user.EmployeeId!.Value,
+            RelatedExternalId = source.RelatedExternalId == InternalMailAreaAccessService.ResearchMarker ? null : source.RelatedExternalId,
+            CreatedBy = user.EmployeeId!.Value,
             CreatedAt = clock.Now, LastMessageAt = messageIds.Length == 0 ? root.CreatedAt : clock.Now
         };
         foreach (var employee in members)

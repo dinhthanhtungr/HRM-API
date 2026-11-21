@@ -71,10 +71,13 @@ Create VA ghép ghi chú người dùng và `Lab lưu ý:` từ nguồn, theo FE
 
 ## Nhánh tạo VA
 
-VU và chuẩn: VA Checking, PSV hiệu lực ngay, MFG Scheduling, đảm bảo lịch và
-giữ hàng. VA sản xuất cũ/mới hoặc VU cải tiến: VA New, PSV pending (hai ngày
-null), MFG FormulaRequested; không tạo lịch/reservation mới nhưng vẫn cập nhật
-lịch đã có. Không tự tạo chuẩn khi tạo VA. Tạo VA và dùng tồn đều ghi lại
+Mọi nguồn (VU, chuẩn, VA sản xuất cũ/mới và VU cải tiến) đều tạo VA New,
+PSV pending (ValidFrom/ValidTo null), MFG FormulaRequested; không tạo lịch hoặc
+reservation mới nhưng vẫn cập nhật lịch đã có. Các option đều trả
+requiresFormulaReview=true; kết quả tạo trả isSelectionEffective=false. LabUser Save hoàn
+tất VA thành Checking, kích hoạt PSV và MFG thành FormulaSuccess. PLPU lưu kế
+hoạch tiếp mới chuyển Scheduling, tạo lịch và đồng bộ giữ chỗ theo rule hiện hành.
+Không tự tạo chuẩn khi tạo VA. Tạo VA và dùng tồn đều ghi lại
 CreatedDate theo quyết định giữ legacy của chủ hệ thống.
 
 Copy giữ CustomerId=null, lượng yêu cầu=0 và giá thỏa thuận=0. Copy có vật tư
@@ -135,7 +138,15 @@ không tự phục dựng ItemType/ProductId bị thiếu trong snapshot cũ.
 GET `/api/v1/plm/manufacturing-formulas/production-orders/{id}/excel` chuyển
 ExportXmlByMpo: helper mang tên XML ở nguồn thực tế tạo XLSX 7 cột. VA là PSV
 mở mới nhất của MFG active cùng công ty; không yêu cầu khối lượng >0 vì chỉ
-xuất tỷ lệ. Giữ tên/mã live như spreadsheet nguồn, không xuất giá.
+xuất tỷ lệ. Giữ tên/mã live như spreadsheet nguồn, mặc định không xuất giá.
+Query `includePrices=true` thêm cột `Đơn giá lưu trên VA (VND/kg)` từ
+ManufacturingFormulaMaterial.UnitPrice, giữ số 0 là giá 0 và không lấy giá mới nhất.
+Chỉ role trong ApplicationRoleSets.PLM.ManufacturingPricedExcelExporters
+(President/Developer) cùng quyền ViewProductionOrders, xem vật tư và
+CanViewFormulaPrices mới được xuất; thiếu quyền bị từ chối trước khi query giá.
+Company/order/VA active và PSV mở mới nhất vẫn được scope như bản không giá.
+File XLSX trả trực tiếp với Content-Disposition attachment, không public URL;
+không ghi DB hay cập nhật lot. Không truyền includePrices giữ nguyên 7 cột cũ.
 
 Lab tạo VA qua POST `/api/v1/plm/manufacturing-formulas/production-orders/{id}`:
 FE gửi SourceFormulaId, SourceType, IsStandard, Note và Items cơ bản. BE kiểm tra

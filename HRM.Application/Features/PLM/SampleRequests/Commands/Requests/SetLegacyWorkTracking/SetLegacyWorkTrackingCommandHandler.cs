@@ -27,7 +27,8 @@ internal sealed class SetLegacyWorkTrackingCommandHandler(IPLMWriteDbContext db,
         var scope = await visibility.BuildScopeAsync(ct);
         var eligible = visibility.ApplySampleRequestVisibility(db.SampleRequests, db.Customers, scope)
             .Where(x => x.SampleRequestId == request.SampleRequestId && x.CompanyId == company && x.IsActive &&
-                x.CreatedDate < SampleRequestWorkScope.StartedAt && x.Customer.ExternalId != PLMCustomerRules.InternalCustomerExternalId);
+                x.CreatedDate < SampleRequestWorkScope.StartedAt &&
+                !x.WorkflowEvents.Any(e => e.CompanyId == x.CompanyId && e.EventType == Services.Workflow.SampleFollowUpRules.Started) && x.Customer.ExternalId != PLMCustomerRules.InternalCustomerExternalId);
         var record = await eligible.AsNoTracking().SingleOrDefaultAsync(ct);
         if (record is null) return OperationResult<Guid>.Fail("Legacy sample request is outside your scope.");
         if (record.UpdatedDate != request.ExpectedUpdatedDate)

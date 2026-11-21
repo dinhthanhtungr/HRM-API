@@ -1,5 +1,6 @@
 using HRM.Application.Abstractions.Persistence.PLM;
 using HRM.Application.Abstractions.Security;
+using HRM.Application.Commons.Authorization;
 using HRM.Application.Commons.Models;
 using HRM.Application.Features.DevAndQA.ProductInspections.Dtos;
 using MediatR;
@@ -29,11 +30,28 @@ internal sealed class GetProductInspectionByIdQueryHandler
         if (_currentUser.CompanyId is not { } companyId || companyId == Guid.Empty)
             return OperationResult<ProductInspectionDetailDto>.Fail("Current company is invalid.");
 
-        var item = await _dbContext.ProductInspections
-            .AsNoTracking()
-            .ForCompany(_dbContext, companyId)
-            .Where(x => x.Id == request.Id)
-            .Select(x => new ProductInspectionDetailDto
+        var query = _dbContext.ProductInspections.AsNoTracking()
+            .ForCompany(_dbContext, companyId).Where(x => x.Id == request.Id);
+        if (ImsAccountRestrictions.AppliesTo(_currentUser))
+        {
+            var tracking = await query.Select(x => new ProductInspectionDetailDto
+            {
+                Id = x.Id,
+                ExternalId = x.ExternalId,
+                BatchId = x.BatchId,
+                ProductName = x.ProductName,
+                ProductCode = x.ProductCode,
+                Weight = x.Weight,
+                ManufacturingDate = x.ManufacturingDate,
+                ExpiryDate = x.ExpiryDate,
+                DeliveryAccepted = x.DeliveryAccepted,
+                CreateDate = x.CreateDate
+            }).FirstOrDefaultAsync(cancellationToken);
+
+            return ToResult(tracking);
+        }
+
+        var item = await query.Select(x => new ProductInspectionDetailDto
             {
                 Id = x.Id,
                 ProductId = x.ProductId,
@@ -107,8 +125,11 @@ internal sealed class GetProductInspectionByIdQueryHandler
                 .Where(x => x.Id == standardId && x.CompanyId == companyId)
                 .Select(ProductInspectionQueries.Specifications).FirstOrDefaultAsync(cancellationToken);
 
-        return item is null
+        return ToResult(item);
+    }
+
+    private static OperationResult<ProductInspectionDetailDto> ToResult(ProductInspectionDetailDto? item) =>
+        item is null
             ? OperationResult<ProductInspectionDetailDto>.Fail("Product inspection was not found or is outside your company.")
             : OperationResult<ProductInspectionDetailDto>.Ok(item);
-    }
 }

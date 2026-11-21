@@ -13,9 +13,14 @@ namespace HRM.Application.Features.Warehouse.Queries.GetStockAvailable;
 public sealed class GetStockAvailableQuery
     : PaginationQuery, IRequest<OperationResult<PagedResult<StockAvailableDto>>>
 {
+    internal bool ExportAll { get; init; }
+
     public StockType[] StockTypes { get; init; } = [];
 
     public bool OnlyAvailableLeZero { get; init; }
 
     public decimal? AvailableMax { get; init; }
+
+    // Internal batch consumers only; controllers do not bind this property.
+    internal string[]? ExactCodes { get; init; }
 }

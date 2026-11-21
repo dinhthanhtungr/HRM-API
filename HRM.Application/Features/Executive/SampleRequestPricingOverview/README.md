@@ -1,6 +1,14 @@
 # Sample Request Pricing Overview
 
+Summary điều hành loại `SampleRequest.RequestType = SemiFinished` trước count, lọc giá và phân trang, kể cả khi tìm đúng mã NVL. Yêu cầu mẫu thường và loại null legacy vẫn được giữ; bán thành phẩm nội bộ chỉ xuất hiện trong luồng NVL riêng.
+
+`product.usageRate` trả nullable từ Product.UsageRate trong cả projection tổng quan và Lab, giữ nguyên đơn vị phần trăm và giá trị null. Chỉ thêm field đọc để FE hiển thị cạnh tên; không thêm query, không đổi scope/quyền hoặc cách tính giá.
+
 ACCUser được đọc Overview và Merchandise Order Price History như President, gồm phạm vi khách hàng toàn công ty qua BuildReadScopeAsync. Company/employee context vẫn bắt buộc. Quyền mở trao đổi Sample Request dùng cùng nhóm reader điều hành; khu vực riêng tiếp tục bắt buộc membership.
+
+Yêu cầu báo giá mới nằm trong nhóm Giá. `SelectLabPriceQuoteRequests` nhận metadata từ
+nhóm Giá active và root SampleRequest active cùng company để giữ nhóm cần duyệt giá hoạt động;
+vẫn nhận tin Chung cũ, không sao chép body/giá vào Chung và không tự chuyển tin lịch sử.
 
 ## API
 
@@ -388,3 +396,7 @@ message được worker gửi hoặc retry muộn không tạo yêu cầu duyệ
 Message đã liên kết sự kiện được loại khỏi nhánh legacy để không tính đôi. Message cũ chưa có
 sự kiện vẫn dùng SentAt theo contract trước đây. Scope CompanyId/SampleRequestId và các nguyên nhân
 NeedsPricing khác giữ nguyên. Không có thay đổi quyền, payload giá hoặc snapshot báo giá.
+
+## Sale yêu cầu báo giá lại từ Theo dõi mẫu
+
+`NeedsPricing` nhận cả message `SampleRequestPriceQuoteRequested` có nguồn `Explicit` (Sale chọn đúng VU để yêu cầu BGD duyệt lại) bên cạnh `LabConfirmed`. Chỉ nhận hội thoại TP active đúng công ty và message chưa xóa. Giá đã duyệt trước thời điểm yêu cầu không giải quyết yêu cầu mới; phiên bản Approved mới hơn hoặc bằng mốc yêu cầu sẽ giải quyết nó. Áp dụng trước phân trang, không dựa vào danh sách đã tải ở FE. Yêu cầu báo giá lại không sửa NVL/trạng thái VU hay giao việc làm lại cho Lab; các giới hạn người xem giá hiện hành vẫn áp dụng.

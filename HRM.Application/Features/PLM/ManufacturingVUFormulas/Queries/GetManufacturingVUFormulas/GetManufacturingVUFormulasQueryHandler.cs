@@ -48,7 +48,15 @@ internal sealed class GetManufacturingVUFormulasQueryHandler
             query = query.Where(x => x.status == status);
         }
 
-        if (request.NormalizedKeyword is { } keyword)
+        var smartSearch = HRM.Application.Commons.Searching.SmartSearch.For(query, fields => [
+            fields.Code("formulaCode", x => x.Formula.ExternalId, "Công thức", "Formula", "VU"),
+            fields.Code("colourCode", x => x.Formula.Product.ColourCode, "ColorCode", "Mã màu"),
+            fields.Name("productName", x => x.Formula.Product.Name, "Tên sản phẩm", "Product name"),
+            fields.Codes("sampleRequestCode", x => x.Formula.Product.SampleRequests.Where(s => s.IsActive && s.CompanyId == companyId),
+                s => s.ExternalId, "TP Code", "Mã TP")
+        ]);
+        query = smartSearch.ApplyRequest(query, request.NormalizedKeyword, request, out var smartKeyword);
+        if (smartKeyword is { } keyword)
         {
             query = query.Where(x =>
                 EF.Functions.ILike(x.Formula.ExternalId, $"%{keyword}%") ||
@@ -61,6 +69,8 @@ internal sealed class GetManufacturingVUFormulasQueryHandler
                     EF.Functions.ILike(sampleRequest.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter)));
         }
 
+        if (await smartSearch.SuggestionsAsync<ManufacturingVUFormulaListItemDto>(query, request, cancellationToken) is { } suggestions)
+            return OperationResult<PagedResult<ManufacturingVUFormulaListItemDto>>.Ok(suggestions);
         query = request.NormalizedSortBy?.ToLowerInvariant() switch
         {
             "formulaexternalid" => request.SortDescending

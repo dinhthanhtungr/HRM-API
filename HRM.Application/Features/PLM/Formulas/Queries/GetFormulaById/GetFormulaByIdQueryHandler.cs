@@ -10,6 +10,7 @@ using HRM.Application.Commons.Pricing.Services;
 using HRM.Application.Features.CRM.Quotations.Services;
 using HRM.Application.Features.PLM.Formulas.Dtos.Commons;
 using HRM.Application.Features.PLM.Formulas.Helpers;
+using HRM.Application.Features.PLM.Formulas.Services;
 using HRM.Application.Features.PLM.Materials.Rules;
 using HRM.Domain.Enums.CustomerEnum;
 using HRM.Domain.Enums.Formulas;
@@ -275,6 +276,8 @@ internal sealed class GetFormulaByIdQueryHandler
                     : "MaterialPriceMissing";
         var pricing = enginePricing?.Calculation;
 
+        var lastDeliveryKinds = await FormulaLastDeliveryReader.ReadAsync(_dbContext, companyId,
+            formula.Status == "SampleSent" ? [formula.FormulaId] : [], cancellationToken);
         return new FormulaInformationDto
         {
             FormulaId = formula.FormulaId,
@@ -290,6 +293,7 @@ internal sealed class GetFormulaByIdQueryHandler
             SentBy = formula.SentBy,
             SentByName = formula.SentByName,
             SentDate = formula.SentDate,
+            LastDeliveryKind = lastDeliveryKinds.GetValueOrDefault(formula.FormulaId),
 
             TotalPrice = realtimeMaterialCost,
             RealtimeMaterialCost = realtimeMaterialCost,

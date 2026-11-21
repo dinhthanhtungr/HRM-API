@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace HRM.Api.Controllers.PLM;
 
 [ApiController]
-[Authorize]
+[Authorize(Policy = HRM.Api.Security.Authorization.SensitiveDataAuthorization.PolicyName)]
 [Route("api/v1/plm/sample-requests/{sampleRequestId:guid}/attachments")]
 public sealed class SampleRequestAttachmentsController : ControllerBase
 {

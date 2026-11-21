@@ -53,6 +53,7 @@ public static class NotificationTopicCatalog
             TopicNotifications.ManufacturingFormulaAdjustmentCreated => Production("mfg.formula_adjustment.created", "formula", "ManufacturingFormula"),
 
             TopicNotifications.SampleRequestMessageCreated => SampleRequest("plm.sample_request.message.created", "message"),
+            TopicNotifications.SampleRequestLabNoteRecorded => SampleRequest("plm.sample_request.lab_note.recorded", "message"),
             TopicNotifications.SampleRequestPriceQuoteRequested => SampleRequest("plm.sample_request.price_quote.requested", "quotation"),
             TopicNotifications.SampleRequestCustomerPriceFeedbackRecorded => SampleRequest("plm.sample_request.customer_price.feedback_recorded", "quotation"),
             TopicNotifications.SampleRequestChangeRequested => SampleRequest("plm.sample_request.change.requested", "change"),
@@ -70,6 +71,7 @@ public static class NotificationTopicCatalog
             TopicNotifications.MerchandiseOrderDeliveryPaused => SalesOrder("sales.merchandise_order.delivery.paused", "delivery"),
             TopicNotifications.MerchandiseOrderDeliveryResumed => SalesOrder("sales.merchandise_order.delivery.resumed", "delivery"),
             TopicNotifications.QuotationSendConfirmationRequested => Quotation("crm.quotation.send_confirmation.requested", "approval"),
+            TopicNotifications.QuotationSendConfirmationRejected => Quotation("crm.quotation.send_confirmation.rejected", "approval"),
             TopicNotifications.QuotationSent => Quotation("crm.quotation.sent", "status"),
             TopicNotifications.QuotationMessageCreated => Quotation("crm.quotation.message.created", "message"),
             TopicNotifications.QuotationRequested => Quotation("crm.quotation.requested", "request"),

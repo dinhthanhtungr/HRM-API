@@ -44,8 +44,9 @@ internal static class SelectableDeliveryKeywordSearch
                 EF.Functions.ILike(x.Order.PhoneSnapshot, pattern, PostgresSearchPattern.EscapeCharacter) ||
                 EF.Functions.ILike(x.Detail.ProductExternalIdSnapshot, pattern, PostgresSearchPattern.EscapeCharacter) ||
                 EF.Functions.ILike(x.Detail.ProductNameSnapshot, pattern, PostgresSearchPattern.EscapeCharacter) ||
-                (x.Detail.Product.IsActive && x.Detail.Product.CompanyId == companyId &&
+                (x.Detail.Product != null && x.Detail.Product.CompanyId == companyId &&
                     (EF.Functions.ILike(x.Detail.Product.ColourCode ?? string.Empty, pattern, PostgresSearchPattern.EscapeCharacter) ||
+                     EF.Functions.ILike(x.Detail.Product.Name ?? string.Empty, pattern, PostgresSearchPattern.EscapeCharacter) ||
                      x.Detail.Product.SampleRequests.Any(sr => sr.IsActive && sr.CompanyId == companyId &&
                          EF.Functions.ILike(sr.ExternalId, pattern, PostgresSearchPattern.EscapeCharacter)))) ||
                 EF.Functions.ILike((x.Detail.Comment ?? string.Empty), pattern, PostgresSearchPattern.EscapeCharacter);

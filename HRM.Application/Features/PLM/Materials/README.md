@@ -16,6 +16,15 @@ Endpoint tráº£ danh sÃ¡ch phÃ¢n trang dÃ¹ng khi thÃªm dÃ²ng vÃ o 
 Khi tra Product, `keyword` hỗ trợ tên, mã màu/mã Product, `SampleRequest.ExternalId` active và
 `Formula.ExternalId` active cùng company.
 
+Lookup không tự sinh toàn bộ biến thể Băm/Nghiền khi thiếu từ khóa công đoạn.
+`keyword=009` tìm mã/tên thực đã tồn tại. `keyword=009 Băm` hoặc `009 Nghiền`
+(cũng nhận `bam`/`nghien`, `009-B`/`009-N`, hậu tố `_B`/`_N` cũ) lọc loại tương ứng,
+bỏ từ khóa công đoạn trước khi tìm mã/tên gốc, rồi bổ sung lựa chọn dự kiến nếu chưa có mã thật.
+Ví dụ URL: `GET /api/v1/plm/formulas/item-lookup?categoryId={id}&keyword=009%20B%C4%83m&pageNumber=1&pageSize=15`.
+Truy vấn chỉ thêm một nhánh dự kiến khi người dùng chỉ định công đoạn; đếm trên ID,
+lọc/phân trang tại DB, tải giá theo batch cho trang hiện tại. Thứ tự có ID cuối cùng để ổn định khi ngày/tên trùng.
+FE Sample Request tự tải trang đầu các mã đã có khi mở dropdown; biến thể dự kiến vẫn cần từ khóa công đoạn.
+
 NVL pháº£i active vÃ  thuá»™c `CurrentUser.CompanyId`. Product pháº£i active, thuá»™c cÃ¹ng cÃ´ng ty, cÃ³ tÃªn/mÃ£ mÃ u
 vÃ  cÃ³ Ã­t nháº¥t má»™t Sample Request active á»Ÿ tráº¡ng thÃ¡i `SampleSent` hoáº·c `Completed`. MÃ£ `externalId` cá»§a
 Product láº¥y tá»« Sample Request há»£p lá»‡ má»›i nháº¥t; `categoryCode` cá»§a Product tráº£ `KH` Ä‘á»ƒ giá»¯ contract nghiá»‡p vá»¥ cÅ©.

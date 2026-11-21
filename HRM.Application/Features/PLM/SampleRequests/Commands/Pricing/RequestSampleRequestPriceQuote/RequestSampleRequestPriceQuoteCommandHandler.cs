@@ -100,9 +100,11 @@ internal sealed class RequestSampleRequestPriceQuoteCommandHandler
             return OperationResult<SendInternalMessageResultDto>.Fail(
                 "Sample Request was not found or is outside your visibility scope.");
         }
+        if (await Services.Workflow.SampleRequestLabPauseRules.IsPausedAsync(_dbContext, companyId, sampleRequest.SampleRequestId, cancellationToken))
+            return OperationResult<SendInternalMessageResultDto>.Fail(Services.Workflow.SampleRequestLabPauseRules.PausedMessage);
 
         if (string.Equals(sampleRequest.Status, nameof(SampleRequestStatus.New), StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(sampleRequest.Status, nameof(SampleRequestStatus.Cancelled), StringComparison.OrdinalIgnoreCase))
+            string.Equals(sampleRequest.Status, nameof(SampleRequestStatus.Cancelled), StringComparison.OrdinalIgnoreCase) || sampleRequest.Status == "LabDeclined")
         {
             return OperationResult<SendInternalMessageResultDto>.Fail(
                 "A price quote can only be requested after the Sample Request starts processing.");

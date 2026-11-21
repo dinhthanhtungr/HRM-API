@@ -81,6 +81,31 @@ public sealed class DeveloperSampleWorkMiddlewareTests
         Assert.Equal(0, calls);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ImsActorOrTargetIsRejectedBeforeAnyWriteOrExecution(bool imsActor)
+    {
+        var context = Context("Developer", "/api/v1/plm/sample-requests");
+        context.Request.Method = "PATCH";
+        if (imsActor) ((ClaimsIdentity)context.User.Identity!).AddClaim(new Claim(ClaimTypes.Role, "imsuser"));
+        var calls = 0;
+        var service = Proxy.Create((_, company, employee) =>
+        {
+            calls++;
+            return new AuthenticatedUserDto
+            {
+                UserId = Guid.NewGuid(), CompanyId = company, EmployeeId = employee, Roles = ["IMSUser", "LabUser"]
+            };
+        });
+
+        await new DeveloperSampleWorkMiddleware(_ => throw new Exception("Must not execute"))
+            .InvokeAsync(context, service, null!);
+
+        Assert.Equal(403, context.Response.StatusCode);
+        Assert.Equal(imsActor ? 0 : 1, calls);
+    }
+
     [Fact]
     public async Task UnavailableOrOutOfCompanyEmployeeIsForbidden()
     {
@@ -91,15 +116,18 @@ public sealed class DeveloperSampleWorkMiddlewareTests
         Assert.Equal(403, context.Response.StatusCode);
     }
 
-    [Fact]
-    public async Task TargetPrincipalReplacesDeveloperAndIsRestoredAfterRequest()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task TargetPrincipalReplacesDeveloperAndIsRestoredAfterRequest(bool targetHasDeveloperRole)
     {
         var context = Context("Developer", "/api/v1/plm/sample-requests");
         var original = context.User;
         var targetId = Guid.NewGuid();
         var service = Proxy.Create((actor, company, employee) => new AuthenticatedUserDto
         {
-            UserId = targetId, EmployeeId = employee, CompanyId = company, Roles = ["SaleUser"],
+            UserId = targetId, EmployeeId = employee, CompanyId = company,
+            Roles = targetHasDeveloperRole ? ["SaleUser", "Developer"] : ["SaleUser"],
             UsesDatabasePermissions = true, Permissions = ["test.read"]
         });
         var called = false;
@@ -107,7 +135,7 @@ public sealed class DeveloperSampleWorkMiddlewareTests
         {
             called = true;
             Assert.True(ctx.User.IsInRole("SaleUser"));
-            Assert.False(ctx.User.IsInRole("Developer"));
+            Assert.Equal(targetHasDeveloperRole, ctx.User.IsInRole("Developer"));
             Assert.Equal(targetId.ToString(), ctx.User.FindFirstValue(ClaimTypes.NameIdentifier));
             Assert.Equal("test.read", ctx.User.FindFirstValue("permission"));
             return Task.CompletedTask;

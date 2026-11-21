@@ -57,6 +57,21 @@ internal sealed class ProductPricingSourceQueryService
                 .ToArray());
     }
 
+    public async Task<IReadOnlyDictionary<Guid, IReadOnlyList<ProductPricingSourceOptionDto>>> LoadForSampleTrialsVisibleAsync(
+        IReadOnlyCollection<(Guid ProductId, Guid? FormulaId)> trials,
+        Guid companyId,
+        string currency,
+        PricingAccessDecision access,
+        CancellationToken cancellationToken)
+    {
+        if (!access.CanViewSystemCalculatedPrice)
+            return new Dictionary<Guid, IReadOnlyList<ProductPricingSourceOptionDto>>();
+        var resolved = await _realtimeSourceQueryService.LoadForSampleTrialsAsync(trials, companyId, currency, cancellationToken);
+        return resolved.ToDictionary(pair => pair.Key,
+            pair => (IReadOnlyList<ProductPricingSourceOptionDto>)pair.Value
+                .Select(source => ProductPricingSourceVisibility.Apply(source, access)).ToArray());
+    }
+
     private static ProductPricingSourceOptionDto ToSaleSource(
         ProductPricingSourceOptionDto source)
         => new()

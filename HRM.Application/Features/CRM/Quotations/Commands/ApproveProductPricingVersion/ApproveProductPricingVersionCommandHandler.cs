@@ -163,6 +163,10 @@ internal sealed class ApproveProductPricingVersionCommandHandler
         entity.UpdatedBy = employeeId;
         entity.UpdatedDate = now;
 
+        // Save the durable follow-up with the approval; sending runs later and cannot fail this approval request.
+        _dbContext.OutboxMessages.Add(QuotationPricingApprovalAutoSend.Create(
+            companyId, entity.ProductId, entity.ProductPricingVersionId, employeeId, now));
+        await _approvalNotificationService.QueueSampleRequestApprovalsAsync(entity, cancellationToken);
         try { await _dbContext.SaveChangesAsync(cancellationToken); }
         catch (DbUpdateConcurrencyException exception)
         {

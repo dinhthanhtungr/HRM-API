@@ -9,10 +9,23 @@ namespace HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestSa
 
 internal static class SampleRequestSampleTrialReportQueryRules
 {
+    internal static IQueryable<SampleRequestSampleTrialReportRow> HistoryRows(
+        IQueryable<HRM.Domain.Entities.SampleRequestSchema.SampleRequest> visibleRequests,
+        IQueryable<HRM.Domain.Entities.SampleRequestSchema.SampleRequestSampleTrial> activeTrials)
+        => from request in visibleRequests
+           join trial in activeTrials on request.SampleRequestId equals trial.SampleRequestId into trials
+           from trial in trials.DefaultIfEmpty()
+           select new SampleRequestSampleTrialReportRow
+           {
+               SampleRequest = request, Trial = trial,
+               TrialCount = activeTrials.Count(x => x.SampleRequestId == request.SampleRequestId)
+           };
+
     // The persisted action payload always includes formulaId, including JSON null for ProductOnly.
     internal static IQueryable<InternalMessage> FormulaPriceQuoteRequests(IQueryable<InternalMessage> messages)
         => messages.Where(message => !message.IsDeleted && message.Conversation.IsActive &&
-            message.Conversation.RelatedType == InternalMailRelatedType.SampleRequest &&
+            (message.Conversation.RelatedType == InternalMailRelatedType.SampleRequest ||
+             message.Conversation.RelatedType == InternalMailRelatedType.ConversationPricing) &&
             message.PayloadJson != null &&
             EF.Functions.JsonContains(message.PayloadJson,
                 "{\"contentType\":\"SampleRequestPriceQuoteRequested\",\"priceQuoteRequest\":{}}") &&
@@ -28,9 +41,9 @@ internal static class SampleRequestSampleTrialReportQueryRules
             if (request.DailyWorkView == SampleRequestDailyView.All)
                 return query;
             if (request.DailyWorkView == SampleRequestDailyView.Tracking)
-                return query.Where(x => x.SampleRequest.Status != "Completed" && x.SampleRequest.Status != "Cancelled");
+                return query.Where(x => x.SampleRequest.Status != "Completed" && x.SampleRequest.Status != "Cancelled" && x.SampleRequest.Status != "LabDeclined");
             if (request.DailyWorkView is SampleRequestDailyView.SalePending or SampleRequestDailyView.SaleToday)
-                return query.Where(x => x.SampleRequest.Status != "Completed" && x.SampleRequest.Status != "Cancelled" &&
+                return query.Where(x => x.SampleRequest.Status != "Completed" && x.SampleRequest.Status != "Cancelled" && x.SampleRequest.Status != "LabDeclined" &&
                     ((x.SampleRequest.Status == "WaitingCustomerPriceConfirmation" && x.LabFormulaConfirmedAt.HasValue) ||
                      (x.Trial != null && (x.Trial.Status == SampleTrialStatus.SampleSent ||
                       x.Trial.Status == SampleTrialStatus.WaitingCustomerFeedback || x.Trial.Status == SampleTrialStatus.PriceQuote)) ||
@@ -40,11 +53,11 @@ internal static class SampleRequestSampleTrialReportQueryRules
 
             if (request.DailyWorkView == SampleRequestDailyView.Delay)
                 return query.Where(x => x.SampleRequest.Status != "Completed" &&
-                    x.SampleRequest.Status != "Cancelled" && x.SampleRequest.IsDelayed == true);
+                    x.SampleRequest.Status != "Cancelled" && x.SampleRequest.Status != "LabDeclined" && x.SampleRequest.IsDelayed == true);
 
             // Delay thủ công có thể đưa hồ sơ Lab đã xong trở lại danh sách cần theo dõi.
             return query.Where(x =>
-                x.SampleRequest.Status != "Completed" && x.SampleRequest.Status != "Cancelled" &&
+                x.SampleRequest.Status != "Completed" && x.SampleRequest.Status != "Cancelled" && x.SampleRequest.Status != "LabDeclined" &&
                 (x.SampleRequest.IsDelayed == true ||
                  (
                  (x.Trial == null || (x.Trial.Status != SampleTrialStatus.Approved &&

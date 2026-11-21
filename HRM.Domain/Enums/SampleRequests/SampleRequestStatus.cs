@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -16,6 +16,7 @@ namespace HRM.Domain.Enums.SampleRequests
         Cancelled,
         New,
         FormulaUpdateRequested,
-        WaitingCustomerPriceConfirmation
+        WaitingCustomerPriceConfirmation,
+        LabDeclined
     }
 }

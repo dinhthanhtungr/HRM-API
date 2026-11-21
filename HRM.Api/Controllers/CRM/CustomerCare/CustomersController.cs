@@ -13,7 +13,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace HRM.Api.Controllers.CRM.CustomerCare;
 
 [ApiController]
-[Authorize]
+[Authorize(Policy = HRM.Api.Security.Authorization.SensitiveDataAuthorization.PolicyName)]
 [Route("api/v1/crm/customers")]
 public sealed class CustomersController : ControllerBase
 {

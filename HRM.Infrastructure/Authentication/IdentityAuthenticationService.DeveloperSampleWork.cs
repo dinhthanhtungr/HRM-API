@@ -26,8 +26,7 @@ public sealed partial class IdentityAuthenticationService
             return null;
         var authorization = await GetAuthorizationAsync(user, cancellationToken);
         if (!authorization.Roles.Any(x => x is ApplicationRoles.Lab.LabUser or
-                ApplicationRoles.Lab.LabAdmin or ApplicationRoles.Sales.SaleUser) ||
-            authorization.Roles.Contains(ApplicationRoles.Developer, StringComparer.OrdinalIgnoreCase))
+                ApplicationRoles.Lab.LabAdmin or ApplicationRoles.Sales.SaleUser or ApplicationRoles.Sales.SaleAdmin))
             return null;
         return new AuthenticatedUserDto
         {

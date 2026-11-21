@@ -52,6 +52,7 @@ public sealed record UpdatePurchaseOrderNotesRequest
 
 public class PurchaseOrderListItemDto
 {
+    public PurchaseReturnProgressDto? ReturnProgress { get; set; }
     public Guid PurchaseOrderId { get; init; }
     public string ExternalId { get; init; } = string.Empty;
     public string Status { get; init; } = string.Empty;

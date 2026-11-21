@@ -9,6 +9,17 @@ public static class ApplicationPermissionRoleSets
     public static IReadOnlyCollection<string> GetRoles(string permission)
         => permission switch
         {
+            ApplicationPermissions.PLM.ViewSampleRequestTracking => [ApplicationRoles.InternalSystems.IMSUser],
+            ApplicationPermissions.PLM.ViewSaleOrderTracking => [ApplicationRoles.InternalSystems.IMSUser],
+            ApplicationPermissions.PLM.ViewProductionTracking => [ApplicationRoles.InternalSystems.IMSUser],
+            ApplicationPermissions.PLM.ViewSampleProductionTracking => [ApplicationRoles.InternalSystems.IMSUser],
+            ApplicationPermissions.Warehouse.ViewStockTracking => [ApplicationRoles.InternalSystems.IMSUser],
+            ApplicationPermissions.Dispatch.ViewDeliveryTracking => [ApplicationRoles.InternalSystems.IMSUser],
+            ApplicationPermissions.Reports.ViewDeliveryOtd => [ApplicationRoles.InternalSystems.IMSUser],
+            ApplicationPermissions.Reports.ViewDeliveryFinish => [ApplicationRoles.InternalSystems.IMSUser],
+            ApplicationPermissions.CRM.ViewCustomerTracking => [ApplicationRoles.InternalSystems.IMSUser],
+            ApplicationPermissions.Quotations.ViewTracking => [ApplicationRoles.InternalSystems.IMSUser],
+            ApplicationPermissions.Warehouse.ViewVoucherSuppliers => ApplicationRoleSets.Warehouse.VoucherSupplierViewers,
             ApplicationPermissions.PLM.ManageSampleWorkSchedule => ApplicationRoleSets.PLM.SampleWorkScheduleManagers,
             ApplicationPermissions.DevAndQA.ViewWorkflowNotificationJobs => ApplicationRoleSets.DevAndQA.WorkflowNotificationJobAdministrators,
             ApplicationPermissions.DevAndQA.RetryWorkflowNotificationJobs => ApplicationRoleSets.DevAndQA.WorkflowNotificationJobAdministrators,
@@ -58,11 +69,16 @@ public static class ApplicationPermissionRoleSets
                 ApplicationRoleSets.Pricing.Managers,
             ApplicationPermissions.Pricing.Approve =>
                 ApplicationRoleSets.Pricing.Approvers,
+            ApplicationPermissions.PLM.ViewMaterialProcessing => ApplicationRoleSets.PLM.FormulaMaterialViewers,
+            ApplicationPermissions.PLM.CreateMaterialProcessing => ApplicationRoleSets.PLM.MaterialProcessingCreators,
+            ApplicationPermissions.PLM.ManageMaterialProcessing => ApplicationRoleSets.PLM.ManufacturingFormulaEditors,
             ApplicationPermissions.PLM.CreateProductionOrders => ApplicationRoleSets.PLM.ProductionOrderCreators,
             ApplicationPermissions.PLM.ExtractMaterialDocuments => ApplicationRoleSets.PLM.MaterialDocumentExtractors,
             ApplicationPermissions.PLM.ViewProductionOrders => ApplicationRoleSets.PLM.ProductionOrderViewers,
             ApplicationPermissions.PLM.CheckProductionOrders => ApplicationRoleSets.PLM.ProductionOrderCheckers,
             ApplicationPermissions.PLM.ManageProductionOrders => ApplicationRoleSets.PLM.ProductionOrderManagers,
+            ApplicationPermissions.PLM.EditRequestedDeliverySchedule => ApplicationRoleSets.DeliverySchedules.RequestEditors,
+            ApplicationPermissions.PLM.EditPromisedDeliverySchedule => ApplicationRoleSets.DeliverySchedules.PromiseEditors,
             ApplicationPermissions.PLM.EditProductionOrderRequirement => ApplicationRoleSets.PLM.ProductionOrderRequirementEditors,
             ApplicationPermissions.PLM.ManageManufacturingFormulas => ApplicationRoleSets.PLM.ManufacturingFormulaEditors,
             ApplicationPermissions.PLM.ManageManufacturingAdjustments => ApplicationRoleSets.PLM.ManufacturingAdjustmentEditors,
@@ -83,6 +99,8 @@ public static class ApplicationPermissionRoleSets
             ApplicationPermissions.Purchasing.ManageCatalog =>
                 ApplicationRoleSets.Modules.Purchasing,
             ApplicationPermissions.Quotations.ConfirmSent => ApplicationRoleSets.Quotations.SendConfirmers,
+            ApplicationPermissions.CRM.ManageCustomerSampleSharing => ApplicationRoleSets.CRM.SampleSharingManagers,
+            ApplicationPermissions.CRM.AdminCustomerSampleSharing => ApplicationRoleSets.CRM.SampleSharingCompanyManagers,
             _ => []
         };
 }

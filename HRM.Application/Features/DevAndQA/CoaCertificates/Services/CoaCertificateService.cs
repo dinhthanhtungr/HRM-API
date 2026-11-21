@@ -53,27 +53,56 @@ internal sealed partial class CoaCertificateService(IEvaluationDbContext db,
     }
 
     /// <summary>Danh sách COA trong company, trả snapshot đã lưu.</summary>
-    public async Task<PagedResult<CoaCertificateDto>> ListCoaAsync(string? keyword, int pageNumber, int pageSize, CancellationToken ct)
+    public async Task<PagedResult<CoaCertificateDto>> ListCoaAsync(string? keyword, int pageNumber, int pageSize, CancellationToken ct,
+        HRM.Application.Commons.Searching.ISmartSearchRequest? search = null)
     {
-        var company = access.Company(false, EvaluationTemplateType.Coa);
-        var query = db.CoaCertificates.AsNoTracking().Include(x => x.Results).ThenInclude(x => x.CoaSpecificationItem).ThenInclude(x => x!.CoaSpecification).Where(x => x.CompanyId == company);
-        if (access.Normalize(keyword) is { } term)
+        var company = access.IsIms ? access.CoaTrackingCompany() : access.Company(false, EvaluationTemplateType.Coa);
+        var query = db.CoaCertificates.AsNoTracking().Where(x => x.CompanyId == company);
+        var smartSearch = HRM.Application.Commons.Searching.SmartSearch.For(query, fields => [
+            fields.Code("coaCode", x => x.CertificateNo, "Mã COA", "COA"),
+            fields.Code("productCode", x => x.ProductCode, "Mã sản phẩm", "Product code"),
+            fields.Name("productName", x => x.ProductName, "Tên sản phẩm", "Product name"),
+            fields.Code("batchNumber", x => x.BatchNo, "Số lô", "Batch")
+        ]);
+        var filtered = smartSearch.ApplyRequest(query, keyword, search, out var smartKeyword);
+        if (access.Normalize(smartKeyword) is { } term)
         {
             var pattern = PostgresSearchPattern.ContainsLiteral(term);
-            query = query.Where(x => EF.Functions.ILike(x.CertificateNo, pattern, PostgresSearchPattern.EscapeCharacter) ||
+            filtered = filtered.Where(x => EF.Functions.ILike(x.CertificateNo, pattern, PostgresSearchPattern.EscapeCharacter) ||
                 EF.Functions.ILike(x.ProductCode, pattern, PostgresSearchPattern.EscapeCharacter) ||
                 EF.Functions.ILike(x.BatchNo, pattern, PostgresSearchPattern.EscapeCharacter));
         }
         var skip = access.PageOffset(pageNumber, pageSize);
-        var total = await query.CountAsync(ct);
-        var entities = await query.OrderByDescending(x => x.CreatedDate).ThenByDescending(x => x.Id).Skip(skip).Take(pageSize).ToListAsync(ct);
+        if (search is not null && await smartSearch.SuggestionsAsync<CoaCertificateDto>(filtered, search, ct) is { } suggestions)
+            return suggestions;
+        var total = await filtered.CountAsync(ct);
+        var page = filtered.OrderByDescending(x => x.CreatedDate).ThenByDescending(x => x.Id).Skip(skip).Take(pageSize);
+        if (access.IsIms)
+            return new(await page.Select(TrackingProjection).ToListAsync(ct), total, pageNumber, pageSize);
+
+        var entities = await page.Include(x => x.Results).ThenInclude(x => x.CoaSpecificationItem)
+            .ThenInclude(x => x!.CoaSpecification).ToListAsync(ct);
         foreach (var entity in entities) ValidateLegacyCoa(entity, company);
         var items = entities.Select(CoaDto).ToList();
         return new(items, total, pageNumber, pageSize);
     }
 
     /// <summary>Chi tiết COA và các dòng kết quả, kiểm tra nguồn legacy.</summary>
-    public async Task<CoaCertificateDto> GetCoaAsync(Guid id, CancellationToken ct) => CoaDto(await LoadCoaAsync(id, access.Company(false, EvaluationTemplateType.Coa), ct));
+    public async Task<CoaCertificateDto> GetCoaAsync(Guid id, CancellationToken ct)
+    {
+        if (!access.IsIms)
+            return CoaDto(await LoadCoaAsync(id, access.Company(false, EvaluationTemplateType.Coa), ct));
+
+        var company = access.CoaTrackingCompany();
+        return await db.CoaCertificates.AsNoTracking().Where(x => x.Id == id && x.CompanyId == company)
+            .Select(TrackingProjection).SingleOrDefaultAsync(ct)
+            ?? throw new EvaluationRequestException("Không tìm thấy phiếu COA.", 404);
+    }
+
+    private static readonly System.Linq.Expressions.Expression<Func<CoaCertificate, CoaCertificateDto>> TrackingProjection =
+        x => new(x.Id, x.CertificateNo, x.ProductCode, x.ProductName, x.BatchNo, x.ManufacturingDate, x.ExpiryDate,
+            x.Status, null, null, null, null, null, x.CreatedBy, x.CreatedDate, x.IssuedBy, x.IssuedDate,
+            Array.Empty<EvaluationResultDto>());
 
     /// <summary>Tạo COA Draft từ sản phẩm và template cùng company.</summary>
     public async Task<CoaCertificateDto> CreateCoaAsync(CreateCoaCertificateCommand request, CancellationToken ct)

@@ -28,6 +28,9 @@ internal sealed class RetryWorkflowNotificationJobCommandHandler(IPLMWriteDbCont
         var eventId = WorkflowNotificationJobRules.EventId(job.PayloadJson);
         var evt = await db.SampleRequestWorkflowEvents.AsNoTracking().SingleAsync(x => x.Id == eventId && x.CompanyId == company, ct);
         var recover = WorkflowNotificationJobRules.CanRecoverMissingHandler(job.ProcessedAt, job.Error, evt.MessageId, evt.NotificationId);
+        if (request.RequireReady && (!recover ||
+            (await WorkflowNotificationReplayAssessment.ReadAsync(db, company, [evt], ct)).GetValueOrDefault(evt.Id) != "Ready"))
+            return new("RecoveryConflict");
         if (recover && await db.InternalMessages.AsNoTracking().AnyAsync(x => x.InternalMessageId == eventId, ct))
             return new("RecoveryConflict");
         if (!recover && (job.ProcessedAt.HasValue || evt.NotificationId.HasValue)) return new("Completed");

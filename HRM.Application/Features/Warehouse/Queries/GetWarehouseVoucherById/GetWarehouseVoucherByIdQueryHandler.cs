@@ -14,15 +14,18 @@ internal sealed class GetWarehouseVoucherByIdQueryHandler
     private readonly IWarehouseReadDbContext _dbContext;
     private readonly ICurrentUser _currentUser;
     private readonly IWarehouseStockVisibilityService _stockVisibilityService;
+    private readonly IWarehouseVoucherBusinessReader _businessReader;
 
     public GetWarehouseVoucherByIdQueryHandler(
         IWarehouseReadDbContext dbContext,
         ICurrentUser currentUser,
-        IWarehouseStockVisibilityService stockVisibilityService)
+        IWarehouseStockVisibilityService stockVisibilityService,
+        IWarehouseVoucherBusinessReader businessReader)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
         _stockVisibilityService = stockVisibilityService;
+        _businessReader = businessReader;
     }
 
     public async Task<OperationResult<WarehouseVoucherDetailResponseDto>> Handle(
@@ -33,10 +36,12 @@ internal sealed class GetWarehouseVoucherByIdQueryHandler
             return OperationResult<WarehouseVoucherDetailResponseDto>.Fail("Không tìm thấy phiếu kho.");
         }
 
+        var isIms = HRM.Application.Commons.Authorization.ImsAccountRestrictions.AppliesTo(_currentUser);
         var companyId = _currentUser.CompanyId!.Value;
         var vouchers = _dbContext.WarehouseVouchers
             .AsNoTracking()
             .Where(x => x.VoucherId == request.VoucherId && x.CompanyId == companyId);
+        if (isIms) vouchers = ImsWarehouseVoucherScope.Apply(_dbContext, vouchers, companyId);
         var requests = _dbContext.WarehouseRequests
             .AsNoTracking()
             .Where(x => x.CompanyId == companyId);
@@ -51,7 +56,7 @@ internal sealed class GetWarehouseVoucherByIdQueryHandler
         var voucherDetails = _dbContext.WarehouseVoucherDetails
             .AsNoTracking()
             .Where(x => x.VoucherId == header.VoucherId);
-        var visibleDetails = await _stockVisibilityService.ApplyVoucherDetailsAsync(
+        var visibleDetails = isIms ? voucherDetails : await _stockVisibilityService.ApplyVoucherDetailsAsync(
             voucherDetails,
             companyId,
             request.Keyword,
@@ -59,14 +64,14 @@ internal sealed class GetWarehouseVoucherByIdQueryHandler
         var detailEntities = await visibleDetails
             .OrderBy(x => x.LineNo)
             .ToListAsync(cancellationToken);
-        if (detailEntities.Count == 0 && !WarehouseVoucherAccessRules.CanReadAll(_currentUser))
+        if (detailEntities.Count == 0 && !isIms && !WarehouseVoucherAccessRules.CanReadAll(_currentUser))
         {
             return OperationResult<WarehouseVoucherDetailResponseDto>.Fail("Không tìm thấy phiếu kho.");
         }
         var voucherDetailIds = detailEntities.Select(x => x.VoucherDetailId).ToArray();
         var movementDates = await _dbContext.WarehouseShelfLedgers
             .AsNoTracking()
-            .Where(x => x.VoucherDetailId != null && voucherDetailIds.Contains(x.VoucherDetailId.Value))
+            .Where(x => (!isIms || x.CompanyId == companyId) && x.VoucherDetailId != null && voucherDetailIds.Contains(x.VoucherDetailId.Value))
             .GroupBy(x => x.VoucherDetailId!.Value)
             .Select(x => new
             {
@@ -83,16 +88,29 @@ internal sealed class GetWarehouseVoucherByIdQueryHandler
             .Where(x => x.EmployeeId == header.CreatedBy && x.CompanyId == companyId)
             .Select(x => x.FullName).FirstOrDefaultAsync(cancellationToken) ?? string.Empty;
 
+        var businessInfo = await _businessReader.ReadAsync(companyId,
+            [new(header.VoucherId, header.VoucherType, header.CodeFromRequest)], cancellationToken);
+        var business = businessInfo[header.VoucherId];
+        var mappedDetails = detailEntities.Select(x => WarehouseVoucherReadModelMapper.ToDetailDto(
+            x, movementDates.GetValueOrDefault(x.VoucherDetailId), isIms)).ToList();
+        if (!isIms) await WarehouseDefectReasonReader.EnrichVouchersAsync(_dbContext, companyId, mappedDetails, cancellationToken);
+
         return OperationResult<WarehouseVoucherDetailResponseDto>.Ok(new WarehouseVoucherDetailResponseDto
         {
             VoucherId = header.VoucherId,
             VoucherCode = header.VoucherCode,
             VoucherType = header.VoucherType,
+            BusinessType = business.BusinessType,
+            PurchaseOrderCode = business.PurchaseOrderCode,
+            CanViewSupplier = business.CanViewSupplier,
+            SupplierName = business.SupplierName,
+            SupplierExternalId = business.SupplierExternalId,
+            Comments = business.Comments,
             Status = header.Status,
             CreatedDate = header.CreatedDate,
             RequestId = header.RequestId,
             RequestCode = header.RequestCode,
-            RequestName = header.RequestName,
+            RequestName = isIms ? string.Empty : header.RequestName,
             ReqStatus = header.ReqStatus,
             ReqType = header.ReqType,
             CodeFromRequest = header.CodeFromRequest,
@@ -100,11 +118,7 @@ internal sealed class GetWarehouseVoucherByIdQueryHandler
             CompanyName = companyName,
             CreatedBy = header.CreatedBy,
             CreatedByName = createdByName,
-            Details = detailEntities
-                .Select(x => WarehouseVoucherReadModelMapper.ToDetailDto(
-                    x,
-                    movementDates.GetValueOrDefault(x.VoucherDetailId)))
-                .ToList()
+            Details = mappedDetails
         });
     }
 }

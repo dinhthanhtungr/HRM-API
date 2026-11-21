@@ -1,6 +1,7 @@
 using HRM.Application.Abstractions.Persistence.DevAndQA;
 using HRM.Domain.Entities.WarehouseSchema;
 using HRM.Domain.Enums.Devandqa;
+using HRM.Domain.Enums.WareHouses;
 using Microsoft.EntityFrameworkCore;
 using HRM.Domain.Entities.OrderSchema;
 using Shared.Enums;
@@ -34,6 +35,7 @@ internal sealed class IqcPurchaseOrderSync(IIqcDbContext context)
                 join qc in context.QCInputByQCs.AsNoTracking() on vd.VoucherDetailId equals qc.VoucherDetailId into qcGroup
                 from qc in qcGroup.DefaultIfEmpty()
                 where v.CompanyId == companyId && wr.CompanyId == companyId && wr.IsActive
+                    && wr.ReqType != WareHouseRequestType.ExportReturn && v.VoucherType != (int)WareHouseRequestType.ExportReturn
                     && wr.codeFromRequest != null && wr.codeFromRequest.Trim() == poCode
                     && vd.ProductCode != null && vd.ProductCode.Trim() == lineMaterialCode
                 select new { vd.VoucherDetailId, vd.QtyKg, Decision = qc != null ? qc.ImportWarehouseType : null }
@@ -54,6 +56,7 @@ internal sealed class IqcPurchaseOrderSync(IIqcDbContext context)
     {
         var requestId = await context.WarehouseVouchers.AsNoTracking()
             .Where(x => x.VoucherId == detail.VoucherId
+                     && x.VoucherType != (int)WareHouseRequestType.ExportReturn
                      && x.CompanyId == companyId)
             .Select(x => x.RequestId).FirstOrDefaultAsync(ct);
 
@@ -61,6 +64,7 @@ internal sealed class IqcPurchaseOrderSync(IIqcDbContext context)
 
         var poCode = await context.WarehouseRequests.AsNoTracking()
             .Where(x => x.RequestId == requestId
+                     && x.ReqType != WareHouseRequestType.ExportReturn
                      && x.CompanyId == companyId && x.IsActive)
             .Select(x => x.codeFromRequest).FirstOrDefaultAsync(ct);
 

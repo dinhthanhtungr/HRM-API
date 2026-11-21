@@ -7,12 +7,24 @@ namespace HRM.Application.Features.Dispatch.DeliveryOrders.Queries.ExportDeliver
 
 internal static class DeliveryFinishReportQuery
 {
-    internal static IQueryable<DeliveryFinishReportSource> Project(IQueryable<DeliveryOrder> orders, Guid companyId, DateTime from, DateTime to)
+    internal static IQueryable<DeliveryFinishReportSource> Project(IQueryable<DeliveryOrder> orders, Guid companyId, DateTime from, DateTime to,
+        bool restricted = false)
         => orders.Where(d => companyId != Guid.Empty && d.IsActive && d.CompanyId == companyId && d.CreatedDate >= from.Date && d.CreatedDate < to.Date.AddDays(1))
             .OrderBy(d => d.CreatedDate).ThenBy(d => d.Id)
             .SelectMany(d => d.Details.Where(det => det.IsActive &&
+                (!restricted || (!det.IsAttach && det.MerchandiseOrderDetail != null &&
+                    det.MerchandiseOrderDetail.IsActive && det.MerchandiseOrderDetail.MerchandiseOrder.IsActive &&
+                    det.MerchandiseOrderDetail.MerchandiseOrder.CustomerId == d.CustomerId &&
+                    det.MerchandiseOrderDetail.MerchandiseOrder.OrderType != HRM.Domain.Enums.Merchadises.OrderType.Internal)) &&
                 (det.MerchandiseOrderDetail == null || det.MerchandiseOrderDetail.MerchandiseOrder.CompanyId == companyId)), (d, det) => new DeliveryFinishReportSource
             {
+                DeliveryOrderId = d.Id,
+                DeliveryLineId = det.Id,
+                DeliveryCustomerId = d.CustomerId,
+                CustomerId = det.MerchandiseOrderDetail != null ? det.MerchandiseOrderDetail.MerchandiseOrder.CustomerId : d.CustomerId,
+                OrderId = det.MerchandiseOrderDetail != null ? det.MerchandiseOrderDetail.MerchandiseOrderId : null,
+                ProductId = det.ProductId,
+                CreatedDate = d.CreatedDate!.Value,
                 DetailId = det.MerchandiseOrderDetailId,
                 Row = new DeliveryFinishRow
                 {
@@ -24,9 +36,10 @@ internal static class DeliveryFinishReportQuery
                     CustomerName = det.MerchandiseOrderDetail != null ? det.MerchandiseOrderDetail.MerchandiseOrder.CustomerNameSnapshot : d.CustomerExternalIdSnapShot,
                     DelivererName = d.Deliverers.OrderBy(x => x.DelivererInfor.Name).Select(x => x.DelivererInfor.Name).FirstOrDefault(),
                     ProductDisplay = (det.ProductExternalIdSnapShot ?? "") + " - " + (det.ProductNameSnapShot ?? ""),
-                    WarehouseDisplay = "", LotNoOrBatch = det.LotConsumptions.Any(l => l.IsActive)
+                    WarehouseDisplay = "", LotNoOrBatch = restricted ? null : det.LotConsumptions.Any(l => l.IsActive)
                         ? string.Join(", ", det.LotConsumptions.Where(l => l.IsActive).OrderBy(l => l.LotNo).Select(l => l.LotNo)) : det.LotNoList,
-                    QuantityKg = det.Quantity, NumOfBags = det.NumOfBags, PoNo = det.PONo, Note = d.Note
+                    QuantityKg = det.Quantity, NumOfBags = det.NumOfBags,
+                    PoNo = restricted ? null : det.PONo, Note = restricted ? null : d.Note
                 }
             });
 
@@ -51,6 +64,13 @@ internal static class DeliveryFinishReportQuery
 
 internal sealed class DeliveryFinishReportSource
 {
+    public Guid DeliveryOrderId { get; init; }
+    public Guid DeliveryLineId { get; init; }
+    public Guid DeliveryCustomerId { get; init; }
+    public Guid CustomerId { get; init; }
+    public Guid? OrderId { get; init; }
+    public Guid? ProductId { get; init; }
+    public DateTime CreatedDate { get; init; }
     public Guid? DetailId { get; init; }
     public DeliveryFinishRow Row { get; init; } = new();
 }

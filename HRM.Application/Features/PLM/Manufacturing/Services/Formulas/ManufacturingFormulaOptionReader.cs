@@ -32,7 +32,7 @@ internal static class ManufacturingFormulaOptionReader
             ManufacturingFormulaOrigin.Standard,
             null,
             x.ManufacturingFormula.CreatedDate,
-            false
+            true
         )
         {
             Note = !string.IsNullOrWhiteSpace(x.Note) ? x.Note : x.ManufacturingFormula.Note

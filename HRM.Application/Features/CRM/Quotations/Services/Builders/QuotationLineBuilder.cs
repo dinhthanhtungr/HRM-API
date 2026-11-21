@@ -6,6 +6,7 @@ using HRM.Domain.Entities.CustomerSchema;
 using HRM.Domain.Entities.SampleRequestSchema;
 using HRM.Domain.Enums.CustomerEnum;
 using Microsoft.EntityFrameworkCore;
+using HRM.Application.Features.CRM.CustomerCare.SampleSharingGroups;
 
 namespace HRM.Application.Features.CRM.Quotations.Services;
 
@@ -15,11 +16,13 @@ namespace HRM.Application.Features.CRM.Quotations.Services;
 internal sealed class QuotationLineBuilder
 {
     private readonly ICRMReadDbContext _dbContext;
+    private readonly CustomerSampleSharingService? _sampleSharing;
 
     public QuotationLineBuilder(
-        ICRMReadDbContext dbContext)
+        ICRMReadDbContext dbContext, CustomerSampleSharingService? sampleSharing = null)
     {
         _dbContext = dbContext;
+        _sampleSharing = sampleSharing;
     }
 
     public async Task<OperationResult<IReadOnlyList<QuotationLine>>> BuildAsync(
@@ -140,8 +143,16 @@ internal sealed class QuotationLineBuilder
             .Select(x => x.SampleRequestId!.Value)
             .Distinct()
             .ToArray();
+        Guid[] sharedOwners = [];
+        if (sampleRequestIds.Length > 0 && _sampleSharing?.Enabled == true)
+        {
+            var owners = await _sampleSharing.ResolveOwnerIdsAsync(companyId, customerId, cancellationToken);
+            if (owners is null)
+                return OperationResult<IReadOnlyList<QuotationLine>>.Fail("Không được dùng mẫu cho khách nhận báo giá này.");
+            sharedOwners = owners;
+        }
         var sampleRequests = await ScopeSampleRequests(
-                _dbContext.SampleRequests.AsNoTracking(), companyId, customerId)
+                _dbContext.SampleRequests.AsNoTracking(), companyId, customerId, sharedOwners)
             .Where(x => sampleRequestIds.Contains(x.SampleRequestId))
             .Select(x => new
             {
@@ -226,13 +237,16 @@ internal sealed class QuotationLineBuilder
     }
 
     internal static IQueryable<SampleRequest> ScopeSampleRequests(
-        IQueryable<SampleRequest> source, Guid companyId, Guid customerId)
+        IQueryable<SampleRequest> source, Guid companyId, Guid customerId, IReadOnlyCollection<Guid>? sharedOwners = null)
     {
-        // Mẫu nội bộ VietAus được dùng chung cho khách hàng trong cùng công ty.
+        sharedOwners ??= [];
+        // Membership only authorizes the sample reference, never another customer's prices.
         return source.Where(x =>
             x.CompanyId == companyId &&
             x.IsActive &&
             (x.CustomerId == customerId ||
+             (sharedOwners.Contains(x.CustomerId) && x.Customer.CompanyId == companyId && x.Customer.IsActive == true &&
+              (x.RequestType == null || x.RequestType != HRM.Application.Features.PLM.Shared.Rules.SemiFinishedRequestRules.RequestType)) ||
              (x.Customer.CompanyId == companyId &&
               x.Customer.ExternalId == InternalCustomerRules.InternalCustomerExternalId)));
     }

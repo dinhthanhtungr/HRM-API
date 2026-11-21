@@ -11,6 +11,17 @@ namespace HRM.Application.Tests.Features.PLM.Manufacturing;
 public sealed class ManufacturingQueryTranslationTests
 {
     [Fact]
+    public void IssueRequestLock_TranslatesCompanyLinksAndAppliedVoucherForPostgres()
+    {
+        using var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>().UseNpgsql().Options);
+        var sql = HRM.Application.Features.PLM.Manufacturing.Services.Access.ManufacturingAccess.IssueRequestCodes(db,
+            new MfgProductionOrder { CompanyId = Guid.NewGuid(), MfgProductionOrderId = Guid.NewGuid() }).Take(1).ToQueryString();
+        Assert.Contains("OperationMaterialRequestLink", sql);
+        Assert.Contains("EXISTS", sql);
+        Assert.Contains("Warehouse", sql);
+        Assert.Contains("LIMIT", sql);
+    }
+    [Fact]
     public void FormulaChoices_TranslateCorrelatedLatestSelectionAndStandardForPostgreSql()
     {
         using var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>().UseNpgsql().Options);

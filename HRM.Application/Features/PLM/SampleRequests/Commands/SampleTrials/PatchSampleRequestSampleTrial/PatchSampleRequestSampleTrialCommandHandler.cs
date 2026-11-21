@@ -101,6 +101,8 @@ internal sealed class PatchSampleRequestSampleTrialCommandHandler
         {
             return OperationResult<Guid>.Fail("Sample request was not found or is outside your scope.");
         }
+        if (await Services.Workflow.SampleRequestLabPauseRules.IsPausedAsync(_dbContext, scope.CompanyId, sampleRequest.SampleRequestId, cancellationToken))
+            return OperationResult<Guid>.Fail(Services.Workflow.SampleRequestLabPauseRules.PausedMessage);
 
         var changesCustomerFeedback = fieldsWithValues.Concat(clearFields).Any(field =>
             field is SampleRequestSampleTrialPatchFields.CustomerReplyStatus or SampleRequestSampleTrialPatchFields.CustomerReplyNote);
@@ -121,6 +123,11 @@ internal sealed class PatchSampleRequestSampleTrialCommandHandler
             return OperationResult<Guid>.Fail("Sample trial was not found or does not belong to this sample request.");
         }
 
+        if (await _dbContext.SampleRequestWorkflowEvents.AsNoTracking().AnyAsync(e => e.CompanyId == scope.CompanyId &&
+            e.SampleRequestId == sampleRequest.SampleRequestId && e.SampleRequestSampleTrialId == trial.SampleRequestSampleTrialId &&
+            e.EventType == Rules.SampleRequestWorkflowEvents.SampleSent && e.RelatedEventId != null &&
+            _dbContext.SampleRequestWorkflowEvents.Any(b => b.Id == e.RelatedEventId && b.EventType == DeliveryOptions.SampleDeliveryRules.BatchSent), cancellationToken))
+            return OperationResult<Guid>.Fail("Edit this sent option through its delivery batch.");
         if (request.ExpectedUpdatedDate.HasValue &&
             trial.UpdatedDate != request.ExpectedUpdatedDate.Value)
         {

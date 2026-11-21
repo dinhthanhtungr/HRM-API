@@ -274,6 +274,8 @@ public sealed class ManufacturingFormulaProcessingTests
         var result = await f.Inform().Handle(new(f.Base.Order.MfgProductionOrderId, f.InformRequest()), default);
         Assert.True(result.Success, result.Message);
         Assert.Equal(after, f.Base.Order.Status);
+        if (after == "Scheduling") Assert.Equal(Fixture.Now, f.Selection.ValidFrom);
+        else Assert.Null(f.Selection.ValidFrom);
         Assert.Equal(created, f.Base.Order.CreatedDate);
         Assert.Equal(schedule ? 1 : 0, f.Base.Store.Added.OfType<SchedualMfg>().Count());
         Assert.DoesNotContain(f.Base.Store.Added, x => x is HRM.Domain.Entities.WarehouseSchema.WarehouseTempStock);
@@ -429,7 +431,7 @@ public sealed class ManufacturingFormulaProcessingTests
     [InlineData("FormulaRequested")]
     [InlineData("FormulaSuccess")]
     [InlineData("Scheduled")]
-    public async Task LabSave_NotesPreservePlanAndStatus(string status)
+    public async Task LabSave_NotesPreservePlanAndCompleteRequestedFormula(string status)
     {
         var f = new Fixture();
         f.Base.Order.Status = status;
@@ -439,7 +441,7 @@ public sealed class ManufacturingFormulaProcessingTests
         var result = await f.Inform().Handle(new(f.Base.Order.MfgProductionOrderId, request)
         { IsEditorSave = true, EditorPatch = patch }, default);
         Assert.True(result.Success, result.Message);
-        Assert.Equal(status, f.Base.Order.Status);
+        Assert.Equal(status == "FormulaRequested" ? "FormulaSuccess" : status, f.Base.Order.Status);
         Assert.Null(f.Base.Order.TotalQuantity);
         Assert.Null(f.Base.Order.NumOfBatches);
         Assert.Equal("2", f.Base.Order.QcCheck);
@@ -497,7 +499,103 @@ public sealed class ManufacturingFormulaProcessingTests
         Assert.Equal(clear ? null : "VA note\nSecond line", f.Formula.Note);
         Assert.Equal("Order QA", f.Base.Order.LabNote);
         if (!withItems) Assert.Equal("Order PLPU", f.Base.Order.PlpuNote);
+        Assert.Equal("FormulaSuccess", f.Base.Order.Status);
+        Assert.Equal("Checking", f.Formula.Status);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task LabSave_CompletesOnceWithoutSchedulingThenPlpuSchedules(bool alsoManager)
+    {
+        var f = new Fixture();
+        if (alsoManager) f.Base.User.Roles = ["LabUser", "PLPUUser"];
+        var row = Assert.Single(f.Formula.ManufacturingFormulaMaterials);
+        row.ManufacturingFormulaId = f.Formula.ManufacturingFormulaId;
+        row.ManufacturingFormula = f.Formula;
+        row.Material = f.Base.Material;
+        row.MaterialExternalIdSnapshot = f.Base.Material.ExternalId;
+        f.Base.Order.TotalQuantity = 100;
+        f.Base.Order.NumOfBatches = 2;
+        f.Base.Order.StepOfProduct = StepOfProduct.Forsb;
+        var patch = new HRM.Application.Features.PLM.Manufacturing.Commands.ExecuteProductionOrderEditorAction.ProductionOrderEditorRequest { Action = "Save" };
+        var request = HRM.Application.Features.PLM.Manufacturing.Commands.ExecuteProductionOrderEditorAction.ProductionOrderEditorMapping.Merge(f.Base.Order, patch);
+        var command = new UpdateProductionOrderInformCommand(f.Base.Order.MfgProductionOrderId, request)
+        { IsEditorSave = true, EditorPatch = patch };
+        var result = await f.Inform().Handle(command, default);
+        Assert.True(result.Success, result.Message);
+        Assert.Equal("FormulaSuccess", f.Base.Order.Status);
+        Assert.Equal("Checking", f.Formula.Status);
+        Assert.Single(f.Events.Events);
+        Assert.Equal(Fixture.Now, f.Selection.ValidFrom);
+        Assert.Empty(f.Base.Store.Added.OfType<SchedualMfg>());
+        Assert.True(f.Base.Store.Transaction.Committed);
+
+        f.Base.User.Roles = ["LabUser"];
+        Assert.True((await f.Inform().Handle(command, default)).Success);
+        Assert.Equal("FormulaSuccess", f.Base.Order.Status);
+        Assert.Single(f.Events.Events);
+        Assert.Empty(f.Base.Store.Added.OfType<SchedualMfg>());
+
+        f.Base.User.Roles = ["PLPUUser"];
+        result = await f.Inform().Handle(command, default);
+        Assert.True(result.Success, result.Message);
+        Assert.Equal("Scheduling", f.Base.Order.Status);
+        Assert.Single(f.Base.Store.Added.OfType<SchedualMfg>());
+        Assert.Equal(2, f.Events.Events.Count);
+    }
+
+    [Theory]
+    [InlineData("missing")]
+    [InlineData("company")]
+    [InlineData("inactive")]
+    [InlineData("empty")]
+    [InlineData("zero")]
+    [InlineData("negative")]
+    public async Task LabSave_RejectsCompletionWithoutValidSelectedFormula(string reason)
+    {
+        var f = new Fixture();
+        if (reason == "missing") f.Selection.ValidTo = Fixture.Now;
+        if (reason == "company") f.Formula.CompanyId = Guid.NewGuid();
+        if (reason == "inactive") f.Formula.IsActive = false;
+        var row = Assert.Single(f.Formula.ManufacturingFormulaMaterials);
+        if (reason == "empty") row.IsActive = false;
+        if (reason == "zero") row.Quantity = 0;
+        if (reason == "negative") row.Quantity = -1;
+        var patch = new HRM.Application.Features.PLM.Manufacturing.Commands.ExecuteProductionOrderEditorAction.ProductionOrderEditorRequest { Action = "Save" };
+        var request = HRM.Application.Features.PLM.Manufacturing.Commands.ExecuteProductionOrderEditorAction.ProductionOrderEditorMapping.Merge(f.Base.Order, patch);
+        var result = await f.Inform().Handle(new(f.Base.Order.MfgProductionOrderId, request)
+        { IsEditorSave = true, EditorPatch = patch }, default);
+        Assert.False(result.Success);
         Assert.Equal("FormulaRequested", f.Base.Order.Status);
+        Assert.Equal(0, f.Base.Store.Saves);
+        Assert.Empty(f.Events.Events);
+    }
+
+    [Theory]
+    [InlineData("material")]
+    [InlineData("formula")]
+    [InlineData("revision")]
+    public async Task LabSave_DoesNotCompleteWithoutCapabilitiesOrCurrentRevision(string missing)
+    {
+        var f = new Fixture();
+        f.Base.User.HasExplicitPermissionSet = true;
+        f.Base.User.Permissions = new[]
+        {
+            ApplicationPermissions.PLM.ViewProductionOrders,
+            ApplicationPermissions.PLM.ManageProductionOrders,
+            ApplicationPermissions.PLM.ManageManufacturingFormulas,
+            ApplicationPermissions.PLM.ViewFormulaMaterials
+        }.Where(x => x != (missing == "material" ? ApplicationPermissions.PLM.ViewFormulaMaterials
+            : missing == "formula" ? ApplicationPermissions.PLM.ManageManufacturingFormulas : string.Empty)).ToArray();
+        var patch = new HRM.Application.Features.PLM.Manufacturing.Commands.ExecuteProductionOrderEditorAction.ProductionOrderEditorRequest { Action = "Save" };
+        var request = HRM.Application.Features.PLM.Manufacturing.Commands.ExecuteProductionOrderEditorAction.ProductionOrderEditorMapping.Merge(f.Base.Order, patch);
+        var result = await f.Inform().Handle(new(f.Base.Order.MfgProductionOrderId, request)
+        { IsEditorSave = true, EditorPatch = patch, ExpectedRevision = missing == "revision" ? new string('0', 64) : null }, default);
+        if (missing == "revision") Assert.False(result.Success);
+        Assert.Equal("FormulaRequested", f.Base.Order.Status);
+        Assert.Equal("New", f.Formula.Status);
+        Assert.Empty(f.Events.Events);
     }
 
     [Theory]
@@ -563,6 +661,27 @@ public sealed class ManufacturingFormulaProcessingTests
         Assert.Equal(change ? 0 : 1, f.Base.Store.Saves);
     }
 
+    [Theory]
+    [InlineData("foreign")]
+    [InlineData("inactive")]
+    [InlineData("ambiguous")]
+    public async Task InformScheduling_CannotCommitInvalidSelection(string reason)
+    {
+        var f = new Fixture();
+        f.Base.User.Roles = [ApplicationRoles.Production.PLPUUser];
+        f.Base.Order.Status = "FormulaSuccess";
+        if (reason == "foreign") f.Formula.CompanyId = Guid.NewGuid();
+        if (reason == "inactive") f.Formula.IsActive = false;
+        if (reason == "ambiguous") f.Base.Store.Seed(nameof(f.Base.Db.ProductionSelectVersions), f.Selection,
+            new ProductionSelectVersion { CompanyId = f.Base.Order.CompanyId, MfgProductionOrderId = f.Base.Order.MfgProductionOrderId,
+                ManufacturingFormulaId = f.Formula.ManufacturingFormulaId, ManufacturingFormula = f.Formula });
+        var result = await f.Inform().Handle(new(f.Base.Order.MfgProductionOrderId, f.InformRequest()), default);
+        Assert.False(result.Success);
+        Assert.False(f.Base.Store.Transaction.Committed);
+        Assert.Equal(0, f.Base.Store.Saves);
+        Assert.Null(f.Selection.ValidFrom);
+    }
+
     private sealed class Fixture
     {
         public static readonly DateTime Now = ManufacturingFormulaCreationTests.Fixture.Now;
@@ -591,7 +710,7 @@ public sealed class ManufacturingFormulaProcessingTests
         public ProcessManufacturingFormulaCommandHandler Process() => new(Base.Db, Base.User, new CurrentUserPermissionService(Base.User), new Clock(), Events, Resolver(), Notifier());
         public CreateLabManufacturingFormulaCommandHandler LabCreate() => new(Base.Db, Base.User, new CurrentUserPermissionService(Base.User), new Clock(), new Codes(), Events, Resolver(), Notifier());
         public UpdateProductionOrderInformCommandHandler Inform() => new(Base.Db, Base.User, new CurrentUserPermissionService(Base.User), new Clock(), Events,
-            Resolver(), new ProductionOrderReservationService(Base.Db), Notifier());
+            Resolver(), new ProductionOrderReservationService(Base.Db), Notifier(), PromisedDeliveryTestFactory.Create(Base.Db, Base.User).Notifier);
         public CopyProductionOrderCommandHandler Copy() => new(Base.Db, Base.User, new CurrentUserPermissionService(Base.User), new Codes(), new Clock(),
             Events, Resolver(), new ProductionOrderReservationService(Base.Db));
         public ProductionOrderInformRequest InformRequest(Guid? selected = null, IReadOnlyList<ManufacturingFormulaInputItem>? items = null)

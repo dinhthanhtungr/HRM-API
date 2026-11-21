@@ -17,7 +17,7 @@ namespace HRM.Api.Controllers.CRM.CustomerCare;
 /// Handler Application chịu trách nhiệm kiểm tra quyền leader/full-view, company scope và ghi audit log.
 /// </summary>
 [ApiController]
-[Authorize]
+[Authorize(Policy = HRM.Api.Security.Authorization.SensitiveDataAuthorization.PolicyName)]
 [Route("api/v1/crm/customer-transfers")]
 public sealed class CustomerTransfersController : ControllerBase
 {

@@ -14,6 +14,7 @@ public sealed record ProductionOrderInformDto(ProductionOrderWorkspaceDto Worksp
     public IReadOnlyList<string> AllowedActions { get; init; } = [];
     public IReadOnlyList<string> EditableFields { get; init; } = [];
     public bool CanEditItems { get; init; }
+    public string? FormulaEditLockReason { get; init; }
     public string? ReadOnlyReason { get; init; }
     public IReadOnlyList<HRM.Application.Features.PLM.Manufacturing.Services.ProductionOrders.ManufacturingStepOption> StepOptions { get; init; } = [];
     public IReadOnlyList<ProductionOrderFormulaSourceDto> FormulaSources { get; init; } = [];

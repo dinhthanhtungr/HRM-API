@@ -15,6 +15,7 @@ using HRM.Domain.Enums.Logs;
 using HRM.Domain.Enums.Manufacturings;
 using HRM.Domain.Enums.Merchadises;
 using MediatR;
+using HRM.Application.Features.PLM.Manufacturing.Services.Notifications;
 using Microsoft.EntityFrameworkCore;
 
 namespace HRM.Application.Features.PLM.Manufacturing.Commands.UpdateProductionOrderInformation;
@@ -25,7 +26,8 @@ internal sealed class UpdateProductionOrderInformationCommandHandler(
     ICurrentUserPermissionService permissions,
     IDateTimeProvider clock,
     IEventLogWriter timeline,
-    ProductionOrderReservationService reservations
+    ProductionOrderReservationService reservations,
+    PromisedDeliveryNotifier promisedDelivery
 ) : IRequestHandler<UpdateProductionOrderInformationCommand, OperationResult>
 {
     public async Task<OperationResult> Handle(UpdateProductionOrderInformationCommand command, CancellationToken ct)
@@ -61,6 +63,11 @@ internal sealed class UpdateProductionOrderInformationCommandHandler(
             }
 
             var order = link.ProductionOrder;
+            var formulaEditLock = await ManufacturingAccess.FormulaEditLockAsync(db, order, ct);
+            if (formulaEditLock is not null && (request.TotalQuantity.HasValue && request.TotalQuantity != order.TotalQuantity
+                || request.NumOfBatches.HasValue && request.NumOfBatches != order.NumOfBatches))
+                return OperationResult.Fail(formulaEditLock);
+            var previousExpectedDate = order.ExpectedDate;
             if (!ManufacturingAccess.IsInformOperator(user))
                 return OperationResult.Fail("Chỉ PLPUUser, President và Developer được sửa thông tin kế hoạch lệnh.");
             if (order.Status == nameof(ManufacturingProductOrder.WaitingForStandardSample)
@@ -100,6 +107,15 @@ internal sealed class UpdateProductionOrderInformationCommandHandler(
             PatchHelper.SetNullable(request.NumOfBatches, () => order.NumOfBatches, v => order.NumOfBatches = v);
             PatchHelper.SetNullable(request.ExpectedDate, () => order.ExpectedDate, v => order.ExpectedDate = v);
             var statusChanged = PatchHelper.SetIfNotNull(request.Status, () => order.Status, v => order.Status = v!);
+            if (order.Status == nameof(ManufacturingProductOrder.Scheduling))
+            {
+                var selections = await db.ProductionSelectVersions.Where(x => x.CompanyId == company
+                    && x.MfgProductionOrderId == command.Id && x.ValidTo == null
+                    && x.ManufacturingFormula != null && x.ManufacturingFormula.IsActive
+                    && x.ManufacturingFormula.CompanyId == company).AsTracking().ToListAsync(ct);
+                var activation = ManufacturingSchedulingSelectionRules.Activate(selections, now);
+                if (!activation.Success) return activation;
+            }
             if (statusChanged)
             {
                 await WriteEvent(
@@ -171,6 +187,13 @@ internal sealed class UpdateProductionOrderInformationCommandHandler(
             }
 
             await db.SaveChangesAsync(ct);
+            if (order.Status == nameof(ManufacturingProductOrder.Scheduling)
+                && !await db.ProductionSelectVersions.AsNoTracking().AnyAsync(x => x.CompanyId == company
+                    && x.MfgProductionOrderId == command.Id && x.ValidFrom != null && x.ValidTo == null
+                    && x.ManufacturingFormula != null && x.ManufacturingFormula.IsActive
+                    && x.ManufacturingFormula.CompanyId == company, ct))
+                return OperationResult.Fail("Không thể lưu Chờ lịch: VA chưa được kích hoạt. Thao tác đã được hủy.");
+            await promisedDelivery.PublishAsync(order.MfgProductionOrderId, order.ExternalId, previousExpectedDate, order.ExpectedDate, ct);
             await transaction.CommitAsync(ct);
             return OperationResult.Ok("Cập nhật thông tin lệnh sản xuất thành công.");
         }

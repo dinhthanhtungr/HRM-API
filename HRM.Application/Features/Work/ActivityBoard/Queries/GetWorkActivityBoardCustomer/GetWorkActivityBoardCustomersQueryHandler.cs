@@ -1,3 +1,4 @@
+using HRM.Application.Features.CRM.CustomerCare.Services.Search;
 using HRM.Application.Abstractions.Persistence.CRM.CustomerCare;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Authorization;
@@ -10,6 +11,7 @@ using HRM.Domain.Enums.CustomerEnum;
 using HRM.Domain.Enums.WorkTaskEnums;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using HRM.Application.Commons.Searching;
 
 namespace HRM.Application.Features.Work.ActivityBoard.Queries.GetWorkActivityBoardCustomer;
 
@@ -53,11 +55,18 @@ internal sealed class GetWorkActivityBoardCustomersQueryHandler
         var customers = _visibilityService
             .ApplyCustomerVisibility(_dbContext.Customers.AsNoTracking(), scope);
 
-        if (request.NormalizedKeyword is { } keyword)
+        var search = SmartSearch.For(customers, f => [
+            f.Code("customerCode", x => x.ExternalId, "Mã KH", "Customer code"),
+            f.Name("customerName", x => x.CustomerName, "Tên KH", "Customer name"),
+            f.CustomerTaxNumber(x => x.TaxNumber),
+        ]);
+        customers = search.ApplyRequest(customers, request.NormalizedKeyword, request, out var smartKeyword);
+        if (smartKeyword is { } keyword)
         {
             customers = customers.Where(customer =>
                 EF.Functions.ILike(customer.ExternalId, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
-                EF.Functions.ILike(customer.CustomerName, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter));
+                EF.Functions.ILike(customer.CustomerName, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                EF.Functions.ILike(customer.TaxNumber ?? "", PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter));
         }
 
         var customerRows = BuildCustomerRows(
@@ -69,6 +78,13 @@ internal sealed class GetWorkActivityBoardCustomersQueryHandler
             customerRows = customerRows.Where(customer => customer.HasActivity);
         }
 
+        if (request.SuggestionKeyword is not null)
+        {
+            var eligibleIds = customerRows.Select(x => x.CustomerId);
+            var suggestions = await search.SuggestionsAsync<WorkActivityBoardCustomerSummaryDto>(
+                customers.Where(x => eligibleIds.Contains(x.CustomerId)), request, cancellationToken);
+            return OperationResult<PagedResult<WorkActivityBoardCustomerSummaryDto>>.Ok(suggestions!);
+        }
         var totalCount = await customerRows.CountAsync(cancellationToken);
 
         var pageCustomers = await customerRows

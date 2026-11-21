@@ -9,5 +9,6 @@ public interface IIdentityAccessValidator
         Guid userId,
         Guid? employeeId,
         Guid? companyId,
+        bool tokenHasImsRole,
         CancellationToken cancellationToken = default);
 }

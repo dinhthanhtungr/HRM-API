@@ -10,4 +10,5 @@ public sealed class ProductionOrderQuantityExcelRow
     public string Detail { get; set; } = string.Empty;
     public decimal StdQuantity { get; set; }
     public decimal RequiredQuantity { get; set; }
+    public decimal? UnitPrice { get; set; }
 }

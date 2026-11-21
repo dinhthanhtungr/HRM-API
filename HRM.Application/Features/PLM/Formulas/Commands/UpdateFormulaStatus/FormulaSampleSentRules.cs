@@ -8,6 +8,12 @@ namespace HRM.Application.Features.PLM.Formulas.Commands.UpdateFormulaStatus;
 internal static class FormulaSampleSentRules
 {
     private const decimal MaxDeliveredSampleQuantityKg = 99999999999999.9999m;
+    internal static bool IsValidLegacyQuantity(decimal? quantity)
+        => quantity is > 0 && quantity <= MaxDeliveredSampleQuantityKg;
+
+    public static bool CanReceiveFormulaStatus(string? requestStatus, FormulaStatus targetStatus)
+        => requestStatus != "Cancelled" && requestStatus != "LabDeclined" &&
+           (requestStatus != "Completed" || targetStatus == FormulaStatus.Approved);
 
     public static string? ValidateRequest(UpdateFormulaStatusRequest request, bool isChip = false)
     {
@@ -44,6 +50,11 @@ internal static class FormulaSampleSentRules
     public static bool CanSendFromStatus(string? currentStatus)
         => string.Equals(currentStatus, FormulaStatus.Approved.ToString(), StringComparison.OrdinalIgnoreCase) ||
            string.Equals(currentStatus, FormulaStatus.SampleSent.ToString(), StringComparison.OrdinalIgnoreCase);
+
+    public static bool CanRetryFailedKg(SampleRequestSampleTrial? latest, Guid requestId, Guid formulaId)
+        => latest is { IsActive: true, Status: SampleTrialStatus.Failed, SentDate: not null } &&
+           latest.SampleRequestId == requestId && latest.FormulaId == formulaId &&
+           latest.DeliveryKind == SampleDeliveryKind.TrialSample;
 
     public static void PrepareTrialForDelivery(
         SampleRequestSampleTrial trial,

@@ -15,6 +15,7 @@ public sealed class QuotationDisplayStatusTests
     [InlineData(QuotationStatus.Approved, ProductStandardPriceState.PendingReapproval, "PendingPriceUpdate")]
     [InlineData(QuotationStatus.PendingSendConfirmation, ProductStandardPriceState.PendingReapproval, "PendingSendConfirmation")]
     [InlineData(QuotationStatus.Sent, ProductStandardPriceState.PendingReapproval, "Sent")]
+    [InlineData(QuotationStatus.SendRejected, ProductStandardPriceState.PendingReapproval, "SendRejected")]
     public void DisplayPriorityMatchesContract(QuotationStatus status, ProductStandardPriceState review, string code)
         => Assert.Equal(code, QuotationDisplayStatusResolver.Resolve(status, [new() { State = review }]).Code);
 

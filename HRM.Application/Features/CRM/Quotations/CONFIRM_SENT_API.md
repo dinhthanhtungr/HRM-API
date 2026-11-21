@@ -1,5 +1,8 @@
 # Xác nhận gửi mức giá khách
 
+Quyết định từ chối dùng cùng capability/scope/token nhưng endpoint và trạng thái riêng:
+[reject-sent, vòng gửi lại và khóa PDF](SEND_REJECTION.md).
+
 BGĐ xác nhận đề nghị thương mại Sale đã gửi, không duyệt lại bảng giá chuẩn. Giá chuẩn, ngày hết hiệu lực,
 phiên bản chuẩn hoặc comparison rule mới không tự vô hiệu hóa yêu cầu đang chờ. Bảng đối chiếu và Body đã lưu
 được giữ nguyên; lúc xác nhận chỉ cập nhật trạng thái/người/ngày xác nhận và urgency theo workflow hiện có.

@@ -37,7 +37,7 @@ namespace HRM.Api.Controllers.CRM.CustomerCare;
 /// Task/plan được lưu trong WorkTaskSchema; interaction và AI summary dùng entity CRM chuyên biệt.
 /// </summary>
 [ApiController]
-[Authorize]
+[Authorize(Policy = HRM.Api.Security.Authorization.SensitiveDataAuthorization.PolicyName)]
 [Route("api/v1/crm")]
 public sealed class CustomerCrmController : ControllerBase
 {

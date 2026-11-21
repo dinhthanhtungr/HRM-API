@@ -50,13 +50,29 @@ public sealed class GetStockAvailableQueryHandler
             return OperationResult<PagedResult<StockAvailableDto>>.Fail("Invalid stock type.");
         }
 
+        if (request.SuggestionKeyword is not null)
+        {
+            var visible = await BuildShelfStockQueryAsync(request, companyId, cancellationToken);
+            var search = StockAvailableSmartSearch.Build(_dbContext, visible, companyId);
+            if (request.OnlyAvailableLeZero || request.AvailableMax.HasValue)
+                search = search.FilterSuggestionScope(rows => StockAvailableSmartSearch.FilterAvailability(
+                    _dbContext, rows, companyId, request.OnlyAvailableLeZero, request.AvailableMax));
+            var suggestions = await search.SuggestionsAsync<StockAvailableDto>(visible, request, cancellationToken);
+            return OperationResult<PagedResult<StockAvailableDto>>.Ok(suggestions!);
+        }
         var items = await BuildStockAvailableItemsAsync(request, companyId, cancellationToken);
+        if (request.ExportAll)
+        {
+            pageNumber = 1;
+            pageSize = Math.Max(items.Count, 1);
+        }
         var totalCount = items.Count;
         var pagedItems = items
             .Skip((pageNumber - 1) * pageSize)
             .Take(pageSize)
             .ToList();
 
+        await WarehouseDefectReasonReader.EnrichStockAsync(_dbContext, companyId, pagedItems, cancellationToken);
         return OperationResult<PagedResult<StockAvailableDto>>.Ok(
             new PagedResult<StockAvailableDto>(pagedItems, totalCount, pageNumber, pageSize));
     }
@@ -81,8 +97,13 @@ public sealed class GetStockAvailableQueryHandler
         }
 
         var keyword = request.NormalizedKeyword;
+        if (request.ExactCodes is { } exactCodes)
+            shelfQuery = shelfQuery.Where(stock => exactCodes.Contains(stock.Code!));
         shelfQuery = await _stockVisibilityService.ApplyAsync(
             shelfQuery, companyId, keyword, cancellationToken);
+
+        shelfQuery = StockAvailableSmartSearch.Build(_dbContext, shelfQuery, companyId)
+            .ApplyRequest(shelfQuery, keyword, request, out keyword);
 
         if (!string.IsNullOrWhiteSpace(keyword))
         {
@@ -273,7 +294,7 @@ public sealed class GetStockAvailableQueryHandler
             })
             .ToListAsync(cancellationToken);
 
-        var formulaCodesByMfg = await ReservedManufacturingFormulaReader.ReadAsync(
+        var formulaCodesByMfg = await ReservedManufacturingFormulaReader.ReadLinksAsync(
             _dbContext, companyId, reservedVaRows.Select(x => x.VaCode).Distinct().ToArray(), cancellationToken);
 
         var reservedVaMap = reservedVaRows
@@ -285,7 +306,8 @@ public sealed class GetStockAvailableQueryHandler
                     .ThenBy(y => y.CreatedDate)
                     .Select(y => new ReservedVaCodeDto
                     {
-                        VaCode = formulaCodesByMfg.GetValueOrDefault(y.VaCode) ?? string.Empty,
+                        VaCode = formulaCodesByMfg.GetValueOrDefault(y.VaCode)?.FormulaCode ?? string.Empty,
+                        MfgProductionOrderId = formulaCodesByMfg.GetValueOrDefault(y.VaCode)?.MfgProductionOrderId is Guid mfgId && mfgId != Guid.Empty ? mfgId : null,
                         ReservedKg = y.ReservedKg,
                         CreatedDate = y.CreatedDate
                     })

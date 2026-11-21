@@ -8,12 +8,18 @@ namespace HRM.Application.Features.PLM.SampleRequests.Dtos.SampleTrials;
 /// </summary>
 public sealed class SampleRequestSampleTrialReportDto
 {
+    public int UnreadMessageCount { get; set; }
     internal Services.SampleWorkDecision? WorkDecision { get; set; }
     [JsonIgnore]
     internal bool? CanActForSaleOwner { get; set; }
     public bool NeedsLabSchedule { get; set; }
     public bool HasAvailableFormula { get; set; }
+    public bool HasApprovedStandardPrice { get; set; }
+    public DateTime? ApprovedStandardPriceMilestoneAt { get; set; }
+    public string? ApprovedStandardPriceMilestoneBy { get; set; }
     public bool CanEditLabSchedule { get; set; }
+    public Reports.LabNoteDto? LatestLabNote { get; set; }
+    public bool CanWriteLabNote { get; set; }
     public string? PrimaryActionCode { get; set; }
     public string[] SupplementaryActionCodes { get; set; } = [];
     public Reports.SampleFlowStateDto? Flow { get; set; }
@@ -24,6 +30,7 @@ public sealed class SampleRequestSampleTrialReportDto
     public bool CanRecordCustomerFeedbackNote { get; set; }
     public Guid? LatestPriceEventId { get; set; }
     public bool CanCorrectCustomerFeedback { get; set; }
+    public bool IsChipFeedbackOptional { get; set; }
     public bool IsLegacyWork { get; set; }
     public bool IsLegacyWorkTracked { get; set; }
     public bool CanManageLegacyWorkTracking { get; set; }
@@ -49,10 +56,15 @@ public sealed class SampleRequestSampleTrialReportDto
     public bool CanUpdateTrial { get; set; }
     public bool CanUpdateExpectedPriceQuoteDate { get; set; }
     public bool CanUpdateCustomerFeedback { get; set; }
+    public Guid? DeliveryBatchId { get; set; }
     public string SampleRequestStatus { get; set; } = string.Empty;
+    public string? LabDeclineReason { get; set; }
+    public string? CancellationNote { get; set; }
 
+    public Guid CustomerId { get; set; }
     public string CustomerName { get; set; } = string.Empty;
     public string? CustomerExternalId { get; set; }
+    public string? CurrentCustomerSaleName { get; set; }
     [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public bool IsCustomerPriceContentHidden { get; set; }
     public CustomerPriceConfirmationDto? CustomerPriceConfirmation { get; set; }
@@ -66,6 +78,7 @@ public sealed class SampleRequestSampleTrialReportDto
     public bool CanConfirmCustomerPrice { get; set; }
     public bool CanRevokeCustomerPrice { get; set; }
     public bool CanReceiveLabStandard { get; set; }
+    public IReadOnlyList<string> PendingActionCodes { get; set; } = [];
     public DateTime? SaleFollowUpDate { get; set; }
     public string ManagerSalesName { get; set; } = string.Empty;
     public string SampleRequestExternalId { get; set; } = string.Empty;
@@ -130,6 +143,7 @@ public sealed class SampleRequestSampleTrialReportDto
     public SampleTrialStatus? Status { get; set; }
     public string? CustomerReplyStatus { get; set; }
     public DateTime? CustomerReplyDate { get; set; }
+    public bool? HasCurrentDeliveryFeedback { get; set; }
     public string? CustomerReplyNote { get; set; }
     public DateTime? OrderDate { get; set; }
 

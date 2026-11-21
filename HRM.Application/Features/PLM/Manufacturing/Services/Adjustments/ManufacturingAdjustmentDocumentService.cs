@@ -66,7 +66,7 @@ internal sealed class ManufacturingAdjustmentDocumentService(
         Guid? adjustmentId = null
     )
     {
-        var calculated = await adjustments.CalculateDraftAsync(orderId, request, ct, adjustmentId);
+        var calculated = await adjustments.CalculateDraftAsync(orderId, request, ct, adjustmentId, validateDuplicates: true);
         if (!calculated.Success || calculated.Data is null)
             return Fail(calculated.Message ?? "Không tính được phiếu chỉnh màu.");
         var data = calculated.Data.Adjustment;

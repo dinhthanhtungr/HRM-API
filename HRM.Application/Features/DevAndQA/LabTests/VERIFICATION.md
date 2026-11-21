@@ -1,4 +1,9 @@
-> LabTest đang tạm dừng; tài liệu bên dưới giữ để khôi phục sau. Xem [trạng thái hiện tại](README.md#trạng-thái-hiện-tại-tạm-dừng).
+> Kiểm chứng luồng Excel cũ dưới đây không áp dụng cho API cơ bản. Contract đang mở: [BASIC_API.md](BASIC_API.md).
+
+API cơ bản: build HRM.Api thành công; 268 test DevAndQA pass, gồm BasicLabTestTests và EvaluationFileSaveTests.
+FE: 97 test form/IQC/attachment pass; lint phần sửa, TypeScript và production build pass.
+UI style/theme checks pass. Không ghi DB hoặc restart dịch vụ.
+UI xác nhận được nút cộng mở dialog; API đang phục vụ báo Failed to fetch khi tải template, chưa xác minh lưu thực tế.
 
 # Kiểm chứng
 

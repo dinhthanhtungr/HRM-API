@@ -64,6 +64,7 @@ internal sealed class CreateFormulaCommandHandler
                     "Product colour code and product name are required before creating a formula.");
 
             var now = DateTime.Now;
+            await using var transaction = await _dbContext.BeginTransactionAsync(cancellationToken);
             var formula = new Formula
             {
                 FormulaId = Guid.CreateVersion7(),
@@ -97,7 +98,7 @@ internal sealed class CreateFormulaCommandHandler
                 formula,
                 request.Materials,
                 companyId,
-                cancellationToken);
+                cancellationToken, employeeId);
 
             await _formulaVersionService.SaveSnapshotAsync(
                 formula,
@@ -107,6 +108,7 @@ internal sealed class CreateFormulaCommandHandler
                 force: true,
                 cancellationToken);
 
+            await transaction.CommitAsync(cancellationToken);
             return OperationResult<FormulaWriteResultDto>.Ok(
                 FormulaWriteService.ToResult(formula),
                 "Created formula successfully.");

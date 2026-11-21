@@ -17,6 +17,7 @@ namespace HRM.Domain.Enums.CustomerEnum
         Rejected = 60,
         Expired = 70,
         Cancelled = 80,
-        PendingSendConfirmation = 90
+        PendingSendConfirmation = 90,
+        SendRejected = 100
     }
 }

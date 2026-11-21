@@ -27,6 +27,8 @@ Không cập nhật ExpectedDate, RequiredDate, lịch sản xuất hay ĐHG; kh
 InternalMail. PublishAsync lưu notification, recipient audit, inbox/unread và outbox
 SignalR/Web Push theo cấu hình hiện có.
 
+API này dùng chung `PromisedDeliveryNotifier` với các luồng sửa ngày trong lệnh sản xuất. Luồng sửa lấy ngày cũ trước khi gán và phát thông báo cùng transaction với lưu ngày mới; không gọi lại API này sau khi đã lưu, vì lúc đó so với ngày mới sẽ trở thành không đổi. Ngày mới null hoặc không đổi phần ngày không phát. Sửa information/kế hoạch, inform/công thức, tạo VA cho lệnh đã có và dùng hàng tồn đều áp dụng; tạo/copy lệnh mới không tự phát.
+
 Topic `MerchandiseOrderPromisedDeliveryNotified = 55` có code
 `sales.merchandise_order.promised_delivery_notified`, category `sales_order`, event group
 `schedule`, aggregate `MerchandiseOrder`. Title là MerchandiseOrder.ExternalId;
@@ -68,3 +70,5 @@ Ngày cũ lấy từ ExpectedDate đang lưu của MFG tại thời điểm gọ
 nếu null thì hiển thị `chưa xác định`. Payload `previousPromisedDeliveryDate` là ngày
 cũ ISO hoặc null; `promisedDeliveryDate` là ngày mới từ request. FE gọi trước khi
 lưu ngày mới nếu muốn giữ đúng ngày cũ. Endpoint này chỉ thông báo, không lưu thay đổi ngày.
+
+Thông báo ngày hứa giao mới bổ sung `customerCode`, `customerName`, `productCodes` trong từng `merchandiseOrders` từ snapshot ĐHG/detail active cùng company. Gộp theo ID ĐHG, mã sản phẩm không trùng. Không thêm query hay thay người nhận. Thông báo cũ thiếu dữ liệu này giữ cách hiển thị cũ; không backfill DB.

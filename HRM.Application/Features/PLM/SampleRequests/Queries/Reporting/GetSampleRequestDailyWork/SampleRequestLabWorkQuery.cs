@@ -42,7 +42,12 @@ internal static class SampleRequestLabWorkQuery
                     .Select(version => (DateTime?)version.CreatedAt).Max()
                 // Tương thích xác nhận cũ chưa có audit/liên kết trực tiếp; không dùng message cho lần xác nhận mới.
                 ?? messages.Where(message => message.Conversation.CompanyId == row.SampleRequest.CompanyId &&
-                        message.Conversation.RelatedId == row.SampleRequest.SampleRequestId)
+                        (message.Conversation.RelatedType == HRM.Domain.Enums.InternalMailEnums.InternalMailRelatedType.SampleRequest
+                            ? message.Conversation.RelatedId == row.SampleRequest.SampleRequestId
+                            : db.InternalConversations.Any(root => root.InternalConversationId == message.Conversation.RelatedId &&
+                                root.CompanyId == row.SampleRequest.CompanyId && root.IsActive &&
+                                root.RelatedType == HRM.Domain.Enums.InternalMailEnums.InternalMailRelatedType.SampleRequest &&
+                                root.RelatedId == row.SampleRequest.SampleRequestId)))
                     .Select(message => (DateTime?)message.SentAt).Max()
         });
         return SampleFlowQueueQuery.Enrich(enriched, db);

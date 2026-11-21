@@ -11,16 +11,19 @@ namespace HRM.Application.Features.DevAndQA.IQC.Services;
 /// <summary>Đọc context dòng phiếu kho và QC mới nhất; dùng chung selector QC cho detail và POST lặp.</summary>
 internal sealed partial class IqcReader
 {
-    public Task<GetQCInputByQC?> GetDetailByVoucherDetailIdAsync(long voucherDetailId, CancellationToken ct) =>
-        BuildDetailQuery(voucherDetailId).FirstOrDefaultAsync(ct);
+    public Task<GetQCInputByQC?> GetDetailByVoucherDetailIdAsync(long voucherDetailId, CancellationToken ct, bool trackingOnly = false) =>
+        BuildDetailQuery(voucherDetailId, trackingOnly).FirstOrDefaultAsync(ct);
 
-    internal IQueryable<GetQCInputByQC> BuildDetailQuery(long voucherDetailId)
+    internal IQueryable<GetQCInputByQC> BuildDetailQuery(long voucherDetailId, bool trackingOnly = false)
     {
         var q =
             from vd in WarehouseVoucherDetails.AsNoTracking()
             join v in WarehouseVouchers.AsNoTracking()
                 on vd.VoucherId equals v.VoucherId
-            where vd.VoucherDetailId == voucherDetailId
+            where vd.VoucherDetailId == voucherDetailId &&
+                (!trackingOnly || (v.VoucherType == (int)WareHouseRequestType.ImportOther &&
+                    (vd.VoucherType == VoucherDetailType.Waiter || vd.VoucherType == VoucherDetailType.QCPass ||
+                     vd.VoucherType == VoucherDetailType.QCFail || vd.VoucherType == VoucherDetailType.Special)))
 
             join r0 in WarehouseRequests.AsNoTracking()
                 on v.RequestId equals r0.RequestId into rJoin
@@ -34,16 +37,16 @@ internal sealed partial class IqcReader
                     qc.QCInputByQCId,
                     qc.CSName,
                     qc.CSExternalId,
-                    qc.InspectionMethod,
+                    InspectionMethod = trackingOnly ? null : qc.InspectionMethod,
                     qc.IsCOAProvided,
                     qc.IsMSDSTDSProvided,
                     qc.IsMetalDetectionRequired,
-                    qc.AttachmentCollectionId,
-                    qc.AttachmentStatus,
-                    qc.AttachmentLastError,
+                    AttachmentCollectionId = trackingOnly ? null : qc.AttachmentCollectionId,
+                    AttachmentStatus = trackingOnly ? HRM.Domain.Enums.Attachment.AttachmentUploadStatus.None : qc.AttachmentStatus,
+                    AttachmentLastError = trackingOnly ? null : qc.AttachmentLastError,
                     qc.IsSuccessQuality,
                     qc.ImportWarehouseType,
-                    qc.Note,
+                    Note = trackingOnly ? null : qc.Note,
                     qc.CreatedDate,
                     qc.CreatedBy
                 })

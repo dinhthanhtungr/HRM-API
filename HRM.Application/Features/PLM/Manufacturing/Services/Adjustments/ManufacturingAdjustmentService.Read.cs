@@ -57,13 +57,15 @@ internal sealed partial class ManufacturingAdjustmentService
 
         if (!string.IsNullOrWhiteSpace(request.Status))
         {
-            if (!Enum.TryParse<AdjustmentStatus>(request.Status.Trim(), true, out var parsed) || !Enum.IsDefined(parsed))
+            if (!Enum.TryParse<AdjustmentStatus>((request.Status.Trim().Equals("Approve", StringComparison.OrdinalIgnoreCase) ? nameof(AdjustmentStatus.Approved) : request.Status.Trim()), true, out var parsed) || !Enum.IsDefined(parsed))
             {
                 return OperationResult<List<GetManufacturingFormulaAdjustment>>.Fail("Trạng thái không hợp lệ.");
             }
 
             var normalized = parsed.ToString();
-            query = query.Where(x => x.Status == normalized);
+            query = parsed == AdjustmentStatus.Approved || parsed == AdjustmentStatus.Accepted
+                ? query.Where(x => x.Status == nameof(AdjustmentStatus.Approved) || x.Status == "Approve" || x.Status == nameof(AdjustmentStatus.Accepted))
+                : query.Where(x => x.Status == normalized);
         }
 
         if (request.BatchNo.HasValue)
@@ -74,10 +76,12 @@ internal sealed partial class ManufacturingAdjustmentService
             query = query.Where(x => x.Batches.Any(b => b.IsAdditionalBatch == request.IsAdditionalBatch.Value));
         if (!string.IsNullOrWhiteSpace(request.BatchStatus))
         {
-            if (!Enum.TryParse<AdjustmentStatus>(request.BatchStatus.Trim(), true, out var batchStatus) || !Enum.IsDefined(batchStatus))
+            if (!Enum.TryParse<AdjustmentStatus>((request.BatchStatus.Trim().Equals("Approve", StringComparison.OrdinalIgnoreCase) ? nameof(AdjustmentStatus.Approved) : request.BatchStatus.Trim()), true, out var batchStatus) || !Enum.IsDefined(batchStatus))
                 return OperationResult<List<GetManufacturingFormulaAdjustment>>.Fail("Trạng thái mẻ không hợp lệ.");
             var normalized = batchStatus.ToString();
-            query = query.Where(x => x.Batches.Any(b => b.Status == normalized));
+            query = batchStatus == AdjustmentStatus.Approved || batchStatus == AdjustmentStatus.Accepted
+                ? query.Where(x => x.Batches.Any(b => b.Status == nameof(AdjustmentStatus.Approved) || b.Status == "Approve" || b.Status == nameof(AdjustmentStatus.Accepted)))
+                : query.Where(x => x.Batches.Any(b => b.Status == normalized));
         }
 
         var skip = (long)(request.Page - 1) * request.PageSize;

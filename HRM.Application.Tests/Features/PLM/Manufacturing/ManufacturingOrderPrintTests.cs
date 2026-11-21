@@ -14,6 +14,33 @@ namespace HRM.Application.Tests.Features.PLM.Manufacturing;
 
 public sealed class ManufacturingOrderPrintTests
 {
+    [Theory]
+    [InlineData("allowed", true)]
+    [InlineData("view", false)]
+    [InlineData("materials", false)]
+    [InlineData("manage-formula", false)]
+    public async Task LabPdf_RequiresExplicitViewMaterialAndFormulaPermissions(string missing, bool allowed)
+    {
+        var f = new Fixture();
+        f.Base.User.HasExplicitPermissionSet = true;
+        f.Base.User.Permissions = new[]
+        {
+            ("view", ApplicationPermissions.PLM.ViewProductionOrders),
+            ("materials", ApplicationPermissions.PLM.ViewFormulaMaterials),
+            ("manage-formula", ApplicationPermissions.PLM.ManageManufacturingFormulas)
+        }.Where(x => x.Item1 != missing).Select(x => x.Item2).ToArray();
+
+        var result = await f.Handler.Handle(new(f.Base.Order.MfgProductionOrderId), default);
+
+        Assert.Equal(allowed, result.Success);
+        if (allowed) Assert.Equal("%PDF", System.Text.Encoding.ASCII.GetString(result.Data!, 0, 4));
+        else
+        {
+            Assert.Null(f.Renderer.Document);
+            Assert.Equal(0, f.Base.Store.Saves);
+        }
+    }
+
     [Fact]
     public async Task Print_InfersLatestRawMaterialLotAndPersistsOnlyMissingLot()
     {

@@ -29,11 +29,14 @@ internal sealed class RecordCustomerFeedbackNoteCommandHandler(IPLMWriteDbContex
             return Fail("Employee is not active.");
         var scope = await visibility.BuildScopeAsync(ct);
         var allowedOwners = SampleSaleWorkflowAccess.GetAllowedOwnerIds(user, permissions, scope);
+        var companyWide = SampleSaleWorkflowAccess.HasCompanyWideAccess(user, scope);
         var parents = visibility.ApplySampleRequestVisibility(db.SampleRequests.AsNoTracking(), db.Customers.AsNoTracking(), scope)
             .Where(x => x.SampleRequestId == command.SampleRequestId && x.CompanyId == company && x.IsActive &&
-                allowedOwners.Contains(x.ManagerBy) && x.Status != "Cancelled");
+                (companyWide || allowedOwners.Contains(x.ManagerBy)) && x.Status != "Cancelled" && x.Status != "LabDeclined");
         var parent = await parents.Select(x => new { x.SampleRequestId, x.UpdatedDate }).SingleOrDefaultAsync(ct);
         if (parent is null) return Fail("Request is not accessible.");
+        if (await SampleRequestLabPauseRules.IsPausedAsync(db, company, parent.SampleRequestId, ct))
+            return Fail(SampleRequestLabPauseRules.PausedMessage);
         if (parent.UpdatedDate != command.ExpectedRequestUpdatedDate) return Fail("Request changed. Reload before saving.");
         var priceEvents = db.SampleRequestWorkflowEvents.AsNoTracking().Where(x => x.CompanyId == company &&
             x.SampleRequestId == parent.SampleRequestId && SampleRequestPriceFeedbackVisibility.PriceEventTypes.Contains(x.EventType));
@@ -54,7 +57,7 @@ internal sealed class RecordCustomerFeedbackNoteCommandHandler(IPLMWriteDbContex
             SampleFlowRules.PriceFeedbackShared, now, note, primary.FormulaId, primary.SampleRequestSampleTrialId);
         shared.RelatedEventId = primary.Id;
         db.SampleRequestWorkflowEvents.Add(shared);
-        SampleRequestWorkflowNotificationQueue.Queue(db, shared);
+        SampleRequestWorkflowNotificationQueue.Queue(db, shared, feedbackNoteUpdated: true);
         db.AuditLogs.Add(new AuditLog
         {
             CompanyId = company, SchemaName = "SampleRequests", TableName = "SampleRequests", RecordId = parent.SampleRequestId,

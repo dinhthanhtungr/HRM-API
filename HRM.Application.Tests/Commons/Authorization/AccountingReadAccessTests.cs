@@ -16,7 +16,7 @@ namespace HRM.Application.Tests.Commons.Authorization;
 public sealed class AccountingReadAccessTests
 {
     [Fact]
-    public void Accounting_HasEveryPresidentReadCapabilityInCompatibilityMapping()
+    public void Accounting_HasPresidentReadCapabilitiesExceptRestrictedPlpuCapabilities()
     {
         var permissions = new CurrentUserPermissionService(new User());
         var presidentReadPermissions = ApplicationPermissionCatalog.Codes.Where(code =>
@@ -24,7 +24,13 @@ public sealed class AccountingReadAccessTests
             ApplicationPermissionRoleSets.GetRoles(code).Contains(ApplicationRoles.President));
 
         Assert.NotEmpty(presidentReadPermissions);
-        Assert.All(presidentReadPermissions, code => Assert.True(permissions.HasPermission(code), code));
+        string[] restrictedPermissions = [
+            ApplicationPermissions.Reports.ViewPlpu,
+            ApplicationPermissions.Warehouse.ViewMixingStock
+        ];
+        Assert.All(presidentReadPermissions.Except(restrictedPermissions),
+            code => Assert.True(permissions.HasPermission(code), code));
+        Assert.All(restrictedPermissions, code => Assert.False(permissions.HasPermission(code), code));
         Assert.False(permissions.HasPermission("unknown.resource.view"));
     }
 

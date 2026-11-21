@@ -13,6 +13,10 @@ public sealed class InternalMessageDto
     public Guid ConversationId { get; set; }
     public Guid SenderEmployeeId { get; set; }
     public string SenderName { get; set; } = string.Empty;
+    /// <summary>Navigation hint only; no permission grant or raw Identity roles.</summary>
+    public string? SenderSampleWorkAudience { get; set; }
+    /// <summary>Whether this request belongs to the All sample-work list's creation-date scope.</summary>
+    public bool? SampleWorkTrackingEligible { get; set; }
 
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public InternalMessageType MessageType { get; set; }
@@ -72,6 +76,12 @@ public sealed class InternalMessageAttachmentDto
     public string ContentType { get; set; } = "application/octet-stream";
     public string Kind { get; set; } = "File";
     public bool IsImage { get; set; }
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public HRM.Domain.Enums.Attachment.AttachmentMediaKind MediaKind { get; set; }
+    public string? VideoInfoUrl { get; set; }
+    public string? VideoRetryUrl { get; set; }
+    public string? PlaybackUrl { get; set; }
+    public string? PosterUrl { get; set; }
     public string ContentUrl { get; set; } = string.Empty;
     public string? ThumbnailUrl { get; set; }
     public string DownloadUrl { get; set; } = string.Empty;
@@ -91,6 +101,12 @@ public sealed class InternalConversationAttachmentDto
     public string ContentType { get; set; } = "application/octet-stream";
     public string Kind { get; set; } = "File";
     public bool IsImage { get; set; }
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public HRM.Domain.Enums.Attachment.AttachmentMediaKind MediaKind { get; set; }
+    public string? VideoInfoUrl { get; set; }
+    public string? VideoRetryUrl { get; set; }
+    public string? PlaybackUrl { get; set; }
+    public string? PosterUrl { get; set; }
     public string ContentUrl { get; set; } = string.Empty;
     public string? ThumbnailUrl { get; set; }
     public string DownloadUrl { get; set; } = string.Empty;

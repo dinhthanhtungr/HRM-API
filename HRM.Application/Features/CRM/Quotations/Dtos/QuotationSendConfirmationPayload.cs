@@ -7,6 +7,11 @@ public sealed class QuotationSendConfirmationPayload
     public const string PendingStatus = "pending";
     public const string ConfirmedStatus = "confirmed";
     public const string SupersededStatus = "superseded";
+    public const string RejectedStatus = "rejected";
+    public string? RejectionReason { get; set; }
+    public DateTime? RejectedAt { get; set; }
+    public Guid? RejectedBy { get; set; }
+    public string? RejectedPricingFingerprint { get; set; }
     public const int CurrentComparisonRuleVersion = 3;
     public int ComparisonRuleVersion { get; set; }
     public DateTime? PricingEvaluatedAt { get; set; }
@@ -31,4 +36,11 @@ public sealed class ConfirmQuotationSentRequest
 {
     public Guid? RequestMessageId { get; init; }
     public DateTime? ExpectedUpdatedDate { get; init; }
+}
+
+public sealed class RejectQuotationSentRequest
+{
+    public Guid? RequestMessageId { get; init; }
+    public DateTime? ExpectedUpdatedDate { get; init; }
+    public string? Reason { get; init; }
 }

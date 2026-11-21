@@ -76,6 +76,7 @@ internal sealed class UpdateFormulaInformationCommandHandler
             }
 
             var now = DateTime.Now;
+            await using var transaction = await _dbContext.BeginTransactionAsync(cancellationToken);
             var materialsChanged = await _pricingReview.RequiresMaterialReviewAsync(
                 formula, command.Request, companyId, cancellationToken);
             await _formulaWriteService.ApplyFormulaUpdateAsync(
@@ -103,6 +104,7 @@ internal sealed class UpdateFormulaInformationCommandHandler
                 force: false,
                 cancellationToken);
 
+            await transaction.CommitAsync(cancellationToken);
             if (!reviewQueued)
             {
                 return OperationResult<FormulaWriteResultDto>.Ok(

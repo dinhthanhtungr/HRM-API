@@ -5,8 +5,10 @@ using MediatR;
 
 namespace HRM.Application.Features.PLM.Manufacturing.Queries.GetProductionOrders;
 
-public sealed record GetProductionOrdersQuery : IRequest<OperationResult<PagedResult<GetSummaryMfgProductionOrder>>>
+public sealed record GetProductionOrdersQuery : IRequest<OperationResult<PagedResult<GetSummaryMfgProductionOrder>>>, HRM.Application.Commons.Searching.ISmartSearchRequest
 {
+    public string? SearchSelections { get; init; }
+    public string? SuggestionKeyword { get; init; }
     public int PageNumber { get; init; } = 1;
     public int PageSize { get; init; } = 15;
     public string? Keyword { get; init; }

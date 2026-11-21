@@ -12,6 +12,11 @@ internal sealed class SampleRequestSampleTrialReportRow
     public bool HasPriceFeedback { get; set; }
     public bool HasAcceptedCustomerPrice { get; set; }
     public bool HasFinalizedChip { get; set; }
+    public bool HasSalePriceWork { get; set; }
+    public bool HasSaleFeedbackWork { get; set; }
     public Services.SampleWorkDecision? WorkDecision { get; set; }
     public bool NeedsSchedule { get; set; }
+    public int WorkSortRank { get; set; }
+    public bool WorkSortOverdue { get; set; }
+    public DateTime? WorkSortDue { get; set; }
 }

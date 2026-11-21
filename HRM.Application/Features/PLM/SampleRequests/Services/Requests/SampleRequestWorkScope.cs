@@ -18,6 +18,7 @@ internal static class SampleRequestWorkScope
     {
         var tracking = TrackingEvents(events);
         return requests.Where(request => request.CreatedDate >= StartedAt ||
+            request.WorkflowEvents.Any(e => e.CompanyId == request.CompanyId && e.EventType == Services.Workflow.SampleFollowUpRules.Started) ||
             tracking.Where(e => e.CompanyId == request.CompanyId && e.SampleRequestId == request.SampleRequestId)
                 .OrderByDescending(e => e.RecordedAt).ThenByDescending(e => e.Id)
                 .Select(e => e.EventType).FirstOrDefault() == LegacyIncluded);

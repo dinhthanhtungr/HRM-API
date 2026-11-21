@@ -11,10 +11,13 @@ internal sealed class GetInternalConversationParticipantsQueryHandler(InternalMa
 {
     public async Task<IReadOnlyList<InternalConversationParticipantDto>?> Handle(GetInternalConversationParticipantsQuery request, CancellationToken ct)
     {
+        if (request.AreaCode == InternalMailAreaAccessService.ResearchArea)
+            return await areas.PreviewResearchParticipantsAsync(request.ConversationId, ct);
         var result = await areas.Conversations().AsNoTracking().Where(c => c.InternalConversationId == request.ConversationId)
             .Select(c => new
             {
                 c.RelatedType,
+                c.RelatedExternalId,
                 Participants = c.Participants.Where(p => p.IsActive).OrderBy(p => p.JoinedAt)
                     .Select(p => new InternalConversationParticipantDto
                     {
@@ -23,7 +26,8 @@ internal sealed class GetInternalConversationParticipantsQueryHandler(InternalMa
             }).FirstOrDefaultAsync(ct);
         if (result is null || (request.AreaCode != null && request.AreaCode != InternalMailAreaAccessService.AreaOf(result.RelatedType))) return null;
         var visible = await areas.VisibleParticipantsAsync(result.RelatedType, result.Participants, ct);
-        if (request.AreaCode is null) return await areas.WithReaderGroupsAsync(visible, ct);
+        if (request.AreaCode is null && result.RelatedExternalId != InternalMailAreaAccessService.ResearchMarker)
+            return await areas.WithReaderGroupsAsync(visible, ct);
 
         var memberIds = result.Participants.Select(p => p.EmployeeId).ToArray();
         var eligible = await areas.Recipients(user.CompanyId!.Value, request.AreaCode, request.ConversationId)

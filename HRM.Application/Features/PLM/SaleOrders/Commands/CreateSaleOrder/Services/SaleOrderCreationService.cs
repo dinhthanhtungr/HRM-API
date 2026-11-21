@@ -21,24 +21,30 @@ namespace HRM.Application.Features.PLM.SaleOrders.Commands.CreateSaleOrder.Servi
 /// </summary>
 internal sealed class SaleOrderCreationService
 {
+    private readonly HRM.Application.Features.CRM.CustomerCare.SampleSharingGroups.CustomerSampleSharingService _sampleSharing;
     private readonly ISaleOrderDbContext _dbContext;
     private readonly IExternalIdService _externalIdService;
     private readonly IEventLogWriter _eventLogWriter;
     private readonly SaleOrderLeadConversionService _leadConversionService;
     private readonly SaleOrderStandardSampleService _standardSamples;
+    private readonly HRM.Application.Features.PLM.SaleOrders.DeliverySchedules.DeliveryScheduleService? _deliverySchedules;
 
     public SaleOrderCreationService(
         ISaleOrderDbContext dbContext,
         IExternalIdService externalIdService,
         IEventLogWriter eventLogWriter,
         SaleOrderLeadConversionService leadConversionService,
-        SaleOrderStandardSampleService standardSamples)
+        SaleOrderStandardSampleService standardSamples,
+        HRM.Application.Features.CRM.CustomerCare.SampleSharingGroups.CustomerSampleSharingService sampleSharing,
+        HRM.Application.Features.PLM.SaleOrders.DeliverySchedules.DeliveryScheduleService? deliverySchedules = null)
     {
         _dbContext = dbContext;
         _externalIdService = externalIdService;
         _eventLogWriter = eventLogWriter;
         _leadConversionService = leadConversionService;
         _standardSamples = standardSamples;
+        _sampleSharing = sampleSharing;
+        _deliverySchedules = deliverySchedules;
     }
 
     public async Task<OperationResult<MerchandiseOrder>> CreateAsync(
@@ -91,6 +97,21 @@ internal sealed class SaleOrderCreationService
         }
 
         var detailFormulaIds = details.Select(x => x.FormulaId).Distinct().ToArray();
+        if (_sampleSharing.Enabled)
+        {
+            var owners = await _sampleSharing.ResolveOwnerIdsAsync(companyId, request.CustomerId, cancellationToken, forWrite: true);
+            if (owners is null) return OperationResult<MerchandiseOrder>.Fail("Không có quyền lên đơn cho khách hàng này.");
+            var customerCode = await _dbContext.Customers.AsNoTracking().Where(x => x.CompanyId == companyId && x.CustomerId == request.CustomerId)
+                .Select(x => x.ExternalId).FirstOrDefaultAsync(cancellationToken);
+            if (!HRM.Application.Features.PLM.Shared.Rules.PLMCustomerRules.CanUseAllCustomersFormula(request.OrderType,
+                HRM.Application.Features.PLM.Shared.Rules.PLMCustomerRules.IsInternalCustomerExternalId(customerCode)))
+            {
+                var eligible = await _sampleSharing.EligibleProductsAsync(companyId, owners,
+                    details.Select(x => x.ProductId).Distinct().ToArray(), cancellationToken);
+                if (details.Any(x => !eligible.Contains(x.ProductId)))
+                    return OperationResult<MerchandiseOrder>.Fail("Mẫu không thuộc khách đặt hàng hoặc nhóm dùng chung mẫu còn hoạt động.");
+            }
+        }
         var formulaRows = await _dbContext.Formulas
             .AsNoTracking()
             .Where(x =>
@@ -206,7 +227,7 @@ internal sealed class SaleOrderCreationService
                 detailRequest.UnitPriceAgreed * detailRequest.ExpectedQuantity,
                 2,
                 MidpointRounding.AwayFromZero);
-            order.MerchandiseOrderDetails.Add(new MerchandiseOrderDetail
+            var newDetail = new MerchandiseOrderDetail
             {
                 MerchandiseOrderDetailId = detailRequest.MerchandiseOrderDetailId == Guid.Empty
                     ? Guid.CreateVersion7()
@@ -232,7 +253,14 @@ internal sealed class SaleOrderCreationService
                 UnitPriceAgreed = detailRequest.UnitPriceAgreed,
                 TotalPriceAgreed = totalPrice,
                 IsActive = true
-            });
+            };
+            if (detailRequest.DeliverySchedules is not null)
+            {
+                var scheduleError = _deliverySchedules?.PrepareNewDetail(newDetail, detailRequest.DeliverySchedules, employeeId, now)
+                    ?? (_deliverySchedules is null ? "Luồng chia đợt chưa sẵn sàng." : null);
+                if (scheduleError is not null) return OperationResult<MerchandiseOrder>.Fail(scheduleError);
+            }
+            order.MerchandiseOrderDetails.Add(newDetail);
         }
 
         order.TotalPrice = Math.Round(

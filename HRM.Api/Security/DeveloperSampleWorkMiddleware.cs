@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using System.Text.Json;
+using HRM.Api.Security.Authorization;
 using HRM.Application.Abstractions.Authentication;
 using HRM.Application.Commons.Authorization;
 using HRM.Domain.Entities.AuditSchema;
@@ -24,6 +25,7 @@ public sealed class DeveloperSampleWorkMiddleware(RequestDelegate next)
         if (!context.Request.Headers.ContainsKey(Header)) { await next(context); return; }
         var original = context.User;
         if (original.Identity?.IsAuthenticated != true || !original.IsInRole(ApplicationRoles.Developer) ||
+            ImsSessionAuthorizationMiddleware.HasImsRole(original) ||
             !IsSupportedPath(context.Request.Path) ||
             !Guid.TryParse(original.FindFirstValue(ClaimTypes.NameIdentifier) ?? original.FindFirstValue("sub"), out var actorId) ||
             !Guid.TryParse(original.FindFirstValue("companyId"), out var company) ||
@@ -31,7 +33,8 @@ public sealed class DeveloperSampleWorkMiddleware(RequestDelegate next)
             !Guid.TryParse(context.Request.Headers[Header].ToString(), out var employee))
         { context.Response.StatusCode = StatusCodes.Status403Forbidden; return; }
         var target = await identities.ResolveDeveloperSampleWorkUserAsync(actorId, company, employee, context.RequestAborted);
-        if (target is null) { context.Response.StatusCode = StatusCodes.Status403Forbidden; return; }
+        if (target is null || target.Roles.Contains(ApplicationRoles.InternalSystems.IMSUser, StringComparer.OrdinalIgnoreCase))
+        { context.Response.StatusCode = StatusCodes.Status403Forbidden; return; }
         var claims = new List<Claim>
         {
             new(ClaimTypes.NameIdentifier, target.UserId.ToString()), new("employeeId", employee.ToString()),

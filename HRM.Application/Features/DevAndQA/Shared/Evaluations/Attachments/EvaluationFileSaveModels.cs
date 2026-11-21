@@ -4,7 +4,7 @@ using HRM.Application.Features.DevAndQA.Shared.Evaluations.Dtos;
 
 namespace HRM.Application.Features.DevAndQA.Shared.Evaluations.Attachments;
 
-public enum EvaluationFileResource { Iqc = 2, Coa = 3 }
+public enum EvaluationFileResource { Iqc = 2, Coa = 3, Lab = 6 }
 
 /// <summary>Ghép file kết quả bằng EvaluationStandardId. FileKeys là tên part multipart.</summary>
 public sealed record EvaluationFileBinding(Guid? EvaluationStandardId = null,

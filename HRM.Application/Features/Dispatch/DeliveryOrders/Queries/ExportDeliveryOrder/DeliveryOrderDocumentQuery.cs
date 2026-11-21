@@ -1,12 +1,13 @@
 using HRM.Application.Features.Dispatch.DeliveryOrders.Dtos;
 using HRM.Domain.Entities.DeliverySchema;
+using HRM.Domain.Entities.PrintectSchema;
 
 namespace HRM.Application.Features.Dispatch.DeliveryOrders.Queries.ExportDeliveryOrder;
 
 internal static class DeliveryOrderDocumentQuery
 {
     public static IQueryable<DeliveryOrderDocumentDto> Project(
-        IQueryable<DeliveryOrder> orders, Guid id, Guid companyId)
+        IQueryable<DeliveryOrder> orders, Guid id, Guid companyId, IQueryable<CustomerLabelDetail>? labelNames = null)
         => orders.Where(x => companyId != Guid.Empty && x.Id == id && x.CompanyId == companyId && x.IsActive)
             .Select(x => new DeliveryOrderDocumentDto
             {
@@ -35,8 +36,11 @@ internal static class DeliveryOrderDocumentQuery
                     {
                         MerchandiseOrderDetailId = d.MerchandiseOrderDetailId,
                         ProductId = d.ProductId,
-                        ProductCode = d.ProductExternalIdSnapShot,
-                        ProductName = d.ProductNameSnapShot,
+                        ProductCode = d.Product != null && d.Product.CompanyId == companyId ? d.Product.ColourCode : null,
+                        ProductName = (labelNames == null ? null : labelNames
+                            .Where(n => n.Header.CustomerId == x.CustomerId && n.Header.ProductId == d.ProductId)
+                            .Select(n => n.FieldValue!.Trim()).FirstOrDefault()) ??
+                            (d.Product != null && d.Product.CompanyId == companyId ? d.Product.Name : null),
                         PONo = d.PONo,
                         Quantity = d.Quantity,
                         NumOfBags = d.NumOfBags,

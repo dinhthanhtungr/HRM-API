@@ -8,6 +8,10 @@ optimistic concurrency, notification và quotation reconciliation để không t
 
 ## Quyền và scope
 
+Duyệt Draft, tạo+duyệt ngay và xác nhận giữ chuẩn hiện tại xếp việc tự kiểm tra các BBG đang chờ gửi.
+Worker xử lý sau commit, không chặn màn duyệt nếu việc chuyển BBG lỗi; giữ nguyên giá khách/snapshot cũ.
+Xem [contract tự đánh dấu Đã gửi](../../CRM/Quotations/AUTO_SEND_AFTER_PRICING_APPROVAL.md).
+
 Tất cả endpoint yêu cầu policy `Executive.ManageProductPricingReview`, gồm role `President`,
 `Developer` và `ACCUser`. Handler ghi tiếp tục chỉ nhận President/Developer; handler đọc cho phép cả ACCUser.
 Handler kiểm tra lại `CompanyId`, `EmployeeId`, Product active/cùng company và quan hệ Product–Material
@@ -306,6 +310,11 @@ Nếu bất kỳ item nguồn nào thiếu giá, preview/create/update/approve b
 UI cho President biết item cần rà soát.
 
 ## Lưu, cập nhật và duyệt
+
+Khi duyệt, tạo-duyệt hoặc xác nhận lại giá chuẩn, writer queue thông báo SampleRequest trước SaveChanges.
+Ghép đúng công ty/sản phẩm/VU đang dùng; lưu snapshot giá vào outbox, không phụ thuộc việc có báo giá CRM chờ duyệt.
+Retry cùng version/TP không tạo thêm tin. Thông báo chỉ thuộc nhóm Giá theo capability; Lab có tín hiệu
+đối chiếu thẻ không chứa giá. Xem [contract](../../Notifications/README.md#bgd-duyệt-giá-chuẩn-cho-yêu-cầu-mẫu).
 
 `POST /versions` yêu cầu `idempotencyKey` là GUID. GUID này đồng thời được dùng làm `ProductPricingVersionId`, vì vậy
 retry qua restart vẫn trả lại cùng version thay vì tạo bản ghi trùng. `expectedCurrentVersionId` và

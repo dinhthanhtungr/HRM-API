@@ -39,10 +39,13 @@ internal static class PresentationDependencyInjection
                 .Get<QuotationFeatureOptions>() ?? new QuotationFeatureOptions());
         services.AddSignalR();
         services.AddHostedService<OutboxProcessor>();
+        services.AddHostedService<QuotationPricingApprovalAutoSendWorker>();
         services.AddHostedService<SampleRequestWorkflowNotificationWorker>();
+        services.AddHostedService<SampleRequestConversationSummaryWorker>();
         services.AddScoped<HRM.Application.Features.InternalMail.Services.IInternalMessageReactionEvents,
             HRM.Infrastructure.Services.InternalMail.InternalMessageReactionEvents>();
         services.AddHostedService<InternalMessageReactionOutboxProcessor>();
+        services.AddHostedService<HRM.Api.Backgrounds.Notifications.InternalMailMediaOutboxProcessor>();
         services.AddHostedService<WebPushOutboxProcessor>();
         services.AddHostedService<CustomerFollowUpTaskDueReminderWorker>();
         services.AddHostedService<QuotationPricingExpiryReminderWorker>();
@@ -182,16 +185,22 @@ internal static class PresentationDependencyInjection
 
                         var employeeId = TryReadOptionalGuid(principal, "employeeId");
                         var companyId = TryReadOptionalGuid(principal, "companyId");
+                        var tokenHasImsRole = principal?.Identities.Any(identity =>
+                            identity.HasClaim(claim => claim.Type == identity.RoleClaimType &&
+                                string.Equals(claim.Value,
+                                    HRM.Application.Commons.Authorization.ApplicationRoles.InternalSystems.IMSUser,
+                                    StringComparison.OrdinalIgnoreCase))) == true;
                         var accessValidator = context.HttpContext.RequestServices
                             .GetRequiredService<IIdentityAccessValidator>();
                         var isAllowed = await accessValidator.IsAccessAllowedAsync(
                             userId,
                             employeeId,
                             companyId,
+                            tokenHasImsRole,
                             context.HttpContext.RequestAborted);
                         if (!isAllowed)
                         {
-                            context.Fail("Account or employee is inactive.");
+                            context.Fail("Account access changed or is inactive.");
                         }
                     }
                 };

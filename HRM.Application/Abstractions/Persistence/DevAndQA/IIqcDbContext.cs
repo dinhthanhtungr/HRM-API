@@ -11,6 +11,7 @@ namespace HRM.Application.Abstractions.Persistence.DevAndQA;
 
 public interface IIqcDbContext
 {
+    DbSet<LabTest> LabTests { get; }
     DbSet<QCInputByQC> QCInputByQCs { get; }
     DbSet<EvaluationStandard> EvaluationStandards { get; }
     DbSet<MeasurementMethod> MeasurementMethods { get; }

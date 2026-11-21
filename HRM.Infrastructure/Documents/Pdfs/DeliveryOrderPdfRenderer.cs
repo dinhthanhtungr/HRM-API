@@ -144,7 +144,8 @@ internal sealed class DeliveryOrderPdfRenderer(IHostEnvironment? environment = n
         foreach (var line in group)
         {
             Cell(table.Cell(), line.ProductCode, horizontalPadding: 4);
-            Cell(table.Cell(), line.ProductName);
+            table.Cell().Border(1).BorderColor(Colors.Black).PaddingVertical(4).PaddingHorizontal(6)
+                .AlignMiddle().AlignCenter().Text(line.ProductName ?? string.Empty);
             // The query joins all active consumption lots without multiplying quantity by lot count.
             Cell(table.Cell(), line.LotNo);
             Cell(table.Cell(), "Kg");

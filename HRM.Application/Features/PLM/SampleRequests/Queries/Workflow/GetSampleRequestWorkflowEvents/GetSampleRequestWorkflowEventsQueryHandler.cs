@@ -62,7 +62,7 @@ internal sealed class GetSampleRequestWorkflowEventsQueryHandler(IPLMReadDbConte
                 !SampleRequestPriceFeedbackVisibility.CanViewContent(pricingVisibility.GetAccess());
             return new SampleRequestWorkflowEventDto(evt.Id, evt.EventType, evt.OccurredAt, evt.RecordedAt,
                 evt.RecordedByEmployeeId is { } actor ? names.GetValueOrDefault(actor) : null,
-                hidePriceNote ? null : evt.Note, evt.FormulaId, evt.SampleRequestSampleTrialId, evt.ConversationId, evt.MessageId,
+                hidePriceNote || evt.EventType == DeliveryOptions.RecordSampleBatchFeedbackCommandHandler.EventType ? null : evt.Note, evt.FormulaId, evt.SampleRequestSampleTrialId, evt.ConversationId, evt.MessageId,
                 evt.NotificationId, status, status == "Failed" && writable && evt.RecordedByEmployeeId == user.EmployeeId,
                 evt.SampleRequestSampleTrialId is { } trialId && trials.TryGetValue(trialId, out var trialNo) ? trialNo : null,
                 evt.FormulaId is { } formulaId ? formulas.GetValueOrDefault(formulaId) : null, hidePriceNote);

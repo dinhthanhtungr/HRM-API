@@ -11,7 +11,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace HRM.Api.Controllers.Reports
 {
     [ApiController]
-    [Authorize]
+    [Authorize(Policy = HRM.Api.Security.Authorization.SensitiveDataAuthorization.PolicyName)]
     [Route("api/v1/reports/executive/pnl/dashboard")]
     public sealed class ExecutivePnLDashboardController : ControllerBase
     {

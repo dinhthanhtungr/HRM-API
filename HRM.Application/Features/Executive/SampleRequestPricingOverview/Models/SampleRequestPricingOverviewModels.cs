@@ -2,6 +2,7 @@ namespace HRM.Application.Features.Executive.SampleRequestPricingOverview.Models
 
 internal sealed class SampleRequestOverviewRow
 {
+    public double? UsageRate { get; init; }
     public Guid SampleRequestId { get; init; }
     public Guid ProductId { get; init; }
     public string RequestCode { get; init; } = string.Empty;

@@ -31,7 +31,7 @@ public sealed class SampleWorkPlanningDetailTests
         store.Seed(nameof(db.Formulas),
             new Formula { FormulaId = Guid.NewGuid(), CompanyId = user.CompanyId.Value, ProductId = item.ProductId, IsActive = true, TotalPrice = 123m },
             new Formula { FormulaId = Guid.NewGuid(), CompanyId = Guid.NewGuid(), ProductId = item.ProductId, IsActive = true, TotalPrice = 456m });
-        var handler = new GetSampleRequestDetailQueryHandler(db, new HiddenFields(), visibility, user, new CurrentUserPermissionService(user));
+        var handler = new GetSampleRequestDetailQueryHandler(db, new HiddenFields(), visibility, user, new CurrentUserPermissionService(user), HRM.Application.Tests.Features.CRM.CustomerCare.CustomerSampleSharingTestServices.Disabled());
         var result = await handler.Handle(new() { SampleRequestId = item.SampleRequestId }, default);
         Assert.Equal(visible, result != null);
         if (result != null)
@@ -59,7 +59,7 @@ public sealed class SampleWorkPlanningDetailTests
         var invalidProduct = Request(user.CompanyId.Value); invalidProduct.Product.CompanyId = Guid.NewGuid();
         store.Seed(nameof(db.SampleRequests), valid, foreign, inactive, internalByCode, internalById, invalidProduct);
         store.Seed(nameof(db.Employees), new Employee { EmployeeId = user.EmployeeId!.Value, CompanyId = user.CompanyId.Value, IsActive = true });
-        var handler = new GetSampleRequestDetailQueryHandler(db, new HiddenFields(), visibility, user, new CurrentUserPermissionService(user));
+        var handler = new GetSampleRequestDetailQueryHandler(db, new HiddenFields(), visibility, user, new CurrentUserPermissionService(user), HRM.Application.Tests.Features.CRM.CustomerCare.CustomerSampleSharingTestServices.Disabled());
         var access = new GetSampleRequestDetailAccessQueryHandler(db, visibility, user);
         Assert.NotNull(await handler.Handle(new() { SampleRequestId = valid.SampleRequestId }, default));
         Assert.Equal(SampleRequestDetailAccessStatus.NotFound,

@@ -42,10 +42,29 @@ public sealed class ProductionOrdersController : ControllerBase
 
     public ProductionOrdersController(ISender sender) => _sender = sender;
 
+    /// <summary>Bổ sung color_name đang NULL từ Product.ColourName; dryRun=true chỉ xem trước.</summary>
+    [HttpPost("fill-colour-names")]
+    [Authorize(Policy = HRM.Application.Commons.Authorization.PLM.PlmPolicies.EditProductTechnicalInfo)]
+    public async Task<IActionResult> FillColourNames([FromQuery] bool dryRun = true, CancellationToken ct = default)
+    {
+        var result = await _sender.Send(new HRM.Application.Features.PLM.Manufacturing.Commands.FillManufacturingColourNames.FillManufacturingColourNamesCommand(dryRun), ct);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
     [HttpGet("step-options")]
     public async Task<IActionResult> StepOptions(CancellationToken ct)
     {
         var result = await _sender.Send(new GetManufacturingStepsQuery(), ct);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    [HttpPost("{id:guid}/excel-formula/resolve")]
+    public async Task<IActionResult> ResolveExcelFormula(Guid id,
+        [FromBody] HRM.Application.Features.PLM.Manufacturing.Queries.ResolveProductionExcel.ProductionExcelRequest request,
+        CancellationToken ct)
+    {
+        var result = await _sender.Send(new HRM.Application.Features.PLM.Manufacturing.Queries.ResolveProductionExcel.ResolveProductionExcelQuery(
+            id, request.Rows), ct);
         return result.Success ? Ok(result) : BadRequest(result);
     }
 

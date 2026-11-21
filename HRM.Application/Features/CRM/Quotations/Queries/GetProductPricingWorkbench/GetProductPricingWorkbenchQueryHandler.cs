@@ -112,23 +112,27 @@ internal sealed class GetProductPricingWorkbenchQueryHandler
         }
 
         productQuery = ApplyFilters(productQuery, visibleSampleRequests, request);
+        var smartSearch = Services.Queries.ProductPricingSmartSearch.Build(productQuery, visibleSampleRequests, companyId,
+            canManagePricing ? null : _dbContext.ProductPricingVersions.AsNoTracking().Where(v => v.CompanyId == companyId && v.IsActive &&
+                v.Status == ProductPricingStatus.Approved && v.Currency == request.NormalizedCurrency));
+        productQuery = smartSearch.ApplyRequest(productQuery, request.NormalizedKeyword, request, out var smartKeyword);
 
-        var quotationKeywordProductIds = request.NormalizedKeyword is { } &&
+        var quotationKeywordProductIds = smartKeyword is { } &&
                                          request.EffectiveSearchType is
                                              ProductPricingWorkbenchSearchType.All or
                                              ProductPricingWorkbenchSearchType.Quotation
             ? await LoadQuotationKeywordProductIdsAsync(
                 companyId,
-                request.NormalizedKeyword,
+                smartKeyword,
                 cancellationToken)
             : new HashSet<Guid>();
         productQuery = ApplyTypedKeywordFilter(
             productQuery,
             visibleSampleRequests,
             quotationKeywordProductIds,
-            request);
+            request, smartKeyword);
 
-        var sampleRequestKeywordProductIds = request.NormalizedKeyword is { } sampleRequestKeyword &&
+        var sampleRequestKeywordProductIds = smartKeyword is { } sampleRequestKeyword &&
                                              request.EffectiveSearchType ==
                                              ProductPricingWorkbenchSearchType.All
             ? (await visibleSampleRequests
@@ -145,6 +149,7 @@ internal sealed class GetProductPricingWorkbenchQueryHandler
                         sampleRequest.Customer.CustomerName,
                         PostgresSearchPattern.ContainsLiteral(sampleRequestKeyword),
                         PostgresSearchPattern.EscapeCharacter) ||
+                    sampleRequest.Customer.CompanyId == companyId && EF.Functions.ILike(sampleRequest.Customer.TaxNumber ?? "", PostgresSearchPattern.ContainsLiteral(sampleRequestKeyword), PostgresSearchPattern.EscapeCharacter) ||
                     (sampleRequest.Formula != null && EF.Functions.ILike(
                         sampleRequest.Formula.ExternalId,
                         PostgresSearchPattern.ContainsLiteral(sampleRequestKeyword),
@@ -154,6 +159,10 @@ internal sealed class GetProductPricingWorkbenchQueryHandler
                 .ToListAsync(cancellationToken))
                 .ToHashSet()
             : [];
+
+        if (canManagePricing && request.View == ProductPricingWorkbenchView.All && smartKeyword is null &&
+            await smartSearch.SuggestionsAsync<ProductPricingWorkbenchItemDto>(productQuery, request, cancellationToken) is { } fastSuggestions)
+            return OperationResult<PagedResult<ProductPricingWorkbenchItemDto>>.Ok(fastSuggestions);
 
         var products = await productQuery
             .Select(x => new ProductRow
@@ -208,7 +217,7 @@ internal sealed class GetProductPricingWorkbenchQueryHandler
         var requestsByProduct = requests
             .GroupBy(x => x.ProductId)
             .ToDictionary(x => x.Key, x => (IReadOnlyList<ProductPricingRequestRow>)x.ToArray());
-        var isQuotationKeyword = request.NormalizedKeyword is not null &&
+        var isQuotationKeyword = smartKeyword is not null &&
                                  request.EffectiveSearchType ==
                                      ProductPricingWorkbenchSearchType.Quotation;
 
@@ -273,10 +282,17 @@ internal sealed class GetProductPricingWorkbenchQueryHandler
                 quotationKeywordProductIds,
                 sampleRequestKeywordProductIds,
                 request.EffectiveSearchType == ProductPricingWorkbenchSearchType.All
-                    ? request.NormalizedKeyword
+                    ? smartKeyword
                     : null))
             .ToArray();
 
+        if (request.SuggestionKeyword is not null)
+        {
+            var eligibleIds = filtered.Select(x => x.ProductId).ToArray();
+            var suggestions = await smartSearch.SuggestionsAsync<ProductPricingWorkbenchItemDto>(
+                productQuery.Where(x => eligibleIds.Contains(x.ProductId)), request, cancellationToken);
+            return OperationResult<PagedResult<ProductPricingWorkbenchItemDto>>.Ok(suggestions!);
+        }
         var ordered = ApplySorting(
             filtered,
             pendingRequestsByProduct,
@@ -489,9 +505,9 @@ internal sealed class GetProductPricingWorkbenchQueryHandler
         IQueryable<Product> products,
         IQueryable<SampleRequest> visibleSampleRequests,
         IReadOnlySet<Guid> quotationKeywordProductIds,
-        GetProductPricingWorkbenchQuery request)
+        GetProductPricingWorkbenchQuery request, string? keyword)
     {
-        if (request.NormalizedKeyword is not { } keyword ||
+        if (keyword is null ||
             request.EffectiveSearchType == ProductPricingWorkbenchSearchType.All)
         {
             return products;
@@ -505,10 +521,11 @@ internal sealed class GetProductPricingWorkbenchQueryHandler
             ProductPricingWorkbenchSearchType.Customer => products.Where(product =>
                 visibleSampleRequests.Any(sampleRequest =>
                     sampleRequest.ProductId == product.ProductId &&
-                    EF.Functions.ILike(
+                    (EF.Functions.ILike(
                         sampleRequest.Customer.ExternalId,
                         pattern,
-                        PostgresSearchPattern.EscapeCharacter))),
+                        PostgresSearchPattern.EscapeCharacter) ||
+                     sampleRequest.Customer.CompanyId == sampleRequest.CompanyId && EF.Functions.ILike(sampleRequest.Customer.TaxNumber ?? "", pattern, PostgresSearchPattern.EscapeCharacter)))),
             ProductPricingWorkbenchSearchType.SampleRequest => products.Where(product =>
                 visibleSampleRequests.Any(sampleRequest =>
                     sampleRequest.ProductId == product.ProductId &&

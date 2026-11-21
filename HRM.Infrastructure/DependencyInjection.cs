@@ -27,6 +27,10 @@ public static class DependencyInjection
             .AddAuthenticationServices(configuration);
 
         services.AddScoped<IExternalIdService, ExternalIdServicePostgres>();
+        services.Configure<HRM.Application.Features.PLM.SampleRequests.Services.ConversationSummary.ConversationSummaryOptions>(
+            configuration.GetSection(HRM.Application.Features.PLM.SampleRequests.Services.ConversationSummary.ConversationSummaryOptions.SectionName));
+        services.AddScoped<HRM.Application.Features.PLM.SampleRequests.Services.ConversationSummary.ISampleRequestConversationSummaryStore,
+            HRM.Infrastructure.Services.PLM.ConversationSummary.SampleRequestConversationSummaryStore>();
         // GROUP-STORAGE-TRANSITION: synchronization-api — live write-through is owned by DbContext, not these temporary services.
         services.AddScoped<HRM.Application.Features.InternalMail.GroupStorage.IGroupStorageSynchronization,
             HRM.Infrastructure.Services.InternalMail.GroupStorageSynchronization>();
@@ -39,6 +43,16 @@ public static class DependencyInjection
             options.PublicBaseUrl = section["PublicBaseUrl"];
         });
         services.AddScoped<IFileStorage, FileShareStorage>();
+        services.AddSingleton<HRM.Infrastructure.Services.Media.ResumableAttachmentStore>();
+        services.AddSingleton<IResumableAttachmentStore>(p => p.GetRequiredService<HRM.Infrastructure.Services.Media.ResumableAttachmentStore>());
+        services.AddHostedService(p => p.GetRequiredService<HRM.Infrastructure.Services.Media.ResumableAttachmentStore>());
+        services.AddScoped<HRM.Application.Features.InternalMail.Services.InternalMailUploadService>();
+        services.AddScoped<IVideoMediaCompletionSignal, HRM.Application.Features.InternalMail.Services.InternalMailMediaCompletionSignal>();
+        services.Configure<HRM.Infrastructure.Services.Media.VideoMediaOptions>(
+            configuration.GetSection(HRM.Infrastructure.Services.Media.VideoMediaOptions.SectionName));
+        services.AddSingleton<HRM.Infrastructure.Services.Media.VideoMediaService>();
+        services.AddSingleton<IVideoMediaService>(p => p.GetRequiredService<HRM.Infrastructure.Services.Media.VideoMediaService>());
+        services.AddHostedService(p => p.GetRequiredService<HRM.Infrastructure.Services.Media.VideoMediaService>());
         services.Configure<MaterialDocumentImportOptions>(
             configuration.GetSection(MaterialDocumentImportOptions.SectionName));
         services.AddScoped<IMaterialDocumentSourceScanner, FileShareMaterialDocumentSourceScanner>();

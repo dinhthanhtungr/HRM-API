@@ -12,4 +12,5 @@ public sealed class GetInternalMailAttachmentContentQuery : IRequest<AttachmentC
     /// </summary>
     public Guid? ConversationId { get; set; }
     public bool Thumbnail { get; set; }
+    public string? VideoVariant { get; set; }
 }

@@ -3,6 +3,7 @@ using HRM.Application.Commons.Patching;
 using HRM.Application.Features.Work.MyTasks.Dtos;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using HRM.Domain.Enums.WorkTaskEnums;
 
 namespace HRM.Application.Features.Work.MyTasks.Commands.UpdateMyTask;
 
@@ -80,6 +81,9 @@ internal sealed class UpdateMyTaskCommandHandler
         PatchHelper.SetIfHasValue(body.Priority, () => task.Priority, value => task.Priority = value);
         if (body.DueDate.HasValue)
         {
+            if (body.DueDate != task.DueDate && await _support.WriteDbContext.WorkTaskReferences.AnyAsync(
+                    x => x.WorkTaskId == task.Id && x.ReferenceType == WorkReferenceType.SampleRequest, cancellationToken))
+                task.DueReminderSentAt = null;
             PatchHelper.SetNullable(body.DueDate, () => task.DueDate, value => task.DueDate = value);
         }
 

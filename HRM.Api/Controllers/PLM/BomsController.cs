@@ -1,3 +1,4 @@
+using HRM.Api.Security.Authorization;
 using HRM.Application.Commons.Authorization.PLM;
 using HRM.Application.Features.PLM.Boms.Commands.CreateBom;
 using HRM.Application.Features.PLM.Boms.Commands.CreateBomFromSelectedFormula;
@@ -10,6 +11,7 @@ using HRM.Application.Features.PLM.Boms.Dtos;
 using HRM.Application.Features.PLM.Boms.Queries.GetBomDefinition;
 using HRM.Application.Features.PLM.Boms.Queries.ExplodeBom;
 using HRM.Application.Features.PLM.Boms.Queries.GetBoms;
+using HRM.Application.Features.PLM.Boms.Queries.GetBomSearchSuggestions;
 using HRM.Application.Features.PLM.Boms.Queries.GetBomVersion;
 using HRM.Domain.Enums.Boms;
 using MediatR;
@@ -20,7 +22,7 @@ namespace HRM.Api.Controllers.PLM;
 
 /// <summary>E-BOM master APIs. Only Draft versions may be edited.</summary>
 [ApiController]
-[Authorize]
+[Authorize(Policy = SensitiveDataAuthorization.PolicyName)]
 [Route("api/v1/plm/boms")]
 public sealed class BomsController : ControllerBase
 {
@@ -32,12 +34,20 @@ public sealed class BomsController : ControllerBase
     public async Task<IActionResult> GetList(
         [FromQuery] Guid? productId,
         [FromQuery] string? keyword,
-        CancellationToken ct)
+        CancellationToken ct, [FromQuery] string? searchSelections = null)
         => Ok(await _sender.Send(new GetBomsQuery
         {
             ProductId = productId,
-            Keyword = keyword
+            Keyword = keyword,
+            SearchSelections = searchSelections
         }, ct));
+
+    [HttpGet("suggestions"), Authorize(Policy = PlmPolicies.ViewBom)]
+    public async Task<IActionResult> GetSearchSuggestions([FromQuery] GetBomSearchSuggestionsQuery query, CancellationToken ct)
+    {
+        query.BomType = BomType.Engineering;
+        return Ok(await _sender.Send(query, ct));
+    }
 
     [HttpGet("versions/{bomVersionId:guid}")]
     [Authorize(Policy = PlmPolicies.ViewBom)]

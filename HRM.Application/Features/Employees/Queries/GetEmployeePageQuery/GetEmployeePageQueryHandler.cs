@@ -42,9 +42,17 @@ namespace HRM.Application.Features.Employees.Queries.GetEmployeePageQuery
                 query = query.Where(employee => employee.CompanyId == companyId);
             }
 
-            if (!string.IsNullOrWhiteSpace(request.Keyword))
+            var smartSearch = HRM.Application.Commons.Searching.SmartSearch.For(query, fields => [
+                fields.Code("employeeCode", x => x.ExternalId, "Mã nhân viên", "Employee code"),
+                fields.Name("employeeName", x => x.FullName, "Nhân viên", "Employee"),
+                fields.Name("departmentName", x => x.Part == null ? "" : x.Part.PartName, "Phòng ban", "Department"),
+                fields.Names("jobTitle", x => x.EmployeeWorkProfiles.Where(w => w.IsCurrent),
+                    w => w.JobTitle == null ? "" : w.JobTitle.Name, "Chức danh", "Job title")
+            ]);
+            query = smartSearch.ApplyRequest(query, request.Keyword, request, out var smartKeyword);
+            if (!string.IsNullOrWhiteSpace(smartKeyword))
             {
-                var keyword = request.Keyword.Trim();
+                var keyword = smartKeyword.Trim();
 
                 query = query.Where(x =>
                     x.ExternalId.StartsWith(keyword) ||
@@ -70,6 +78,8 @@ namespace HRM.Application.Features.Employees.Queries.GetEmployeePageQuery
                         m.IsActive));
             }
 
+            if (await smartSearch.SuggestionsAsync<EmployeePageDto>(query, request, cancellationToken) is { } suggestions)
+                return suggestions;
             var isDescending = string.Equals(
                 request.SortDirection,
                 "desc",

@@ -20,6 +20,60 @@ namespace HRM.Application.Tests.Features.PLM.Manufacturing;
 public sealed class ManufacturingStatusMutationTests
 {
     [Theory]
+    [InlineData(19, 20, 1)]
+    [InlineData(20, 19, 1)]
+    [InlineData(20, 20, 0)]
+    public async Task DateUpdatePublishesActualBeforeAndAfterThroughSharedTopic(int oldDay, int newDay, int count)
+    {
+        var f = new Fixture();
+        EnableDateNotifications(f);
+        f.Order.ExpectedDate = new DateTime(2026, 10, oldDay, 15, 30, 0);
+        var next = new DateTime(2026, 10, newDay);
+        var result = await f.Update.Handle(new(f.Order.MfgProductionOrderId, new() {
+            TotalQuantity = 100, NumOfBatches = 2, StepOfProduct = null, ExpectedDate = next }), default);
+        Assert.True(result.Success);
+        Assert.True(f.Store.Transaction.Committed);
+        Assert.Equal(next, f.Order.ExpectedDate);
+        Assert.Equal(next, f.Schedule.DeliveryPlanDate);
+        Assert.Equal(count, f.Notifications.Published.Count);
+        if (count == 0) return;
+        var notification = Assert.Single(f.Notifications.Published);
+        Assert.Equal(HRM.Domain.Enums.Notifications.TopicNotifications.MerchandiseOrderPromisedDeliveryNotified, notification.Topic);
+        Assert.Contains(f.SaleOrder.ManagerById, notification.TargetUserIds!);
+        using var payload = JsonDocument.Parse(notification.PayloadJson!);
+        Assert.Equal($"2026-10-{oldDay:D2}", payload.RootElement.GetProperty("previousPromisedDeliveryDate").GetString());
+        Assert.Equal($"2026-10-{newDay:D2}", payload.RootElement.GetProperty("promisedDeliveryDate").GetString());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DateUpdateDoesNotCommitWhenSaveOrPublishFails(bool publishFails)
+    {
+        var f = new Fixture();
+        EnableDateNotifications(f);
+        f.Order.ExpectedDate = new DateTime(2026, 10, 19);
+        f.Store.ThrowOnSave = !publishFails;
+        f.Notifications.ThrowOnPublish = publishFails;
+        var result = await f.Update.Handle(new(f.Order.MfgProductionOrderId, new() {
+            TotalQuantity = 100, NumOfBatches = 2, StepOfProduct = null, ExpectedDate = new DateTime(2026, 10, 20) }), default);
+        Assert.False(result.Success);
+        Assert.False(f.Store.Transaction.Committed);
+        Assert.True(f.Store.Transaction.RolledBack);
+        Assert.Empty(f.Notifications.Published);
+    }
+
+    private static void EnableDateNotifications(Fixture f)
+    {
+        f.Order.ExternalId = "MFG_DATE";
+        f.SaleOrder.ExternalId = "DHG_DATE";
+        f.SaleOrder.ManagerById = Guid.NewGuid();
+        f.Db.MfgOrderPOs.Single().Detail.IsActive = true;
+        f.Store.Seed(nameof(f.Db.Employees), new HRM.Domain.Entities.HrSchema.Employee {
+            EmployeeId = f.SaleOrder.ManagerById, CompanyId = f.Order.CompanyId, IsActive = true });
+    }
+
+    [Theory]
     [InlineData("New", "UseStock", true)]
     [InlineData("New", "RequestFormula", true)]
     [InlineData("New", "Schedule", false)]
@@ -71,7 +125,7 @@ public sealed class ManufacturingStatusMutationTests
         f.Store.Seed(nameof(f.Db.ManufacturingFormulaMaterials), item);
         f.Store.Seed(nameof(f.Db.ProductionSelectVersions), new ProductionSelectVersion {
             CompanyId = f.Order.CompanyId, MfgProductionOrderId = f.Order.MfgProductionOrderId, ManufacturingFormula = formula,
-            ManufacturingFormulaId = formula.ManufacturingFormulaId, ValidFrom = new DateTime(2026, 10, 1) });
+            ManufacturingFormulaId = formula.ManufacturingFormulaId });
         f.Store.ThrowOnSave = !saveSucceeds;
         var result = await f.Update.Handle(new(f.Order.MfgProductionOrderId, new() { TotalQuantity = 200, NumOfBatches = 2,
             Status = "Finished", StepOfProduct = StepOfProduct.Forsb, ExpectedDate = new DateTime(2026, 10, 20) }, HRM.Application.Features.PLM.Manufacturing.Commands.ApplyProductionOrderAction.ManufacturingInformationAction.Schedule), default);
@@ -79,6 +133,7 @@ public sealed class ManufacturingStatusMutationTests
         Assert.Equal(saveSucceeds, f.Store.Transaction.Committed);
         if (!saveSucceeds) Assert.True(f.Store.Transaction.RolledBack);
         Assert.Equal("Scheduling", f.Order.Status);
+        Assert.Equal(new Clock().Now, f.Db.ProductionSelectVersions.Single().ValidFrom);
         var reservation = Assert.Single(f.Store.Added.OfType<HRM.Domain.Entities.WarehouseSchema.WarehouseTempStock>());
         Assert.Equal("SERVER-CODE", reservation.Code);
         Assert.Equal(100m, reservation.QtyRequest);
@@ -158,6 +213,7 @@ public sealed class ManufacturingStatusMutationTests
     public async Task Update_StatusChangeSyncsSaleOrderAndClearsNullableValuesLikeLegacy()
     {
         var f = new Fixture();
+        var selection = f.PendingSelection();
         f.Order.TotalQuantity = 200;
         f.Order.NumOfBatches = 2;
         f.Order.LabNote = "Lab";
@@ -176,18 +232,21 @@ public sealed class ManufacturingStatusMutationTests
         Assert.Null(f.Order.StepOfProduct);
         Assert.Equal(2, f.Timeline.Events.Count);
         Assert.True(f.Store.Transaction.Committed);
+        Assert.Equal(new Clock().Now, selection.ValidFrom);
     }
 
     [Fact]
     public async Task Update_SchedulingCreatesScheduleOnlyOnceAndDoesNotReserveStock()
     {
         var f = new Fixture();
+        var selection = f.PendingSelection();
         f.Store.Seed<SchedualMfg>(nameof(f.Db.SchedualMfgs));
         var result = await f.Update.Handle(new(f.Order.MfgProductionOrderId, new()
         {
             StepOfProduct = null, Status = "Scheduling", LabNote = "L", PlpuNote = "P"
         }), default);
         Assert.True(result.Success);
+        Assert.Equal(new Clock().Now, selection.ValidFrom);
         var schedule = Assert.Single(f.Store.Added.OfType<SchedualMfg>());
         Assert.Equal("L", schedule.Note);
         Assert.Null(schedule.StepOfProduct);
@@ -214,8 +273,36 @@ public sealed class ManufacturingStatusMutationTests
         Assert.NotNull(JsonSerializer.Deserialize<UpdateProductionOrderInformationRequest>("{\"StepOfProduct\":null,\"ExpectedDate\":null,\"TotalQuantity\":null,\"NumOfBatches\":null}"));
     }
 
+    [Theory]
+    [InlineData("missing")]
+    [InlineData("foreign")]
+    [InlineData("inactive")]
+    public async Task LegacyScheduling_CannotCommitWithoutEligibleVa(string reason)
+    {
+        var f = new Fixture();
+        if (reason != "missing")
+        {
+            var selected = f.PendingSelection();
+            if (reason == "foreign") selected.ManufacturingFormula!.CompanyId = Guid.NewGuid();
+            else selected.ManufacturingFormula!.IsActive = false;
+        }
+        var result = await f.Update.Handle(new(f.Order.MfgProductionOrderId,
+            new() { Status = "Scheduling", StepOfProduct = null }), default);
+        Assert.False(result.Success);
+        Assert.False(f.Store.Transaction.Committed);
+        Assert.Equal(0, f.Store.Saves);
+    }
+
     private sealed class Fixture
     {
+        public ProductionSelectVersion PendingSelection()
+        {
+            var formula = new ManufacturingFormula { ManufacturingFormulaId = Guid.NewGuid(), CompanyId = Order.CompanyId, IsActive = true };
+            var selection = new ProductionSelectVersion { CompanyId = Order.CompanyId, MfgProductionOrderId = Order.MfgProductionOrderId,
+                ManufacturingFormulaId = formula.ManufacturingFormulaId, ManufacturingFormula = formula };
+            Store.Seed(nameof(Db.ProductionSelectVersions), selection);
+            return selection;
+        }
         public ProductionOrderCreationTests.TestUser User { get; } = new();
         public IManufacturingDbContext Db { get; }
         public ProductionOrderTestStore Store { get; }
@@ -225,6 +312,7 @@ public sealed class ManufacturingStatusMutationTests
         public Timeline Timeline { get; } = new();
         public FinishProductionOrderCommandHandler Finish { get; }
         public UpdateProductionOrderInformationCommandHandler Update { get; }
+        public NotifyPromisedDeliveryTests.CapturePort Notifications { get; }
         public Fixture()
         {
             (Db, Store) = ProductionOrderTestStore.CreateContext<IManufacturingDbContext>();
@@ -237,8 +325,10 @@ public sealed class ManufacturingStatusMutationTests
             Store.Seed(nameof(Db.SchedualMfgs), Schedule);
             var permissions = new CurrentUserPermissionService(User);
             Finish = new(Db, User, permissions, new Clock(), Timeline);
+            var notification = PromisedDeliveryTestFactory.Create(Db, User);
+            Notifications = notification.Capture;
             Update = new(Db, User, permissions, new Clock(), Timeline,
-                new HRM.Application.Features.PLM.ProductionOrders.Services.ProductionOrderReservationService(Db));
+                new HRM.Application.Features.PLM.ProductionOrders.Services.ProductionOrderReservationService(Db), notification.Notifier);
         }
     }
     private sealed class Clock : IDateTimeProvider { public DateTime Now => new(2026, 10, 5, 12, 0, 0); }

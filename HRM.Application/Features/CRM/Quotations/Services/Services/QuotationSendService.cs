@@ -179,6 +179,9 @@ namespace HRM.Application.Features.CRM.Quotations.Services
             }
 
             // Confirmation accepts the stored customer offer; standard-price changes do not revoke it.
+            if (!requestMessageId.HasValue && await RejectedPricesUnchangedAsync(quotation, cancellationToken))
+                return QuotationConfirmationFailure.Create(QuotationSendRejectionRules.PricesUnchangedCode,
+                    "Revise customer prices, commission or quantity tiers before resubmitting a rejected send request.");
             var comparison = requestMessageId.HasValue
                 ? Array.Empty<QuotationSendPriceSegment>()
                 : await ComparePricesAsync(quotation, cancellationToken);

@@ -79,3 +79,5 @@ Script không tự thêm marker `permission-model` hay chuyển role legacy sang
 Lỗi nghiệp vụ trả `{ code }`, gồm `forbidden`, `notFound`, `invalidInput`, `invalidDates`, `invalidPagination`, `invalidReference`, `missingCompanyCode`, `duplicateCode`, `referencedOrInvalidReference`, `hasAssessment`. FE dịch code thành thông báo vi/en.
 
 FE: `F:/UserInterface/hrm-mobile/src/modules/mro/equipment`, route `/mro/equipment`. FE lấy capability từ backend, không suy luận quyền từ role ở component.
+
+IMSUser xem danh sách và chi tiết thiết bị trong công ty hiện tại. Tìm kiếm giới hạn ở mã và tên thiết bị. Bộ lọc chỉ trả khu vực và nhóm có thiết bị trong công ty. Chi tiết không trả ghi chú tự do hoặc thông số kỹ thuật. API thông số riêng và mọi thao tác ghi bị chặn cả khi tài khoản IMS có thêm role quản trị. Quyền đọc IMS dùng role hiện có và không cần claim mới.

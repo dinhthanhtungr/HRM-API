@@ -158,7 +158,9 @@ internal sealed partial class NotificationService
         var company = _currentUser.CompanyId ?? Guid.Empty;
         var employee = _currentUser.EmployeeId ?? Guid.Empty;
         var ids = reactions.Select(n => n.MessageId).OfType<Guid>().Distinct().ToArray();
-        var visibleMessages = _areas.Messages().Where(m => !m.IsDeleted && m.SenderEmployeeId == employee)
+        var authorizedMessageIds = await _areas.AuthorizedOwnReactionMessageIdsAsync(ids, ct);
+        var visibleMessages = mail.InternalMessages.Where(m => authorizedMessageIds.Contains(m.InternalMessageId) &&
+                !m.IsDeleted && m.SenderEmployeeId == employee && m.Conversation.CompanyId == company && m.Conversation.IsActive)
             .Select(m => m.InternalMessageId);
         var query = mail.InternalMessageReactions.AsNoTracking().Where(r => ids.Contains(r.MessageId) &&
             visibleMessages.Contains(r.MessageId) && r.EmployeeId != employee && r.Employee.CompanyId == company && r.Employee.IsActive);

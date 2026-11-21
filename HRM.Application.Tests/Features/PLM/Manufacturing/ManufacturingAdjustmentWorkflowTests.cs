@@ -18,6 +18,103 @@ namespace HRM.Application.Tests.Features.PLM.Manufacturing;
 public sealed partial class ManufacturingAdjustmentWorkflowTests
 {
     [Theory]
+    [InlineData("Accepted")]
+    [InlineData("Approve")]
+    [InlineData("Approved")]
+    public async Task Approved_ReadAndInitializeLegacyStatuses_KeepFiltersCompatible(string storedStatus)
+    {
+        var f = new Fixture();
+        var entity = f.Existing(new ManufacturingFormulaAdjustmentBatch {
+            BatchNo = 1, TrialNo = 1, Status = storedStatus,
+            AdjustmentType = AdjustmentType.AddQuantity, BatchQuantity = 50000,
+            TakenQuantityGram = 100,
+            Items = [new() { MaterialId = f.Base.Material.MaterialId, itemType = ItemType.Material,
+                BaseQuantity = 50000, AdjustedQuantity = 50100, DeltaQuantity = 100, Unit = "g" }]
+        });
+        entity.Status = storedStatus;
+        foreach (var filter in new[] { "Accepted", "Approve", "Approved" })
+        {
+            var listed = await f.Service.ListAsync(new() { Status = filter, BatchStatus = filter }, default);
+            Assert.True(listed.Success, listed.Message);
+            var row = Assert.Single(listed.Data!);
+            Assert.Equal(nameof(AdjustmentStatus.Approved), row.Status);
+            Assert.Equal(nameof(AdjustmentStatus.Approved), Assert.Single(row.Batches).Status);
+        }
+        var initialized = await f.Service.InitializeAsync(f.Base.Order.MfgProductionOrderId,
+            entity.ManufacturingFormulaAdjustmentId, default);
+        Assert.True(initialized.Success, initialized.Message);
+        Assert.Equal(AdjustmentStatus.Approved, initialized.Data!.Draft.Status);
+        Assert.Equal(AdjustmentStatus.Approved, Assert.Single(initialized.Data.Draft.Ranges!).Status);
+        Assert.Equal(storedStatus, entity.Status);
+        Assert.Equal(0, f.Base.Store.Saves);
+    }
+
+    [Theory]
+    [InlineData(false, AdjustmentStatus.Draft)]
+    [InlineData(false, AdjustmentStatus.Testing)]
+    [InlineData(false, AdjustmentStatus.Accepted)]
+    [InlineData(false, AdjustmentStatus.Approved)]
+    [InlineData(false, AdjustmentStatus.Rejected)]
+    [InlineData(false, AdjustmentStatus.AppliedToNextBatch)]
+    [InlineData(true, AdjustmentStatus.Draft)]
+    [InlineData(true, AdjustmentStatus.Testing)]
+    [InlineData(true, AdjustmentStatus.Accepted)]
+    [InlineData(true, AdjustmentStatus.Approved)]
+    [InlineData(true, AdjustmentStatus.Rejected)]
+    [InlineData(true, AdjustmentStatus.AppliedToNextBatch)]
+    public async Task Save_AcceptsHeaderAndAllActiveTrialsRegardlessOfInput(bool editing, AdjustmentStatus status)
+    {
+        var f = new Fixture();
+        var entity = editing ? f.Existing(new ManufacturingFormulaAdjustmentBatch {
+            BatchNo = 1, TrialNo = 1, Status = nameof(AdjustmentStatus.Draft),
+            AdjustmentType = AdjustmentType.AddQuantity, BatchQuantity = 50000
+        }) : null;
+        var result = await f.Service.SaveAsync(f.Base.Order.MfgProductionOrderId,
+            entity?.ManufacturingFormulaAdjustmentId,
+            new() { Status = status,
+                Ranges = editing ? null : [f.Range(1, AdjustmentType.AddQuantity, 100)] }, default);
+        Assert.True(result.Success, result.Message);
+        Assert.Equal(nameof(AdjustmentStatus.Approved), result.Data!.Status);
+        Assert.All(result.Data.Batches, batch => Assert.Equal(nameof(AdjustmentStatus.Approved), batch.Status));
+        Assert.NotEmpty(result.Data.Batches);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Delete_AcceptsLegacyHeaderAndTrialsWhileKeepingSoftDelete(bool deleteBatch)
+    {
+        var f = new Fixture();
+        var batch = new ManufacturingFormulaAdjustmentBatch {
+            ManufacturingFormulaAdjustmentBatchId = Guid.NewGuid(), BatchNo = 1, TrialNo = 1,
+            Status = nameof(AdjustmentStatus.Rejected), AdjustmentType = AdjustmentType.AddQuantity
+        };
+        var entity = f.Existing(batch);
+        entity.Status = nameof(AdjustmentStatus.Testing);
+        var result = await f.Service.DeleteAsync(entity.ManufacturingFormulaAdjustmentId,
+            deleteBatch ? batch.ManufacturingFormulaAdjustmentBatchId : null, default);
+        Assert.True(result.Success, result.Message);
+        Assert.Equal(nameof(AdjustmentStatus.Approved), entity.Status);
+        Assert.Equal(nameof(AdjustmentStatus.Approved), batch.Status);
+        Assert.Equal(deleteBatch, entity.IsActive);
+        Assert.Equal(!deleteBatch, batch.IsActive);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SaveRange_AcceptsHeaderAndAllActiveTrials(bool singleBatchUpsert)
+    {
+        var f = new Fixture();
+        var entity = f.Existing();
+        var result = await f.Service.SaveRangeAsync(entity.ManufacturingFormulaAdjustmentId,
+            null, f.Range(1, AdjustmentType.AddQuantity, 100), singleBatchUpsert, default);
+        Assert.True(result.Success, result.Message);
+        Assert.Equal(nameof(AdjustmentStatus.Approved), result.Data!.Status);
+        Assert.Equal(nameof(AdjustmentStatus.Approved), Assert.Single(result.Data.Batches).Status);
+    }
+
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task SavedPdf_UsesCurrentMaterialLabelsOnlyWithinCompany(bool foreign)
@@ -237,6 +334,24 @@ public sealed partial class ManufacturingAdjustmentWorkflowTests
         Assert.Equal(50000m, Assert.Single(patched.Items).BaseQuantity);
         Assert.Equal(50200m, patched.FinalQuantityGram);
         Assert.Single(f.Base.Store.Removed);
+        Assert.Contains(Assert.Single(patched.Items), f.Base.Store.Added.OfType<ManufacturingFormulaAdjustmentItem>());
+        Assert.True(f.Base.Store.Transaction.Committed);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SavedSlip_NewRangeIsRegisteredForInsert(bool replaceAll)
+    {
+        var f = new Fixture();
+        var entity = f.Existing();
+        var range = f.Range(1, AdjustmentType.AddQuantity, 25);
+        var result = replaceAll
+            ? await f.Service.SaveAsync(f.Base.Order.MfgProductionOrderId, entity.ManufacturingFormulaAdjustmentId,
+                new() { Ranges = [range] }, default)
+            : await f.Service.SaveRangeAsync(entity.ManufacturingFormulaAdjustmentId, null, range, false, default);
+        Assert.True(result.Success, result.Message);
+        Assert.Contains(Assert.Single(entity.Batches), f.Base.Store.Added.OfType<ManufacturingFormulaAdjustmentBatch>());
         Assert.True(f.Base.Store.Transaction.Committed);
     }
 

@@ -155,4 +155,83 @@ public sealed partial class InternalMailAreaAccessTests
                 LastSender = row.Conversation.Messages.Where(m => !m.IsDeleted).Select(m => m.SenderEmployee.FullName).FirstOrDefault() }).ToQueryString();
         Assert.NotEmpty(sql);
     }
+
+    [Theory]
+    [InlineData("Developer")]
+    [InlineData("LabUser")]
+    [InlineData("SaleUser")]
+    public void EffectiveUnreadQueryTranslatesWithoutConnectingToDatabase(string role)
+    {
+        using var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>().UseNpgsql().Options);
+        var access = new InternalMailAreaAccessService(db, new User(role));
+        var sql = access.NotificationUnreadCounts([Guid.NewGuid()]).ToQueryString();
+        Assert.Contains("UNION ALL", sql);
+        Assert.Contains("SUM", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.NotEmpty(access.LegacyUnreadMessages().ToQueryString());
+        var unreadSql = access.InboxConversations(false)
+            .Where(c => access.UnreadConversationIds().Contains(c.InternalConversationId))
+            .OrderByDescending(c => c.ActivityAt).Take(50).Select(c => c.InternalConversationId).ToQueryString();
+        Assert.DoesNotContain("GROUP BY", unreadSql);
+        Assert.DoesNotContain("COUNT(", unreadSql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("LIMIT", unreadSql);
+        var stagedKeys = new[] { Guid.NewGuid() };
+        var scopedSql = access.InboxConversations(false).Where(c => stagedKeys.Contains(c.InternalConversationId)).OrderByDescending(c => c.ActivityAt)
+            .Take(50).Select(c => c.InternalConversationId).ToQueryString();
+        Assert.DoesNotContain("GROUP BY", scopedSql);
+        Assert.DoesNotContain("COUNT(", scopedSql, StringComparison.OrdinalIgnoreCase);
+        var eventSql = access.VisibleMessageBusinessEvents([Guid.NewGuid()]).ToQueryString();
+        Assert.DoesNotContain("notification_user_states", eventSql);
+        Assert.Contains("InternalMessageId", eventSql);
+        Assert.Contains("IsDeleted", eventSql);
+        Assert.Contains("CompanyId", eventSql);
+        Assert.DoesNotContain("created_by_name_snapshot", eventSql);
+        Assert.DoesNotContain("n.message,", eventSql);
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public void OwnNotificationStateSuppressesLegacyUnreadEvenWhenReadOrArchived(bool read, bool archived)
+    {
+        var user = new User("LabUser");
+        var store = CreateStore(user, InternalMailRelatedType.Internal, true);
+        var message = store.Db.InternalMessages.Single();
+        message.ReadStates.Add(new() { EmployeeId = user.EmployeeId!.Value, IsRead = false });
+        var access = new InternalMailAreaAccessService(store.Db, user);
+        Assert.Single(access.LegacyUnreadMessages());
+        var notification = new HRM.Domain.Entities.Notifications.Notification
+        {
+            Id = Guid.NewGuid(), CompanyId = user.CompanyId.Value
+        };
+        var proxy = (MemoryStore)(object)store.Db;
+        proxy.Values[nameof(store.Db.QueryInternalMailNotificationLinks)] = new AsyncQuery<HRM.Application.Abstractions.Persistence.InternalMail.InternalMailNotificationLink>([
+            new() { NotificationId = notification.Id, ConversationId = message.InternalConversationId, MessageId = message.InternalMessageId }
+        ]);
+        proxy.Values[nameof(store.Db.NotificationUserStates)] = new MemorySet<HRM.Domain.Entities.Notifications.NotificationUserState>([
+            new() { NotificationId = notification.Id, Notification = notification, UserId = user.EmployeeId.Value,
+                IsRead = read, IsArchived = archived }
+        ]);
+        Assert.Empty(access.LegacyUnreadMessages());
+    }
+
+    [Fact]
+    public void EffectiveUnreadAddsDisjointLegacyAndNotificationCountsAndExcludesSilentWatchers()
+    {
+        var user = new User("LabUser");
+        var store = CreateStore(user, InternalMailRelatedType.Internal, true);
+        store.Db.InternalMessages.Single().ReadStates.Add(new() { EmployeeId = user.EmployeeId!.Value, IsRead = false });
+        var proxy = (MemoryStore)(object)store.Db;
+        proxy.Values[nameof(store.Db.QueryInternalConversationNotificationUnreadCounts)] =
+            new AsyncQuery<HRM.Application.Abstractions.Persistence.InternalMail.InternalConversationNotificationUnreadCount>([
+                new() { ConversationId = store.Child.InternalConversationId, UnreadCount = 2 }
+            ]);
+        var access = new InternalMailAreaAccessService(store.Db, user);
+        Assert.Equal(3, Assert.Single(access.NotificationUnreadCounts()).UnreadCount);
+        store.Child.Participants.Single().IsMuted = true;
+        Assert.Equal(2, Assert.Single(access.NotificationUnreadCounts()).UnreadCount);
+        store.Child.Participants.Single().IsMuted = false;
+        store.Child.Participants.Single().IsArchived = true;
+        Assert.Empty(access.LegacyUnreadMessages());
+    }
 }

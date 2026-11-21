@@ -186,3 +186,10 @@ Repository cũ được thay bằng DbContext abstraction ở Application theo k
 
 Phạm vi này chuyển **các luồng tạo MFG**, không chuyển các API sửa, hoàn tất, QC, danh sách,
 detail, điều chỉnh công thức, color-chip, PDF/Excel của toàn bộ Manufacturing cũ.
+
+
+## Tìm kiếm gợi ý cho trang danh sách
+
+Danh sách lệnh sản xuất gợi ý mã lệnh, công thức, ColorCode, tên sản phẩm, mã/tên KH và đơn bán liên quan; giữ scope và bộ lọc hiện tại.
+
+Contract tùy chọn `searchSelections`/`suggestionKeyword`, OR/AND badge, giới hạn 10 và hướng dẫn thêm field: [Searching](../../../Commons/Searching/README.md). Không mở rộng quyền hoặc áp dụng tự động cho lookup.

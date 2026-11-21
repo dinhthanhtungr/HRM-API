@@ -32,6 +32,9 @@ public sealed class CustomerFollowUpTaskDueReminderWorker : BackgroundService
                     .GetRequiredService<ICustomerFollowUpTaskDueReminderProcessor>();
 
                 var processedCount = await processor.ProcessDueRemindersAsync(stoppingToken);
+                processedCount += await scope.ServiceProvider.GetRequiredService<
+                    HRM.Application.Features.PLM.SampleRequests.PersonalWork.SamplePersonalReminderProcessor>()
+                    .ProcessAsync(stoppingToken);
                 if (processedCount > 0)
                 {
                     _logger.LogInformation(

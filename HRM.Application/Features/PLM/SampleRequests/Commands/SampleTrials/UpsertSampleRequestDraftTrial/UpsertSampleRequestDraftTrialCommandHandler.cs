@@ -104,8 +104,10 @@ internal sealed class UpsertSampleRequestDraftTrialCommandHandler
         {
             return OperationResult<Guid>.Fail("Sample request was not found or is outside your scope.");
         }
+        if (await Services.Workflow.SampleRequestLabPauseRules.IsPausedAsync(_dbContext, scope.CompanyId, sampleRequest.SampleRequestId, cancellationToken))
+            return OperationResult<Guid>.Fail(Services.Workflow.SampleRequestLabPauseRules.PausedMessage);
 
-        if (!Services.Workflow.SampleFlowRules.IsLegacy(sampleRequest.CreatedDate) &&
+        if (!await Services.Workflow.SampleFollowUpRules.IsLegacyAsync(_dbContext, sampleRequest, cancellationToken) &&
             sampleRequest.Customer.ExternalId != HRM.Application.Features.PLM.Shared.Rules.PLMCustomerRules.InternalCustomerExternalId)
             return OperationResult<Guid>.Fail("Use the chip/sample delivery workflow; trials are created when Lab sends.");
         if (SampleTrialLifecycleRules.IsClosedRequest(sampleRequest.Status))

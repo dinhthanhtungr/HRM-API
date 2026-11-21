@@ -42,6 +42,7 @@ public sealed class UpdateFormulaStatusRequest
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public FormulaStatus Status { get; init; }
 
+    /// <summary>Explicit request context. Approval may omit it only when the server resolves exactly one visible active non-cancelled request for the formula product.</summary>
     [JsonConverter(typeof(NullableGuidEmptyStringConverter))]
     public Guid? SampleRequestId { get; init; }
 

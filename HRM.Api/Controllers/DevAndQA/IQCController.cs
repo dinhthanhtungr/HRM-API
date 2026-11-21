@@ -34,6 +34,7 @@ public sealed class IQCController(ISender sender) : ControllerBase
         }
     }
 
+    [HRM.Api.Security.Authorization.AllowImsSession]
     [HttpGet]
     [HttpGet("GetPaged")]
     public async Task<IActionResult> GetPaged([FromQuery] QCInputQuery query, CancellationToken ct)
@@ -42,6 +43,7 @@ public sealed class IQCController(ISender sender) : ControllerBase
         return result.Success ? Ok(result) : BadRequest(result);
     }
 
+    [HRM.Api.Security.Authorization.AllowImsSession]
     [HttpGet("GetByVoucherDetailId")]
     public async Task<IActionResult> GetDetail([FromQuery] long voucherDetailId, CancellationToken ct)
     {
@@ -49,6 +51,7 @@ public sealed class IQCController(ISender sender) : ControllerBase
         return result.Success ? Ok(result) : BadRequest(result);
     }
 
+    [HRM.Api.Security.Authorization.AllowImsSession]
     [HttpGet("{voucherDetailId:long}")]
     public async Task<IActionResult> GetById(long voucherDetailId, CancellationToken ct) =>
         await GetDetail(voucherDetailId, ct);

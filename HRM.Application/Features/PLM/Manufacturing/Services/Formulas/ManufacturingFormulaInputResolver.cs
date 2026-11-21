@@ -9,6 +9,7 @@ using HRM.Application.Commons.Pricing.Models;
 using HRM.Application.Features.PLM.Manufacturing.Dtos.MfgProductionOrders;
 using HRM.Application.Features.PLM.ProductionOrders.Dtos;
 using HRM.Application.Features.PLM.ProductionOrders.Rules;
+using HRM.Application.Features.PLM.MaterialProcessing.Services;
 using HRM.Domain.Entities.ManufacturingSchema;
 using HRM.Domain.Enums.Formulas;
 using HRM.Domain.Enums.Manufacturings;
@@ -105,7 +106,8 @@ internal sealed class ManufacturingFormulaInputResolver(IManufacturingDbContext 
         bool includeInactiveSourceItems = false,
         bool refreshExistingPrices = false,
         bool refreshProductPrices = true,
-        bool allowUntrackedSourceRows = false
+        bool allowUntrackedSourceRows = false,
+        bool preserveUnspecifiedLotQuality = false
     )
     {
         var isVu = source.Origin is ManufacturingFormulaOrigin.FromVu or ManufacturingFormulaOrigin.Improvement;
@@ -192,6 +194,24 @@ internal sealed class ManufacturingFormulaInputResolver(IManufacturingDbContext 
             }).ToList();
         }
 
+        var prepared = false;
+        for (var i = 0; i < requested.Count; i++)
+        {
+            var row = requested[i];
+            if (ProductionOrderCreationRules.IsMaterial(row.ItemType)) continue;
+            try
+            {
+                var product = await ProcessingPreviewIdentity.ResolveAsync(db, row.ItemId, order.CompanyId,
+                    order.UpdatedBy != Guid.Empty ? order.UpdatedBy : order.CreatedBy, clock.Now, ct);
+                if (product is null) continue;
+                requested[i] = new ManufacturingFormulaInputItem { ItemId = product.ProductId, ItemType = row.ItemType,
+                    SourceItemId = row.SourceItemId, Quantity = row.Quantity, LotNo = row.LotNo };
+                prepared = true;
+            }
+            catch (InvalidOperationException ex) { return Fail(ex.Message); }
+        }
+        // The caller owns the transaction; make default formula/pricing available to the shared resolver.
+        if (prepared) await db.SaveChangesAsync(ct);
         var materialIds = requested.Where(x => ProductionOrderCreationRules.IsMaterial(x.ItemType)).Select(x => x.ItemId)
             .Distinct()
             .ToArray();
@@ -302,7 +322,11 @@ internal sealed class ManufacturingFormulaInputResolver(IManufacturingDbContext 
                 {
                     if (matching.Count != 1)
                     {
-                        return Fail("Lot không thuộc vật tư/công ty hoặc có tình trạng không nhất quán.");
+                        var quality = row.ItemType is ItemType.ProductFailure or ItemType.MaterialFailure ? "Hàng lỗi" : "Hàng đạt";
+                        var reason = matching.Count == 0 ? "Không tìm thấy lot trên kệ active của đúng vật tư/sản phẩm trong công ty."
+                            : "Lot có nhiều tình trạng kho không nhất quán với loại hàng đã chọn.";
+                        return Fail($"[formulaItem:{row.ItemId:D}:{(int)row.ItemType}:{Uri.EscapeDataString(lotName)}] "
+                            + $"Dòng NVL {requested.IndexOf(row) + 1} — {data.Code} [{stockCode}] — Lot '{lotName}' — {quality}: {reason}");
                     }
 
                     lot = new()
@@ -320,7 +344,7 @@ internal sealed class ManufacturingFormulaInputResolver(IManufacturingDbContext 
             result.Add(new()
             {
                 ItemId = row.ItemId,
-                ItemType = baseType,
+                ItemType = lot is null && preserveUnspecifiedLotQuality ? row.ItemType : baseType,
                 Quantity = row.Quantity,
                 UnitPrice = price,
                 CategoryId = sameItem ? old!.CategoryId : data.CategoryId,
@@ -341,7 +365,8 @@ internal sealed class ManufacturingFormulaInputResolver(IManufacturingDbContext 
 
         foreach (var row in result)
         {
-            row.ItemType = ProductionOrderCreationRules.ResolveItemType(row.ItemType, row.LotNumber);
+            if (row.LotNumber is not null || !preserveUnspecifiedLotQuality)
+                row.ItemType = ProductionOrderCreationRules.ResolveItemType(row.ItemType, row.LotNumber);
             if (row.ItemType is ItemType.MaterialFailure or ItemType.ProductFailure
                 && !permissions.HasPermission(ApplicationPermissions.PLM.ViewManufacturingDefectiveLots))
                 return Fail("Bạn không có quyền chọn hàng lỗi.");

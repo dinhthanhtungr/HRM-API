@@ -15,7 +15,8 @@ internal sealed class GetIqcDetailQueryHandler(IIqcDbContext context, ICurrentUs
 {
     public async Task<OperationResult<GetQCInputByQC?>> Handle(GetIqcDetailQuery query, CancellationToken ct)
     {
-        if (!permissions.HasPermission(ApplicationPermissions.DevAndQA.ViewIqc))
+        var isIms = ImsAccountRestrictions.AppliesTo(currentUser);
+        if (!isIms && !permissions.HasPermission(ApplicationPermissions.DevAndQA.ViewIqc))
             return OperationResult<GetQCInputByQC?>.Fail("Bạn không có quyền xem IQC.");
 
         if (IqcRules.Company(currentUser) is not { } companyId)
@@ -25,6 +26,6 @@ internal sealed class GetIqcDetailQueryHandler(IIqcDbContext context, ICurrentUs
             return OperationResult<GetQCInputByQC?>.Fail("VoucherDetailId không hợp lệ.");
 
         return OperationResult<GetQCInputByQC?>.Ok(
-            await new IqcReader(context, companyId).GetDetailByVoucherDetailIdAsync(query.VoucherDetailId, ct));
+            await new IqcReader(context, companyId).GetDetailByVoucherDetailIdAsync(query.VoucherDetailId, ct, isIms));
     }
 }

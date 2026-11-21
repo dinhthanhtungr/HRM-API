@@ -12,7 +12,18 @@
   </ItemGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <Compile Include="..\HRM.Api\Controllers\PLM\SampleRequestsController.cs" Link="Api\SampleRequestsController.cs" />
+    <Compile Include="..\HRM.Api\Security\Authorization\SensitiveDataAuthorization.cs" Link="Api\SensitiveDataAuthorization.cs" />
+    <Compile Include="..\HRM.Api\Security\Authorization\AllowImsSessionAttribute.cs" Link="Api\AllowImsSessionAttribute.cs" />
+    <Compile Include="..\HRM.Api\Security\Authorization\ImsSessionAuthorizationMiddleware.cs" Link="Api\ImsSessionAuthorizationMiddleware.cs" />
+    <Compile Include="..\HRM.Api\Controllers\Development\SampleWorkflowSimulationController.cs" Link="Api\SampleWorkflowSimulationController.cs" />
     <Compile Include="..\HRM.Api\Security\DeveloperSampleWorkMiddleware.cs" Link="Security\DeveloperSampleWorkMiddleware.cs" />
+    <Compile Include="..\HRM.Api\Diagnostics\NotificationRequestTimingMiddleware.cs" Link="Diagnostics\NotificationRequestTimingMiddleware.cs" />
+    <Compile Include="..\HRM.Api\Diagnostics\WarehouseMovementRequestTimingMiddleware.cs" Link="Diagnostics\WarehouseMovementRequestTimingMiddleware.cs" />
+    <Compile Include="..\HRM.Api\Diagnostics\SampleWorkRequestTimingMiddleware.cs" Link="Diagnostics\SampleWorkRequestTimingMiddleware.cs" />
+    <Compile Include="..\HRM.Api\Diagnostics\PerformanceProbe.cs" Link="Diagnostics\PerformanceProbe.cs" />
+    <Compile Include="..\HRM.Api\Diagnostics\IqcSuggestionRequestTimingMiddleware.cs" Link="Diagnostics\IqcSuggestionRequestTimingMiddleware.cs" />
+    <Compile Include="..\HRM.Api\Backgrounds\CRM\Quotations\QuotationPricingApprovalAutoSendWorker.cs" Link="CRM\QuotationPricingApprovalAutoSendWorker.cs" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.0.0-pre.49">

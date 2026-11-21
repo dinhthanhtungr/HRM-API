@@ -1,4 +1,5 @@
 using HRM.Application.Abstractions.Security;
+using HRM.Api.Security.Authorization;
 using HRM.Application.Commons.Authorization.PLM;
 using HRM.Application.Features.PLM.SampleRequests.Commands.CreateSampleRequest;
 using HRM.Application.Features.PLM.SampleRequests.Commands.MigrateProductCategories;
@@ -36,10 +37,45 @@ using Microsoft.AspNetCore.Mvc;
 namespace HRM.Api.Controllers.PLM;
 
 [ApiController]
-[Authorize]
+[Authorize(Policy = SensitiveDataAuthorization.PolicyName)]
 [Route("api/v1/plm/sample-requests")]
 public sealed class SampleRequestsController : ControllerBase
 {
+    [HttpGet("{sampleRequestId:guid}/deliveries")]
+    public async Task<IActionResult> GetDeliveries(Guid sampleRequestId, [FromQuery] bool forSending = false, CancellationToken cancellationToken = default)
+    {
+        var result = await _sender.Send(new HRM.Application.Features.PLM.SampleRequests.DeliveryOptions.GetSampleDeliveriesQuery(sampleRequestId, forSending), cancellationToken);
+        return result is null ? NotFound() : Ok(result);
+    }
+
+    [HttpPost("{sampleRequestId:guid}/deliveries")]
+    public async Task<IActionResult> SendOptions(Guid sampleRequestId,
+        [FromBody] HRM.Application.Features.PLM.SampleRequests.DeliveryOptions.SendSampleOptionsCommand command, CancellationToken cancellationToken)
+    {
+        command.SampleRequestId = sampleRequestId;
+        var result = await _sender.Send(command, cancellationToken);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    [HttpPost("{sampleRequestId:guid}/deliveries/{batchId:guid}/feedback")]
+    public async Task<IActionResult> RecordOptionFeedback(Guid sampleRequestId, Guid batchId,
+        [FromBody] HRM.Application.Features.PLM.SampleRequests.DeliveryOptions.RecordSampleOptionFeedbackCommand command, CancellationToken cancellationToken)
+    {
+        command.SampleRequestId = sampleRequestId; command.BatchId = batchId;
+        var result = await _sender.Send(command, cancellationToken);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    [HttpPost("{sampleRequestId:guid}/deliveries/{batchId:guid}/feedback-batch")]
+    public async Task<IActionResult> RecordBatchFeedback(Guid sampleRequestId, Guid batchId,
+        [FromBody] HRM.Application.Features.PLM.SampleRequests.DeliveryOptions.RecordSampleBatchFeedbackCommand command, CancellationToken cancellationToken)
+    {
+        command.SampleRequestId = sampleRequestId;
+        command.BatchId = batchId;
+        var result = await _sender.Send(command, cancellationToken);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
     [HttpGet("{sampleRequestId:guid}/workflow-events")]
     public async Task<IActionResult> GetWorkflowEvents(Guid sampleRequestId, [FromQuery] int pageNumber = 1,
         [FromQuery] int pageSize = 20, CancellationToken cancellationToken = default)
@@ -75,10 +111,34 @@ public sealed class SampleRequestsController : ControllerBase
         return Ok(await _sender.Send(command, cancellationToken));
     }
 
+    [HttpPost("{sampleRequestId:guid}/quotation-feedback")]
+    public async Task<IActionResult> RecordQuotationFeedback(Guid sampleRequestId,
+        [FromBody] HRM.Application.Features.PLM.SampleRequests.Commands.RecordQuotationFeedback.RecordSampleQuotationFeedbackCommand command,
+        CancellationToken ct)
+    {
+        var timer = System.Diagnostics.Stopwatch.StartNew();
+        command.SampleRequestId = sampleRequestId;
+        var result = await _sender.Send(command, ct);
+        if (HttpContext.RequestServices.GetRequiredService<IHostEnvironment>().IsDevelopment())
+        {
+            var phases = System.Diagnostics.Activity.Current?.GetTagItem(SampleWorkDiagnosticTags.ServerTiming) as string;
+            var total = "quotation_total;dur=" + timer.ElapsedMilliseconds.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            Response.Headers["Server-Timing"] = string.IsNullOrEmpty(phases) ? total : phases + ", " + total;
+        }
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
     [HttpGet("{sampleRequestId:guid}/workflow")]
     public async Task<IActionResult> GetWorkflow(Guid sampleRequestId, CancellationToken cancellationToken)
     {
+        var timer = System.Diagnostics.Stopwatch.StartNew();
         var result = await _sender.Send(new HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestWorkflow.GetSampleRequestWorkflowQuery(sampleRequestId), cancellationToken);
+        if (HttpContext.RequestServices.GetRequiredService<IHostEnvironment>().IsDevelopment())
+        {
+            var phases = System.Diagnostics.Activity.Current?.GetTagItem(SampleWorkDiagnosticTags.ServerTiming) as string;
+            var total = "workflow_total;dur=" + timer.ElapsedMilliseconds.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            Response.Headers["Server-Timing"] = string.IsNullOrEmpty(phases) ? total : phases + ", " + total;
+        }
         return result is null ? NotFound() : Ok(result);
     }
 
@@ -96,6 +156,22 @@ public sealed class SampleRequestsController : ControllerBase
     public async Task<IActionResult> RecordCustomerFeedbackNote(Guid sampleRequestId,
         [FromBody] HRM.Application.Features.PLM.SampleRequests.Commands.RecordCustomerFeedbackNote.RecordCustomerFeedbackNoteCommand command,
         CancellationToken ct)
+    {
+        command.SampleRequestId = sampleRequestId;
+        var result = await _sender.Send(command, ct);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    [HttpGet("{sampleRequestId:guid}/lab-notes")]
+    public async Task<IActionResult> GetLabNotes(Guid sampleRequestId, [FromQuery] int pageNumber = 1, CancellationToken ct = default)
+    {
+        var result = await _sender.Send(new HRM.Application.Features.PLM.SampleRequests.Queries.GetLabNotes.GetLabNotesQuery(sampleRequestId, pageNumber), ct);
+        return result is null ? NotFound() : Ok(result);
+    }
+
+    [HttpPost("{sampleRequestId:guid}/lab-notes")]
+    public async Task<IActionResult> RecordLabNote(Guid sampleRequestId,
+        [FromBody] HRM.Application.Features.PLM.SampleRequests.Commands.RecordLabNote.RecordLabNoteCommand command, CancellationToken ct)
     {
         command.SampleRequestId = sampleRequestId;
         var result = await _sender.Send(command, ct);
@@ -137,6 +213,16 @@ public sealed class SampleRequestsController : ControllerBase
     public async Task<IActionResult> GetLabTeams(CancellationToken ct)
         => Ok(await _sender.Send(new HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleLabTeams.GetSampleLabTeamsQuery(), ct));
 
+    [HttpGet("reports/work-changes")]
+    public async Task<IActionResult> GetWorkChanges(
+        [FromQuery] HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleWorkChanges.GetSampleWorkChangesQuery query,
+        CancellationToken ct)
+        => Ok(await _sender.Send(query, ct));
+
+    [HttpGet("reports/daily/sale-filters")]
+    public async Task<IActionResult> GetWorkSaleFilters([FromQuery] SampleRequestWorkAudience audience, CancellationToken ct)
+        => Ok(await _sender.Send(new GetSampleWorkSaleFiltersQuery(audience), ct));
+
     [HttpGet("reports/daily")]
     public async Task<IActionResult> GetDailyWork(
         [FromQuery] GetSampleRequestDailyWorkQuery query,
@@ -158,7 +244,14 @@ public sealed class SampleRequestsController : ControllerBase
         {
             return BadRequest("keyword must be at most 80 characters.");
         }
-        return Ok(await _sender.Send(query, cancellationToken));
+        var timer = System.Diagnostics.Stopwatch.StartNew();
+        using var activity = new System.Diagnostics.Activity("sample-daily-timing").Start();
+        var result = await _sender.Send(query, cancellationToken);
+        // Fixed phase names and durations only; available on deployed daily reports too.
+        var phases = activity.GetTagItem(SampleWorkDiagnosticTags.ServerTiming) as string;
+        var total = "daily_total;dur=" + timer.ElapsedMilliseconds.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        Response.Headers["Server-Timing"] = string.IsNullOrEmpty(phases) ? total : phases + ", " + total;
+        return Ok(result);
     }
 
     /// <summary>Gợi ý Sale, khách hàng và mã yêu cầu trong đúng phạm vi báo cáo ngày.</summary>
@@ -201,16 +294,50 @@ public sealed class SampleRequestsController : ControllerBase
         return Ok(await _sender.Send(query, ct));
     }
 
+    [HttpGet("reports/activity-details")]
+    public async Task<IActionResult> GetActivityDetails([FromQuery] HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleActivityDetails.GetSampleActivityDetailsQuery query, CancellationToken ct)
+    {
+        if (!IsValidReportPeriod(query.FromDate, query.ToDate) || !query.HasValidFilters()) return BadRequest("Invalid activity report period or filters.");
+        return Ok(await _sender.Send(query, ct));
+    }
+
     [HttpGet("reports/admin-details")]
     public async Task<IActionResult> GetAdminDetails([FromQuery] GetSampleRequestAdminDetailsQuery query, CancellationToken ct)
     {
         if (!IsValidReportPeriod(query.FromDate, query.ToDate) || !Enum.IsDefined(query.Metric) || query.Keyword?.Length > 80)
             return BadRequest("Invalid report period, metric or keyword.");
-        return Ok(await _sender.Send(query, ct));
+        var timer = System.Diagnostics.Stopwatch.StartNew();
+        var result = await _sender.Send(query, ct);
+        if (HttpContext.RequestServices.GetRequiredService<IHostEnvironment>().IsDevelopment())
+        {
+            var phases = System.Diagnostics.Activity.Current?.GetTagItem(SampleWorkDiagnosticTags.ServerTiming) as string;
+            var total = "admin_details_total;dur=" + timer.ElapsedMilliseconds.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            Response.Headers["Server-Timing"] = string.IsNullOrEmpty(phases) ? total : phases + ", " + total;
+        }
+        return Ok(result);
     }
 
     private static bool IsValidReportPeriod(DateOnly from, DateOnly to)
         => from != default && to != default && to >= from && to != DateOnly.MaxValue && to.DayNumber - from.DayNumber <= 366;
+
+    [HttpGet("summary/suggestions")]
+    public async Task<IActionResult> GetSummarySuggestions(
+        [FromQuery] HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestSummarySuggestions.GetSampleRequestSummarySuggestionsQuery query,
+        CancellationToken cancellationToken)
+    {
+        var development = HttpContext.RequestServices.GetRequiredService<IHostEnvironment>().IsDevelopment();
+        using var activity = development ? new System.Diagnostics.Activity("summary-suggestions-timing").Start() : null;
+        activity?.SetTag(SampleWorkDiagnosticTags.NamedTimingEnabled, true);
+        var timer = System.Diagnostics.Stopwatch.StartNew();
+        var result = await _sender.Send(query, cancellationToken);
+        if (development)
+        {
+            var phases = activity?.GetTagItem(SampleWorkDiagnosticTags.ServerTiming) as string;
+            var total = "summary_suggestions_total;dur=" + timer.Elapsed.TotalMilliseconds.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+            Response.Headers["Server-Timing"] = string.IsNullOrEmpty(phases) ? total : phases + ", " + total;
+        }
+        return Ok(result);
+    }
 
     [HttpGet("summary")]
     public async Task<IActionResult> GetSummary(
@@ -362,6 +489,22 @@ public sealed class SampleRequestsController : ControllerBase
     /// <summary>
     /// Chuyển Product active của công ty hiện tại sang CMP/PIG theo rule chuẩn hoá đã duyệt.
     /// </summary>
+    [HttpPost("products/fill-colour-names")]
+    [Authorize(Policy = PlmPolicies.EditProductTechnicalInfo)]
+    public async Task<IActionResult> FillProductColourNames(
+        [FromServices] HRM.Application.Abstractions.Documents.IProductColourNamePreviewExcelRenderer renderer,
+        [FromQuery] bool dryRun = true, [FromQuery] bool exportExcel = false, CancellationToken cancellationToken = default)
+    {
+        var result = await _sender.Send(new HRM.Application.Features.PLM.SampleRequests.Commands.FillProductColourNames.FillProductColourNamesCommand
+        {
+            DryRun = dryRun,
+            ExportPreview = exportExcel
+        }, cancellationToken);
+        if (result.Success && exportExcel && result.Data is not null)
+            return File(renderer.Render(result.Data), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "product-colour-name-preview.xlsx");
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
     [HttpPost("products/migrate-categories")]
     [Authorize(Policy = PlmPolicies.EditProductTechnicalInfo)]
     public async Task<IActionResult> MigrateProductCategories(

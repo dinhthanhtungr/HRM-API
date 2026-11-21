@@ -83,3 +83,7 @@ Pricing handlers and `/api/v1/auth/me` use the same JWT bearer principal. The be
 the cookie for REST requests (or the SignalR query token only on the notifications hub). The backend has no response,
 output, distributed or application DTO cache for pricing responses. Sensitive pricing fields may be returned as
 `null` when the principal lacks the corresponding capability; this is field redaction rather than an authentication error.
+Khi role IMS được gán hoặc gỡ, JWT có trạng thái IMS khác với role assignment
+active bị từ chối ở bước xác thực. Client cần refresh hoặc đăng nhập lại để
+nhận danh sách role mới trước khi gọi API. Kiểm tra này dùng cùng truy vấn xác
+thực tài khoản và không ghi dữ liệu.

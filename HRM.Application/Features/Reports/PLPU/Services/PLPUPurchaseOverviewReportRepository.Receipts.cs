@@ -97,6 +97,9 @@ public partial class PLPUPurchaseOverviewReportRepository
             if (!string.IsNullOrWhiteSpace(query.Status))
                 q = q.Where(x => (x.po.Status ?? "") == query.Status);
 
+            var search = PLPUSmartSearch.Build(q, x => x.po.ExternalId, x => x.s != null ? x.s.ExternalId : "",
+                x => x.s != null ? x.s.SupplierName : "", x => x.ledger.ProductCode ?? x.vd.ProductCode, x => x.vd.ProductName);
+            q = search.ApplyRequest(q, keyword, query, out keyword);
             if (!string.IsNullOrWhiteSpace(keyword))
             {
                 q = q.Where(x =>

@@ -84,11 +84,34 @@ public sealed class SampleRequestPriceAuditTests
     [InlineData("Thẻ màu (2)")]
     [InlineData("ColorSampleSet")]
     [InlineData("ColourSampleSet")]
-    public void NewColourRequestsStartInProgressRegardlessOfProductIdentity(string infoType)
+    [InlineData("Quotation")]
+    [InlineData("Báo giá")]
+    public void SubmittedRequestsRequireBothProductNameAndColourCode(string infoType)
     {
-        Assert.Equal("InProgress", SampleRequestCustomerPriceRules.ResolveSubmittedStatus("New", infoType));
-        Assert.Equal("InProgress", SampleRequestCustomerPriceRules.ResolveSubmittedStatus("InProgress", infoType));
-        Assert.Equal("New", SampleRequestCustomerPriceRules.ResolveSubmittedStatus("New", "Quotation"));
+        Product?[] incompleteProducts =
+        [
+            null,
+            new Product(),
+            new Product { Name = "Product" },
+            new Product { ColourCode = "C1" },
+            new Product { Name = " ", ColourCode = "C1" },
+            new Product { Name = "Product", ColourCode = " " }
+        ];
+        foreach (var product in incompleteProducts)
+        {
+            var initialStatus = SampleRequestStatusTransitionRules.ResolveInitialStatus(product);
+            Assert.Equal("New", SampleRequestCustomerPriceRules.ResolveSubmittedStatus(initialStatus, infoType));
+            var request = new SampleRequest { Status = "New" };
+            Assert.False(SampleRequestStatusTransitionRules.TryStartProcessing(request, product));
+            Assert.Equal("New", request.Status);
+        }
+
+        var identifiedProduct = new Product { Name = "Product", ColourCode = "C1" };
+        var readyStatus = SampleRequestStatusTransitionRules.ResolveInitialStatus(identifiedProduct);
+        Assert.Equal("InProgress", SampleRequestCustomerPriceRules.ResolveSubmittedStatus(readyStatus, infoType));
+        var readyRequest = new SampleRequest { Status = "New" };
+        Assert.True(SampleRequestStatusTransitionRules.TryStartProcessing(readyRequest, identifiedProduct));
+        Assert.Equal("InProgress", readyRequest.Status);
     }
 
     [Theory]

@@ -11,6 +11,7 @@ namespace HRM.Application.Features.PLM.SampleRequests.Commands.CreateSampleReque
 /// </summary>
 public sealed class CreateSampleRequestCommand : IRequest<OperationResult<Guid>>
 {
+    internal bool UseExistingTransaction { get; init; }
     public Guid CustomerId { get; set; }
     public Guid? ProductId { get; set; }
     public Guid BranchId { get; set; }
@@ -22,6 +23,7 @@ public sealed class CreateSampleRequestCommand : IRequest<OperationResult<Guid>>
     public double? ExpectedQuantity { get; set; }
     public decimal? ExpectedPrice { get; set; }
     public double? SampleQuantity { get; set; }
+    public bool ChipBeforeSample { get; set; }
     public int? NumberDeliverySampleDate { get; set; }
     public string Package { get; set; } = string.Empty;
     public int BagWeight { get; set; }

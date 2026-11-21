@@ -24,6 +24,7 @@ public sealed class SampleRequestPricingOverviewItemDto
 
 public sealed class SampleRequestPricingProductDto
 {
+    public double? UsageRate { get; init; }
     public Guid ProductId { get; init; }
     public string Code { get; init; } = string.Empty;
     public string Name { get; init; } = string.Empty;

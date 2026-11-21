@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using HRM.Application.Abstractions.Persistence.InternalMail;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Pagination;
@@ -7,6 +8,7 @@ using HRM.Application.Features.PLM.SampleRequests.PriceQuoteRequests;
 using HRM.Domain.Enums.InternalMailEnums;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace HRM.Application.Features.InternalMail.Queries.GetConversations;
 
@@ -18,19 +20,22 @@ internal sealed class GetInternalConversationsQueryHandler
     private readonly InternalMailAreaAccessService _areas;
     private readonly InternalConversationSampleRequestInfoResolver _sampleRequestInfoResolver;
     private readonly InternalConversationQuotationInfoResolver _quotationInfoResolver;
+    private readonly ILogger<GetInternalConversationsQueryHandler>? _logger;
 
     public GetInternalConversationsQueryHandler(
         IInternalMailDbContext dbContext,
         ICurrentUser currentUser,
         InternalConversationSampleRequestInfoResolver sampleRequestInfoResolver,
         InternalConversationQuotationInfoResolver quotationInfoResolver,
-        InternalMailAreaAccessService areas)
+        InternalMailAreaAccessService areas,
+        ILogger<GetInternalConversationsQueryHandler>? logger = null)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
         _areas = areas;
         _sampleRequestInfoResolver = sampleRequestInfoResolver;
         _quotationInfoResolver = quotationInfoResolver;
+        _logger = logger;
     }
 
     public async Task<PagedResult<InternalConversationListItemDto>> Handle(
@@ -39,9 +44,19 @@ internal sealed class GetInternalConversationsQueryHandler
     {
         var companyId = GetCompanyId();
         var employeeId = GetEmployeeId();
-        var unreadNotifications = _areas.NotificationUnreadCounts();
+        using var timing = new NotificationQueryTiming(_logger,
+            request.RelatedType == InternalMailRelatedType.SampleRequest
+                ? (request.UnreadOnly ? "sample-conversations-unread" : "sample-conversations-all")
+                : request.RelatedType == InternalMailRelatedType.Quotation
+                    ? (request.UnreadOnly ? "quotation-conversations-unread" : "quotation-conversations-all")
+                    : "internal-mail-conversations", enabled: true);
         // Message metadata belongs to the outer authorized conversation; do not repeat its access query per field.
         var query = _areas.InboxConversations(request.Archived).AsNoTracking();
+        if (request.NormalizedSearchKeyword is null)
+        {
+            var defaultIds = _areas.DefaultLabInboxConversations().Select(c => c.InternalConversationId);
+            query = query.Where(row => defaultIds.Contains(row.InternalConversationId));
+        }
 
         if (request.RelatedType.HasValue)
         {
@@ -64,15 +79,6 @@ internal sealed class GetInternalConversationsQueryHandler
                 !message.IsDeleted &&
                 message.PayloadJson != null &&
                 EF.Functions.JsonContains(message.PayloadJson, payloadMarker)));
-        }
-
-        if (request.UnreadOnly)
-        {
-            query = query.Where(x => x.Conversation.Messages.Any(m => m.InternalConversationId == x.InternalConversationId &&
-                !m.IsDeleted && m.SenderEmployeeId != employeeId &&
-                (m.PayloadJson == null || !EF.Functions.JsonContains(m.PayloadJson, InternalMailMentions.AudienceMarker)) &&
-                m.ReadStates.Any(s => s.EmployeeId == employeeId && !s.IsRead)) ||
-                unreadNotifications.Any(n => n.ConversationId == x.InternalConversationId && n.UnreadCount > 0));
         }
 
         if (request.NormalizedSearchKeyword is { } keyword)
@@ -107,11 +113,24 @@ internal sealed class GetInternalConversationsQueryHandler
                        EF.Functions.ILike(quotation.SaleEmployee.FullName, searchPattern, PostgresSearchPattern.EscapeCharacter)))));
         }
 
-        var totalCount = await query.CountAsync(cancellationToken);
         var pageNumber = request.NormalizedPageNumber;
         var pageSize = request.NormalizedPageSize;
+        if (request.UnreadOnly)
+        {
+            // Separate eligibility from the unpaged COUNT plan. Keep only distinct conversation
+            // keys (never historical notification IDs), then recheck the outer authorized scope.
+            var unreadIds = await timing.RunAsync("unread-keys", () => MeasureUnreadAsync("unread-keys", true,
+                () => _areas.UnreadConversationIdsAsync(request.RelatedType, cancellationToken), keys => keys.Length));
+            if (unreadIds.Length == 0)
+                return new PagedResult<InternalConversationListItemDto>([], 0, pageNumber, pageSize);
+            query = query.Where(row => unreadIds.Contains(row.InternalConversationId));
+        }
+        var totalCount = await timing.RunAsync("total-count", () => MeasureUnreadAsync("total-count", request.UnreadOnly,
+            () => query.CountAsync(cancellationToken), count => count));
+        if (totalCount == 0)
+            return new PagedResult<InternalConversationListItemDto>([], 0, pageNumber, pageSize);
 
-        var items = await query
+        var items = await timing.RunAsync("page", () => MeasureUnreadAsync("page", request.UnreadOnly, () => query
             .OrderByDescending(x => x.ActivityAt)
             .ThenByDescending(x => x.InternalConversationId)
             .Skip((pageNumber - 1) * pageSize)
@@ -136,11 +155,7 @@ internal sealed class GetInternalConversationsQueryHandler
                 LastSenderEmployeeId = row.LastMessage == null ? null : (Guid?)row.LastMessage.SenderEmployeeId,
                 LastSenderName = row.LastMessage == null ? null : row.LastMessage.SenderName,
                 LastMessageAt = row.Participant.ActivityAt,
-                UnreadCount = row.Participant.Conversation.Messages.Count(message => message.InternalConversationId == row.Participant.InternalConversationId &&
-                    (message.PayloadJson == null || !EF.Functions.JsonContains(message.PayloadJson, InternalMailMentions.AudienceMarker)) &&
-                    !message.IsDeleted &&
-                    message.SenderEmployeeId != employeeId &&
-                    message.ReadStates.Any(state => state.EmployeeId == employeeId && !state.IsRead)),
+                UnreadCount = 0,
                 IsUrgent = row.Participant.Conversation.Messages.Any(message => message.InternalConversationId == row.Participant.InternalConversationId &&
                     !message.IsDeleted &&
                     message.IsUrgent &&
@@ -149,27 +164,29 @@ internal sealed class GetInternalConversationsQueryHandler
                 IsArchived = row.Participant.IsArchived,
                 IsMuted = row.Participant.IsMuted
             })
-            .ToListAsync(cancellationToken);
+            .ToListAsync(cancellationToken), page => page.Count));
+        if (items.Count == 0)
+            return new PagedResult<InternalConversationListItemDto>(items, totalCount, pageNumber, pageSize);
 
         var conversationIds = items.Select(item => item.ConversationId).ToArray();
-        var notificationCounts = await unreadNotifications
-            .Where(item => conversationIds.Contains(item.ConversationId))
-            .ToDictionaryAsync(item => item.ConversationId, item => item.UnreadCount, cancellationToken);
+        var notificationCounts = await timing.RunAsync("badges", () => _areas.NotificationUnreadCounts(conversationIds)
+            .ToDictionaryAsync(item => item.ConversationId, item => item.UnreadCount, cancellationToken));
 
         foreach (var item in items)
         {
-            // The same event can have both a message read state and an inbox notification.
-            item.UnreadCount = Math.Max(item.UnreadCount, notificationCounts.GetValueOrDefault(item.ConversationId));
+            item.UnreadCount = notificationCounts.GetValueOrDefault(item.ConversationId);
             item.DisplayTitle = InternalConversationPresentation.BuildDisplayTitle(
                 item.RelatedType,
                 item.Subject,
                 item.RelatedExternalId);
         }
 
-        var groups = await _areas.GroupInfoAsync(conversationIds, cancellationToken);
+        var groups = await timing.RunAsync("group-info", () => _areas.GroupInfoAsync(conversationIds, cancellationToken));
         var parentIds = groups.Values.Where(g => g.RootConversationId != g.ConversationId).Select(g => g.RootConversationId).Distinct().ToArray();
-        var parents = await _dbContext.InternalConversations.AsNoTracking().Where(c => c.CompanyId == companyId && parentIds.Contains(c.InternalConversationId))
-            .ToDictionaryAsync(c => c.InternalConversationId, cancellationToken);
+        var parents = parentIds.Length == 0
+            ? new Dictionary<Guid, HRM.Domain.Entities.InternalMailSchema.InternalConversation>()
+            : await timing.RunAsync("parents", () => _dbContext.InternalConversations.AsNoTracking().Where(c => c.CompanyId == companyId && parentIds.Contains(c.InternalConversationId))
+                .ToDictionaryAsync(c => c.InternalConversationId, cancellationToken));
         foreach (var item in items)
         {
             var group = groups[item.ConversationId];
@@ -183,26 +200,27 @@ internal sealed class GetInternalConversationsQueryHandler
                 item.DisplayTitle = InternalConversationPresentation.BuildDisplayTitle(parent.RelatedType, parent.Subject, parent.RelatedExternalId);
             }
         }
-        var sampleRequestInfoById = await _sampleRequestInfoResolver.ResolveAsync(
+        var sampleRequestInfoById = await timing.RunAsync("sample-info", () => _sampleRequestInfoResolver.ResolveAsync(
             items.Where(item => item.RelatedType == InternalMailRelatedType.SampleRequest)
                 .Select(item => item.RelatedId ?? Guid.Empty),
             companyId,
-            cancellationToken);
-        var quotationInfoById = await _quotationInfoResolver.ResolveAsync(
+            cancellationToken));
+        var quotationInfoById = await timing.RunAsync("quotation-info", () => _quotationInfoResolver.ResolveAsync(
             items.Where(item => item.RelatedType == InternalMailRelatedType.Quotation)
                 .Select(item => item.RelatedId ?? Guid.Empty),
             companyId,
-            cancellationToken);
+            cancellationToken));
         foreach (var item in items)
         {
             InternalConversationRelatedInfoMapper.Apply(item, sampleRequestInfoById, quotationInfoById);
         }
 
-        var quickGroups = await _areas.QuickGroupsAsync(items.Where(i => i.RelatedType == InternalMailRelatedType.SampleRequest)
-            .Select(i => i.GroupConversationId), cancellationToken);
+        var quickGroups = await timing.RunAsync("quick-groups", () => _areas.QuickGroupsAsync(items.Where(i => i.RelatedType == InternalMailRelatedType.SampleRequest)
+            .Select(i => i.GroupConversationId), cancellationToken,
+            items.ToDictionary(i => i.ConversationId, i => i.UnreadCount)));
         foreach (var item in items)
             item.QuickGroups = quickGroups.GetValueOrDefault(item.GroupConversationId) ?? [];
-        await _areas.MaskPriceConversationPreviewsAsync(items, cancellationToken);
+        await timing.RunAsync("masking", () => _areas.MaskPriceConversationPreviewsAsync(items, cancellationToken));
         return new PagedResult<InternalConversationListItemDto>(items, totalCount, pageNumber, pageSize);
     }
 
@@ -211,4 +229,25 @@ internal sealed class GetInternalConversationsQueryHandler
 
     private Guid GetEmployeeId() => _currentUser.EmployeeId
         ?? throw new UnauthorizedAccessException("Current user does not have an employee id.");
+
+    private async Task<T> MeasureUnreadAsync<T>(string stage, bool enabled, Func<Task<T>> action, Func<T, int> rowCount)
+    {
+        if (!enabled) return await action();
+        var watch = Stopwatch.StartNew();
+        try
+        {
+            var result = await action();
+            if (watch.ElapsedMilliseconds >= 1000)
+                _logger?.LogWarning("InternalMail unread stage {Stage} slow: {ElapsedMs} ms, rows {Rows}",
+                    stage, watch.ElapsedMilliseconds, rowCount(result));
+            return result;
+        }
+        catch (Exception failure) when (failure is not OperationCanceledException)
+        {
+            // Only stage/type/timing; never SQL, parameters, credentials or business payload.
+            _logger?.LogWarning("InternalMail unread stage {Stage} failed after {ElapsedMs} ms: {FailureType}",
+                stage, watch.ElapsedMilliseconds, failure.GetType().Name);
+            throw;
+        }
+    }
 }

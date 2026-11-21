@@ -31,6 +31,15 @@ internal sealed class EvaluationAccessService(
     }
 
 
+    public bool IsIms => ImsAccountRestrictions.AppliesTo(user);
+
+    public Guid CoaTrackingCompany()
+    {
+        if (!IsIms || user.CompanyId is not { } company || company == Guid.Empty)
+            throw new EvaluationRequestException("Không có quyền theo dõi COA trong công ty hiện tại.", 403);
+        return company;
+    }
+
     public Guid Company(bool write = false, EvaluationTemplateType? type = null)
     {
         if (!user.IsAuthenticated || user.CompanyId is not { } company || company == Guid.Empty)

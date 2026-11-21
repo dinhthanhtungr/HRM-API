@@ -17,8 +17,10 @@ namespace HRM.Api.Controllers.DevAndQA;
 [Route("api/v1/dev-and-qa/coa-certificates")]
 public sealed class CoaCertificatesController(ISender sender) : EvaluationControllerBase(sender)
 {
+    [HRM.Api.Security.Authorization.AllowImsSession]
     [HttpGet]
     public Task<IActionResult> List([FromQuery] GetCoaCertificatesQuery query, CancellationToken ct) => Execute(query, ct);
+    [HRM.Api.Security.Authorization.AllowImsSession]
     [HttpGet("{id:guid}")]
     public Task<IActionResult> Detail(Guid id, CancellationToken ct) => Execute(new GetCoaCertificateQuery(id), ct);
     [HttpPost]

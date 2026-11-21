@@ -84,7 +84,9 @@ internal sealed class GetPurchaseOrderByIdQueryHandler(
                     PaymentTypes = item.PurchaseOrderSnapshot.PaymentTypes,
                     Vat = item.PurchaseOrderSnapshot.Vat,
                 },
-                SupplierContact = item.PurchaseOrderSnapshot == null ? (item.Supplier == null ? null : item.Supplier.SupplierContacts.Where(c => c.IsPrimary == true && c.IsActive == true).Select(c => c.LastName).FirstOrDefault()) : item.PurchaseOrderSnapshot.SupplierContactSnapshot,
+                SupplierContact = item.PurchaseOrderSnapshot == null ? (item.Supplier == null ? null : item.Supplier.SupplierContacts.Where(c => c.IsActive == true)
+                    .OrderByDescending(c => c.IsPrimary == true).ThenBy(c => c.ContactId)
+                    .Select(c => ((c.FirstName ?? string.Empty) + " " + (c.LastName ?? string.Empty)).Trim()).FirstOrDefault()) : item.PurchaseOrderSnapshot.SupplierContactSnapshot,
                 SupplierAddress = item.PurchaseOrderSnapshot == null ? (item.Supplier == null ? null : item.Supplier.SupplierAddresses.Where(a => a.IsPrimary == true && a.IsActive == true).Select(a => a.AddressLine).FirstOrDefault()) : item.PurchaseOrderSnapshot.SupplierAddressSnapshot,
                 SupplierPhone = item.PurchaseOrderSnapshot == null ? (item.Supplier == null ? null : item.Supplier.Phone) : item.PurchaseOrderSnapshot.SupplierPhoneNumberSnapshot,
                 EmployeeFullName = item.PurchaseOrderSnapshot == null ? (item.CreatedByNavigation == null || item.CreatedByNavigation.CompanyId != companyId ? null : item.CreatedByNavigation.FullName) : item.PurchaseOrderSnapshot.EmployeeFullNameSnapshot,

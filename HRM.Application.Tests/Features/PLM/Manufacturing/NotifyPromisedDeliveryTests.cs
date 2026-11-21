@@ -77,6 +77,27 @@ public sealed class NotifyPromisedDeliveryTests
     }
 
     [Fact]
+    public async Task IncludesCustomerAndDistinctProductCodesPerLinkedOrder()
+    {
+        var f = new Fixture();
+        var first = f.Link(f.Sale);
+        first.Detail.ProductExternalIdSnapshot = " COLOR1 ";
+        first.Detail.MerchandiseOrder.CustomerExternalIdSnapshot = "KH_1";
+        first.Detail.MerchandiseOrder.CustomerNameSnapshot = "Customer";
+        var second = f.Link(f.Sale);
+        second.Detail.MerchandiseOrder = first.Detail.MerchandiseOrder;
+        second.Detail.ProductExternalIdSnapshot = "COLOR2";
+        f.Store.Seed(nameof(f.Db.MfgOrderPOs), first, first, second, f.Link(f.Sale, foreign: true));
+        Assert.True((await f.Handler.Handle(f.Request, default)).Success);
+        using var payload = JsonDocument.Parse(Assert.Single(f.Capture.Published).PayloadJson!);
+        var order = Assert.Single(payload.RootElement.GetProperty("merchandiseOrders").EnumerateArray());
+        Assert.Equal("KH_1", order.GetProperty("customerCode").GetString());
+        Assert.Equal("Customer", order.GetProperty("customerName").GetString());
+        Assert.Equal(new[] { "COLOR1", "COLOR2" }, order.GetProperty("productCodes").EnumerateArray().Select(x => x.GetString()));
+        Assert.Equal(0, f.Store.Saves);
+    }
+
+    [Fact]
     public async Task MissingPreviousDateIsExplicitAndDoesNotUpdateOrder()
     {
         var f = new Fixture();
@@ -155,7 +176,7 @@ public sealed class NotifyPromisedDeliveryTests
             var groups = DispatchProxy.Create<ISaleGroupRecipientResolver, CapturePort>();
             GroupCapture = (CapturePort)(object)groups;
             GroupCapture.Leader = Leader;
-            Handler = new(Db, User, Permissions, groups, notifications);
+            Handler = new(Db, User, Permissions, new HRM.Application.Features.PLM.Manufacturing.Services.Notifications.PromisedDeliveryNotifier(Db, User, groups, notifications));
         }
         public Employee Employee(Guid id) => new() { EmployeeId = id, CompanyId = User.CompanyId!.Value, IsActive = true };
         public MfgOrderPO Link(Guid sale, bool active = true, bool foreign = false) => new()
@@ -173,12 +194,16 @@ public sealed class NotifyPromisedDeliveryTests
     {
         public Guid NotificationId { get; } = Guid.NewGuid();
         public Guid Leader { get; set; }
+        public bool ThrowOnPublish { get; set; }
         public List<Guid> Sales { get; } = [];
         public List<PublishNotificationRequest> Published { get; } = [];
         protected override object? Invoke(MethodInfo? method, object?[]? args)
         {
             if (method!.Name == nameof(INotificationService.PublishAsync))
-            { Published.Add((PublishNotificationRequest)args![0]!); return Task.FromResult(NotificationId); }
+            {
+                if (ThrowOnPublish) throw new InvalidOperationException("Synthetic publish failure");
+                Published.Add((PublishNotificationRequest)args![0]!); return Task.FromResult(NotificationId);
+            }
             if (method.Name == nameof(ISaleGroupRecipientResolver.ResolveSaleGroupLeaderIdsAsync))
             { Sales.Add((Guid)args![1]!); return Task.FromResult<IReadOnlyCollection<Guid>>([Leader]); }
             throw new NotSupportedException(method.Name);

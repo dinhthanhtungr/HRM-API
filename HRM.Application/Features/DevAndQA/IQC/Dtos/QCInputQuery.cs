@@ -3,8 +3,12 @@ using HRM.Domain.Enums.WareHouses;
 
 namespace HRM.Application.Features.DevAndQA.IQC.Dtos;
 
-public class QCInputQuery
+public class QCInputQuery : HRM.Application.Commons.Searching.ISmartSearchRequest
 {
+    public string? SearchSelections { get; set; }
+    public string? SuggestionKeyword { get; set; }
+    /// <summary>Ghép mẫu test độc lập vào summary; mặc định giữ danh sách kho legacy.</summary>
+    public bool IncludeLabTests { get; set; }
     public int PageNumber { get; set; } = 1;
     public int PageSize { get; set; } = 15;
     public Guid? QCInputByQCId { get; set; }

@@ -1,5 +1,6 @@
 using HRM.Application.Abstractions.Commons.ExternalIds;
 using HRM.Application.Abstractions.Persistence.PLM;
+using HRM.Application.Features.PLM.MaterialProcessing.Services;
 using HRM.Application.Features.PLM.Formulas.Commands.UpdateFormulaStatus;
 using HRM.Application.Features.PLM.Formulas.Dtos.Commons;
 using HRM.Application.Features.PLM.SampleRequests.Rules;
@@ -141,7 +142,8 @@ internal sealed class FormulaWriteService
         Formula formula,
         IReadOnlyList<UpsertFormulaMaterialRequest>? requests,
         Guid companyId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Guid? actingEmployeeId = null)
     {
         if (requests is null)
         {
@@ -155,7 +157,6 @@ internal sealed class FormulaWriteService
 
         var hasSentKg = await _dbContext.SampleRequestSampleTrials.AsNoTracking().AnyAsync(x => x.IsActive &&
             x.FormulaId == formula.FormulaId && x.SampleRequest.CompanyId == companyId &&
-            x.SampleRequest.CreatedDate >= HRM.Application.Features.PLM.SampleRequests.Services.Workflow.SampleFlowRules.StartsAt &&
             x.DeliveredSampleQuantityKg > 0 && x.SentDate != null, cancellationToken);
         if (hasSentKg || !FormulaMaterialMutationRules.CanReplaceMaterials(formula.Status))
         {
@@ -199,7 +200,7 @@ internal sealed class FormulaWriteService
                 request,
                 companyId,
                 lineNo,
-                cancellationToken);
+                cancellationToken, actingEmployeeId);
 
             await _dbContext.FormulaMaterials.AddAsync(row, cancellationToken);
             lineNo++;
@@ -229,7 +230,7 @@ internal sealed class FormulaWriteService
             throw new InvalidOperationException("A sent or finalized formula is locked. Use the appropriate workflow action.");
         // Validate/handle materials first so a locked composition change cannot leave
         // other tracked fields mutated in the current request scope.
-        await ReplaceMaterialsAsync(formula, request.Materials, companyId, cancellationToken);
+        await ReplaceMaterialsAsync(formula, request.Materials, companyId, cancellationToken, employeeId);
 
         if (request.ProductId is { } productId && productId != Guid.Empty)
         {
@@ -459,6 +460,7 @@ internal sealed class FormulaWriteService
 
         if (string.Equals(sampleRequest.Status, SampleRequestStatus.Completed.ToString(), StringComparison.OrdinalIgnoreCase) ||
             string.Equals(sampleRequest.Status, SampleRequestStatus.Cancelled.ToString(), StringComparison.OrdinalIgnoreCase) ||
+            sampleRequest.Status == "LabDeclined" ||
             string.Equals(sampleRequest.Status, SampleRequestStatus.FormulaUpdateRequested.ToString(), StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException("This sample request cannot receive a new sample in its current status.");
@@ -483,7 +485,7 @@ internal sealed class FormulaWriteService
         UpsertFormulaMaterialRequest request,
         Guid companyId,
         int fallbackLineNo,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, Guid? actingEmployeeId)
     {
         ValidateMaterialRequest(request);
 
@@ -495,10 +497,13 @@ internal sealed class FormulaWriteService
         var materialId = IsMaterialType(request.ItemType) ? request.ItemId : (Guid?)null;
         var productId = IsProductType(request.ItemType) ? request.ItemId : (Guid?)null;
 
-        var snapshot = await ResolveItemSnapshotAsync(
-            request,
-            companyId,
-            cancellationToken);
+        var previewProduct = IsProductType(request.ItemType)
+            ? await ProcessingPreviewIdentity.ResolveAsync(_dbContext, request.ItemId, companyId,
+                (actingEmployeeId ?? formula.UpdatedBy ?? formula.CreatedBy).GetValueOrDefault(), DateTime.Now, cancellationToken) : null;
+        if (previewProduct is not null) productId = previewProduct.ProductId;
+        var snapshot = previewProduct is null
+            ? await ResolveItemSnapshotAsync(request, companyId, cancellationToken)
+            : new ItemSnapshot(previewProduct.CategoryId, previewProduct.Name ?? "", previewProduct.ColourCode ?? "", previewProduct.Unit);
 
         return new FormulaMaterial
         {

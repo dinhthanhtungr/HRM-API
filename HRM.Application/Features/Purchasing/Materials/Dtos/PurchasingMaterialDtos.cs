@@ -7,6 +7,7 @@ namespace HRM.Application.Features.Purchasing.Materials.Dtos;
 
 public class PurchasingMaterialSummaryDto
 {
+    public bool IsSemiFinished { get; init; }
     public bool IsActive { get; init; }
     public Guid MaterialId { get; init; }
     public string? ExternalId { get; init; }
@@ -27,6 +28,7 @@ public class PurchasingMaterialSummaryDto
 
 public sealed class PurchasingMaterialDetailDto : PurchasingMaterialSummaryDto
 {
+    public IReadOnlyList<PurchasingMaterialSourceDto> SourceMaterials { get; set; } = [];
     public string? Barcode { get; init; }
     public string? Comment { get; init; }
     public DateTime? CreatedDate { get; init; }
@@ -36,6 +38,16 @@ public sealed class PurchasingMaterialDetailDto : PurchasingMaterialSummaryDto
     public string? PurchaseAvailabilityNote { get; init; }
     public IReadOnlyList<string> GroupNames { get; init; } = [];
     public IReadOnlyList<PurchasingMaterialSupplierDto> Suppliers { get; init; } = [];
+}
+
+public sealed class PurchasingMaterialSourceDto
+{
+    public Guid MaterialId { get; init; }
+    public string? ExternalId { get; init; }
+    public string? Name { get; init; }
+    public string? Unit { get; init; }
+    public decimal Std { get; init; }
+    public string FormulaCode { get; init; } = "";
 }
 
 public sealed class PurchasingMaterialSupplierDto

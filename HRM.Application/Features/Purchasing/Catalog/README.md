@@ -223,3 +223,10 @@ Tests kiểm tra quyền/company/employee, IDOR child, phiên bản cũ, clear w
 Detail `GET /api/v1/purchasing/suppliers/{supplierId}` bổ sung `materialCount` (integer): số MaterialId khác nhau có liên kết NCC active, Material active cùng company. Đếm toàn bộ danh mục liên kết, không phải số dòng PO hoặc số lượng hàng, không nhân đôi nếu dữ liệu legacy có nhiều liên kết cùng NVL. Không có NVL hợp lệ trả 0. `includeInactive=true` cho phép mở NCC đã ngừng nhưng không mở rộng tập đếm sang vật tư/liên kết đã ngừng. Field là thống kê query hiện tại, không persist và không phụ thuộc phân trang.
 
 Ví dụ response rút gọn: `{ "supplierId": "00000000-0000-0000-0000-000000000001", "supplierName": "Nhà cung cấp", "materialCount": 12 }`.
+
+
+## Tìm kiếm gợi ý cho trang danh sách
+
+Danh sách NCC gợi ý mã/tên NCC; lookup NCC giữ nguyên.
+
+Contract tùy chọn `searchSelections`/`suggestionKeyword`, OR/AND badge, giới hạn 10 và hướng dẫn thêm field: [Searching](../../../Commons/Searching/README.md). Không mở rộng quyền hoặc áp dụng tự động cho lookup.

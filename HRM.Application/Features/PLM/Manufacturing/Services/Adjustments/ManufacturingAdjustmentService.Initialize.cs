@@ -60,16 +60,17 @@ internal sealed partial class ManufacturingAdjustmentService
                 ManufacturingFormulaId = formula.ManufacturingFormulaId, Status = AdjustmentStatus.Draft,
                 Ranges = [new()
                 {
-                    BatchFrom = 1, BatchTo = planned, TrialNo = 1, AdjustmentType = AdjustmentType.AddQuantity,
+                    BatchFrom = 1, BatchTo = planned > 100 ? 1 : planned, TrialNo = 1, AdjustmentType = AdjustmentType.AddQuantity,
                     Items = formula.ManufacturingFormulaMaterials.Where(x => x.IsActive)
-                        .GroupBy(x => new { Material = ManufacturingAdjustmentBatchRules.IsMaterial(x.itemType), Id = ManufacturingAdjustmentBatchRules.IsMaterial(x.itemType) ? x.MaterialId : x.ProductId })
+                        .GroupBy(x => new { x.itemType, Id = ManufacturingAdjustmentBatchRules.IsMaterial(x.itemType) ? x.MaterialId : x.ProductId })
                         .Select(g => new ManufacturingAdjustmentItemInput
                         {
-                            ItemId = g.Key.Id ?? Guid.Empty, ItemType = g.First().itemType, QuantityGram = 0m
+                            ItemId = g.Key.Id ?? Guid.Empty, ItemType = g.Key.itemType, QuantityGram = 0m
                         }).ToList()
                 }]
             };
         }
+        draft = ManufacturingAdjustmentInputNormalization.Normalize(draft);
         var calculation = await CalculateDraftAsync(orderId, draft, ct, adjustmentId);
         if (!calculation.Success || calculation.Data is null)
             return OperationResult<ManufacturingAdjustmentEditor>.Fail(calculation.Message ?? "Không khởi tạo được phiếu.");

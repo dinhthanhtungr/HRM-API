@@ -27,6 +27,7 @@ internal static class QuotationDisplayStatusResolver
             QuotationStatus.Negotiating => new("Negotiating", "warning", null),
             QuotationStatus.Accepted => new("Accepted", "success", null),
             QuotationStatus.Rejected => new("Rejected", "danger", null),
+            QuotationStatus.SendRejected => new("SendRejected", "danger", "CustomerPricesMustBeRevised"),
             QuotationStatus.Expired => new("Expired", "muted", null),
             QuotationStatus.Cancelled => new("Cancelled", "muted", null),
             QuotationStatus.PendingSendConfirmation => new("PendingSendConfirmation", "warning", null),

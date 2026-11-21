@@ -20,3 +20,7 @@ Luồng ghi: quyền/company/employee → kiểm tra trạng thái và dữ li�
 ## Attachment theo chỉ tiêu
 
 [Lưu đầu phiếu, kết quả và file trong một request](../Shared/Evaluations/ATTACHMENT_SAVE_API.md)
+
+## Theo dõi COA cho IMS
+
+IMSUser xem danh sách và đầu phiếu theo công ty hiện tại. API chỉ tìm theo thông tin đầu phiếu và không đọc kết quả, cấu hình chỉ tiêu, template hoặc tệp. Ghi chú cũng được loại khỏi response. Mọi thao tác ghi, phát hành và hủy bị chặn kể cả khi tài khoản có thêm role quản trị.

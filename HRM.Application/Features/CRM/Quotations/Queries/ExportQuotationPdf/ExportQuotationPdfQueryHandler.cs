@@ -3,6 +3,7 @@ using HRM.Application.Abstractions.Persistence.CRM.CustomerCare;
 using HRM.Application.Commons.Models;
 using HRM.Application.Features.CRM.CustomerCare.Visibility;
 using HRM.Application.Features.CRM.Quotations.Dtos;
+using HRM.Application.Features.CRM.Quotations.Services;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -45,6 +46,9 @@ internal sealed class ExportQuotationPdfQueryHandler
             {
                 ExternalId = x.ExternalId,
                 Status = x.Status,
+                SentDate = x.SentDate,
+                LastSendRejectionAt = x.StatusHistories.Where(h => h.ToStatus == HRM.Domain.Enums.CustomerEnum.QuotationStatus.SendRejected)
+                    .OrderByDescending(h => h.ChangedDate).Select(h => (DateTime?)h.ChangedDate).FirstOrDefault(),
                 QuotationDate = x.QuotationDate,
                 ValidUntil = x.ValidUntil,
                 Currency = x.Currency,
@@ -125,6 +129,13 @@ internal sealed class ExportQuotationPdfQueryHandler
                 "Quotation was not found or is outside your visibility scope.");
         }
 
+        if (!QuotationSendRejectionRules.CanExportPdf(quotation.Status, quotation.SentDate, quotation.LastSendRejectionAt))
+            return new QuotationPdfBlockedFailure
+            {
+                Success = false, Code = QuotationSendRejectionRules.PdfBlockedCode,
+                Message = "PDF is blocked after send rejection. Revise customer pricing and resubmit; PDF unlocks only after Sent."
+            };
+
         if (quotation.Lines.Any(line => line.PriceTiers.Count == 0))
         {
             return OperationResult<QuotationPdfFileDto>.Fail(
@@ -134,7 +145,7 @@ internal sealed class ExportQuotationPdfQueryHandler
         var content = _renderer.Render(quotation);
         return OperationResult<QuotationPdfFileDto>.Ok(new QuotationPdfFileDto
         {
-            FileName = $"Bao-gia-{SanitizeFileName(quotation.ExternalId)}.pdf",
+            FileName = $"VA-SA-F01 {SanitizeFileName(quotation.ExternalId)}.pdf",
             Content = content
         });
     }

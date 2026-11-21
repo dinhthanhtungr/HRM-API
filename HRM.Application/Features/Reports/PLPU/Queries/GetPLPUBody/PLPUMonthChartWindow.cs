@@ -23,7 +23,7 @@ internal static class PLPUMonthChartWindow
         {
             From = from, To = to, CompanyId = source.CompanyId, PurchaseOrderId = source.PurchaseOrderId,
             SupplierId = source.SupplierId, MaterialId = source.MaterialId, OrderType = source.OrderType,
-            Status = source.Status, Keyword = source.Keyword, IncludeInactive = source.IncludeInactive,
+            Status = source.Status, Keyword = source.Keyword, SearchSelections = source.SearchSelections, IncludeInactive = source.IncludeInactive,
             OnlyNeedAction = source.OnlyNeedAction, PageNumber = source.PageNumber, PageSize = source.PageSize
         };
 

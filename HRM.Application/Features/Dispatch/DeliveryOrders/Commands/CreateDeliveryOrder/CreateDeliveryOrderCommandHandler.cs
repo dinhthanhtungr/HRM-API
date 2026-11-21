@@ -24,6 +24,7 @@ internal sealed class CreateDeliveryOrderCommandHandler
     private readonly DeliveryWarehouseRequestService _warehouseRequests;
     private readonly DeliveryOrderFulfillmentService _fulfillment;
     private readonly DeliveryAttachedGoodsService _attachedGoods;
+    private readonly HRM.Application.Features.PLM.SaleOrders.DeliverySchedules.DeliveryScheduleFulfillmentService? _schedules;
 
     public CreateDeliveryOrderCommandHandler(
         IDispatchWriteDbContext dbContext,
@@ -32,7 +33,8 @@ internal sealed class CreateDeliveryOrderCommandHandler
         IExternalIdService codes,
         DeliveryWarehouseRequestService warehouseRequests,
         DeliveryAttachedGoodsService attachedGoods,
-        DeliveryOrderFulfillmentService fulfillment)
+        DeliveryOrderFulfillmentService fulfillment,
+        HRM.Application.Features.PLM.SaleOrders.DeliverySchedules.DeliveryScheduleFulfillmentService? schedules = null)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
@@ -41,6 +43,7 @@ internal sealed class CreateDeliveryOrderCommandHandler
         _warehouseRequests = warehouseRequests;
         _fulfillment = fulfillment;
         _attachedGoods = attachedGoods;
+        _schedules = schedules;
     }
 
     public async Task<OperationResult<Guid>> Handle(
@@ -225,6 +228,11 @@ internal sealed class CreateDeliveryOrderCommandHandler
         }
 
         await using var transaction = await _dbContext.BeginDeliveryOrderTransactionAsync(cancellationToken);
+        if (_schedules is not null)
+        {
+            var allocation = await _schedules.AllocateAsync(deliveryOrder, request.Lines, companyId, employeeId, now, cancellationToken);
+            if (!allocation.Success) return OperationResult<Guid>.Fail(allocation.Message!);
+        }
         foreach (var detail in attached.Data!)
         {
             detail.DeliveryOrderId = deliveryOrderId;

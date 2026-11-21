@@ -8,16 +8,20 @@ namespace HRM.Api.Controllers.MRO;
 [ApiController, Authorize, Route("api/v1/mro/equipment")]
 public sealed class EquipmentController(IEquipmentManagementService service) : ControllerBase
 {
+    [HRM.Api.Security.Authorization.AllowImsSession]
     [HttpGet("capabilities")]
     public IActionResult Capabilities() => Ok(service.GetCapabilities());
 
+    [HRM.Api.Security.Authorization.AllowImsSession]
     [HttpGet]
     public async Task<IActionResult> List([FromQuery] EquipmentListRequest request, CancellationToken ct)
         => Respond(await service.GetListAsync(request, ct));
 
+    [HRM.Api.Security.Authorization.AllowImsSession]
     [HttpGet("options")]
     public async Task<IActionResult> Options(CancellationToken ct) => Respond(await service.GetOptionsAsync(ct));
 
+    [HRM.Api.Security.Authorization.AllowImsSession]
     [HttpGet("{id:int:min(1)}")]
     public async Task<IActionResult> Detail(int id, CancellationToken ct) => Respond(await service.GetDetailAsync(id, ct));
 

@@ -13,7 +13,8 @@ public enum WorkflowNotificationFailureCode
     InvalidRecipients,
     PricingRequestUnavailable,
     MessageCreationFailed,
-    HistoricalPricePublicationRequiresReview
+    HistoricalPricePublicationRequiresReview,
+    TransientDatabase
 }
 
 internal static class WorkflowNotificationFailureRules

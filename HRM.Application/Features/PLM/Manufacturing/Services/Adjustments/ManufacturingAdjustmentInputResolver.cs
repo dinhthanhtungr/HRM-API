@@ -11,10 +11,11 @@ namespace HRM.Application.Features.PLM.Manufacturing.Services.Adjustments;
 
 internal sealed class ManufacturingAdjustmentInputResolver(IManufacturingDbContext db)
 {
-    public async Task<OperationResult<Dictionary<(bool Material, Guid Id, string Lot), ManufacturingFormulaAdjustmentItem>>> ResolveAsync(
+    public async Task<OperationResult<Dictionary<(ItemType Type, Guid Id, string Lot), ManufacturingFormulaAdjustmentItem>>> ResolveAsync(
         Guid company,
         IReadOnlyList<ManufacturingAdjustmentRangeInput> ranges,
-        CancellationToken ct
+        CancellationToken ct,
+        bool validateDuplicates = true
     )
     {
         var rows = ranges.SelectMany(x => x.Items).ToList();
@@ -61,7 +62,7 @@ internal sealed class ManufacturingAdjustmentInputResolver(IManufacturingDbConte
             .Select(x => new { x.Code, x.LotNo, x.StockType })
             .Distinct()
             .ToListAsync(ct);
-        var result = new Dictionary<(bool Material, Guid Id, string Lot), ManufacturingFormulaAdjustmentItem>();
+        var result = new Dictionary<(ItemType Type, Guid Id, string Lot), ManufacturingFormulaAdjustmentItem>();
         foreach (var row in rows)
         {
             var material = ManufacturingAdjustmentBatchRules.IsMaterial(row.ItemType);
@@ -74,6 +75,9 @@ internal sealed class ManufacturingAdjustmentInputResolver(IManufacturingDbConte
                 var matches = stocks.Where(x => x.LotNo == lot
                     && string.Equals(x.Code.Trim(), data.StockCode?.Trim(), StringComparison.OrdinalIgnoreCase))
                     .ToList();
+                if (matches.Count > 1)
+                    matches = matches.Where(x => ProductionOrderCreationRules.ResolveItemType(row.ItemType,
+                        new ProductionOrderLotNumberDto { LotNo = lot, StockType = x.StockType }) == row.ItemType).ToList();
                 if (matches.Count != 1)
                 {
                     return Fail("Lot vật tư không thuộc công ty hoặc có loại tồn không nhất quán.");
@@ -86,7 +90,7 @@ internal sealed class ManufacturingAdjustmentInputResolver(IManufacturingDbConte
                 });
             }
 
-            result[(material, row.ItemId, lot)] = new ManufacturingFormulaAdjustmentItem
+            result[(row.ItemType, row.ItemId, lot)] = new ManufacturingFormulaAdjustmentItem
 
             {
 
@@ -109,7 +113,22 @@ internal sealed class ManufacturingAdjustmentInputResolver(IManufacturingDbConte
             };
         }
 
-        return OperationResult<Dictionary<(bool Material, Guid Id, string Lot), ManufacturingFormulaAdjustmentItem>>.Ok(result);
+        foreach (var range in ranges)
+        {
+            if (!validateDuplicates) continue;
+            var keys = range.Items.Select(row => (
+                Type: string.IsNullOrWhiteSpace(row.LotNo) || string.Equals(row.LotNo.Trim(), "N/A", StringComparison.OrdinalIgnoreCase)
+                    ? row.ItemType : result[(row.ItemType, row.ItemId, row.LotNo.Trim())].itemType,
+                row.ItemId));
+            var seen = new Dictionary<(ItemType, Guid), int>();
+            foreach (var (key, index) in keys.Select((key, index) => (key, index)))
+            {
+                if (seen.TryGetValue(key, out var first))
+                    return Fail(ManufacturingAdjustmentBatchRules.DuplicateItemMessage(range, first, index));
+                seen[key] = index;
+            }
+        }
+        return OperationResult<Dictionary<(ItemType Type, Guid Id, string Lot), ManufacturingFormulaAdjustmentItem>>.Ok(result);
     }
 
     private sealed record Item(
@@ -119,5 +138,5 @@ internal sealed class ManufacturingAdjustmentInputResolver(IManufacturingDbConte
         string? Code,
         string? StockCode
     );
-    private static OperationResult<Dictionary<(bool Material, Guid Id, string Lot), ManufacturingFormulaAdjustmentItem>> Fail(string message) => OperationResult<Dictionary<(bool Material, Guid Id, string Lot), ManufacturingFormulaAdjustmentItem>>.Fail(message);
+    private static OperationResult<Dictionary<(ItemType Type, Guid Id, string Lot), ManufacturingFormulaAdjustmentItem>> Fail(string message) => OperationResult<Dictionary<(ItemType Type, Guid Id, string Lot), ManufacturingFormulaAdjustmentItem>>.Fail(message);
 }

@@ -69,7 +69,9 @@ internal sealed class UpdatePurchaseOrderNotesCommandHandler(
             SupplierNameSnapshot = supplier?.SupplierName, SupplierExternalIdSnapshot = supplier?.ExternalId,
             SupplierPhoneNumberSnapshot = supplier?.Phone,
             SupplierAddressSnapshot = supplier?.SupplierAddresses.Where(x => x.IsActive == true && x.IsPrimary == true).Select(x => x.AddressLine).FirstOrDefault(),
-            SupplierContactSnapshot = supplier?.SupplierContacts.Where(x => x.IsActive == true && x.IsPrimary == true).Select(x => x.LastName).FirstOrDefault(),
+            SupplierContactSnapshot = supplier?.SupplierContacts.Where(x => x.IsActive == true)
+                .OrderByDescending(x => x.IsPrimary == true).ThenBy(x => x.ContactId)
+                .Select(x => ((x.FirstName ?? string.Empty) + " " + (x.LastName ?? string.Empty)).Trim()).FirstOrDefault(),
             EmployeeExternalIdSnapshot = creator?.ExternalId ?? string.Empty,
             EmployeeFullNameSnapshot = creator?.FullName ?? string.Empty, PhoneNumberSnapshot = creator?.PhoneNumber, EmailSnapshot = creator?.Email
         };

@@ -32,6 +32,7 @@ public sealed class ProductInspectionsController : ControllerBase
         return result.Success ? Ok(result) : BadRequest(result);
     }
 
+    [HRM.Api.Security.Authorization.AllowImsSession]
     [HttpGet]
     public async Task<IActionResult> GetProductInspections(
         [FromQuery] GetProductInspectionsQuery query,
@@ -41,6 +42,7 @@ public sealed class ProductInspectionsController : ControllerBase
         return result.Success ? Ok(result) : BadRequest(result);
     }
 
+    [HRM.Api.Security.Authorization.AllowImsSession]
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
     {

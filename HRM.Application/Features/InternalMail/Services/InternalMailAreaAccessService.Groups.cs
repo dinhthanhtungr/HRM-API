@@ -14,7 +14,9 @@ public sealed partial class InternalMailAreaAccessService
     internal IQueryable<HRM.Domain.Entities.InternalMailSchema.InternalConversation> SendableConversations()
     {
         var companySender = CanSendCompanyMessages;
-        return Conversations().Where(c => companySender || c.Participants.Any(p => p.EmployeeId == user.EmployeeId && p.IsActive));
+        var researchMembers = ResearchMemberIds(user.CompanyId ?? Guid.Empty);
+        return Conversations().Where(c => companySender || c.Participants.Any(p => p.EmployeeId == user.EmployeeId && p.IsActive) ||
+            (c.RelatedType == InternalMailRelatedType.ConversationCustom && c.RelatedExternalId == ResearchMarker && researchMembers.Contains(user.EmployeeId!.Value)));
     }
 
     internal bool CanObserveCompanyConversations => user.IsAuthenticated && user.CompanyId is { } company && company != Guid.Empty &&
@@ -87,7 +89,7 @@ public sealed partial class InternalMailAreaAccessService
                     s.Product.CompanyId == company && s.Product.Category != null && s.Product.Category.CompanyId == company)
                 .Select(s => s.Product.Category!.ExternalId).SingleOrDefaultAsync(ct);
             var groupTypes = SampleRequestRecipientRules.ResolveDefaultLeaderGroupTypes(category);
-            var leaders = db.MemberInGroups.Where(m => m.IsActive && m.IsAdmin == true && m.Group.CompanyId == company &&
+            var leaders = db.MemberInGroups.Where(m => m.IsActive && m.Group.CompanyId == company &&
                     m.Group.GroupType != null && groupTypes.Contains(m.Group.GroupType) && m.ProfileNavigation != null &&
                     m.ProfileNavigation.CompanyId == company && m.ProfileNavigation.IsActive)
                 .Select(m => m.Profile!.Value);

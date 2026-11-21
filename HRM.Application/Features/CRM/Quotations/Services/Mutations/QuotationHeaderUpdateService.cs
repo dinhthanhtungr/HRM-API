@@ -115,7 +115,7 @@ namespace HRM.Application.Features.CRM.Quotations.Services
             if (quotation.Status is not (
                 QuotationStatus.Draft or
                 QuotationStatus.PendingApproval or
-                QuotationStatus.Approved) && !(quotation.Status == QuotationStatus.PendingSendConfirmation && !persist))
+                QuotationStatus.Approved or QuotationStatus.SendRejected) && !(quotation.Status == QuotationStatus.PendingSendConfirmation && !persist))
             {
                 return OperationResult<QuotationTotalsDto>.Fail(
                     "Only a draft, pending or approved quotation can be updated.");
@@ -127,6 +127,10 @@ namespace HRM.Application.Features.CRM.Quotations.Services
                 return OperationResult<QuotationTotalsDto>.Fail(
                     $"ContactPhone cannot exceed {QuotationRules.MaximumContactPhoneLength} characters.");
             }
+
+            if (quotation.Status == QuotationStatus.SendRejected &&
+                QuotationSaveRules.ValidateStatus(quotation, new SaveQuotationRequest { Header = request }) is { } rejectedHeaderError)
+                return OperationResult<QuotationTotalsDto>.Fail(rejectedHeaderError);
 
             if (QuotationRules.TrimToNull(request.CustomerAddressSnapshot)?.Length >
                 QuotationRules.MaximumCustomerAddressLength)

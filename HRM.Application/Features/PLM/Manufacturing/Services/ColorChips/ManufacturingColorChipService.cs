@@ -291,9 +291,16 @@ internal sealed class ManufacturingColorChipService(
             query = query.Where(x => x.RecordDate <= r.To);
         }
 
-        if (!string.IsNullOrWhiteSpace(r.Keyword))
+        var smartSearch = HRM.Application.Commons.Searching.SmartSearch.For(query, fields => [
+            fields.Code("colourCode", x => x.ColorCode, "ColorCode", "Mã màu"),
+            fields.Name("productName", x => x.ProductName, "Tên sản phẩm", "Product name"),
+            fields.Code("productionOrderCode", x => x.MfgProductionOrder == null ? "" : x.MfgProductionOrder.ExternalId, "Mã lệnh SX", "Production order"),
+            fields.Code("formulaCode", x => x.ManufacturingFormula == null ? "" : x.ManufacturingFormula.ExternalId, "Công thức", "Formula")
+        ]);
+        query = smartSearch.ApplyRequest(query, r.Keyword, r, out var smartKeyword);
+        if (!string.IsNullOrWhiteSpace(smartKeyword))
         {
-            var pattern = $"%{r.Keyword.Trim()}%";
+            var pattern = PostgresSearchPattern.ContainsLiteral(smartKeyword.Trim());
             query = query.Where(x => EF.Functions.ILike(x.ColorCode ?? "", pattern) || EF.Functions.ILike(x.ProductName ?? "", pattern)
                 || EF.Functions.ILike(x.Machine ?? "", pattern)
                 || EF.Functions.ILike(x.Resin ?? "", pattern)
@@ -302,6 +309,8 @@ internal sealed class ManufacturingColorChipService(
                 || x.ManufacturingFormula != null && EF.Functions.ILike(x.ManufacturingFormula.ExternalId, pattern));
         }
 
+        if (await smartSearch.SuggestionsAsync<GetColorChipManufacturingRecordSummary>(query, r, ct) is { } suggestions)
+            return OperationResult<PagedResult<GetColorChipManufacturingRecordSummary>>.Ok(suggestions);
         var count = await query.CountAsync(ct);
         var data = await query.OrderByDescending(x => x.RecordDate ?? x.CreatedDate).ThenByDescending(x => x.ColorChipMfgRecordId)
             .Skip((int)skip)

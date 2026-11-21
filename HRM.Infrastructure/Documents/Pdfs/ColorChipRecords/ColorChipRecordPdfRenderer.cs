@@ -17,11 +17,6 @@ internal sealed class ColorChipRecordPdfRenderer : IColorChipRecordPdfRenderer
     {
         ArgumentNullException.ThrowIfNull(model);
 
-        if (formStyle == FormStyle.ChipsTanPhu)
-        {
-            model.StandardText = string.Empty;
-        }
-
         return formStyle switch
         {
             FormStyle.Chips2 => _portrait.Render(model),

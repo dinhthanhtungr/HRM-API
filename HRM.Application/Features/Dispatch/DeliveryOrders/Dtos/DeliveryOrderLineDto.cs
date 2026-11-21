@@ -2,6 +2,8 @@ namespace HRM.Application.Features.Dispatch.DeliveryOrders.Dtos;
 
 public sealed class DeliveryOrderLineDto
 {
+    public string? ProductDisplayCode { get; init; }
+    public string? ProductDisplayName { get; init; }
     /// <summary>Kg/bao từ yêu cầu mẫu active mới nhất của product/khách trên PO; null nếu không có giá trị hợp lệ.</summary>
     public int? BagWeightKg { get; init; }
     public Guid Id { get; init; }

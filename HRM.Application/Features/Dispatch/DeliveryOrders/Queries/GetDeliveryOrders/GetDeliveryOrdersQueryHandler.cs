@@ -1,3 +1,4 @@
+using HRM.Application.Features.CRM.CustomerCare.Services.Search;
 using HRM.Application.Abstractions.Persistence.Dispatch;
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Authorization;
@@ -116,17 +117,35 @@ internal sealed class GetDeliveryOrdersQueryHandler
             query = query.Where(x => x.CreatedDate < toDateExclusive);
         }
 
-        if (!string.IsNullOrWhiteSpace(request.NormalizedKeyword))
+        var smartSearch = HRM.Application.Commons.Searching.SmartSearch.For(query, fields => [
+            fields.Code("deliveryOrderCode", x => x.ExternalId, "Mã phiếu giao", "Delivery order"),
+            fields.Code("customerCode", x => x.CustomerExternalIdSnapShot, "Mã KH", "Customer code"),
+            fields.Name("customerName", x => x.Customer.CustomerName, "Tên KH", "Customer name"),
+            fields.CustomerTaxNumber(x => x.Customer.CompanyId == currentCompanyId ? x.Customer.TaxNumber : null),
+            fields.Codes("saleOrderCode", x => x.DeliveryOrderPOs.Where(p => p.MerchandiseOrder.CompanyId == currentCompanyId),
+                p => p.MerchandiseOrder.ExternalId, "Mã đơn hàng", "Order code"),
+            fields.Codes("purchaseOrderNumber", x => x.DeliveryOrderPOs.Where(p => p.MerchandiseOrder.CompanyId == currentCompanyId),
+                p => p.MerchandiseOrder.PONo, "Số PO", "PO"),
+            fields.Codes("colourCode", x => x.Details.Where(d => d.Product != null && d.Product.CompanyId == currentCompanyId),
+                d => d.Product!.ColourCode, "ColorCode", "Mã màu"),
+            fields.Names("productName", x => x.Details, d => d.ProductNameSnapShot, "Tên sản phẩm", "Product name")
+        ]);
+        query = smartSearch.ApplyRequest(query, request.NormalizedKeyword, request, out var smartKeyword);
+        if (!string.IsNullOrWhiteSpace(smartKeyword))
         {
-            var keyword = request.NormalizedKeyword;
+            var keyword = smartKeyword;
             query = query.Where(x =>
                 EF.Functions.ILike((x.ExternalId ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
                 EF.Functions.ILike((x.CustomerExternalIdSnapShot ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
                 EF.Functions.ILike((x.Customer.CustomerName ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                x.Customer.CompanyId == x.CompanyId && EF.Functions.ILike(x.Customer.TaxNumber ?? "", PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
                 x.DeliveryOrderPOs.Any(po =>
                     EF.Functions.ILike((po.MerchandiseOrder.ExternalId ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
                     EF.Functions.ILike((po.MerchandiseOrder.PONo ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter)) ||
                 x.Details.Any(d =>
+                    (d.Product != null && d.Product.CompanyId == x.CompanyId &&
+                        (EF.Functions.ILike(d.Product.ColourCode ?? string.Empty, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
+                         EF.Functions.ILike(d.Product.Name ?? string.Empty, PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter))) ||
                     EF.Functions.ILike((d.ProductExternalIdSnapShot ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
                     EF.Functions.ILike((d.ProductNameSnapShot ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
                     EF.Functions.ILike((d.PONo ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter) ||
@@ -136,8 +155,12 @@ internal sealed class GetDeliveryOrdersQueryHandler
                      EF.Functions.ILike((d.LotNoList ?? string.Empty), PostgresSearchPattern.ContainsLiteral(keyword), PostgresSearchPattern.EscapeCharacter))));
         }
 
+        if (await smartSearch.SuggestionsAsync<DeliveryOrderListItemDto>(query, request, cancellationToken) is { } suggestions)
+            return suggestions;
         query = ApplySorting(query, request);
 
+        var labelNames = HRM.Application.Features.Dispatch.DeliveryOrders.Services.DeliveryCustomerLabelNames.Query(
+            _dbContext.CustomerLabelDetails.AsNoTracking(), currentCompanyId);
         var projected = query
             .Select(x => new DeliveryOrderListItemDto
             {
@@ -183,6 +206,10 @@ internal sealed class GetDeliveryOrdersQueryHandler
                         ProductId = d.ProductId,
                         ProductExternalId = d.ProductExternalIdSnapShot,
                         ProductName = d.ProductNameSnapShot,
+                        ProductDisplayCode = d.Product != null && d.Product.CompanyId == x.CompanyId ? d.Product.ColourCode : null,
+                        ProductDisplayName = labelNames.Where(n => n.Header.CustomerId == x.CustomerId && n.Header.ProductId == d.ProductId)
+                            .Select(n => n.FieldValue!.Trim()).FirstOrDefault() ??
+                            (d.Product != null && d.Product.CompanyId == x.CompanyId ? d.Product.Name : null),
                         LotNoList = d.LotConsumptions.Any(lot => lot.IsActive)
                             ? string.Join(", ", d.LotConsumptions
                                 .Where(lot => lot.IsActive)

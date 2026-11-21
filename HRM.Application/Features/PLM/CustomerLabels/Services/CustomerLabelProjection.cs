@@ -10,7 +10,8 @@ internal static class CustomerLabelProjection
     {
         Id = header.Id,
         ProductId = header.ProductId,
-        ColorCode = header.ColorCode,
+        ColorCode = header.Product.ColourCode != null && header.Product.ColourCode.Trim() != ""
+            ? header.Product.ColourCode.Trim() : header.ColorCode,
         CustomerId = header.CustomerId,
         CustomerExternalId = header.CustomerExternalId,
         LabelType = header.LabelType,

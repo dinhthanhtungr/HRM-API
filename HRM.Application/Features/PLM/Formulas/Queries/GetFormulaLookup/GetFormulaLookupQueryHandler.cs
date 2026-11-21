@@ -33,6 +33,10 @@ internal sealed class GetFormulaLookupQueryHandler
         }
 
         var productId = await ResolveProductIdAsync(request, companyId, cancellationToken);
+        if ((request.ProductId.HasValue || request.SampleRequestId.HasValue) && productId is null)
+        {
+            return EmptyResult(request);
+        }
         //var colorCode = await ResolveColorCodeAsync(productId, companyId, cancellationToken);
         var includeVu = request.SourceType is null or FormulaSource.Both or FormulaSource.FromVU;
         var includeVa = request.SourceType is null or FormulaSource.Both or FormulaSource.FromVA or FormulaSource.FromBom;

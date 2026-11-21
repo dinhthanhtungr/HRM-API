@@ -16,16 +16,22 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using HRM.Application.Features.PLM.SampleRequests.Services.Workflow;
 using HRM.Application.Features.PLM.SampleRequests.DataChangeRequests;
+using HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestSampleTrials;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace HRM.Application.Features.PLM.SampleRequests.Commands.ConfirmCustomerPrice;
 
 internal sealed class ConfirmCustomerPriceCommandHandler(
     IPLMWriteDbContext db, ICurrentUser user, ICurrentUserPermissionService permissions,
-    ICustomerVisibilityService visibility, ISender sender, ICRMReadDbContext crm)
+    ICustomerVisibilityService visibility, ISender sender, ICRMReadDbContext crm,
+    ILogger<ConfirmCustomerPriceCommandHandler>? logger = null)
     : IRequestHandler<ConfirmCustomerPriceCommand, OperationResult<Guid>>
 {
     public async Task<OperationResult<Guid>> Handle(ConfirmCustomerPriceCommand request, CancellationToken ct)
     {
+        using var timings = new SampleWorkQueryTimings(
+            logger ?? NullLogger<ConfirmCustomerPriceCommandHandler>.Instance, true, "price");
         if (!user.IsAuthenticated || !permissions.HasPermission(ApplicationPermissions.PLM.ConfirmCustomerPrice) ||
             user.CompanyId is not { } company || user.EmployeeId is not { } employee)
             return OperationResult<Guid>.Fail("You cannot confirm customer prices.");
@@ -35,9 +41,11 @@ internal sealed class ConfirmCustomerPriceCommandHandler(
         var record = await visibility.ApplySampleRequestVisibility(db.SampleRequests, db.Customers, scope)
             .SingleOrDefaultAsync(x => x.SampleRequestId == request.SampleRequestId && x.CompanyId == company && x.IsActive, ct);
         if (record is null || !SampleSaleWorkflowAccess.CanActFor(user, permissions, record.ManagerBy, scope)) return OperationResult<Guid>.Fail("Sample request is outside your scope.");
+        if (await Services.Workflow.SampleRequestLabPauseRules.IsPausedAsync(db, company, record.SampleRequestId, ct))
+            return OperationResult<Guid>.Fail(Services.Workflow.SampleRequestLabPauseRules.PausedMessage);
         var latestAudit = await SampleRequestCustomerPriceAudit.LatestAsync(db, company, record.SampleRequestId, ct);
         var confirmation = latestAudit is null ? null : SampleRequestCustomerPriceAudit.Read(latestAudit);
-        if (!(SampleRequestCustomerPriceRules.IsColourSet(record.InfoType) || SampleRequestCustomerPriceRules.IsQuotation(record.InfoType) || record.SampleQuantity is > 0) || record.Status is "Completed" or "Cancelled")
+        if (!(SampleRequestCustomerPriceRules.IsColourSet(record.InfoType) || SampleRequestCustomerPriceRules.IsQuotation(record.InfoType) || record.SampleQuantity is > 0) || record.Status is "Completed" or "Cancelled" or "LabDeclined")
             return OperationResult<Guid>.Fail("Price confirmation does not apply to this request.");
         if (record.UpdatedDate != request.ExpectedUpdatedDate)
             return OperationResult<Guid>.Fail("Sample request changed. Reload before saving.");
@@ -51,18 +59,25 @@ internal sealed class ConfirmCustomerPriceCommandHandler(
             return OperationResult<Guid>.Ok(record.SampleRequestId, "Customer price is already confirmed.");
         Guid? formulaId = request.Revoke ? latestAudit?.FormulaId : null;
         Guid? pricingVersionId = request.Revoke ? latestAudit?.ProductPricingVersionId : null;
+        timings.Mark("validation");
         if (!request.Revoke)
         {
             var readiness = await sender.Send(new HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestDailyWork.GetSampleRequestDailyWorkQuery
             {
                 SampleRequestId = record.SampleRequestId,
                 View = SampleRequestDailyView.All,
-                PageSize = 1
+                PageSize = 1,
+                // Same scoped readiness/price capabilities as the dialog, without list ranking
+                // or aggregating trials belonging to unrelated requests inside this save.
+                WorkflowDetail = true
             }, ct);
+            timings.Mark("readiness");
             var readyItem = readiness.Items.SingleOrDefault();
-            if (readyItem?.CanConfirmCustomerPrice != true || SampleRequestPriceConfirmationBasis.ResolveFormulaId(readyItem) is not { } readyFormulaId)
-                return OperationResult<Guid>.Fail("Confirm the formula, approve its standard price and record the quotation date before accepting the customer price.");
-            formulaId = readyFormulaId;
+            if (readyItem is null) return OperationResult<Guid>.Fail("PriceFeedback.RequestUnavailable");
+            if (!readyItem.LabFormulaConfirmedAt.HasValue) return OperationResult<Guid>.Fail("PriceFeedback.LabConfirmationRequired");
+            if (!readyItem.RealPriceQuoteDate.HasValue) return OperationResult<Guid>.Fail("PriceFeedback.QuotationDateRequired");
+            if (!readyItem.HasApprovedStandardPrice) return OperationResult<Guid>.Fail("PriceFeedback.StandardPriceRequired");
+            if (!readyItem.CanConfirmCustomerPrice) return OperationResult<Guid>.Fail("PriceFeedback.NotAllowed");
             // Preserve the actual price/formula basis even when the customer reference is external.
             var approvedPrice = await crm.ProductPricingVersions.AsNoTracking()
                 .Where(x => x.CompanyId == company && x.ProductId == record.ProductId && x.IsActive &&
@@ -71,10 +86,14 @@ internal sealed class ConfirmCustomerPriceCommandHandler(
                 .ThenByDescending(x => x.ApprovedAt ?? x.UpdatedDate ?? x.CreatedDate)
                 .Select(x => new { x.ProductPricingVersionId, x.SourceFormulaId })
                 .FirstOrDefaultAsync(ct);
-            if (approvedPrice?.SourceFormulaId != readyFormulaId)
-                return OperationResult<Guid>.Fail("The approved price source changed. Reload before confirming the customer price.");
+            if (approvedPrice?.SourceFormulaId is null || !await db.Formulas.AsNoTracking().AnyAsync(f =>
+                    f.FormulaId == approvedPrice.SourceFormulaId && f.CompanyId == company &&
+                    f.ProductId == record.ProductId && f.IsActive, ct))
+                return OperationResult<Guid>.Fail("PriceFeedback.StandardPriceRequired");
+            formulaId = approvedPrice.SourceFormulaId;
             pricingVersionId = approvedPrice.ProductPricingVersionId;
         }
+        timings.Mark("approved-price");
 
         var reference = request.Revoke ? confirmation?.PriceReference : request.Reference?.Trim();
         if (!request.Revoke && request.QuotationLineId.HasValue)
@@ -96,8 +115,6 @@ internal sealed class ConfirmCustomerPriceCommandHandler(
             // rather than attributing their historical price to today's confirmed formula.
             formulaId = line.SourceFormulaId;
         }
-        if (!request.Revoke && string.IsNullOrWhiteSpace(reference))
-            return OperationResult<Guid>.Fail("Identify the price/quotation the customer accepted.");
         var now = DateTime.Now;
         var acceptedAt = request.CustomerAcceptedAt ?? now;
         if (acceptedAt.Kind == DateTimeKind.Utc) acceptedAt = acceptedAt.ToLocalTime();
@@ -129,6 +146,7 @@ internal sealed class ConfirmCustomerPriceCommandHandler(
         {
             return OperationResult<Guid>.Fail("Price confirmation changed concurrently. Reload before saving.");
         }
+        timings.Mark("save");
         return OperationResult<Guid>.Ok(record.SampleRequestId, "Price confirmation saved; notification queued.");
     }
 }

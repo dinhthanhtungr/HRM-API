@@ -8,7 +8,7 @@ namespace HRM.Application.Features.PLM.Manufacturing.Services.Adjustments;
 
 internal static class ManufacturingAdjustmentBatchRules
 {
-    public static string? ValidateRange(ManufacturingAdjustmentRangeInput input, int planned, bool requireTakenQuantity = true)
+    public static string? ValidateRange(ManufacturingAdjustmentRangeInput input, int planned, bool requireTakenQuantity = true, bool validateDuplicates = true)
     {
         if (input.BatchFrom <= 0 || input.BatchTo < input.BatchFrom
             || (long)input.BatchTo - input.BatchFrom >= 100
@@ -25,6 +25,18 @@ internal static class ManufacturingAdjustmentBatchRules
             || input.AdjustmentType == AdjustmentType.SetQuantity && x.QuantityGram < 0))
         {
             return "Cần vật tư hợp lệ; khối lượng cân mới phải lớn hơn hoặc bằng 0.";
+        }
+
+        if (validateDuplicates)
+        {
+            var seen = new Dictionary<(ItemType, Guid), int>();
+            for (var index = 0; index < input.Items.Count; index++)
+            {
+                var item = input.Items[index];
+                if (seen.TryGetValue((item.ItemType, item.ItemId), out var first))
+                    return DuplicateItemMessage(input, first, index);
+                seen[(item.ItemType, item.ItemId)] = index;
+            }
         }
 
         if (requireTakenQuantity && (input.Items.Any(x => decimal.Round(x.QuantityGram, 3) != x.QuantityGram)
@@ -48,18 +60,22 @@ internal static class ManufacturingAdjustmentBatchRules
         return null;
     }
 
+    public static string DuplicateItemMessage(ManufacturingAdjustmentRangeInput range, int first, int duplicate)
+        => $"Mẻ {range.BatchFrom}–{range.BatchTo}, lần chỉnh {range.TrialNo?.ToString() ?? "mới"}: dòng {duplicate + 1} trùng vật tư/sản phẩm và loại hàng với dòng {first + 1}. Hãy xóa hoặc thay một trong hai dòng trước khi lưu/xem trước PDF.";
+
     public static OperationResult<List<ManufacturingFormulaAdjustmentBatch>> Build(
         MfgProductionOrder order,
         Guid adjustmentId,
         IReadOnlyList<ManufacturingAdjustmentRangeInput> ranges,
         IReadOnlyList<ManufacturingFormulaAdjustmentBatch> existing,
         IReadOnlyList<ManufacturingFormulaMaterial> formulaRows,
-        IReadOnlyDictionary<(bool Material, Guid Id, string Lot), ManufacturingFormulaAdjustmentItem> templates,
+        IReadOnlyDictionary<(ItemType Type, Guid Id, string Lot), ManufacturingFormulaAdjustmentItem> templates,
         DateTime now,
         Guid employee,
         int? defaultTrial = null,
         IReadOnlyList<ManufacturingFormulaAdjustmentBatch>? originalBatches = null,
-        bool requireTakenQuantity = true
+        bool requireTakenQuantity = true,
+        bool validateDuplicates = true
     )
     {
         var planned = Math.Max(order.NumOfBatches ?? 0, 1);
@@ -67,7 +83,7 @@ internal static class ManufacturingAdjustmentBatchRules
         var result = new List<ManufacturingFormulaAdjustmentBatch>();
         foreach (var range in ranges)
         {
-            var error = ValidateRange(range, planned, requireTakenQuantity);
+            var error = ValidateRange(range, planned, requireTakenQuantity, validateDuplicates);
             if (error is not null)
             {
                 return Fail(error);
@@ -107,7 +123,7 @@ internal static class ManufacturingAdjustmentBatchRules
 
                     TrialNo = trial,
 
-                    Status = range.Status.ToString(),
+                    Status = ManufacturingAdjustmentMapping.StatusName(range.Status),
 
                     AdjustmentType = range.AdjustmentType,
 
@@ -132,7 +148,7 @@ internal static class ManufacturingAdjustmentBatchRules
                 foreach (var input in range.Items)
                 {
                     var material = IsMaterial(input.ItemType);
-                    var template = templates[(material, input.ItemId, input.LotNo?.Trim() ?? string.Empty)];
+                    var template = templates[(input.ItemType, input.ItemId, input.LotNo?.Trim() ?? string.Empty)];
                     var historical = prior.SelectMany(x => x.Items.Where(i => IsMaterial(i.itemType) == material && (material ? i.MaterialId : i.ProductId) == input.ItemId)
                         .Select(i => new { Batch = x, Item = i }))
                         .ToList();
@@ -208,6 +224,8 @@ internal static class ManufacturingAdjustmentBatchRules
         }
 
         var totals = MfgAdjustmentQuantityCalculator.CalculateTrialTotals(all.SelectMany(ToRows)).ToDictionary(x => (x.BatchNo, x.TrialNo), x => x.FinalQuantityGram);
+        foreach (var invalid in totals.Where(x => x.Value <= 0))
+            return Fail($"Mẻ {invalid.Key.BatchNo}, lần chỉnh {invalid.Key.TrialNo}: khối lượng sau chỉnh phải lớn hơn 0.");
         foreach (var batch in result)
         {
             batch.FinalQuantityGram = totals.GetValueOrDefault((batch.BatchNo, batch.TrialNo));

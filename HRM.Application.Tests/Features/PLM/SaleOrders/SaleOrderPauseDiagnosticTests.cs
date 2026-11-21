@@ -14,6 +14,45 @@ namespace HRM.Application.Tests.Features.PLM.SaleOrders;
 public sealed class SaleOrderPauseDiagnosticTests
 {
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task NotificationKeepsActualStateBeforePatchAndActor(bool previous)
+    {
+        var user = new User("President");
+        var (db, store) = ProductionOrderTestStore.CreateContext<ISaleOrderDbContext>();
+        var order = new MerchandiseOrder {
+            MerchandiseOrderId = Guid.NewGuid(), CompanyId = user.CompanyId!.Value,
+            IsActive = true, ManagerById = Guid.NewGuid(), Status = "Approved", IsDeliveryPaused = previous,
+            ExternalId = "DHG_TEST", DeliveryPauseType = "Test"
+        };
+        store.Seed(nameof(db.MerchandiseOrders), order);
+        var notifications = DispatchProxy.Create<HRM.Application.Features.Notifications.Services.INotificationService, NotificationCapture>();
+        var visibility = DispatchProxy.Create<ICustomerVisibilityService, Visibility>();
+        ((Visibility)(object)visibility).Scope = new ViewerScope(user.CompanyId.Value, user.EmployeeId!.Value,
+            true, false, new HashSet<Guid>(), new HashSet<Guid>(), new Clock().Now);
+        var result = await new PauseSaleOrderDeliveryCommandHandler(db, user, new Clock(), notifications, visibility)
+            .Handle(new(new() { MerchandiseOrderId = order.MerchandiseOrderId, IsDeliveryPaused = !previous,
+                DeliveryPauseType = "Test", DeliveryPauseReason = "Recorded reason" }), default);
+        Assert.True(result.Success);
+        var request = Assert.Single(((NotificationCapture)(object)notifications).Requests);
+        using var payload = System.Text.Json.JsonDocument.Parse(request.PayloadJson!);
+        Assert.Equal(previous, payload.RootElement.GetProperty("previousIsDeliveryPaused").GetBoolean());
+        Assert.Equal(!previous, payload.RootElement.GetProperty("isDeliveryPaused").GetBoolean());
+        Assert.Equal("Recorded reason", payload.RootElement.GetProperty("deliveryPauseReason").GetString());
+        Assert.Equal(user.UserName, request.CreatedByNameSnapshot);
+    }
+
+    public class NotificationCapture : DispatchProxy
+    {
+        public List<HRM.Application.Features.Notifications.Dtos.PublishNotificationRequest> Requests { get; } = [];
+        protected override object? Invoke(MethodInfo? method, object?[]? args)
+        {
+            Requests.Add((HRM.Application.Features.Notifications.Dtos.PublishNotificationRequest)args![0]!);
+            return Task.FromResult(Guid.NewGuid());
+        }
+    }
+
+    [Theory]
     [InlineData("SaleUser", "assigned", true)]
     [InlineData("SaleUser", "manager-only", false)]
     [InlineData("SaleUser", "current-sale-only", false)]
@@ -22,28 +61,41 @@ public sealed class SaleOrderPauseDiagnosticTests
     [InlineData("SaleAdmin", "assigned", true)]
     [InlineData("ACUser", "assigned", true)]
     [InlineData("SaleUser", "read-visible", true)]
-    [InlineData("User", "assigned", false)]
+    [InlineData("User", "assigned", true)]
+    [InlineData("PLPUUser", "read-visible", true)]
+    [InlineData("LabAdmin", "read-visible", true)]
+    [InlineData("User", "manager-only", false)]
+    [InlineData("Developer", "manager-only", false)]
+    [InlineData("User", "foreign-company", false)]
+    [InlineData("User", "cancelled", false)]
+    [InlineData("User", "delivered", false)]
     [InlineData("SaleUser", "payment-resume", false)]
     [InlineData("SaleAdmin", "payment-resume", false)]
     [InlineData("ACUser", "payment-resume", false)]
-    [InlineData("Developer", "manager-only", true)]
+    [InlineData("SaleUser", "payment-retype", false)]
+    [InlineData("SaleAdmin", "payment-retype", false)]
+    [InlineData("ACUser", "payment-retype", false)]
+    [InlineData("Developer", "payment-resume", true)]
+    [InlineData("SaleUser", "payment-dates", false)]
+    [InlineData("SaleUser", "inactive-order", false)]
+    [InlineData("User", "canceled", false)]
     public async Task Pause_ExercisesRealHandlerAndCustomerVisibility(string role, string scenario, bool expected)
     {
         var user = new User(role);
         var (db, store) = ProductionOrderTestStore.CreateContext<ISaleOrderDbContext>();
         var customer = new Customer { CustomerId = Guid.NewGuid(), CompanyId = user.CompanyId!.Value, IsActive = true, IsLead = false };
-        if (scenario is "assigned" or "inactive-assignment" or "completed" or "payment-resume")
+        if (scenario is "assigned" or "inactive-assignment" or "completed" or "payment-resume" or "payment-retype" or "cancelled" or "delivered" or "foreign-company")
             customer.CustomerAssignments.Add(new CustomerAssignment
             { EmployeeId = user.EmployeeId!.Value, IsActive = scenario != "inactive-assignment" });
         if (scenario == "current-sale-only") customer.CurrentSaleId = user.EmployeeId;
         var order = new MerchandiseOrder
         {
             MerchandiseOrderId = Guid.NewGuid(), CustomerId = customer.CustomerId,
-            CompanyId = user.CompanyId.Value, IsActive = true, ManagerById = user.EmployeeId!.Value,
-            Status = scenario == "completed" ? "Completed" : "Approved"
+            CompanyId = scenario == "foreign-company" ? Guid.NewGuid() : user.CompanyId.Value, IsActive = scenario != "inactive-order", ManagerById = user.EmployeeId!.Value,
+            Status = scenario switch { "completed" => "Completed", "cancelled" => "Cancelled", "canceled" => "Canceled", "delivered" => "Delivered", _ => "Approved" }
         };
         store.Seed(nameof(db.Customers), customer);
-        if (scenario == "payment-resume")
+        if (scenario is "payment-resume" or "payment-retype" or "payment-dates")
         {
             order.IsDeliveryPaused = true;
             order.DeliveryPauseType = "PaymentHold";
@@ -51,17 +103,20 @@ public sealed class SaleOrderPauseDiagnosticTests
         store.Seed(nameof(db.MerchandiseOrders), order);
         var visibility = DispatchProxy.Create<ICustomerVisibilityService, Visibility>();
         ((Visibility)(object)visibility).Scope = new ViewerScope(user.CompanyId.Value, user.EmployeeId.Value,
-            scenario == "read-visible", false, new HashSet<Guid>(), new HashSet<Guid> { user.EmployeeId.Value }, new Clock().Now);
+            scenario is "read-visible" or "payment-dates" or "canceled", false, new HashSet<Guid>(), new HashSet<Guid> { user.EmployeeId.Value }, new Clock().Now);
         var result = await new PauseSaleOrderDeliveryCommandHandler(db, user, new Clock(), null!, visibility)
             .Handle(new(new() { MerchandiseOrderId = order.MerchandiseOrderId, IsDeliveryPaused = scenario != "payment-resume",
-                DeliveryPauseType = "Test", DeliveryPauseReason = "Diagnostic test" }), default);
+                DeliveryPauseType = scenario == "payment-dates" ? "PaymentHold" : "Test",
+                DeliveryPausedTo = scenario == "payment-dates" ? new Clock().Now.AddDays(-1) : null,
+                DeliveryPauseReason = "Diagnostic test" }), default);
         Assert.Equal(expected, result.Success);
-        Assert.Equal(expected || scenario == "payment-resume", order.IsDeliveryPaused);
+        Assert.Equal(scenario == "payment-resume" ? !expected : expected || scenario is "payment-retype" or "payment-dates", order.IsDeliveryPaused);
         Assert.Equal(expected ? 1 : 0, store.Saves);
+        if (!expected && scenario is "payment-resume" or "payment-retype" or "payment-dates")
+            Assert.Equal("PaymentHold", order.DeliveryPauseType);
         if (!expected)
-            Assert.Equal(role == "User" ? "Bạn không có quyền tạm dừng giao hàng."
-                : scenario == "payment-resume" ? "Đơn đang tạm dừng do công nợ. Sale không có quyền tiếp tục giao hàng."
-                : scenario == "completed" ? "Đơn đã hủy hoặc giao xong, không thể tạm dừng/mở lại."
+            Assert.Equal(scenario is "payment-resume" or "payment-retype" or "payment-dates" ? "Đơn đang tạm dừng do công nợ. Sale không có quyền tiếp tục giao hàng."
+                : scenario is "completed" or "cancelled" or "canceled" or "delivered" ? "Đơn đã hủy hoặc giao xong, không thể tạm dừng/mở lại."
                 : "Không tìm thấy đơn hàng.", result.Message);
     }
 

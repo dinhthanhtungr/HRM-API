@@ -6,6 +6,7 @@ using HRM.Application.Features.Dispatch.DeliveryOrders.Dtos;
 using HRM.Domain.Enums.WareHouses;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using HRM.Application.Features.Dispatch.DeliveryOrders.Services;
 
 namespace HRM.Application.Features.Dispatch.DeliveryOrders.Queries.GetDeliveryOrderDetail;
 
@@ -48,6 +49,7 @@ internal sealed class GetDeliveryOrderDetailQueryHandler
                 (x.Status == "Cancelled" || x.Status == "Canceled") &&
                 x.Details.Count() == 1 && !x.Details.Any(d => d.IsActive), cancellationToken);
 
+        var labelNames = DeliveryCustomerLabelNames.Query(_dbContext.CustomerLabelDetails.AsNoTracking(), companyId);
         var result = await _dbContext.DeliveryOrders
             .AsNoTracking()
             .Where(x => x.Id == request.Id && x.CompanyId == companyId)
@@ -100,6 +102,10 @@ internal sealed class GetDeliveryOrderDetailQueryHandler
                         ProductId = d.ProductId,
                         ProductExternalId = d.ProductExternalIdSnapShot,
                         ProductName = d.ProductNameSnapShot,
+                        ProductDisplayCode = d.Product != null && d.Product.CompanyId == companyId ? d.Product.ColourCode : null,
+                        ProductDisplayName = labelNames.Where(n => n.Header.CustomerId == x.CustomerId && n.Header.ProductId == d.ProductId)
+                            .Select(n => n.FieldValue!.Trim()).FirstOrDefault() ??
+                            (d.Product != null && d.Product.CompanyId == companyId ? d.Product.Name : null),
                         BagWeightKg = d.Product != null && d.Product.IsActive && d.Product.CompanyId == companyId
                             ? d.Product.SampleRequests.Where(sr => sr.CompanyId == companyId && sr.IsActive && sr.CustomerId == x.CustomerId)
                                 .OrderByDescending(sr => sr.CreatedDate).ThenByDescending(sr => sr.SampleRequestId)

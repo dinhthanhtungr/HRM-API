@@ -58,12 +58,14 @@ internal sealed class MyTaskSupport
         => _readDbContext.WorkTasks.AsNoTracking().Where(x =>
             x.CompanyId == actor.CompanyId &&
             x.AssignedToEmployeeId == actor.EmployeeId &&
-            !x.References.Any());
+            !x.References.Any(r => r.ReferenceType != WorkReferenceType.SampleRequest) &&
+            (!x.References.Any() || x.CreatedBy == actor.EmployeeId));
 
     public IQueryable<WorkTask> BuildCustomerFollowUpTaskQuery(MyTaskActor actor)
         => _readDbContext.WorkTasks.AsNoTracking().Where(x =>
             x.CompanyId == actor.CompanyId &&
-            x.References.Any() &&
+            x.References.Any(r => r.ReferenceType != WorkReferenceType.SampleRequest) &&
+            !x.References.Any(r => r.ReferenceType == WorkReferenceType.SampleRequest) &&
             (x.AssignedToEmployeeId == actor.EmployeeId ||
              x.Assignees.Any(a => a.EmployeeId == actor.EmployeeId && a.IsActive)));
 
@@ -71,8 +73,10 @@ internal sealed class MyTaskSupport
         => source.Select(x => new MyTaskDto
         {
             WorkTaskId = x.Id,
-            SourceType = x.References.Any() ? WorkTaskSourceType.CustomerFollowUp : WorkTaskSourceType.Personal,
-            WorkTaskListId = x.References.Any() ? null : x.WorkTaskListId,
+            SampleRequestId = x.References.Where(r => r.ReferenceType == WorkReferenceType.SampleRequest)
+                .Select(r => (Guid?)r.ReferenceId).FirstOrDefault(),
+            SourceType = x.References.Any(r => r.ReferenceType != WorkReferenceType.SampleRequest) ? WorkTaskSourceType.CustomerFollowUp : WorkTaskSourceType.Personal,
+            WorkTaskListId = x.References.Any(r => r.ReferenceType != WorkReferenceType.SampleRequest) ? null : x.WorkTaskListId,
             SortOrder = x.SortOrder,
             Title = x.Title,
             Description = x.Description,
@@ -138,7 +142,8 @@ internal sealed class MyTaskSupport
         => _writeDbContext.WorkTasks.Where(x =>
             x.CompanyId == actor.CompanyId &&
             x.AssignedToEmployeeId == actor.EmployeeId &&
-            !x.References.Any());
+            !x.References.Any(r => r.ReferenceType != WorkReferenceType.SampleRequest) &&
+            (!x.References.Any() || x.CreatedBy == actor.EmployeeId));
 }
 
 internal sealed record MyTaskActor(Guid CompanyId, Guid EmployeeId);

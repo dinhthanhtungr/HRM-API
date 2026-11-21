@@ -92,6 +92,7 @@ internal sealed class UpdateFormulaPricingPolicyCommandHandler(
             }
 
             entity.Tiers.Add(requestedTier);
+            dbContext.FormulaPricingPolicyTiers.Add(requestedTier);
         }
 
         var removedTiers = entity.Tiers

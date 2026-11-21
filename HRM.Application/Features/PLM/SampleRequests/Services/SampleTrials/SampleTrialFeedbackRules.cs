@@ -9,7 +9,7 @@ internal static class SampleTrialFeedbackRules
         if (trialStatus is not SampleTrialStatus.SampleSent and not SampleTrialStatus.WaitingCustomerFeedback and not SampleTrialStatus.PriceQuote)
             return "Customer feedback can only be recorded for a sent sample awaiting customer feedback.";
 
-        if (requestStatus == SampleRequestStatus.Cancelled.ToString())
+        if (requestStatus is "Cancelled" or "LabDeclined")
             return "A cancelled sample request cannot receive customer feedback.";
 
         if (requestStatus == SampleRequestStatus.Completed.ToString() &&
@@ -20,5 +20,5 @@ internal static class SampleTrialFeedbackRules
     }
 
     public static bool CanReopen(string requestStatus)
-        => requestStatus != SampleRequestStatus.Completed.ToString() && requestStatus != SampleRequestStatus.Cancelled.ToString();
+        => requestStatus != SampleRequestStatus.Completed.ToString() && requestStatus != SampleRequestStatus.Cancelled.ToString() && requestStatus != "LabDeclined";
 }

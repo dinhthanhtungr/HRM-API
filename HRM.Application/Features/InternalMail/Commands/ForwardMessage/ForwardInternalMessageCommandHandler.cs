@@ -61,6 +61,7 @@ internal sealed class ForwardInternalMessageCommandHandler(
             // Copy only the selected body/files. Never grant source membership or copy executable action payloads/replies.
             var result = await sender.Send(new SendInternalMessageCommand
             {
+                HasGroupTransaction = true,
                 ConversationId = target.InternalConversationId,
                 AreaCode = InternalMailAreaAccessService.AreaOf(target.RelatedType),
                 Body = source.Body, Attachments = uploads, IsForwarded = true,

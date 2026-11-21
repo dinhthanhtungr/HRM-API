@@ -1,5 +1,6 @@
 using HRM.Domain.Entities.DevandqaSchema;
 using HRM.Domain.Entities.MaterialSchema;
+using HRM.Domain.Identity;
 using Microsoft.EntityFrameworkCore;
 
 namespace HRM.Application.Abstractions.Persistence.DevAndQA;
@@ -10,4 +11,8 @@ public interface ILabTestDbContext : IEvaluationDbContext
     DbSet<LabTest> LabTests { get; }
     DbSet<LabTestResult> LabTestResults { get; }
     DbSet<Material> Materials { get; }
+    DbSet<Supplier> Suppliers { get; }
+    DbSet<ApplicationUser> Users { get; }
+    DbSet<ApplicationRole> Roles { get; }
+    DbSet<ApplicationUserRole> UserRoles { get; }
 }

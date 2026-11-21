@@ -94,7 +94,10 @@ public sealed class SampleManagedSaleWorkflowPostgresTests(IsolatedGroupStorageP
             Assert.Equal(ownerId, saved.ManagerBy); Assert.Equal(actorId, saved.UpdatedBy);
             var primary = await db.SampleRequestWorkflowEvents.AsNoTracking().SingleAsync(x => x.SampleRequestId == id && x.EventType == SampleFlowRules.PriceNoResponse);
             Assert.Equal(actorId, primary.RecordedByEmployeeId);
-            Assert.Equal(2, await db.OutboxMessages.CountAsync() - jobsBefore);
+            var shared = await db.SampleRequestWorkflowEvents.AsNoTracking().SingleAsync(x => x.RelatedEventId == primary.Id && x.EventType == SampleFlowRules.PriceFeedbackShared);
+            Assert.False(SampleRequestWorkflowPublicationRules.ShouldPublishMessage(primary));
+            Assert.True(SampleRequestWorkflowPublicationRules.ShouldPublishMessage(shared));
+            Assert.Equal(1, await db.OutboxMessages.CountAsync() - jobsBefore);
             var publicHandler = new RecordCustomerFeedbackNoteCommandHandler(db, effective, permissions, visibility);
             var publicResult = await publicHandler.Handle(new() { SampleRequestId = id, ExpectedPriceEventId = primary.Id,
                 ExpectedRequestUpdatedDate = saved.UpdatedDate, CustomerFeedbackNote = "Managed Sale note revision" }, default);
@@ -110,6 +113,7 @@ public sealed class SampleManagedSaleWorkflowPostgresTests(IsolatedGroupStorageP
             Assert.NotNull((await db.Customers.AsNoTracking().SingleAsync(x => x.CustomerId == customer)).LastContactDate);
 
             Assert.Equal(ownerId, (await db.SampleRequests.AsNoTracking().SingleAsync(x => x.SampleRequestId == id)).ManagerBy);
+
 
             saved = await db.SampleRequests.AsNoTracking().SingleAsync(x => x.SampleRequestId == id);
             db.ChangeTracker.Clear();
@@ -138,6 +142,29 @@ public sealed class SampleManagedSaleWorkflowPostgresTests(IsolatedGroupStorageP
             Assert.Equal(ownerId, (await db.Customers.AsNoTracking().SingleAsync(x => x.CustomerId == customer)).CurrentSaleId);
 
             Assert.Equal(ownerId, (await db.SampleRequests.AsNoTracking().SingleAsync(x => x.SampleRequestId == id)).ManagerBy);
+            // Optional feedback on an earlier chip must not reopen a completed TP or its VU/sample.
+            var optionalChip = Guid.NewGuid(); var acceptedKg = Guid.NewGuid();
+            await db.SampleRequests.Where(x => x.SampleRequestId == id).ExecuteUpdateAsync(s => s.SetProperty(x => x.Status, "Completed"));
+            await db.Formulas.Where(x => x.FormulaId == formula).ExecuteUpdateAsync(s => s.SetProperty(x => x.Status, "Completed").SetProperty(x => x.IsSelect, true));
+            await Insert(connection, db.Model.FindEntityType(typeof(SampleRequestSampleTrial))!, new()
+            { ["SampleRequestSampleTrialId"] = optionalChip, ["SampleRequestId"] = id, ["FormulaId"] = formula,
+              ["IsActive"] = true, ["TrialNo"] = 4, ["DeliveredSampleQuantityKg"] = 0m,
+              ["Status"] = (int)SampleTrialStatus.WaitingCustomerFeedback, ["SentDate"] = original, ["UpdatedDate"] = original });
+            await Insert(connection, db.Model.FindEntityType(typeof(SampleRequestSampleTrial))!, new()
+            { ["SampleRequestSampleTrialId"] = acceptedKg, ["SampleRequestId"] = id, ["FormulaId"] = formula,
+              ["IsActive"] = true, ["TrialNo"] = 5, ["DeliveredSampleQuantityKg"] = 2m,
+              ["Status"] = (int)SampleTrialStatus.Approved, ["SentDate"] = original, ["CustomerReplyNote"] = "Keep kg result" });
+            db.ChangeTracker.Clear();
+            var optionalResult = await crmHandler.Handle(new() { Request = new()
+            { CustomerId = customer, SampleRequestSampleTrialId = optionalChip, IdempotencyKey = Guid.NewGuid(),
+              Content = "Separate optional chip response", CustomerReplyStatus = "APPROVED", ExpectedTrialUpdatedDate = original } }, default);
+            Assert.True(optionalResult.Success, optionalResult.Message);
+            Assert.Equal("Completed", (await db.SampleRequests.AsNoTracking().SingleAsync(x => x.SampleRequestId == id)).Status);
+            var keptFormula = await db.Formulas.AsNoTracking().SingleAsync(x => x.FormulaId == formula);
+            Assert.Equal("Completed", keptFormula.Status); Assert.True(keptFormula.IsSelect);
+            Assert.Equal(SampleTrialStatus.Approved, (await db.SampleRequestSampleTrials.AsNoTracking().SingleAsync(x => x.SampleRequestSampleTrialId == optionalChip)).Status);
+            Assert.Equal("Keep kg result", (await db.SampleRequestSampleTrials.AsNoTracking().SingleAsync(x => x.SampleRequestSampleTrialId == acceptedKg)).CustomerReplyNote);
+
 
         }
     }

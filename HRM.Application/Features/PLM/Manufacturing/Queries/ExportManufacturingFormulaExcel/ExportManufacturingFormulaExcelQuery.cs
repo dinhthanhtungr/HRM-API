@@ -9,4 +9,4 @@ using Microsoft.EntityFrameworkCore;
 
 namespace HRM.Application.Features.PLM.Manufacturing.Queries.ExportManufacturingFormulaExcel;
 
-public sealed record ExportManufacturingFormulaExcelQuery(Guid OrderId) : IRequest<OperationResult<byte[]>>;
+public sealed record ExportManufacturingFormulaExcelQuery(Guid OrderId, bool IncludePrices = false) : IRequest<OperationResult<byte[]>>;

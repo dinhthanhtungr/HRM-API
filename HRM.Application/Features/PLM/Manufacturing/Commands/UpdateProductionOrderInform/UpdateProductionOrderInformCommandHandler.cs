@@ -15,6 +15,7 @@ using HRM.Application.Features.Timeline.Dtos;
 using HRM.Application.Features.Timeline.Services;
 using HRM.Domain.Enums.Logs;
 using HRM.Domain.Enums.Manufacturings;
+using HRM.Domain.Entities.ManufacturingSchema;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -28,7 +29,8 @@ internal sealed class UpdateProductionOrderInformCommandHandler(
     IEventLogWriter timeline,
     ManufacturingFormulaInputResolver inputResolver,
     ProductionOrderReservationService reservations,
-    ManufacturingWorkflowNotifier notifier
+    ManufacturingWorkflowNotifier notifier,
+    PromisedDeliveryNotifier promisedDelivery
 ) : IRequestHandler<UpdateProductionOrderInformCommand, OperationResult>
 {
     public async Task<OperationResult> Handle(UpdateProductionOrderInformCommand command, CancellationToken ct)
@@ -69,6 +71,15 @@ internal sealed class UpdateProductionOrderInformCommandHandler(
             error = ManufacturingAccess.ValidateInformState(user, order.Status);
             if (error is not null) return OperationResult.Fail(error);
             var canManage = ManufacturingAccess.CanManageInform(user, permissions);
+            var formulaEditLock = await ManufacturingAccess.FormulaEditLockAsync(db, order, ct);
+            if (formulaEditLock is not null && (request.TotalQuantity != (order.TotalQuantity ?? 0)
+                || request.NumOfBatches != (order.NumOfBatches ?? 0)))
+                return OperationResult.Fail(formulaEditLock);
+            var completesRequestedFormula = command.IsEditorSave
+                && order.Status == nameof(ManufacturingProductOrder.FormulaRequested)
+                && user.IsInRole(ApplicationRoles.Lab.LabUser)
+                && permissions.HasPermission(ApplicationPermissions.PLM.ManageManufacturingFormulas)
+                && permissions.HasPermission(ApplicationPermissions.PLM.ViewFormulaMaterials);
             if (!canManage && (request.LabNote is not null && request.LabNote != order.LabNote
                 || request.Requirement is not null && request.Requirement != order.Requirement
                 || request.PlpuNote is not null && request.PlpuNote != order.PlpuNote))
@@ -94,24 +105,25 @@ internal sealed class UpdateProductionOrderInformCommandHandler(
             List<CreateProductionOrderFormulaItemRequest>? items = null;
             string? generatedPlpuNote = null;
             var itemsChanged = false;
-            if (request.SelectedFormulaId.HasValue)
+            ManufacturingFormula? completedFormula = null;
+            if (request.SelectedFormulaId.HasValue || completesRequestedFormula)
             {
-                if (request.SelectedFormulaId == Guid.Empty || request.Items is null && !changesFormulaNote)
+                if (request.SelectedFormulaId == Guid.Empty || request.Items is null && !changesFormulaNote && !completesRequestedFormula)
                 {
                     return OperationResult.Fail("Thiếu danh sách vật tư của công thức đang chọn.");
                 }
 
-                var selected = await db.ProductionSelectVersions.AsNoTracking().Where(x => x.MfgProductionOrderId == command.Id && x.CompanyId == company && x.ValidTo == null)
+                var selectedVersion = await db.ProductionSelectVersions.Where(x => x.MfgProductionOrderId == command.Id && x.CompanyId == company && x.ValidTo == null)
                     .OrderByDescending(x => x.ValidFrom)
                     .ThenByDescending(x => x.ProductionSelectVersionId)
-                    .Select(x => x.ManufacturingFormulaId)
                     .FirstOrDefaultAsync(ct);
-                if (selected != request.SelectedFormulaId)
+                var selected = selectedVersion?.ManufacturingFormulaId;
+                if (!selected.HasValue || request.SelectedFormulaId.HasValue && selected != request.SelectedFormulaId)
                 {
                     return OperationResult.Fail("Công thức gửi lên không phải công thức đang chọn của lệnh.");
                 }
 
-                await db.LockManufacturingFormulaAsync(request.SelectedFormulaId.Value, company, ct);
+                await db.LockManufacturingFormulaAsync(selected.Value, company, ct);
                 var formula = await db.ManufacturingFormulas.Where(x => x.ManufacturingFormulaId == selected && x.CompanyId == company && x.IsActive)
                     .Include(x => x.ManufacturingFormulaMaterials)
                     .FirstOrDefaultAsync(ct);
@@ -119,14 +131,13 @@ internal sealed class UpdateProductionOrderInformCommandHandler(
                 {
                     return OperationResult.Fail("Không tìm thấy công thức đang chọn.");
                 }
-                if (request.Items is not null && ManufacturingAccess.ValidateFormulaEditState(order.Status) is { } formulaLock)
+                if (request.Items is not null && formulaEditLock is { } formulaLock)
                 {
                     var storedItems = formula.ManufacturingFormulaMaterials.Where(x => x.IsActive).ToList();
                     if (storedItems.Count != request.Items.Count || request.Items.Select(x => x.SourceItemId).Distinct().Count() != storedItems.Count
                         || request.Items.Any(x => !storedItems.Any(s => s.ManufacturingFormulaMaterialId == x.SourceItemId
                             && (s.MaterialId ?? s.ProductId) == x.ItemId
-                            && (s.itemType is HRM.Domain.Enums.Formulas.ItemType.Material or HRM.Domain.Enums.Formulas.ItemType.MaterialFailure)
-                                == (x.ItemType is HRM.Domain.Enums.Formulas.ItemType.Material or HRM.Domain.Enums.Formulas.ItemType.MaterialFailure)
+                            && s.itemType == x.ItemType && s.LotNo == x.LotNo
                             && s.Quantity == x.Quantity)))
                         return OperationResult.Fail(formulaLock);
                 }
@@ -174,6 +185,15 @@ internal sealed class UpdateProductionOrderInformCommandHandler(
                 }
                 if (changesFormulaNote)
                     formula.Note = notePatch!.ClearFields.Contains("formulaNote") ? null : notePatch.FormulaNote;
+                if (completesRequestedFormula)
+                {
+                    var activeItems = formula.ManufacturingFormulaMaterials.Where(x => x.IsActive).ToList();
+                    if (activeItems.Count == 0 || activeItems.Any(x => x.Quantity < 0) || !activeItems.Any(x => x.Quantity > 0))
+                        return OperationResult.Fail("Công thức cần có nguyên vật liệu với định mức hợp lệ trước khi hoàn tất.");
+                    formula.Status = nameof(ManufacturingProductOrderFormula.Checking);
+                    selectedVersion!.ValidFrom ??= clock.Now;
+                    completedFormula = formula;
+                }
                 formula.UpdatedBy = employee;
                 formula.UpdatedDate = clock.Now;
             }
@@ -195,15 +215,41 @@ internal sealed class UpdateProductionOrderInformCommandHandler(
             PatchHelper.SetIfNotNull(request.Requirement, () => order.Requirement, v => order.Requirement = v);
             PatchHelper.SetIfNotNull(request.QcCheck, () => order.QcCheck, v => order.QcCheck = v);
             PatchHelper.SetIfNotNull(request.BagType, () => order.BagType, v => order.BagType = v!);
-            if (canManage && order.Status == ManufacturingProductOrder.FormulaSuccess.ToString())
+            if (completedFormula is not null)
+            {
+                // Lab hoàn tất công thức; PLPU lưu kế hoạch ở bước sau mới chuyển sang Scheduling.
+                order.Status = nameof(ManufacturingProductOrder.FormulaSuccess);
+                await timeline.AddAsync(new EventLogCreateRequest
+                {
+                    CompanyId = company,
+                    EmployeeId = employee,
+                    SourceId = command.Id,
+                    SourceCode = order.ExternalId,
+                    SourceType = "MfgProductionOrder",
+                    EventType = EventType.ManufacturingProductOrder,
+                    Status = order.Status,
+                    CreatedDate = now,
+                    Note = $"Công thức thành công vào {now} bởi {user.UserName}"
+                }, ct);
+            }
+            else if (canManage && order.Status == ManufacturingProductOrder.FormulaSuccess.ToString())
             {
                 order.Status = ManufacturingProductOrder.Scheduling.ToString();
             }
 
             var enteredScheduling = oldStatus != ManufacturingProductOrder.Scheduling.ToString()
                 && order.Status == ManufacturingProductOrder.Scheduling.ToString();
+            if (order.Status == nameof(ManufacturingProductOrder.Scheduling))
+            {
+                var selections = await db.ProductionSelectVersions.Where(x => x.CompanyId == company
+                    && x.MfgProductionOrderId == command.Id && x.ValidTo == null
+                    && x.ManufacturingFormula != null && x.ManufacturingFormula.IsActive
+                    && x.ManufacturingFormula.CompanyId == company).AsTracking().ToListAsync(ct);
+                var activation = ManufacturingSchedulingSelectionRules.Activate(selections, now);
+                if (!activation.Success) return activation;
+            }
             var schedule = await db.SchedualMfgs.FirstOrDefaultAsync(x => x.MfgProductionOrderId == command.Id, ct);
-            if (canManage && schedule is null
+            if (canManage && completedFormula is null && schedule is null
                 && !string.Equals(
                 order.Status,
                 ManufacturingProductOrder.FormulaRequested.ToString(),
@@ -259,8 +305,30 @@ internal sealed class UpdateProductionOrderInformCommandHandler(
                 }
             }
 
-            await notifier.ExpectedDateWarningAsync(db, order, oldExpectedDate, ct);
+            if (completedFormula is not null)
+            {
+                var link = await db.MfgOrderPOs.AsNoTracking().Where(x => x.MfgProductionOrderId == command.Id
+                    && x.IsActive && x.Detail.IsActive && x.Detail.MerchandiseOrder.IsActive
+                    && x.Detail.MerchandiseOrder.CompanyId == company)
+                    .Select(x => new { x.Detail.MerchandiseOrderId, x.Detail.UnitPriceAgreed })
+                    .FirstOrDefaultAsync(ct);
+                if (link is not null)
+                {
+                    var sale = await db.MerchandiseOrders.AsNoTracking().FirstOrDefaultAsync(x => x.MerchandiseOrderId == link.MerchandiseOrderId
+                        && x.CompanyId == company && x.IsActive, ct);
+                    if (sale is not null)
+                        await notifier.PriceWarningAsync(order, completedFormula, sale, link.UnitPriceAgreed, ct);
+                }
+            }
+
             await db.SaveChangesAsync(ct);
+            if (order.Status == nameof(ManufacturingProductOrder.Scheduling)
+                && !await db.ProductionSelectVersions.AsNoTracking().AnyAsync(x => x.CompanyId == company
+                    && x.MfgProductionOrderId == command.Id && x.ValidFrom != null && x.ValidTo == null
+                    && x.ManufacturingFormula != null && x.ManufacturingFormula.IsActive
+                    && x.ManufacturingFormula.CompanyId == company, ct))
+                return OperationResult.Fail("Không thể lưu Chờ lịch: VA chưa được kích hoạt. Thao tác đã được hủy.");
+            await promisedDelivery.PublishAsync(order.MfgProductionOrderId, order.ExternalId, oldExpectedDate, order.ExpectedDate, ct);
             await transaction.CommitAsync(ct);
             return OperationResult.Ok("Cập nhật thông tin và công thức VA thành công.");
         }

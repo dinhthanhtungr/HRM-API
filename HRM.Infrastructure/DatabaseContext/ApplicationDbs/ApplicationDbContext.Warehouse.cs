@@ -12,6 +12,7 @@ namespace HRM.Infrastructure.DatabaseContext.ApplicationDbs
 {
     public partial class ApplicationDbContext
     {
+        public virtual DbSet<WarehouseMovementRow> WarehouseMovementRows { get; set; } = default!;
         public virtual DbSet<DepartmentTempStock> DepartmentTempStocks { get; set; } = default!;
         public virtual DbSet<DepartmentTempStockLog> DepartmentTempStockLogs { get; set; } = default!;
         public virtual DbSet<ImportRequestFlowLog> ImportRequestFlowLogs { get; set; } = default!;

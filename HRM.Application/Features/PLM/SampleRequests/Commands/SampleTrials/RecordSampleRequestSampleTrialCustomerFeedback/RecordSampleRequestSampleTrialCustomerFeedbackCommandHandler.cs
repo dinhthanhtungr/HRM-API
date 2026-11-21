@@ -71,6 +71,8 @@ internal sealed class RecordSampleRequestSampleTrialCustomerFeedbackCommandHandl
 
         var replyStatus = TrimToNull(request.CustomerReplyStatus);
         var replyNote = TrimToNull(request.CustomerReplyNote);
+        if (request.Status == SampleTrialStatus.Cancelled && replyNote is null)
+            return OperationResult<Guid>.Fail("A cancellation reason is required in CustomerReplyNote.");
         if (replyStatus is { Length: > MaxCustomerReplyStatusLength })
         {
             return OperationResult<Guid>.Fail($"CustomerReplyStatus cannot exceed {MaxCustomerReplyStatusLength} characters.");
@@ -96,7 +98,15 @@ internal sealed class RecordSampleRequestSampleTrialCustomerFeedbackCommandHandl
         var sampleRequest = await visibleSampleRequests
             .AsTracking()
             .FirstOrDefaultAsync(x => x.SampleRequestId == request.SampleRequestId, cancellationToken);
-        if (sampleRequest is null || !SampleSaleWorkflowAccess.CanActFor(_currentUser, _permissions, sampleRequest.ManagerBy, scope))
+        if (sampleRequest is null)
+            return OperationResult<Guid>.Fail("Sample request was not found or is outside your scope.");
+        if (await Services.Workflow.SampleRequestLabPauseRules.IsPausedAsync(_dbContext, scope.CompanyId, sampleRequest.SampleRequestId, cancellationToken))
+            return OperationResult<Guid>.Fail(Services.Workflow.SampleRequestLabPauseRules.PausedMessage);
+        var canAct = request.Status == SampleTrialStatus.Cancelled
+            ? await SampleSaleWorkflowAccess.CustomersAllowedForCancellation(_dbContext.Customers.AsNoTracking(), _currentUser, _permissions, scope)
+                .AnyAsync(c => c.CustomerId == sampleRequest.CustomerId, cancellationToken)
+            : SampleSaleWorkflowAccess.CanActFor(_currentUser, _permissions, sampleRequest.ManagerBy, scope);
+        if (!canAct)
         {
             return OperationResult<Guid>.Fail("Sample request was not found or is outside your scope.");
         }
@@ -108,10 +118,7 @@ internal sealed class RecordSampleRequestSampleTrialCustomerFeedbackCommandHandl
             .Include(x => x.Formula)
             .Where(x =>
                 x.SampleRequestId == sampleRequest.SampleRequestId &&
-                x.IsActive &&
-                (x.Status == SampleTrialStatus.SampleSent ||
-                 x.Status == SampleTrialStatus.WaitingCustomerFeedback ||
-                 x.Status == SampleTrialStatus.PriceQuote))
+                x.IsActive)
             .OrderByDescending(x => x.TrialNo)
             .FirstOrDefaultAsync(cancellationToken);
         if (trial is null)
@@ -119,6 +126,10 @@ internal sealed class RecordSampleRequestSampleTrialCustomerFeedbackCommandHandl
             return OperationResult<Guid>.Fail("No active sample trial is waiting for customer feedback.");
         }
 
+        if (await _dbContext.SampleRequestWorkflowEvents.AsNoTracking().AnyAsync(e => e.CompanyId == scope.CompanyId && e.SampleRequestId == sampleRequest.SampleRequestId &&
+            e.SampleRequestSampleTrialId == trial.SampleRequestSampleTrialId && e.EventType == SampleRequestWorkflowEvents.SampleSent && e.RelatedEventId != null &&
+            _dbContext.SampleRequestWorkflowEvents.Any(b => b.Id == e.RelatedEventId && b.EventType == DeliveryOptions.SampleDeliveryRules.BatchSent), cancellationToken))
+            return OperationResult<Guid>.Fail("Record this option through its delivery batch.");
         if (request.ExpectedUpdatedDate.HasValue && trial.UpdatedDate != request.ExpectedUpdatedDate.Value)
         {
             return OperationResult<Guid>.Fail("Sample trial was changed by another user. Reload before saving.");
@@ -133,7 +144,8 @@ internal sealed class RecordSampleRequestSampleTrialCustomerFeedbackCommandHandl
         if (feedbackValidationError is not null)
             return OperationResult<Guid>.Fail(feedbackValidationError);
 
-        if (SampleFlowRules.IsModernChip(sampleRequest, trial) &&
+        var currentWorkflow = !await SampleFollowUpRules.IsLegacyAsync(_dbContext, sampleRequest, cancellationToken);
+        if (trial.DeliveryKind == SampleDeliveryKind.ColorChip && currentWorkflow &&
             request.Status is SampleTrialStatus.Approved or SampleTrialStatus.Failed &&
             await _dbContext.SampleRequestSampleTrials.AnyAsync(x => x.IsActive && x.FormulaId == trial.FormulaId &&
                 x.SampleRequest.CompanyId == sampleRequest.CompanyId && x.DeliveredSampleQuantityKg > 0 && x.SentDate != null, cancellationToken))
@@ -179,13 +191,22 @@ internal sealed class RecordSampleRequestSampleTrialCustomerFeedbackCommandHandl
                 now,
                 replyStatus!,
                 replyNote,
-                replyDate);
+                replyDate, currentWorkflow);
         }
         else if (request.Status == SampleTrialStatus.Failed && SampleTrialFeedbackRules.CanReopen(sampleRequest.Status))
         {
-            if (SampleFlowRules.IsModernChip(sampleRequest, trial))
+            if (trial.DeliveryKind == SampleDeliveryKind.ColorChip && currentWorkflow)
                 SampleFlowRules.ApplyChipReply(sampleRequest, trial, SampleTrialStatus.Failed, employeeId, now);
-            else SampleRequestStatusTransitionRules.MarkCustomerFailed(sampleRequest);
+            else
+            {
+                SampleRequestStatusTransitionRules.MarkCustomerFailed(sampleRequest);
+                if (currentWorkflow && trial.DeliveryKind == SampleDeliveryKind.TrialSample && trial.Formula is not null)
+                {
+                    trial.Formula.Status = HRM.Domain.Enums.Products.FormulaStatus.Rework.ToString();
+                    trial.Formula.UpdatedBy = employeeId;
+                    trial.Formula.UpdatedDate = now;
+                }
+            }
         }
         else if (request.Status == SampleTrialStatus.Cancelled)
         {

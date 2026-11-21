@@ -25,6 +25,12 @@ internal sealed partial class EvaluationFileSaveService
     {
         switch (resource)
         {
+            case EvaluationFileResource.Lab:
+                var inputLab = Read<HRM.Application.Features.DevAndQA.LabTests.Dtos.BasicLabTestWriteRequest>(payload);
+                var lab = create
+                    ? await sender.Send(new HRM.Application.Features.DevAndQA.LabTests.Commands.CreateBasicLabTest.CreateBasicLabTestCommand(inputLab), ct)
+                    : await sender.Send(new HRM.Application.Features.DevAndQA.LabTests.Commands.PatchBasicLabTest.PatchBasicLabTestCommand(GuidKey(key), inputLab), ct);
+                return (lab, lab.Id);
             case EvaluationFileResource.Iqc:
                 OperationResult<GetQCInputByQC> qc;
                 if (create)

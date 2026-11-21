@@ -8,8 +8,10 @@ using MediatR;
 namespace HRM.Application.Features.Executive.SampleRequestPricingOverview;
 
 public sealed class GetSampleRequestPricingOverviewQuery
-    : IRequest<OperationResult<PagedResult<SampleRequestPricingOverviewItemDto>>>
+    : IRequest<OperationResult<PagedResult<SampleRequestPricingOverviewItemDto>>>, HRM.Application.Commons.Searching.ISmartSearchRequest
 {
+    public string? SearchSelections { get; init; }
+    public string? SuggestionKeyword { get; init; }
     private const int DefaultPageSize = 12;
     private const int MaximumPageSize = 100;
 

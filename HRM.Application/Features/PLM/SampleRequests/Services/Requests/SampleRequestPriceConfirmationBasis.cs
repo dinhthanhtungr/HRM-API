@@ -7,6 +7,7 @@ internal static class SampleRequestPriceConfirmationBasis
     public static Guid? ResolveFormulaId(SampleRequestSampleTrialReportDto item)
         => item.PriceConfirmationFormulaId ?? item.FormulaId;
 
-    public static bool MatchesApprovedFormula(SampleRequestSampleTrialReportDto item, Guid? approvedSourceFormulaId)
-        => ResolveFormulaId(item) is { } formulaId && formulaId == approvedSourceFormulaId;
+    public static bool HasApprovedPriceSource(Guid? approvedSourceFormulaId)
+        // Price approval belongs to the request's product, independently of its sent option.
+        => approvedSourceFormulaId.HasValue;
 }

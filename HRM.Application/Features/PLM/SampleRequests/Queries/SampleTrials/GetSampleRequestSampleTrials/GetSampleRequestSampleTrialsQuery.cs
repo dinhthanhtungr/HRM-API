@@ -25,9 +25,16 @@ public sealed class GetSampleRequestSampleTrialsQuery
 
     public Guid? SampleRequestId { get; set; }
     [JsonIgnore]
+    internal Guid[]? SampleRequestIds { get; init; }
+    internal bool ReadSelectedReportPage { get; init; }
+    [JsonIgnore]
     public bool UseOperationalScope { get; init; }
     public Guid? CustomerId { get; init; }
     public Guid? SaleEmployeeId { get; init; }
+    [JsonIgnore]
+    internal Guid[]? SaleEmployeeIds { get; init; }
+    [JsonIgnore]
+    internal Guid[]? SaleGroupIds { get; init; }
     /// <summary>
     /// Inclusive report-date lower bound. CompletedSamples uses CustomerReplyDate,
     /// WaitingCustomerFeedback uses SentDate, independent of legacy Sale receipt.
@@ -64,6 +71,11 @@ public sealed class GetSampleRequestSampleTrialsQuery
     /// ngoại trừ WaitingCustomerFeedback trả mọi Trial đang chờ phản hồi.
     /// </summary>
     public bool IncludeTrialHistory { get; set; }
+    internal bool UseTrialHistoryPayload => SampleRequestId.HasValue && IncludeTrialHistory &&
+        WorkAudience == null && WorkSort == null && !GroupByCustomer && DailyWorkDate == null;
+    [JsonIgnore]
+    internal bool WorkflowDetail { get; init; }
+    internal string[] PriorityTasks { get; init; } = [];
 
     /// <summary>Chỉ handler báo cáo ngày được đặt; route sample-trials không nhận filter nội bộ này từ client.</summary>
     [JsonIgnore]
@@ -73,6 +85,11 @@ public sealed class GetSampleRequestSampleTrialsQuery
     public SampleRequestDailyView DailyWorkView { get; set; } = SampleRequestDailyView.Today;
     [JsonIgnore]
     public SampleRequestWorkAudience? WorkAudience { get; set; }
+    /// <summary>Internal daily-work option; counts/pages customers and includes every matching request in the selected groups.</summary>
+    [JsonIgnore]
+    internal bool GroupByCustomer { get; init; }
+    [JsonIgnore]
+    internal SampleRequestWorkSort? WorkSort { get; init; }
     [JsonIgnore]
     public HRM.Application.Features.PLM.SampleRequests.Services.SampleLabTeamFilter? LabTeam { get; set; }
     [JsonIgnore]

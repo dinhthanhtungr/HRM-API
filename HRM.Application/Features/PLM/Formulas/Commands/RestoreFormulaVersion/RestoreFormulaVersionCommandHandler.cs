@@ -94,15 +94,8 @@ internal sealed class RestoreFormulaVersionCommandHandler
             material.IsActive = false;
         }
 
-        formula.Name = sourceVersion.Name;
-        formula.Status = sourceVersion.Status;
-        formula.Note = sourceVersion.Note;
-        formula.TotalPrice = sourceVersion.TotalPrice;
-        formula.ProductionPrice = sourceVersion.ProductionPrice;
-        formula.PresidentPrice = sourceVersion.PresidentPrice;
-        formula.ProfitMarginPrice = sourceVersion.ProfitMarginPrice;
-        formula.UpdatedBy = employeeId;
-        formula.UpdatedDate = DateTime.Now;
+        var restoredAt = DateTime.Now;
+        FormulaVersionRestoreRules.ApplyHeader(formula, sourceVersion, employeeId, restoredAt);
 
         foreach (var item in sourceVersion.Items.OrderBy(x => x.LineNo))
         {
@@ -133,7 +126,7 @@ internal sealed class RestoreFormulaVersionCommandHandler
             var restoredVersion = await _formulaVersionService.SaveSnapshotAsync(
                 formula,
                 employeeId,
-                formula.UpdatedDate.Value,
+                restoredAt,
                 BuildChangeReason(command.VersionNo, command.Request.ChangeReason),
                 force: true,
                 cancellationToken);

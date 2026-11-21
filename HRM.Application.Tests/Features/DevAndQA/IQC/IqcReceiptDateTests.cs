@@ -12,6 +12,29 @@ namespace HRM.Application.Tests.Features.DevAndQA.IQC;
 
 public sealed class IqcReceiptDateTests
 {
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    [InlineData(null, true)]
+    [InlineData(true, true)]
+    [InlineData(false, true)]
+    public void SuggestionMetadataKeepsTheSameVisibleRowsAndValuesAsTheList(bool? hasQc, bool dateFilter)
+    {
+        var reader = Fixture(withTests: true);
+        var request = new QCInputQuery {
+            IncludeLabTests = true, HasQC = hasQc,
+            FromDate = dateFilter ? new(2026, 10, 26) : null,
+            ToDate = dateFilter ? new(2026, 10, 27, 23, 59, 59) : null
+        };
+        var list = reader.BuildSmartRows(request)
+            .Select(x => new { x.VoucherDetailId, x.LabTestId, x.Code, x.Name, x.LotNumber }).ToHashSet();
+        request.SuggestionKeyword = "MAT";
+        var suggestions = reader.BuildSmartRows(request)
+            .Select(x => new { x.VoucherDetailId, x.LabTestId, x.Code, x.Name, x.LotNumber }).ToHashSet();
+        Assert.True(list.SetEquals(suggestions));
+    }
+
     [Fact]
     public async Task ReceiptDateUsesLatestScopedLedgerPerLineNotHeaderOrQcDate()
     {
@@ -58,7 +81,66 @@ public sealed class IqcReceiptDateTests
         Assert.Empty(await reader.BuildSummaryIdsQuery(new QCInputQuery { VoucherDetailId = 34303, FromDate = new(2026, 1, 1) }).ToListAsync());
     }
 
-    private static IqcReader Fixture()
+    [Fact]
+    public async Task CombinedSummaryPagesBothSourcesAndScopesTestSamples()
+    {
+        var reader = Fixture(withTests: true);
+        var legacy = await reader.GetPagedSummaryAsync(new(), default);
+        Assert.Equal(3, legacy.TotalCount);
+        var filter = new QCInputQuery { IncludeLabTests = true, PageSize = 1 };
+        var first = await reader.GetPagedSummaryAsync(filter, default);
+        Assert.Equal(5, first.TotalCount);
+        var sample = Assert.Single(first.Items);
+        Assert.Equal("LabTest", sample.Source);
+        Assert.Equal("NVL_TEST_00002", sample.ExternalId);
+        Assert.Equal(0, sample.VoucherDetailId);
+        Assert.Null(sample.QCInputByQCId);
+        Assert.Null(sample.InputDate);
+        Assert.Equal(new DateOnly(2026, 10, 27), sample.TestDate);
+        Assert.Equal("LOT-TEST", sample.LotNumber);
+        Assert.Equal(2.5m, sample.WeightKg);
+        Assert.Equal("kg", sample.Unit);
+        filter.PageNumber = 2;
+        Assert.Equal("NVL_TEST_00001", Assert.Single((await reader.GetPagedSummaryAsync(filter, default)).Items).ExternalId);
+        filter.PageNumber = 3;
+        Assert.Equal(34302, Assert.Single((await reader.GetPagedSummaryAsync(filter, default)).Items).VoucherDetailId);
+        filter.PageNumber = 1;
+        filter.FromDate = new(2026, 10, 27);
+        filter.ToDate = new(2026, 10, 27, 23, 59, 59);
+        Assert.Equal(1, (await reader.GetPagedSummaryAsync(filter, default)).TotalCount);
+        filter.FromDate = null; filter.ToDate = null;
+        filter.VoucherDetailId = 34302;
+        Assert.Equal(1, (await reader.GetPagedSummaryAsync(filter, default)).TotalCount);
+        filter.VoucherDetailId = 0;
+        filter.VoucherDetailType = VoucherDetailType.QCPass;
+        Assert.Equal(3, (await reader.GetPagedSummaryAsync(filter, default)).TotalCount);
+        filter.VoucherDetailType = null;
+        filter.HasQC = false;
+        Assert.Empty((await reader.GetPagedSummaryAsync(filter, default)).Items);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void CombinedKeyQueryTranslatesToPostgresBeforePaging(bool filtered)
+    {
+        using var db = new HRM.Infrastructure.DatabaseContext.ApplicationDbs.ApplicationDbContext(
+            new DbContextOptionsBuilder<HRM.Infrastructure.DatabaseContext.ApplicationDbs.ApplicationDbContext>().UseNpgsql().Options);
+        var sql = new IqcReader(db, Guid.NewGuid()).BuildCombinedSummaryKeys(new QCInputQuery
+            { Keyword = filtered ? "NVL_TEST" : null, FromDate = filtered ? new DateTime(2026, 10, 1) : null })
+            .OrderByDescending(x => x.SortDate).ThenByDescending(x => x.VoucherDetailId).ThenByDescending(x => x.LabTestId)
+            .Skip(15).Take(15).ToQueryString();
+        Assert.Contains("UNION ALL", sql);
+        Assert.Contains("LIMIT", sql);
+        Assert.Contains("OFFSET", sql);
+        if (filtered) Assert.Contains("ILIKE", sql);
+        Assert.Contains("GROUP BY", sql);
+        Assert.Contains("LEFT JOIN", sql);
+        // Regression: sorting must not evaluate a scalar MAX subquery for every warehouse candidate.
+        Assert.DoesNotMatch(@"(?is)COALESCE\(\s*\(\s*SELECT\s+max\(", sql);
+    }
+
+    private static IqcReader Fixture(bool withTests = false)
     {
         var (db, store) = IqcTestStore.CreateStore();
         var company = Guid.NewGuid(); var employee = Guid.NewGuid(); var category = Guid.NewGuid();
@@ -86,6 +168,11 @@ public sealed class IqcReceiptDateTests
             Ledger(34302, company, new(2026, 10, 26, 13, 55, 34)),
             Ledger(34302, Guid.NewGuid(), new(2026, 11, 1)),
             Ledger(34304, other.Voucher.CompanyId, new(2026, 10, 26)));
+        if (withTests)
+            store.Seed(nameof(db.LabTests),
+                new LabTest { Id = Guid.NewGuid(), CompanyId = company, Code = "NVL_TEST_00001", SampleName = "Sample", TestDate = new(2026, 10, 26), CreatedDate = new(2026, 10, 27), CreatedBy = employee },
+                new LabTest { Id = Guid.NewGuid(), CompanyId = company, Code = "NVL_TEST_00002", SampleName = "Sample 2", TestDate = new(2026, 10, 27), CreatedDate = new(2026, 10, 28), CreatedBy = employee, BatchNumber = "LOT-TEST", WeightKg = 2.5m },
+                new LabTest { Id = Guid.NewGuid(), CompanyId = Guid.NewGuid(), Code = "FOREIGN", TestDate = new(2026, 10, 27), CreatedDate = new(2026, 11, 1) });
         return new(db, company);
     }
 }

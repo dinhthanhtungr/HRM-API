@@ -1,7 +1,9 @@
 using HRM.Application.Abstractions.Persistence.PLM;
 using HRM.Application.Abstractions.Security;
+using HRM.Application.Commons.Authorization;
 using HRM.Application.Commons.Models;
 using HRM.Application.Commons.Pagination;
+using HRM.Application.Commons.Searching;
 using HRM.Application.Features.DevAndQA.ProductInspections.Dtos;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -27,11 +29,19 @@ internal sealed class GetProductInspectionsQueryHandler
         if (_currentUser.CompanyId is not { } companyId || companyId == Guid.Empty)
             return OperationResult<PagedResult<ProductInspectionSummaryDto>>.Fail("Current company is invalid.");
 
+        var isIms = ImsAccountRestrictions.AppliesTo(_currentUser);
         var query = _dbContext.ProductInspections
             .AsNoTracking()
             .ForCompany(_dbContext, companyId);
 
-        if (request.NormalizedKeyword is { } keyword)
+        var smartSearch = SmartSearch.For(query, fields => [
+            fields.Code("inspectionCode", x => x.ExternalId, "Mã kiểm tra", "Inspection code"),
+            fields.Code("batchNumber", x => x.BatchId, "Số lô", "Batch"),
+            fields.Code("productCode", x => x.ProductCode, "Mã sản phẩm", "Product code"),
+            fields.Name("productName", x => x.ProductName, "Tên sản phẩm", "Product name")
+        ]);
+        query = smartSearch.ApplyRequest(query, request.NormalizedKeyword, request, out var smartKeyword);
+        if (smartKeyword is { } keyword)
         {
             var pattern = $"%{keyword}%";
             query = query.Where(x =>
@@ -41,6 +51,8 @@ internal sealed class GetProductInspectionsQueryHandler
                 (x.ProductName != null && EF.Functions.Like(x.ProductName, pattern)));
         }
 
+        if (await smartSearch.SuggestionsAsync<ProductInspectionSummaryDto>(query, request, cancellationToken) is { } suggestions)
+            return OperationResult<PagedResult<ProductInspectionSummaryDto>>.Ok(suggestions);
         var totalCount = await query.CountAsync(cancellationToken);
         var items = await query
             .OrderByDescending(x => x.CreateDate)
@@ -55,7 +67,7 @@ internal sealed class GetProductInspectionsQueryHandler
                 ProductName = x.ProductName,
                 BatchId = x.BatchId,
                 Result = x.DeliveryAccepted,
-                Types = x.Types,
+                Types = isIms ? null : x.Types,
                 CreateDate = x.CreateDate,
                 CreatedBy = x.CreatedBy
             })

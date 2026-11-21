@@ -14,7 +14,8 @@ internal sealed class GetIqcSummaryQueryHandler(IIqcDbContext context, ICurrentU
 {
     public async Task<OperationResult<IqcPagedResult<GetSummaryQCInput>>> Handle(GetIqcSummaryQuery query, CancellationToken ct)
     {
-        if (!permissions.HasPermission(ApplicationPermissions.DevAndQA.ViewIqc))
+        var isIms = ImsAccountRestrictions.AppliesTo(currentUser);
+        if (!isIms && !permissions.HasPermission(ApplicationPermissions.DevAndQA.ViewIqc))
             return OperationResult<IqcPagedResult<GetSummaryQCInput>>.Fail("Bạn không có quyền xem IQC.");
 
         if (IqcRules.Company(currentUser) is not { } companyId)
@@ -25,6 +26,8 @@ internal sealed class GetIqcSummaryQueryHandler(IIqcDbContext context, ICurrentU
         if (error is not null) 
             return OperationResult<IqcPagedResult<GetSummaryQCInput>>.Fail(error);
         
+        if (isIms) query.Filter.IncludeLabTests = false;
+
         var reader = new IqcReader(context, companyId);
         
         return OperationResult<IqcPagedResult<GetSummaryQCInput>>.Ok(

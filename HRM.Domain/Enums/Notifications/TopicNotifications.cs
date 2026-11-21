@@ -88,6 +88,8 @@ namespace HRM.Domain.Enums.Notifications
         SampleRequestMessageReacted = 58,
         QuotationMessageReacted = 59,
         InternalMailMessageReacted = 60,
-        SampleRequestCustomerPriceFeedbackRecorded = 61
+        SampleRequestCustomerPriceFeedbackRecorded = 61,
+        SampleRequestLabNoteRecorded = 62,
+        QuotationSendConfirmationRejected = 63
     }
 }

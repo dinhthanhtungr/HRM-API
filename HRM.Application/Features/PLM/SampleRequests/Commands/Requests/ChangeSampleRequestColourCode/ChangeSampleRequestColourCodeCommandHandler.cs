@@ -1,4 +1,5 @@
 using System.Text.Json;
+using HRM.Application.Features.PLM.CustomerLabels.Services;
 using HRM.Application.Abstractions.Persistence.Notifications;
 using HRM.Application.Abstractions.Persistence.PLM;
 using HRM.Application.Abstractions.Security;
@@ -34,6 +35,7 @@ internal sealed class ChangeSampleRequestColourCodeCommandHandler
     private readonly SampleRequestConversationSubjectService _conversationSubjectService;
     private readonly DraftQuotationProductSnapshotSyncService _draftQuotationProductSnapshotSyncService;
     private readonly ISender _sender;
+    private readonly CustomerLabelColorCodeSyncService _labelCodeSync;
 
     public ChangeSampleRequestColourCodeCommandHandler(
         IPLMWriteDbContext dbContext,
@@ -42,7 +44,8 @@ internal sealed class ChangeSampleRequestColourCodeCommandHandler
         ICustomerVisibilityService visibilityService,
         SampleRequestConversationSubjectService conversationSubjectService,
         DraftQuotationProductSnapshotSyncService draftQuotationProductSnapshotSyncService,
-        ISender sender)
+        ISender sender,
+        CustomerLabelColorCodeSyncService? labelCodeSync = null)
     {
         _dbContext = dbContext;
         _notificationDbContext = notificationDbContext;
@@ -51,6 +54,7 @@ internal sealed class ChangeSampleRequestColourCodeCommandHandler
         _conversationSubjectService = conversationSubjectService;
         _draftQuotationProductSnapshotSyncService = draftQuotationProductSnapshotSyncService;
         _sender = sender;
+        _labelCodeSync = labelCodeSync ?? new CustomerLabelColorCodeSyncService(dbContext);
     }
 
     public async Task<OperationResult<ChangeSampleRequestColourCodeResultDto>> Handle(
@@ -97,6 +101,8 @@ internal sealed class ChangeSampleRequestColourCodeCommandHandler
         {
             return OperationResult<ChangeSampleRequestColourCodeResultDto>.Fail("Sample request was not found.");
         }
+        if (await Services.Workflow.SampleRequestLabPauseRules.IsPausedAsync(_dbContext, companyId.Value, sampleRequest.SampleRequestId, cancellationToken))
+            return OperationResult<ChangeSampleRequestColourCodeResultDto>.Fail(Services.Workflow.SampleRequestLabPauseRules.PausedMessage);
 
         var product = await _dbContext.Products
             .FirstOrDefaultAsync(x =>
@@ -224,6 +230,7 @@ internal sealed class ChangeSampleRequestColourCodeCommandHandler
         var oldProductSnapshot = SampleRequestDataChangeAuditHelper.BuildProductAuditSnapshot(product);
 
         product.ColourCode = newColourCode;
+        await _labelCodeSync.SyncAsync(product.ProductId, companyId.Value, newColourCode, cancellationToken);
         if (!string.IsNullOrWhiteSpace(resolvedResult.Data.AdditiveCode))
         {
             product.Additive = resolvedResult.Data.AdditiveCode;

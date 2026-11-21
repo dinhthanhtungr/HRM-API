@@ -1,11 +1,16 @@
 using System.Globalization;
 using HRM.Application.Features.PLM.Manufacturing.Dtos.MfgFormulaAdjustments;
 using HRM.Domain.Entities.ManufacturingSchema;
+using HRM.Domain.Enums.Manufacturings;
 
 namespace HRM.Application.Features.PLM.Manufacturing.Services.Adjustments;
 
 internal static class ManufacturingAdjustmentMapping
 {
+    internal static string StatusName(AdjustmentStatus status) =>
+        status is AdjustmentStatus.Accepted or AdjustmentStatus.Approved
+            ? nameof(AdjustmentStatus.Approved) : status.ToString();
+
     internal static IQueryable<GetManufacturingFormulaAdjustment> ProjectToDto(IQueryable<ManufacturingFormulaAdjustment> query)
     {
         return query.Select(x => new GetManufacturingFormulaAdjustment
@@ -15,7 +20,7 @@ internal static class ManufacturingAdjustmentMapping
             MfgProductionOrderExternalId = x.MfgProductionOrder.ExternalId,
             ManufacturingFormulaId = x.ManufacturingFormulaId,
             ManufacturingFormulaExternalId = x.ManufacturingFormula != null && x.ManufacturingFormula.CompanyId == x.CompanyId ? x.ManufacturingFormula.ExternalId : null,
-            Status = x.Status,
+            Status = x.Status == nameof(AdjustmentStatus.Accepted) || x.Status == "Approve" ? nameof(AdjustmentStatus.Approved) : x.Status,
             Note = x.Note,
             CompanyId = x.CompanyId,
             IsActive = x.IsActive,
@@ -29,7 +34,7 @@ internal static class ManufacturingAdjustmentMapping
                 ManufacturingFormulaAdjustmentId = b.ManufacturingFormulaAdjustmentId,
                 BatchNo = b.BatchNo,
                 TrialNo = b.TrialNo,
-                Status = b.Status,
+                Status = b.Status == nameof(AdjustmentStatus.Accepted) || b.Status == "Approve" ? nameof(AdjustmentStatus.Approved) : b.Status,
                 AdjustmentType = b.AdjustmentType,
                 IsAdditionalBatch = b.IsAdditionalBatch,
                 BatchQuantity = b.BatchQuantity,

@@ -69,7 +69,9 @@ internal sealed class ExportPurchaseOrderPdfQueryHandler(
                     : x.Supplier == null ? null : x.Supplier.SupplierName,
                 SupplierContactSnapshot = x.PurchaseOrderSnapshot != null
                     ? x.PurchaseOrderSnapshot.SupplierContactSnapshot
-                    : x.Supplier == null ? null : x.Supplier.SupplierContacts.Where(c => c.IsPrimary == true && c.IsActive == true).Select(c => c.LastName).FirstOrDefault(),
+                    : x.Supplier == null ? null : x.Supplier.SupplierContacts.Where(c => c.IsActive == true)
+                        .OrderByDescending(c => c.IsPrimary == true).ThenBy(c => c.ContactId)
+                        .Select(c => ((c.FirstName ?? string.Empty) + " " + (c.LastName ?? string.Empty)).Trim()).FirstOrDefault(),
                 SupplierPhoneNumberSnapshot = x.PurchaseOrderSnapshot != null
                     ? x.PurchaseOrderSnapshot.SupplierPhoneNumberSnapshot
                     : x.Supplier == null ? null : x.Supplier.Phone,

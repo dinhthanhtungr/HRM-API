@@ -12,6 +12,7 @@ namespace HRM.Domain.Enums.Manufacturings
         Testing,
         Accepted,
         Rejected,
-        AppliedToNextBatch
+        AppliedToNextBatch,
+        Approved
     }
 }
