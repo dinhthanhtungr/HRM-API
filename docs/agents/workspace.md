@@ -14,6 +14,18 @@
 - Khi kiểm tra lỗi runtime, đối chiếu đường dẫn tiến trình đang phục vụ với repo D và xác nhận mã/file đang được phục vụ. Build thành công ở một repo không chứng minh một tiến trình khác đã nạp bản sửa. Không tự restart dịch vụ hay chạm DB thật khi user chỉ cho xem.
 - Quy tắc này không cho phép sửa `F:\Backend`, đổi nhánh, ghi DB, migration, triển khai hoặc sao chép các thay đổi cũ. Những thao tác đó vẫn theo phạm vi user cho phép và AGENTS của repo chính.
 
+## Đồng bộ BE/FE qua main
+
+Áp dụng khi toàn bộ tin nhắn của user là `save`, `load` hoặc `laod` (bỏ khoảng trắng đầu/cuối, không phân biệt hoa thường). `laod` được hiểu là `load`.
+
+- **Save:** hỏi “Bạn có muốn lưu code của cả BE và FE lên `main` trên GitHub không?”
+- **Load:** hỏi “Bạn có muốn tải code của cả BE và FE từ `main` trên GitHub về máy này không?”
+- Chờ đồng ý rõ cho lần đó trước khi fetch, stage, commit, push, cập nhật nhánh hoặc sửa file. Xác minh đúng repo, remote, nhánh, trạng thái và phạm vi ở cả hai repo. Áp dụng quy định Git của từng repo. Nếu một repo bị chặn, báo rõ trước khi đồng bộ riêng repo còn lại.
+- Cấu hình được bảo vệ gồm `.env`, `.env.*`, `appsettings.json`, `appsettings.*.json` và cấu hình riêng từng máy hoặc máy chủ như URL backend, đường dẫn lưu trữ, connection string và khóa. Giữ nguyên nội dung hiện có, kể cả file Git đang theo dõi. Khi báo kết quả, chỉ nêu tên file và phạm vi thay đổi, không in giá trị nhạy cảm.
+- **Sau khi xác nhận save:** rà code và lịch sử commit sắp đưa lên, loại cấu hình được bảo vệ, secret và artifact build khỏi phạm vi push. Nếu commit đã có chứa thay đổi cấu hình được bảo vệ, chỉ đưa lên phần code an toàn qua cách tích hợp giữ nguyên lịch sử `main`; dừng nếu chưa có phương án an toàn. Kiểm tra phù hợp trước khi push và xác minh commit trên GitHub.
+- **Sau khi xác nhận load:** fetch `origin/main` rồi kiểm tra diff và thay đổi local trước khi áp dụng. Chỉ cập nhật `main` local bằng fast-forward khi đủ điều kiện. Nếu cập nhật sẽ tạo, xóa hoặc ghi đè cấu hình được bảo vệ, chồng lên thay đổi local hoặc gặp lịch sử phân kỳ, dừng và báo file hoặc blocker để user quyết định. Nếu cần chuyển nhánh, nêu nhánh hiện tại và nhánh đích rồi xin xác nhận riêng.
+- Báo kết quả theo từng repo, kèm commit đã push hoặc đã tải và phần còn chờ xử lý. Không dùng force-push, reset hoặc thao tác ghi đè để hoàn tất đồng bộ.
+
 ## Trình bày cấu trúc code khi bàn bạc thay đổi HRM
 
 Áp dụng chung FE/BE khi bàn bạc feature, sửa lỗi, nâng cấp hoặc refactor có liên quan đến code, kể cả khi chưa được yêu cầu triển khai.

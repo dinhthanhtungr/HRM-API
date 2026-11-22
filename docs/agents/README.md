@@ -20,6 +20,7 @@ Dành cho user và agent khi quản lý, sửa hoặc kiểm tra điều hướn
 | Cách sửa tài liệu và rule FE | [Documentation FE](D:/UserInterface/hrm-mobile/docs/agents/docs.md) |
 | Nghiệp vụ, quyền, API, status, side effect | README gần feature được router repo/module dẫn tới; không chép lại tại trang này |
 | Quyền Git/nhánh | [Git BE](../../.agents/git-and-build.md), [Git FE](D:/UserInterface/hrm-mobile/docs/agents/git.md) và invariant repo |
+| Lệnh chat `save`, `load`, `laod` | [Đồng bộ BE/FE qua main](workspace.md#đồng-bộ-befe-qua-main) |
 | Thuật ngữ FE/BE | [Glossary](../glossary/README.md) |
 | Thêm/sửa/đổi tên/xóa cờ tính năng FE/BE, biến môi trường hoặc cấu hình build/deploy liên quan | AGENTS FE/BE → [quy tắc cập nhật sổ tính năng](../feature-flags.md#quy-tắc-cập-nhật-bắt-buộc); nguồn duy nhất cho danh mục và quy tắc cập nhật |
 
