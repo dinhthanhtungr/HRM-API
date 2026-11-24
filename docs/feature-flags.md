@@ -54,7 +54,7 @@ không thay capability/company scope. Gỡ bằng cách bỏ middleware/đăng k
 | `customer-sample-sharing` | BE `CustomerSampleSharing:Enabled` | false | appsettings.json = true (2026-11-18, theo yêu cầu người dùng) |
 | `delivery-schedule-storage` | BE `DeliverySchedules:StorageReady` | false | appsettings.json = true (2026-11-20, user xác nhận đã migration) |
 | `delivery-schedule-ui` | BE `DeliverySchedules:EnableMultiScheduleUi` | false | appsettings.json = true (2026-11-20) |
-| `delivery-schedule-fe` | FE `NEXT_PUBLIC_DELIVERY_SCHEDULES_ENABLED` + Developer preview | Người thường chỉ chuỗi `true` mới bật; Developer được yêu cầu features khi cờ false | Repo D .env.local = false (2026-11-20): người thường dùng cũ, Developer vẫn qua BE features/quyền |
+| `delivery-schedule-fe` | FE `NEXT_PUBLIC_DELIVERY_SCHEDULES_ENABLED` | Developer và SaleUser được gọi features khi cờ false. Role khác cần cờ `true`. | Repo D .env.local = false. Developer và SaleUser vẫn qua kiểm tra tính năng và quyền của BE. |
 | `internal-mail-reactions` | BE `InternalMail:Reactions:Enabled` | false | appsettings.json = true |
 | `internal-mail-group-storage` | BE `InternalMail:GroupStorage:Enabled` | false | appsettings.json = true |
 | `sample-conversation-summary` | BE `SampleRequests:ConversationSummary:Enabled` | false | Không có |
@@ -80,11 +80,11 @@ BE cấu hình ở HRM.Api của môi trường đích; biến môi trường .N
 
 ### Nhiều đợt giao trên một dòng hàng
 
-FE `canRequestDeliverySchedules(roles)` là gate dùng chung cho hook features và bước lưu có deliverySchedules: opt-in hoặc role Developer. Cấu hình local hiện false để người dùng thường giữ luồng cũ và không gọi features API. Giao diện nhập mới `SaleOrderDeliveryEntry` chỉ mở cho Developer sau khi BE trả enabled và canEditRequest; không cấp quyền chỉ bằng role FE. Developer không vượt StorageReady/EnableMultiScheduleUi, capability, company scope hay ràng buộc lưu của BE. Trạng thái phân bổ trong bộ nhớ phải xóa khi đổi phiên ngay cả khi cờ false. Nếu sau này mở cho role khác, phải sửa gate giao diện mới và cập nhật sổ, không chỉ bật cờ.
+FE `canRequestDeliverySchedules(roles)` cho phép hook gọi features và form gửi lịch khi có opt-in hoặc role Developer hay SaleUser. Khi cờ local là false, các role khác dùng luồng cũ. Form tạo đơn hiển thị `SaleOrderDeliveryEntry` cho Developer và SaleUser khi BE trả `enabled` và `canEditRequest`. BE kiểm tra hai cờ StorageReady và EnableMultiScheduleUi, quyền chỉnh lịch yêu cầu, phạm vi công ty và quy tắc lưu. Trạng thái phân bổ trong bộ nhớ phải xóa khi đổi phiên kể cả khi cờ false.
 
-- [Options](../HRM.Application/Features/PLM/SaleOrders/DeliverySchedules/DeliveryScheduleOptions.cs), [contract/schema](../HRM.Application/Features/PLM/SaleOrders/DeliverySchedules/README.md). FE: `D:/UserInterface/hrm-mobile/src/modules/plm/sale-orders/presentation/config/deliveryScheduleFeature.ts`.
+- [Options](../HRM.Application/Features/PLM/SaleOrders/DeliverySchedules/DeliveryScheduleOptions.cs), [contract/schema](../HRM.Application/Features/PLM/SaleOrders/DeliverySchedules/README.md). FE `D:/Vietaus_one_websites/VietausOne.FE.Next/src/modules/plm/sale-orders/presentation/config/deliveryScheduleFeature.ts`.
 - StorageReady=false: luồng ngày đơn cũ, không truy vấn bảng lịch/phân bổ mới. UI=false và StorageReady=true: ẩn/chặn thao tác lịch mới, vẫn duy trì phân bổ khi lập/sửa phiếu.
-- Bật StorageReady sau khi schema đúng đã được áp dụng. Mở UI khi cả hai cờ BE và cờ FE bật, quyền đã cấp và các luồng phiếu đã nghiệm thu.
+- Bật StorageReady sau khi schema đã được áp dụng. Developer và SaleUser cần hai cờ BE và quyền phù hợp. Các role khác cần thêm cờ FE để truy cập giao diện lịch theo quyền hiện có.
 - Sau khi có lịch/phân bổ thật: có thể ẩn UI, nhưng không tự tắt StorageReady để quay về luồng đơn ngày. Việc đó ngừng duy trì phân bổ, cần đánh giá dữ liệu trước. Không xóa schema để ẩn UI.
 - Export/report và thông báo theo từng đợt chưa chuyển đổi đầy đủ; giới hạn cụ thể ở contract.
 

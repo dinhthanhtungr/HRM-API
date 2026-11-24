@@ -10,6 +10,7 @@ using HRM.Domain.Entities.OrderSchema;
 using HRM.Domain.Enums.Category;
 using HRM.Domain.Enums.Logs;
 using HRM.Domain.Enums.Merchadises;
+using HRM.Domain.Enums.Orders;
 using HRM.Domain.Enums.Products;
 using Microsoft.EntityFrameworkCore;
 
@@ -221,6 +222,50 @@ internal sealed class SaleOrderCreationService
             UpdatedBy = employeeId
         };
 
+        List<MerchandiseOrderDetail> sourceLines = [];
+        if (request.OrderType == OrderType.Complaint)
+        {
+            if (request.SourceMerchandiseOrderId is not { } sourceOrderId || sourceOrderId == Guid.Empty)
+                return OperationResult<MerchandiseOrder>.Fail("Chọn ĐHG gốc cho đơn khiếu nại.");
+
+            sourceLines = await _dbContext.MerchandiseOrderDetails.AsNoTracking()
+                .Where(x => x.MerchandiseOrderId == sourceOrderId && x.IsActive
+                    && x.MerchandiseOrder.IsActive && x.MerchandiseOrder.CompanyId == companyId
+                    && x.MerchandiseOrder.CustomerId == request.CustomerId)
+                .ToListAsync(cancellationToken);
+            if (sourceLines.Count == 0)
+                return OperationResult<MerchandiseOrder>.Fail("ĐHG gốc không hợp lệ.");
+
+            var creatorName = await _dbContext.Employees.AsNoTracking()
+                .Where(x => x.EmployeeId == employeeId && x.CompanyId == companyId)
+                .Select(x => x.FullName).FirstOrDefaultAsync(cancellationToken);
+            var report = new ComplaintReport
+            {
+                ComplaintReportId = Guid.CreateVersion7(),
+                ExternalId = await _externalIdService.GenerateMonthlyCodeAsync(companyId, DocumentPrefix.CPL.ToString(), cancellationToken),
+                CompanyId = companyId,
+                CustomerId = order.CustomerId,
+                CustomerExternalIdSnapshot = order.CustomerExternalIdSnapshot,
+                CustomerNameSnapshot = order.CustomerNameSnapshot,
+                AttachmentCollection = new AttachmentCollection { AttachmentCollectionId = Guid.CreateVersion7() },
+                Status = ComplaintReportStatus.Draft,
+                Summary = order.Note,
+                ReportedAt = now,
+                CreatedDate = now,
+                CreatedBy = employeeId,
+                CreatedByNameSnapshot = TrimToEmpty(creatorName),
+                UpdatedDate = now,
+                UpdatedBy = employeeId
+            };
+            order.ComplaintReport = report;
+            order.ComplaintReportId = report.ComplaintReportId;
+        }
+        else if (request.SourceMerchandiseOrderId.HasValue || details.Any(x =>
+                     x.SourceMerchandiseOrderDetailId.HasValue || x.ReplacementSourceManufacturingFormulaId.HasValue))
+        {
+            return OperationResult<MerchandiseOrder>.Fail("Chỉ đơn khiếu nại được chọn ĐHG gốc và VA nguồn.");
+        }
+
         foreach (var detailRequest in details)
         {
             var totalPrice = Math.Round(
@@ -254,6 +299,44 @@ internal sealed class SaleOrderCreationService
                 TotalPriceAgreed = totalPrice,
                 IsActive = true
             };
+            if (order.ComplaintReport is { } complaint)
+            {
+                var matches = sourceLines.Where(x => x.ProductId == detailRequest.ProductId
+                    && (!detailRequest.SourceMerchandiseOrderDetailId.HasValue
+                        || x.MerchandiseOrderDetailId == detailRequest.SourceMerchandiseOrderDetailId))
+                    .Take(2).ToList();
+                if (matches.Count != 1)
+                    return OperationResult<MerchandiseOrder>.Fail("Chọn đúng dòng sản phẩm thuộc ĐHG gốc.");
+
+                var source = matches[0];
+                if (detailRequest.ReplacementSourceManufacturingFormulaId is { } vaId)
+                {
+                    var options = await ComplaintOrderSourceReader.ReadVaAsync(
+                        _dbContext, companyId, source.MerchandiseOrderDetailId, cancellationToken);
+                    if (!options.Any(x => x.ManufacturingFormulaId == vaId))
+                        return OperationResult<MerchandiseOrder>.Fail("VA nguồn không thuộc dòng hàng của ĐHG gốc.");
+                    newDetail.ReplacementSourceManufacturingFormulaId = vaId;
+                }
+
+                var complaintLine = new ComplaintReportLine
+                {
+                    ComplaintReportLineId = Guid.CreateVersion7(),
+                    ComplaintReportId = complaint.ComplaintReportId,
+                    SourceMerchandiseOrderDetailId = source.MerchandiseOrderDetailId,
+                    ProductId = source.ProductId,
+                    ProductExternalIdSnapshot = source.ProductExternalIdSnapshot,
+                    ProductNameSnapshot = source.ProductNameSnapshot,
+                    FormulaId = source.FormulaId,
+                    FormulaExternalIdSnapshot = source.FormulaExternalIdSnapshot,
+                    ComplaintQuantity = newDetail.ExpectedQuantity,
+                    CreatedDate = now,
+                    CreatedBy = employeeId,
+                    UpdatedDate = now,
+                    UpdatedBy = employeeId
+                };
+                complaint.ComplaintReportLines.Add(complaintLine);
+                newDetail.ComplaintReportLineId = complaintLine.ComplaintReportLineId;
+            }
             if (detailRequest.DeliverySchedules is not null)
             {
                 var scheduleError = _deliverySchedules?.PrepareNewDetail(newDetail, detailRequest.DeliverySchedules, employeeId, now)

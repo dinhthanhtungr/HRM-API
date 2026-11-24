@@ -80,10 +80,12 @@ public sealed partial class InternalMailAreaAccessTests
             ]);
         var inbox = new AsyncQuery<Notification>(notices);
         var access = new InternalMailAreaAccessService(store.Db, user);
-        var keys = (await access.UnreadHubConversationIdsAsync(inbox, default)).ConversationIds;
+        var unreadKeys = await access.UnreadHubConversationIdsAsync(inbox, default);
+        var keys = unreadKeys.ConversationIds;
         Assert.Equal(access.UnreadHubConversationIds(inbox).OrderBy(id => id), keys.OrderBy(id => id));
         var expected = access.UnreadHubEventsForConversations(inbox, inbox, keys);
-        var scope = await access.UnreadHubEventsForConversationsAsync(inbox, inbox, keys, default);
+        var scope = await access.UnreadHubEventsForConversationsAsync(
+            inbox, inbox, keys, default, unreadKeys.SuppressedNotificationIds);
         var actual = scope.Visible;
         Assert.Equal(expected.Select(n => n.Id).OrderBy(id => id), actual.Select(n => n.Id).OrderBy(id => id));
         Assert.Equal(notices.Take(3).Select(n => n.Id).OrderBy(id => id), actual.Select(n => n.Id).OrderBy(id => id));

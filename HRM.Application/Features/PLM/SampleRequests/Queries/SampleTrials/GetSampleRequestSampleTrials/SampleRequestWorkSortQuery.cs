@@ -52,9 +52,8 @@ internal static class SampleRequestWorkSortQuery
             HasFinalizedChip = x.Row.HasFinalizedChip, WorkDecision = x.Row.WorkDecision, NeedsSchedule = x.Row.NeedsSchedule,
             HasSalePriceWork = x.Row.HasSalePriceWork, HasSaleFeedbackWork = x.Row.HasSaleFeedbackWork,
             WorkSortRank = x.Row.SampleRequest.Status == "Completed" ? 4 : (x.Row.SampleRequest.Status == "Cancelled" || x.Row.SampleRequest.Status == "LabDeclined") ? 5 : !x.Mine ? 3 :
-                audience == SampleRequestWorkAudience.Lab ?
-                    (x.Row.WorkDecision!.Code == "FinalizeQuotation" || x.Row.WorkDecision.Code == "FinalizeChip" ? 0 :
-                     x.Row.WorkDecision.Code == "SendSample" ? 1 : 2) :
+                audience == SampleRequestWorkAudience.Lab ? x.Row.LabTaskRank :
+                audience == SampleRequestWorkAudience.LabAdmin ? (x.Row.LabTaskRank < 0 ? x.Row.LabTaskRank : 0) :
                 audience == SampleRequestWorkAudience.Sale ?
                     (x.Row.WorkDecision!.Code == "CompleteRequest" ? 0 : x.Row.WorkDecision.Code == "FollowUpCustomer" || x.Row.HasSaleFeedbackWork ? 1 : 2) : 0,
             WorkSortDue = x.Due,
@@ -64,10 +63,11 @@ internal static class SampleRequestWorkSortQuery
     }
 
     // Same ranking as the SQL projection above; used by the scoped facts stream BEFORE paging.
-    internal static int Rank(string status, bool mine, SampleRequestWorkAudience? audience, string code)
+    internal static int Rank(string status, bool mine, SampleRequestWorkAudience? audience, string code, int labRank)
         => status == "Completed" ? 4 : (status == "Cancelled" || status == "LabDeclined") ? 5 : !mine ? 3 : audience switch
         {
-            SampleRequestWorkAudience.Lab => code is "FinalizeQuotation" or "FinalizeChip" ? 0 : code == "SendSample" ? 1 : 2,
+            SampleRequestWorkAudience.Lab => labRank,
+            SampleRequestWorkAudience.LabAdmin => Math.Min(labRank, 0),
             SampleRequestWorkAudience.Sale => code == "CompleteRequest" ? 0 : code == "FollowUpCustomer" ? 1 : 2,
             _ => 0
         };

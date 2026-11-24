@@ -10,10 +10,10 @@ public sealed class MaterialsExcelRenderer : IMaterialsExcelRenderer
     {
         using var workbook = new XLWorkbook();
         var sheet = workbook.Worksheets.Add("Danh sách NVL");
-        string[] headers = ["Mã NVL", "Tên NVL", "Mã loại sản phẩm", "Tên loại sản phẩm"];
+        string[] headers = ["Mã NVL", "Tên NVL", "Mã loại sản phẩm", "Tên loại sản phẩm", "Có sử dụng trong năm nay"];
         for (var column = 0; column < headers.Length; column++)
             sheet.Cell(1, column + 1).SetValue(headers[column]);
-        sheet.Range(1, 1, 1, 4).Style.Font.Bold = true;
+        sheet.Range(1, 1, 1, headers.Length).Style.Font.Bold = true;
         for (var index = 0; index < rows.Count; index++)
         {
             var row = rows[index];
@@ -25,12 +25,14 @@ public sealed class MaterialsExcelRenderer : IMaterialsExcelRenderer
             sheet.Cell(index + 2, 2).SetValue(displayName);
             sheet.Cell(index + 2, 3).SetValue(row.CategoryCode ?? string.Empty);
             sheet.Cell(index + 2, 4).SetValue(row.CategoryName ?? string.Empty);
+            sheet.Cell(index + 2, 5).SetValue(row.UsedThisYear);
         }
-        sheet.Range(1, 1, rows.Count + 1, 4).SetAutoFilter();
+        sheet.Range(1, 1, rows.Count + 1, headers.Length).SetAutoFilter();
         sheet.Column(1).Width = 26;
         sheet.Column(2).Width = 60;
         sheet.Column(3).Width = 24;
         sheet.Column(4).Width = 40;
+        sheet.Column(5).Width = 32;
         sheet.SheetView.FreezeRows(1);
         using var stream = new MemoryStream();
         workbook.SaveAs(stream);

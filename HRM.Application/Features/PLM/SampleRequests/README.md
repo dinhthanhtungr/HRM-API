@@ -40,24 +40,29 @@ Màn Theo dõi mẫu dùng cùng audience Lab cho LabUser/LabAdmin. Context nhó
 All/Rd/Color tường minh luôn được giữ. Không đổi quyền kỹ thuật, scope company/customer
 hay endpoint quản lý lịch; audience LabAdmin cũ tiếp tục tương thích API.
 
-### Ưu tiên hiển thị trong Cần tôi xử lý
+### Loại công việc trong Cần tôi xử lý
 
 `GET reports/daily` nhận `priorityTasks` (mảng mã được whitelist, tối đa 15) trong
-bucket MyActionRequired/ActionRequired với sort WorkPriority. Đây chỉ là thứ tự:
-không thêm/bớt TP, không thay scope, quyền, trạng thái hoặc workflow. Sale giữ
-phạm vi cá nhân hiện có; Lab giữ phạm vi công việc/team hiện có. Khi gộp khách,
-nhóm có TP ưu tiên lên trước và TP ưu tiên lên trước trong nhóm; ghim thủ công
-vẫn giữ ưu tiên cao nhất. Các TP cùng mức giữ quy tắc sắp xếp cũ.
+bucket MyActionRequired/ActionRequired với sort WorkPriority. Trong ActionRequired
+của Lab/LabAdmin, FinalizeFormula, ApproveFormula, SendSample và SendChip giới hạn
+kết quả vào TP khớp ít nhất một mã trước khi gộp khách và phân trang. Sale áp dụng
+cùng cách lọc trong nhóm Cần tôi xử lý. Khi không chọn loại việc, WorkPriority
+sắp xếp toàn bộ kết quả trong nhóm. Các mã ưu tiên Lab cũ khi dùng riêng tiếp tục
+sắp xếp theo ưu tiên. Ghim thủ công giữ thứ tự cao nhất trong kết quả.
+Phạm vi đọc, quyền và workflow được áp dụng như trước.
+
+Việc ưu tiên thực hiện của Lab xếp chốt công thức lên đơn, gửi mẫu kg, gửi chip
+và xác nhận công thức đã có theo thứ tự đó. Hồ sơ còn chuẩn bị tên/mã hoặc chưa có
+công thức để xác nhận nằm sau các việc trên. Các việc còn lại vẫn được phân trang.
 
 Phân loại dựa trên canonical work facts; SendChip/SendSample được tách theo bước
 gửi thực tế, không suy từ lượng Trial cũ. Sale có thể đồng thời có PriceFeedback
 và SampleFeedback/ChipFeedback. `facets.workTasks` là số TP theo từng việc sau
-scope/keyword/team/ownership/bucket và trước phân trang, không phải số khách hoặc
+scope/keyword/team/ownership/bucket, trước lọc loại việc và phân trang, không phải số khách hoặc
 số dòng đã tải. Vì một TP có thể có nhiều việc, không cộng các số thành tổng TP.
 Metadata facets là tùy chọn của PagedResult; các API không cung cấp giữ field bị omit.
-Lab/LabAdmin có nhóm `NewRequest` (Mẫu mới): TP còn Status=New và công việc thuộc Lab,
-không xét ngày tạo nên TP New từ hôm trước vẫn được tính. Nhóm này không đồng thời
-đếm vào `ApproveFormula` (Xác nhận công thức). `FinalizeFormula` (Cần chuyển trạng thái) chỉ gom
+Mã `NewRequest` cũ vẫn đếm TP Status=New có công việc thuộc Lab. TP mới cần xác nhận
+cũng được đếm vào `ApproveFormula`. `FinalizeFormula` (Chuyển trạng thái lên đơn hàng) chỉ gom
 việc FinalizeQuotation/FinalizeChip để hoàn thành VU lên đơn, không gom xác nhận thông thường.
 Hai mã ưu tiên FinalizeQuotation/FinalizeChip cũ vẫn được API chấp nhận tương thích. Mã hành động workflow
 ApproveFormula và quyền xác nhận VU không đổi; đây chỉ là phân loại ưu tiên hiển thị.

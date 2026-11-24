@@ -12,6 +12,7 @@ public partial class MerchandiseOrderDetail
 
     public Guid MerchandiseOrderId { get; set; }
     public Guid? ComplaintReportLineId { get; set; }
+    public Guid? ReplacementSourceManufacturingFormulaId { get; set; }
 
     public Guid ProductId { get; set; }
     public string ProductExternalIdSnapshot { get; set; } = string.Empty;

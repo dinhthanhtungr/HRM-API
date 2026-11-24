@@ -9,6 +9,7 @@ using HRM.Application.Features.PLM.SaleOrders.Commands.CreateSaleOrderWithAttach
 using HRM.Application.Features.PLM.SaleOrders.Commands.PauseSaleOrderDelivery;
 using HRM.Application.Features.PLM.SaleOrders.Commands.UpdateSaleOrder;
 using HRM.Application.Features.PLM.SaleOrders.Dtos;
+using HRM.Application.Features.PLM.SaleOrders.Queries;
 using HRM.Application.Features.PLM.SaleOrders.Queries.GetSaleOrderCustomerContext;
 using HRM.Application.Features.PLM.SaleOrders.Queries.GetCustomerProductStock;
 using HRM.Application.Features.PLM.SaleOrders.Queries.GetLastSaleOrderByCustomer;
@@ -87,6 +88,12 @@ public sealed class SaleOrdersController : ControllerBase
                 await uploadFile.Stream.DisposeAsync();
             }
         }
+    }
+
+    [HttpGet("complaint-sources")]
+    public async Task<IActionResult> GetComplaintSources(Guid customerId, Guid? orderId, string? keyword, CancellationToken cancellationToken)
+    {
+        return Ok(await _sender.Send(new GetComplaintOrderSourcesQuery(customerId, orderId, keyword), cancellationToken));
     }
 
     [HttpPost("standard-samples/review")]

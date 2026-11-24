@@ -84,14 +84,19 @@ Vì vậy không cộng cột TP trên sheet chi tiết.
 `GET /api/v1/excel-special/materials/excel` tải `materials.xlsx`, sheet `Danh sách NVL`.
 Không có tham số; xuất một dòng cho mỗi vật tư đang hoạt động, thuộc công ty đăng nhập,
 có Category đang hoạt động cùng công ty và `Types = NVL`. Sắp theo mã NVL, tên và ID.
-Bốn cột: `Mã NVL` (Material.ExternalId), `Tên NVL` (`Material.Name (Material.CustomCode)`),
-`Mã loại sản phẩm` (Category.ExternalId), `Tên loại sản phẩm` (Category.Name).
+Năm cột: `Mã NVL` (Material.ExternalId), `Tên NVL` (`Material.Name (Material.CustomCode)`),
+`Mã loại sản phẩm` (Category.ExternalId), `Tên loại sản phẩm` (Category.Name),
+`Có sử dụng trong năm nay` (boolean Excel).
+Cột cuối là TRUE khi NVL có dòng active trong Formula hoặc ManufacturingFormula active,
+hoặc trong đơn mua còn hiệu lực ở trạng thái InProgress, Completed hay ExchangeRequested.
+Chỉ tính hồ sơ cùng công ty, có ngày tạo trong năm hiện tại theo Asia/Bangkok.
+Nếu không khớp nguồn nào, giá trị là FALSE. Cột này chỉ xuất kết quả tổng hợp.
 Loại sản phẩm ở đây là danh mục gắn trực tiếp với NVL, không phải danh sách thành phẩm
 sử dụng NVL trong công thức. Giá trị null xuất ô trống; không có dữ liệu vẫn xuất header.
 Mã Việt Úc (`VietausCode` trong model export) lấy từ Material.CustomCode, trim trước
 khi thêm vào tên trong ngoặc. Nếu mã null/rỗng/toàn khoảng trắng thì giữ nguyên tên,
 không thêm ngoặc rỗng; nếu tên thiếu nhưng có mã thì xuất `(mã)`.
-Ví dụ: `NVL_PIG_001 | Bột màu trắng (ABC123) | PIG | Bột màu`.
+Ví dụ: `NVL_PIG_001 | Bột màu trắng (ABC123) | PIG | Bột màu | TRUE`.
 
 Cần đăng nhập, CompanyId hợp lệ và một trong hai capability hiện có
 `ApplicationPermissions.Purchasing.ManageCatalog` hoặc

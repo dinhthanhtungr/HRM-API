@@ -20,6 +20,7 @@ Tỷ lệ sử dụng (Usage rate) là phần trăm sản phẩm màu/phụ gia 
 | End user / Người dùng cuối | Tên người dùng cuối lưu trong Product.EndUser, khác khách hàng trực tiếp của TP. | Summary tìm bằng `End user: Toyota` hoặc chọn gợi ý End user; chỉ trong các TP được phép xem. |
 | Lab từ chối / LabDeclined | TP dừng do Lab từ chối, khác Hủy và khác tạm dừng lịch sử; không phải trạng thái VU. | Sale xem lý do; yêu cầu bổ sung hợp lệ đưa cùng TP về Đang xử lý, giữ ColorCode và lịch sử. |
 | Mẫu mới trong ưu tiên Lab | TP còn trạng thái New, chưa bắt đầu xử lý; không phải tất cả TP tạo trong ngày. | TP tạo hôm trước vẫn New thì tiếp tục thuộc Mẫu mới; TP đã InProgress không thuộc nhóm này. |
+| Chuyển trạng thái lên đơn hàng | Việc Lab hoàn thành công thức sang Completed để Sale chọn khi lên đơn. | Chốt công thức báo giá hoặc chip đã đủ điều kiện lên đơn. |
 | Tiếp tục theo dõi khách / Continue customer follow-up | Chờ quyết định mua, giữ phản hồi giá/chip đã có; chưa giao Lab chốt công thức. | Sale chọn Y/C chốt công thức và lưu yêu cầu chốt thì mới giao Lab; không phải ghi lại phản hồi Đạt. |
 | Tổng số mẫu nhận trong kỳ / Total requests received in period | Số TP tạo trong kỳ báo cáo, khác với ghi nhận đã nhận mẫu chuẩn vật lý. | TP tạo tháng 11 được đếm dù chưa có LabReceivedDate; TP tháng 10 theo dõi tiếp không cộng vào số nhận tháng 11. |
 | Sửa kết quả phản hồi / Feedback result correction | Đính chính Đạt/Không đạt của lần gửi mới nhất trước khi Lab làm tiếp; khác với khách đổi yêu cầu sau khi đã triển khai. | Sale nhập lý do, lưu kết quả trước–sau và tính lại việc cần làm; không tạo VU hoặc tự hoàn thành TP. |
@@ -350,6 +351,9 @@ Shortlist / Tập ứng viên: lấy trước các khóa có khả năng phù h�
 Loại sản phẩm của NVL trong Excel Special là danh mục `Category` gắn trực tiếp với
 `Material.CategoryId`; xuất mã và tên danh mục cùng mã/tên NVL, không suy ra thành phẩm
 từ công thức. Chỉ danh mục có `Types = NVL` được xuất trong danh sách này.
+
+`Có sử dụng trong năm nay` trong Excel Special: cờ boolean cho biết NVL có
+trong công thức hoặc đơn mua hợp lệ được tạo trong năm hiện tại.
 
 Lựa chọn NVL dự kiến (processing preview) là kết quả tìm NVL băm/nghiền khi Product chưa được tạo.
 Tìm/chọn chưa ghi DB; lưu công thức mới kiểm tra nguồn và đổi reference dự kiến thành ProductId thật,

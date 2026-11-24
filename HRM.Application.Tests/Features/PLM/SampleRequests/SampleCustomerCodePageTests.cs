@@ -62,7 +62,9 @@ public sealed class SampleCustomerCodePageTests
                 InfoType = facts.Quotation ? "quotation" : "Thẻ màu", SampleQuantity = facts.RequestedKg ? 2 : 0,
                 ExpectedDeliveryDate = due, ExpectedPriceQuoteDate = due };
             if (index % 3 != 0) writable.Add(request);
-            rows.Add(new() { SampleRequest = request, WorkDecision = SampleWorkDecisionRules.Resolve(facts),
+            var decision = SampleWorkDecisionRules.Resolve(facts);
+            rows.Add(new() { SampleRequest = request, WorkDecision = decision,
+                LabTaskRank = SampleWorkTaskPriority.ResolveLabRank(facts, decision.Code),
                 HasSalePriceWork = SampleWorkDecisionRules.HasSalePriceWork(facts),
                 HasSaleFeedbackWork = SampleWorkDecisionRules.HasSaleFeedbackWork(facts) });
             read.Add(new() { Status = request.Status, Due = due, SaleWritable = request.ManagerBy == owner && writable.Contains(request),

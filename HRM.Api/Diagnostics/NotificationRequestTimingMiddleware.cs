@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Http;
 namespace HRM.Api.Diagnostics;
 
 /// <summary>Only fixed metric names and durations; no request parameters, identities or business content.</summary>
-public sealed class NotificationRequestTimingMiddleware(RequestDelegate next)
+public sealed class NotificationRequestTimingMiddleware(RequestDelegate next, bool includeThreadReads = false)
 {
     private static readonly object StateKey = new();
     private sealed class TimingState
@@ -23,10 +23,12 @@ public sealed class NotificationRequestTimingMiddleware(RequestDelegate next)
 
     public async Task InvokeAsync(HttpContext context)
     {
+        var threadRead = includeThreadReads && IsThreadRead(context.Request.Path);
         if (!HttpMethods.IsGet(context.Request.Method) ||
             !(context.Request.Path.Equals(new PathString("/api/v1/internal-mail/conversations")) ||
               context.Request.Path.Equals(new PathString("/api/v1/notifications/feed")) ||
-              context.Request.Path.Equals(new PathString("/api/v1/notification-hub/items"))))
+              context.Request.Path.Equals(new PathString("/api/v1/notification-hub/items")) ||
+              threadRead))
         {
             await next(context);
             return;
@@ -35,6 +37,7 @@ public sealed class NotificationRequestTimingMiddleware(RequestDelegate next)
         var state = new TimingState();
         context.Items[StateKey] = state;
         using var activity = new Activity("notification-request-timing").Start();
+        if (threadRead) activity.SetTag(NotificationDiagnosticTags.ThreadTiming, "enabled");
         context.Response.OnStarting(() =>
         {
             if (context.User.Identity?.IsAuthenticated == true && context.Response.StatusCode == StatusCodes.Status200OK)
@@ -52,5 +55,14 @@ public sealed class NotificationRequestTimingMiddleware(RequestDelegate next)
         });
         try { await next(context); }
         finally { context.Items.Remove(StateKey); }
+    }
+
+    private static bool IsThreadRead(PathString path)
+    {
+        if (!path.StartsWithSegments("/api/v1/internal-mail/conversations", out var remaining))
+            return false;
+        var segments = remaining.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        return segments is { Length: 1 or 2 } && Guid.TryParse(segments[0], out _) &&
+            (segments.Length == 1 || string.Equals(segments[1], "messages", StringComparison.OrdinalIgnoreCase));
     }
 }

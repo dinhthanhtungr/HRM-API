@@ -27,6 +27,13 @@ namespace HRM.Infrastructure.DatabaseContext.ApplicationDbs.Configurations.Order
 
             entity.Property(e => e.MerchandiseOrderId).HasColumnName("MerchandiseOrderId");
             entity.Property(e => e.ComplaintReportLineId).HasColumnName("ComplaintReportLineId");
+            entity.HasOne<HRM.Domain.Entities.ManufacturingSchema.ManufacturingFormula>()
+                  .WithMany()
+                  .HasForeignKey(e => e.ReplacementSourceManufacturingFormulaId)
+                  .OnDelete(DeleteBehavior.Restrict)
+                  .HasConstraintName("FK_MerchandiseOrderDetails_ReplacementVA");
+            entity.HasIndex(e => e.ReplacementSourceManufacturingFormulaId)
+                  .HasDatabaseName("IX_MerchandiseOrderDetails_ReplacementVA");
             entity.Property(e => e.ProductId).HasColumnName("ProductId");
             entity.Property(e => e.FormulaId).HasColumnName("FormulaId");
 

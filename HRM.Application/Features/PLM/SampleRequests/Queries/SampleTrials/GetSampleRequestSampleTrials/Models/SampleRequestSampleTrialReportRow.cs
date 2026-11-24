@@ -17,6 +17,7 @@ internal sealed class SampleRequestSampleTrialReportRow
     public Services.SampleWorkDecision? WorkDecision { get; set; }
     public bool NeedsSchedule { get; set; }
     public int WorkSortRank { get; set; }
+    public int LabTaskRank { get; set; } = 2;
     public bool WorkSortOverdue { get; set; }
     public DateTime? WorkSortDue { get; set; }
 }

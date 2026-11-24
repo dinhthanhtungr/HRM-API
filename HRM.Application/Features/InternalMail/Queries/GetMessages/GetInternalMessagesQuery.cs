@@ -8,4 +8,5 @@ public sealed class GetInternalMessagesQuery : PaginationQuery, IRequest<PagedRe
 {
     public Guid ConversationId { get; init; }
     public string? AreaCode { get; init; }
+    public bool IncludeUnreadBadges { get; init; }
 }

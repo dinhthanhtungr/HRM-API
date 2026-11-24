@@ -246,12 +246,19 @@ public sealed class SampleRequestsController : ControllerBase
         }
         var timer = System.Diagnostics.Stopwatch.StartNew();
         using var activity = new System.Diagnostics.Activity("sample-daily-timing").Start();
-        var result = await _sender.Send(query, cancellationToken);
-        // Fixed phase names and durations only; available on deployed daily reports too.
-        var phases = activity.GetTagItem(SampleWorkDiagnosticTags.ServerTiming) as string;
-        var total = "daily_total;dur=" + timer.ElapsedMilliseconds.ToString(System.Globalization.CultureInfo.InvariantCulture);
-        Response.Headers["Server-Timing"] = string.IsNullOrEmpty(phases) ? total : phases + ", " + total;
-        return Ok(result);
+        try
+        {
+            var result = await _sender.Send(query, cancellationToken);
+            // Fixed phase names and durations only; available on deployed daily reports too.
+            var phases = activity.GetTagItem(SampleWorkDiagnosticTags.ServerTiming) as string;
+            var total = "daily_total;dur=" + timer.ElapsedMilliseconds.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            Response.Headers["Server-Timing"] = string.IsNullOrEmpty(phases) ? total : phases + ", " + total;
+            return Ok(result);
+        }
+        catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     /// <summary>Gợi ý Sale, khách hàng và mã yêu cầu trong đúng phạm vi báo cáo ngày.</summary>

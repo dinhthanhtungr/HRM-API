@@ -4,8 +4,8 @@
 
 | Phạm vi | Repo chính duy nhất được sửa và chạy kiểm tra |
 | --- | --- |
-| FE hrm-mobile | `D:\UserInterface\hrm-mobile` |
-| BE HRM.api | `D:\VIETAUS\ASP-NET-CORE\HRM.api` |
+| FE hrm-mobile | `D:\Vietaus_one_websites\VietausOne.FE.Next` |
+| BE HRM.api | `D:\Vietaus_one_websites\VietausOne.BE.Next\HRM.api` |
 
 - `F:\UserInterface\hrm-mobile` và `F:\VIETAUS\ASP-NET-CORE\HRM.api` là các bản cũ, chỉ đọc để tham khảo. Không sửa, format, build, test có ghi file, sinh code, commit hoặc chạy server tại các bản này. Không tự đồng bộ/copy đè thay đổi giữa F và D.
 - Trước thao tác ghi, sửa code, format, build/test, Git có ghi hoặc khởi chạy dịch vụ: xác minh đường dẫn tuyệt đối của repo đích, đọc AGENTS.md của repo chính và kiểm tra nhánh/trạng thái tại đúng repo D. Dùng workdir và đường dẫn file thuộc repo D; không dựa vào cwd mặc định.

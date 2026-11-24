@@ -169,6 +169,7 @@ public sealed class SampleWorkSortTests
         {
             rows[i].SampleRequest.ManagerBy = owner;
             rows[i].WorkDecision = new("stage", actions[i], rows[i].WorkDecision!.Role);
+            rows[i].LabTaskRank = SampleWorkTaskPriority.ResolveLabRank(new() { FormulaStatus = "Draft" }, actions[i]);
         }
         var ranked = SampleRequestWorkSortQuery.Enrich(rows.AsQueryable(), audience, new(2026, 11, 11),
             audience == SampleRequestWorkAudience.Lab, audience == SampleRequestWorkAudience.Sale,

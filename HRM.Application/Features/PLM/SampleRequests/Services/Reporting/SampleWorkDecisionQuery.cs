@@ -1,6 +1,7 @@
 using System.Linq.Expressions;
 using HRM.Application.Abstractions.Persistence.CRM.CustomerCare;
 using HRM.Application.Abstractions.Persistence.PLM;
+using HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestDailyWork;
 using HRM.Application.Features.PLM.SampleRequests.Queries.GetSampleRequestSampleTrials.Models;
 using HRM.Application.Features.PLM.SampleRequests.Rules;
 using HRM.Application.Features.PLM.SampleRequests.Services.Workflow;
@@ -178,11 +179,18 @@ internal static class SampleWorkDecisionQuery
             SampleWorkDecisionRules.Expression.Parameters[0], Expression.Property(parameter, nameof(QueryFacts.Facts)));
         var body = (MemberInitExpression)template.Body;
         var facts = Expression.Property(parameter, nameof(QueryFacts.Facts));
+        var labRank = SampleWorkTaskPriority.LabRank;
+        var rank = SampleWorkDecisionRules.Replace(labRank.Body, labRank.Parameters[0], facts);
+        var action = SampleWorkDecisionRules.Action;
+        var code = SampleWorkDecisionRules.Replace(action.Body, action.Parameters[0], facts);
+        rank = SampleWorkDecisionRules.Replace(rank, labRank.Parameters[1], code);
         var price = SampleWorkDecisionRules.Replace(SampleWorkDecisionRules.SalePricePending.Body, SampleWorkDecisionRules.SalePricePending.Parameters[0], facts);
         var feedback = SampleWorkDecisionRules.Replace(SampleWorkDecisionRules.SaleFeedbackPending.Body, SampleWorkDecisionRules.SaleFeedbackPending.Parameters[0], facts);
         return Expression.Lambda<Func<QueryFacts, SampleRequestSampleTrialReportRow>>(Expression.MemberInit(body.NewExpression,
             body.Bindings.Concat([
                 Expression.Bind(typeof(SampleRequestSampleTrialReportRow).GetProperty(nameof(SampleRequestSampleTrialReportRow.WorkDecision))!, decision),
+                Expression.Bind(typeof(SampleRequestSampleTrialReportRow).GetProperty(nameof(SampleRequestSampleTrialReportRow.LabTaskRank))!,
+                    rank),
                 Expression.Bind(typeof(SampleRequestSampleTrialReportRow).GetProperty(nameof(SampleRequestSampleTrialReportRow.HasSalePriceWork))!, price),
                 Expression.Bind(typeof(SampleRequestSampleTrialReportRow).GetProperty(nameof(SampleRequestSampleTrialReportRow.HasSaleFeedbackWork))!, feedback)
             ])), parameter);

@@ -14,6 +14,7 @@ internal static class SampleRequestDailyPriorityFactsPage
 {
     internal static bool CanRead(GetSampleRequestSampleTrialsQuery request)
         => request.SuggestionKeyword is null && (request.GroupByCustomer ||
+               (request.WorkBucket == SampleRequestWorkBucket.All && request.SampleRequestIds is { Length: > 0 and <= 100 }) ||
                request.WorkBucket is SampleRequestWorkBucket.MyActionRequired or SampleRequestWorkBucket.ActionRequired) && request.WorkSort == SampleRequestWorkSort.WorkPriority &&
            request.WorkAudience.HasValue && !request.IncludeTrialHistory &&
            (request.WorkBucket is SampleRequestWorkBucket.All or SampleRequestWorkBucket.Rework or
@@ -88,6 +89,14 @@ internal static class SampleRequestDailyPriorityFactsPage
         var prefixSize = Math.Min((long)pageNumber * pageSize, int.MaxValue);
         var pinned = (access.PinnedRequestIds ?? []).ToHashSet();
         var priorities = SampleWorkTaskPriority.Normalize(access.PriorityTasks).ToHashSet();
+        HashSet<string> taskFilters = (access.Audience, access.Bucket) switch
+        {
+            (SampleRequestWorkAudience.Sale, SampleRequestWorkBucket.MyActionRequired or SampleRequestWorkBucket.ActionRequired)
+                => priorities.Where(SampleWorkTaskPriority.IsSaleFilter).ToHashSet(),
+            (SampleRequestWorkAudience.Lab or SampleRequestWorkAudience.LabAdmin, SampleRequestWorkBucket.ActionRequired)
+                => priorities.Where(SampleWorkTaskPriority.IsLabFilter).ToHashSet(),
+            _ => []
+        };
         var taskCounts = SampleWorkTaskPriority.Codes.ToDictionary(code => code, _ => 0);
         var retained = new List<CustomerGroup>();
         List<Candidate> current = [];
@@ -123,9 +132,12 @@ internal static class SampleRequestDailyPriorityFactsPage
                 access.Audience is null or SampleRequestWorkAudience.LabAdmin;
             var tasks = SampleWorkTaskPriority.Tasks(row.State.Facts, decision, access.Audience, row.State.NeedsSchedule, row.Status);
             foreach (var task in tasks) taskCounts[task]++;
+            if (taskFilters.Count > 0 && !tasks.Any(taskFilters.Contains)) continue;
             current.Add(new(row, SampleRequestWorkSortQuery.Rank(row.Status, mine, access.Audience,
-                access.Audience == SampleRequestWorkAudience.Sale && SampleWorkDecisionRules.HasSaleFeedbackWork(row.State.Facts) && decision.Code != "CompleteRequest" ? "FollowUpCustomer" : decision.Code),
-                row.State.Facts.Open && role == "Lab" && row.Due < day, pinned.Contains(row.State.RequestId), tasks.Any(priorities.Contains)));
+                access.Audience == SampleRequestWorkAudience.Sale && SampleWorkDecisionRules.HasSaleFeedbackWork(row.State.Facts) && decision.Code != "CompleteRequest" ? "FollowUpCustomer" : decision.Code,
+                SampleWorkTaskPriority.ResolveLabRank(row.State.Facts, decision.Code)),
+                row.State.Facts.Open && role == "Lab" && row.Due < day, pinned.Contains(row.State.RequestId),
+                taskFilters.Count == 0 && tasks.Any(priorities.Contains)));
         }
         Finish();
         var offset = (long)(pageNumber - 1) * pageSize;
@@ -151,7 +163,8 @@ internal static class SampleRequestDailyPriorityFactsPage
                 role == "President" && access.Pricing || role == "LabAdmin" && access.Schedule &&
                 access.Audience is null or SampleRequestWorkAudience.LabAdmin;
             return new Candidate(row, SampleRequestWorkSortQuery.Rank(row.Status, mine, access.Audience,
-                access.Audience == SampleRequestWorkAudience.Sale && SampleWorkDecisionRules.HasSaleFeedbackWork(row.State.Facts) && decision.Code != "CompleteRequest" ? "FollowUpCustomer" : decision.Code),
+                access.Audience == SampleRequestWorkAudience.Sale && SampleWorkDecisionRules.HasSaleFeedbackWork(row.State.Facts) && decision.Code != "CompleteRequest" ? "FollowUpCustomer" : decision.Code,
+                SampleWorkTaskPriority.ResolveLabRank(row.State.Facts, decision.Code)),
                 row.State.Facts.Open && role == "Lab" && row.Due < day, false,
                 SampleWorkTaskPriority.Tasks(row.State.Facts, decision, access.Audience, row.State.NeedsSchedule, row.Status)
                     .Any(task => access.PriorityTasks?.Contains(task) == true));

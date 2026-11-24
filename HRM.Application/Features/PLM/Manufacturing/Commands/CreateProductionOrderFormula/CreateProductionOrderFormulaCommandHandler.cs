@@ -76,6 +76,8 @@ internal sealed class CreateProductionOrderFormulaCommandHandler(
                 && x.Detail.MerchandiseOrder.CompanyId == company)
                 .Include(x => x.ProductionOrder)
                 .Include(x => x.Detail)
+                .OrderByDescending(x => x.Detail.ReplacementSourceManufacturingFormulaId.HasValue)
+                .ThenBy(x => x.MerchandiseOrderDetailId)
                 .FirstOrDefaultAsync(ct);
             if (link is null)
             {
@@ -120,7 +122,9 @@ internal sealed class CreateProductionOrderFormulaCommandHandler(
                 return Fail("Lệnh đã có công thức hiệu lực hoặc chờ xử lý trong nhánh đang chọn.");
             }
 
-            var resolved = await inputResolver.ResolveAsync(order, source, request.Items, ct, allowUntrackedSourceRows: true);
+            var isReplacement = link.Detail.ReplacementSourceManufacturingFormulaId.HasValue;
+            var items = isReplacement ? null : request.Items;
+            var resolved = await inputResolver.ResolveAsync(order, source, items, ct, allowUntrackedSourceRows: !isReplacement);
             if (!resolved.Success || resolved.Data is null)
             {
                 return Fail(resolved.Message ?? "Công thức không hợp lệ.");
@@ -147,7 +151,7 @@ internal sealed class CreateProductionOrderFormulaCommandHandler(
             var previousExpectedDate = order.ExpectedDate;
             order.ExpectedDate = request.ExpectedDate;
             order.ManufacturingDate = request.ManufacturingDate;
-            order.PlpuNote = await inputResolver.BuildPlpuNoteAsync(order, source, request.Items, resolved.Data, request.PlpuNote ?? order.PlpuNote, ct, allowUntrackedSourceRows: true);
+            order.PlpuNote = await inputResolver.BuildPlpuNoteAsync(order, source, items, resolved.Data, request.PlpuNote ?? order.PlpuNote, ct, allowUntrackedSourceRows: !isReplacement);
             order.LabNote = ManufacturingNoteRules.MergeLab(request.LabNote ?? order.LabNote, sourceNote);
             PatchHelper.SetIfNotNull(request.Requirement, () => order.Requirement, v => order.Requirement = v);
             PatchHelper.SetIfNotNull(request.QcCheck, () => order.QcCheck, v => order.QcCheck = v);
@@ -173,7 +177,9 @@ internal sealed class CreateProductionOrderFormulaCommandHandler(
                 company,
                 employee,
                 now,
-                await codes.GenerateMonthlyCodeAsync(company, DocumentPrefix.VA.ToString(), ct)
+                isReplacement
+                    ? await GenerateReplacementCodeAsync(company, source.ExternalId, ct)
+                    : await codes.GenerateMonthlyCodeAsync(company, DocumentPrefix.VA.ToString(), ct)
             );
             formula.Name = "F001";
             formula.Note = note;
@@ -264,5 +270,32 @@ internal sealed class CreateProductionOrderFormulaCommandHandler(
         CreatedDate = now,
         Note = $"Cập nhật bởi hệ thống vào {now} bởi {user.UserName}"
     }, ct);
+    private async Task<string> GenerateReplacementCodeAsync(Guid company, string sourceCode, CancellationToken ct)
+    {
+        var formulas = db.ManufacturingFormulas.AsNoTracking().Where(x => x.CompanyId == company);
+        var separator = sourceCode.LastIndexOf('-');
+        var candidateRoot = separator > 0 && int.TryParse(sourceCode.AsSpan(separator + 1), out _)
+            ? sourceCode[..separator]
+            : sourceCode;
+        var root = await formulas.Where(x => x.ExternalId == candidateRoot)
+            .Select(x => new { x.ManufacturingFormulaId, x.ExternalId })
+            .SingleOrDefaultAsync(ct);
+        if (root is not null)
+        {
+            await db.LockManufacturingFormulaAsync(root.ManufacturingFormulaId, company, ct);
+        }
+
+        var prefix = (root?.ExternalId ?? sourceCode) + "-";
+        var pattern = prefix.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
+        var existingCodes = await formulas.Where(x => EF.Functions.ILike(x.ExternalId, pattern, "\\"))
+            .Select(x => x.ExternalId)
+            .ToListAsync(ct);
+        var lastNumber = existingCodes
+            .Select(code => int.TryParse(code.AsSpan(prefix.Length), out var number) ? number : 0)
+            .DefaultIfEmpty()
+            .Max();
+        return prefix + checked(lastNumber + 1).ToString(System.Globalization.CultureInfo.InvariantCulture);
+    }
+
     private static OperationResult<ProductionOrderFormulaCreatedDto> Fail(string message) => OperationResult<ProductionOrderFormulaCreatedDto>.Fail(message);
 }

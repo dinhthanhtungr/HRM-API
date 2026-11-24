@@ -102,6 +102,11 @@ internal sealed class GetSaleOrderByIdQueryHandler
                             && x.Status != "Cancelled" && x.Status != "Delivered" && x.Status != "Completed"
                             && detail.Status == nameof(HRM.Domain.Enums.Merchadises.MerchadiseStatus.WaitingForStandardSample),
                         MerchandiseOrderDetailId = detail.MerchandiseOrderDetailId,
+                        SourceMerchandiseOrderId = detail.ComplaintReportLine == null
+                            ? null : detail.ComplaintReportLine.SourceMerchandiseOrderDetail.MerchandiseOrderId,
+                        SourceMerchandiseOrderDetailId = detail.ComplaintReportLine == null
+                            ? null : detail.ComplaintReportLine.SourceMerchandiseOrderDetailId,
+                        ReplacementSourceManufacturingFormulaId = detail.ReplacementSourceManufacturingFormulaId,
                         ProductId = detail.ProductId,
                         ProductExternalIdSnapshot = detail.Product.ColourCode ??
                                                     detail.Product.Code ??

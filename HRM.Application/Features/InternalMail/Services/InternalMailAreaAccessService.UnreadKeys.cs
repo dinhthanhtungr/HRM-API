@@ -37,11 +37,17 @@ public sealed partial class InternalMailAreaAccessService
     }
 
     internal async Task<(IQueryable<Notification> Visible, Guid[]? StandaloneIds)> UnreadHubEventsForConversationsAsync(
-        IQueryable<Notification> visible, IQueryable<Notification> inbox, Guid[] conversationIds, CancellationToken ct)
+        IQueryable<Notification> visible, IQueryable<Notification> inbox, Guid[] conversationIds, CancellationToken ct,
+        Guid[]? suppressedNotificationIds = null)
     {
         const int maxStandaloneCandidates = 4096;
         var links = db.QueryInternalMailNotificationLinks(user.CompanyId ?? Guid.Empty);
-        var standaloneIds = await BadgeNotifications(inbox).Where(n => n.UserStates.Any(s =>
+        // The unread-key query already computed this complete set within the same request.
+        // A null set means the shortlist overflowed and we still need the SQL predicate.
+        var badgeInbox = suppressedNotificationIds is null
+            ? BadgeNotifications(inbox)
+            : inbox.Where(n => !suppressedNotificationIds.Contains(n.Id));
+        var standaloneIds = await badgeInbox.Where(n => n.UserStates.Any(s =>
                 s.UserId == user.EmployeeId && !s.IsRead && !s.IsArchived) &&
                 !links.Any(l => l.NotificationId == n.Id && l.HasConversation))
             .Select(n => n.Id).Take(maxStandaloneCandidates + 1).ToArrayAsync(ct);
@@ -52,7 +58,7 @@ public sealed partial class InternalMailAreaAccessService
             l.NotificationId == n.Id && l.ConversationId.HasValue && conversationIds.Contains(l.ConversationId.Value))), standaloneIds);
     }
 
-    internal async Task<(Guid[] ConversationIds, IReadOnlyDictionary<Guid, int>? LegacyCounts)> UnreadHubConversationIdsAsync(
+    internal async Task<(Guid[] ConversationIds, IReadOnlyDictionary<Guid, int>? LegacyCounts, Guid[]? SuppressedNotificationIds)> UnreadHubConversationIdsAsync(
         IQueryable<Notification> inbox, CancellationToken ct)
     {
         const int maxSuppressedCandidates = 4096;
@@ -60,14 +66,14 @@ public sealed partial class InternalMailAreaAccessService
                 user.CompanyId ?? Guid.Empty, user.EmployeeId ?? Guid.Empty)
             .Take(maxSuppressedCandidates + 1).ToArrayAsync(ct);
         if (suppressed.Length > maxSuppressedCandidates)
-            return (await UnreadHubConversationIds(inbox).ToArrayAsync(ct), null);
+            return (await UnreadHubConversationIds(inbox).ToArrayAsync(ct), null, null);
         var ownUnreadIds = inbox.Where(n => !suppressed.Contains(n.Id) && n.UserStates.Any(s =>
             s.UserId == user.EmployeeId && !s.IsRead && !s.IsArchived)).Select(n => n.Id);
         var linked = await db.QueryInternalMailNotificationLinks(user.CompanyId ?? Guid.Empty)
             .Where(l => l.ConversationId.HasValue && ownUnreadIds.Contains(l.NotificationId))
             .Select(l => l.ConversationId!.Value).Distinct().ToArrayAsync(ct);
         var legacy = await LegacyUnreadCountsByConversationAsync(ct);
-        return (linked.Concat(legacy.Keys).Distinct().ToArray(), legacy);
+        return (linked.Concat(legacy.Keys).Distinct().ToArray(), legacy, suppressed);
     }
 
     internal async Task<Guid[]> UnreadConversationIdsAsync(InternalMailRelatedType? relatedType, CancellationToken ct)

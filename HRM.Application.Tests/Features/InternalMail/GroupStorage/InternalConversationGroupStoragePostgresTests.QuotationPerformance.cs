@@ -1,6 +1,7 @@
 using System.Data.Common;
 using System.Diagnostics;
 using System.Text.Json;
+using HRM.Application.Features.InternalMail.Dtos;
 using HRM.Application.Features.InternalMail.Queries.GetConversations;
 using HRM.Application.Features.InternalMail.Services;
 using HRM.Application.Features.Notifications.Services;
@@ -114,6 +115,60 @@ public sealed partial class InternalConversationGroupStoragePostgresTests
             Assert.Equal("SYNTHETIC", item.QuotationInfo!.QuotationCode);
         });
         Assert.All(firstFeed, item => Assert.False(item.IsRead));
+        var records = new List<object>();
+        var threadId = firstConversations.Items[0].ConversationId;
+        Task<List<InternalMessageDto>> MessagePage() => areas.Messages().Where(message => message.InternalConversationId == threadId)
+            .OrderByDescending(message => message.SentAt).ThenByDescending(message => message.InternalMessageId).Take(30)
+            .Select(message => new InternalMessageDto { MessageId = message.InternalMessageId, IsDeleted = message.IsDeleted })
+            .ToListAsync();
+        var expectedMessages = await MessagePage();
+        await areas.AttachUnreadBadgesAsync(threadId, expectedMessages, default);
+        var expectedBadges = JsonSerializer.Serialize(expectedMessages.Select(message => message.UnreadBadges));
+        var messageTimes = new List<double>();
+        var badgeTimes = new List<double>();
+        for (var sample = 0; sample < 5; sample++)
+        {
+            var clock = Stopwatch.StartNew();
+            var messages = await MessagePage();
+            messageTimes.Add(clock.Elapsed.TotalMilliseconds);
+            clock.Restart();
+            await areas.AttachUnreadBadgesAsync(threadId, messages, default);
+            badgeTimes.Add(clock.Elapsed.TotalMilliseconds);
+            Assert.Equal(expectedMessages.Select(message => message.MessageId), messages.Select(message => message.MessageId));
+            Assert.Equal(expectedBadges, JsonSerializer.Serialize(messages.Select(message => message.UnreadBadges)));
+        }
+        records.Add(new { kind = "thread-page-projection", samples = 5, medianMs = messageTimes.Order().ElementAt(2), minMs = messageTimes.Min(), maxMs = messageTimes.Max() });
+        records.Add(new { kind = "thread-unread-badges", samples = 5, medianMs = badgeTimes.Order().ElementAt(2), minMs = badgeTimes.Min(), maxMs = badgeTimes.Max() });
+        foreach (var kind in new[] { "conversations", "feed" })
+        {
+            var elapsed = new List<double>();
+            var sqlRuns = new List<IReadOnlyList<QuotationCommandMetric>>();
+            for (var sample = 0; sample < 5; sample++)
+            {
+                commands.Items.Clear();
+                var timer = Stopwatch.StartNew();
+                if (kind == "conversations")
+                {
+                    var result = await Conversations();
+                    Assert.Equal(firstConversations.Items.Select(i => i.ConversationId), result.Items.Select(i => i.ConversationId));
+                }
+                else
+                {
+                    var result = await feed.GetFeedAsync(take: 30, categoryCode: "quotation", unreadOnly: true);
+                    Assert.Equal(firstFeed.Select(i => i.Id), result.Select(i => i.Id));
+                }
+                elapsed.Add(timer.Elapsed.TotalMilliseconds);
+                sqlRuns.Add(commands.Items.ToArray());
+            }
+            records.Add(new { kind, samples = 5, medianMs = elapsed.Order().ElementAt(2),
+                minMs = elapsed.Min(), maxMs = elapsed.Max(), commands = sqlRuns });
+        }
+        var destination = Path.Combine(postgres.RepositoryRoot, "artifacts", "quotation-unread-performance");
+        Directory.CreateDirectory(destination);
+        await File.WriteAllTextAsync(Path.Combine(destination, role + ".json"), JsonSerializer.Serialize(new
+        {
+            role, quoteRoots = 120, privateChildren = 60, unrelatedRoots = 400, records
+        }));
         var pageIds = firstConversations.Items.Select(i => i.ConversationId).ToArray();
         var links = db.QueryInternalMailNotificationLinks(user.CompanyId!.Value);
         var visibleMessages = areas.Messages().Where(m => pageIds.Contains(m.InternalConversationId) && !m.IsDeleted);
@@ -146,37 +201,6 @@ public sealed partial class InternalConversationGroupStoragePostgresTests
             .Select(n => new { n.Id, n.Topic, n.Title, n.Message, n.CreatedDate }).ToArrayAsync();
         Assert.Equal(baselineFeed.Select(n => (n.Id, n.Topic, n.Title, n.Message, n.CreatedDate)),
             firstFeed.Select(n => (n.Id, n.Topic, n.Title, n.Message, n.CreatedDate)));
-        var records = new List<object>();
-        foreach (var kind in new[] { "conversations", "feed" })
-        {
-            var elapsed = new List<double>();
-            var sqlRuns = new List<IReadOnlyList<QuotationCommandMetric>>();
-            for (var sample = 0; sample < 5; sample++)
-            {
-                commands.Items.Clear();
-                var timer = Stopwatch.StartNew();
-                if (kind == "conversations")
-                {
-                    var result = await Conversations();
-                    Assert.Equal(firstConversations.Items.Select(i => i.ConversationId), result.Items.Select(i => i.ConversationId));
-                }
-                else
-                {
-                    var result = await feed.GetFeedAsync(take: 30, categoryCode: "quotation", unreadOnly: true);
-                    Assert.Equal(firstFeed.Select(i => i.Id), result.Select(i => i.Id));
-                }
-                elapsed.Add(timer.Elapsed.TotalMilliseconds);
-                sqlRuns.Add(commands.Items.ToArray());
-            }
-            records.Add(new { kind, samples = 5, medianMs = elapsed.Order().ElementAt(2),
-                minMs = elapsed.Min(), maxMs = elapsed.Max(), commands = sqlRuns });
-        }
-        var destination = Path.Combine(postgres.RepositoryRoot, "artifacts", "quotation-unread-performance");
-        Directory.CreateDirectory(destination);
-        await File.WriteAllTextAsync(Path.Combine(destination, role + ".json"), JsonSerializer.Serialize(new
-        {
-            role, quoteRoots = 120, privateChildren = 60, unrelatedRoots = 400, records
-        }));
     }
 
     private sealed record QuotationCommandMetric(int Sequence, double Milliseconds, int SqlCharacters, string Shape);

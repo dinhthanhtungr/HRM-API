@@ -42,8 +42,10 @@ internal sealed class GetInternalConversationDetailQueryHandler
             return null;
         }
 
+        using var timing = new NotificationQueryTiming(null, "thread-detail",
+            System.Diagnostics.Activity.Current?.GetTagItem(NotificationDiagnosticTags.ThreadTiming) is "enabled");
         // The authorized query both checks access and loads the result in one round trip.
-        var conversation = await _areas.Conversations()
+        var conversation = await timing.RunAsync("thread-access", () => _areas.Conversations()
             .AsNoTracking()
             .Where(x =>
                 x.InternalConversationId == request.ConversationId &&
@@ -52,7 +54,7 @@ internal sealed class GetInternalConversationDetailQueryHandler
             // DescribeAsync below supplies the canonical unread count; do not also count legacy read states here.
             .Select(InternalConversationDetailProjection.ForEmployee(employeeId.Value, _dbContext.InternalMessages,
                 _dbContext.InternalConversations, includeLegacyUnread: false))
-            .FirstOrDefaultAsync(cancellationToken);
+            .FirstOrDefaultAsync(cancellationToken));
 
         if (conversation is null)
         {

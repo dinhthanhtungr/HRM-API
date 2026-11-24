@@ -322,7 +322,7 @@ Base route: `/api/v1/internal-mail`
 | `GET` | `/conversations` | Hòm thư đã gộp theo conversation của current employee |
 | `POST` | `/conversations` | Tạo cuộc trao đổi nội bộ tự do (`RelatedType = Internal`) |
 | `GET` | `/conversations/{conversationId}` | Lấy header và participant |
-| `GET` | `/conversations/{conversationId}/messages` | Lấy thread có phân trang |
+| `GET` | `/conversations/{conversationId}/messages` | Lấy thread có phân trang, trang đầu hỗ trợ `includeUnreadBadges=true` |
 | `GET` | `/conversations/{conversationId}/attachments` | Lấy attachment chat và tệp gốc của Sample Request liên kết theo `kind=All|Image|File`, phân trang độc lập với message |
 | `GET` | `/conversations/{conversationId}/messages/search` | Tìm message trong một thread để FE hiển thị số kết quả và nhảy tới message |
 | `GET` | `/conversations/{conversationId}/messages/{messageId}/context` | Lấy cụm message trước/sau message đích khi kết quả search chưa được load |
@@ -391,6 +391,20 @@ Ví dụ response rút gọn:
 ```
 
 ## Đồng bộ trạng thái đã đọc
+
+Ở môi trường Development, GET chi tiết hội thoại và GET `/messages` có
+`Server-Timing` cho kiểm quyền, tải trang và tính badge (`nm_thread_access`,
+`nm_thread_page`, `nm_thread_badges`). So sánh với thời gian chờ phản hồi trong
+Network và thời điểm nội dung hiện trong Performance để tách thời gian API,
+truyền dữ liệu và hiển thị. Chỉ phản hồi GET 200 đã xác thực có header này.
+
+Khi Hub yêu cầu `includeUnreadBadges=true` ở trang đầu, từng tin nhắn trả
+`unreadBadges` với mã dùng để khử trùng và nhóm badge liên quan. Metadata chỉ
+tính các khoản chưa đọc của nhân viên hiện tại, trong phạm vi công ty và luồng
+được phép đọc. Dữ liệu dùng cùng phạm vi đếm với `unread-summary` cho notification
+liên kết, tin nội bộ cũ, mention/reply và reaction. FE dùng khoản giảm này để cập
+nhật badge trong lúc gửi xác nhận đọc, rồi thay bằng số tổng chính thức khi các
+yêu cầu ghi kết thúc. Các lượt đọc trang sau và caller cũ giữ contract hiện tại.
 
 Tối ưu tải (2026-10-04): detail tái sử dụng conversation đã được lọc quyền để dựng `areas`, gộp
 unread của khu vực hiện tại vào cùng lần truy vấn notification và chỉ kiểm tra eligibility của

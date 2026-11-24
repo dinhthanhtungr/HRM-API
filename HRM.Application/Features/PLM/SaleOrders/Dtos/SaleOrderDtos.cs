@@ -19,6 +19,8 @@ public sealed class CreateSaleOrderResultDto
 /// </summary>
 public sealed record SaleOrderLineRequest
 {
+    public Guid? SourceMerchandiseOrderDetailId { get; init; }
+    public Guid? ReplacementSourceManufacturingFormulaId { get; init; }
     public IReadOnlyList<HRM.Application.Features.PLM.SaleOrders.DeliverySchedules.DeliveryScheduleInput>? DeliverySchedules { get; init; }
     public bool StandardSampleReviewed { get; init; }
     public bool HasStandardSample { get; init; }
@@ -47,6 +49,7 @@ public sealed record SaleOrderLineRequest
 /// </summary>
 public sealed record CreateSaleOrderRequest
 {
+    public Guid? SourceMerchandiseOrderId { get; init; }
     public Guid MerchandiseOrderId { get; init; }
     public Guid AttachmentCollectionId { get; init; }
     public Guid CustomerId { get; init; }
@@ -161,6 +164,9 @@ public sealed class SaleOrderDetailDto : SaleOrderListItemDto
 /// </summary>
 public sealed class SaleOrderLineDto
 {
+    public Guid? SourceMerchandiseOrderId { get; init; }
+    public Guid? SourceMerchandiseOrderDetailId { get; init; }
+    public Guid? ReplacementSourceManufacturingFormulaId { get; init; }
     public bool CanConfirmStandardSample { get; init; }
     public Guid MerchandiseOrderDetailId { get; init; }
     public Guid ProductId { get; init; }

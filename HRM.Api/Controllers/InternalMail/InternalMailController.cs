@@ -176,6 +176,7 @@ public sealed class InternalMailController : ControllerBase
         [FromQuery] int pageNumber = 1,
         [FromQuery] int pageSize = 30,
         [FromQuery] string? areaCode = null,
+        [FromQuery] bool includeUnreadBadges = false,
         CancellationToken cancellationToken = default)
     {
         var result = await _sender.Send(new GetInternalMessagesQuery
@@ -183,7 +184,8 @@ public sealed class InternalMailController : ControllerBase
             AreaCode = areaCode,
             ConversationId = conversationId,
             PageNumber = pageNumber,
-            PageSize = pageSize
+            PageSize = pageSize,
+            IncludeUnreadBadges = includeUnreadBadges
         }, cancellationToken);
 
         return result is null ? NotFound() : Ok(result);

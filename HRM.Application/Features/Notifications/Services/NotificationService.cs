@@ -341,7 +341,7 @@ internal sealed partial class NotificationService : INotificationService, IInter
         var personalConversationScope = personalEventIds is null ? null
             : await timing.RunAsync("personal-conversation-keys", () =>
                 _areas.HubConversationIdsForEvents(personalEventIds).ToArrayAsync(cancellationToken));
-        (Guid[] ConversationIds, IReadOnlyDictionary<Guid, int>? LegacyCounts)? initialUnreadKeys = null;
+        (Guid[] ConversationIds, IReadOnlyDictionary<Guid, int>? LegacyCounts, Guid[]? SuppressedNotificationIds)? initialUnreadKeys = null;
         if (unreadOnly && !mentionedOnly)
             initialUnreadKeys = await timing.RunAsync("unread-keys",
                 () => _areas.UnreadHubConversationIdsAsync(inbox, cancellationToken));
@@ -376,7 +376,8 @@ internal sealed partial class NotificationService : INotificationService, IInter
             if (candidateConversationIds is not null)
                 unreadConversationIds = unreadConversationIds.Intersect(candidateConversationIds).ToArray();
             var unreadScope = await timing.RunAsync("unread-filter", () =>
-                _areas.UnreadHubEventsForConversationsAsync(visible, inbox, unreadConversationIds, cancellationToken));
+                _areas.UnreadHubEventsForConversationsAsync(
+                    visible, inbox, unreadConversationIds, cancellationToken, unreadKeys.SuppressedNotificationIds));
             visible = unreadScope.Visible;
             unreadStandaloneIds = unreadScope.StandaloneIds;
             // The outer unread predicate admits linked events only from these threads.
@@ -588,15 +589,7 @@ internal sealed partial class NotificationService : INotificationService, IInter
             () => _areas.LegacyUnreadCountsByTypeAsync(cancellationToken));
         foreach (var legacy in legacyCounts)
         {
-            var category = legacy.Key switch
-            {
-                InternalMailRelatedType.SampleRequest => NotificationCategoryCodes.SampleRequest,
-                InternalMailRelatedType.Quotation => NotificationCategoryCodes.Quotation,
-                InternalMailRelatedType.MfgProductionOrder => NotificationCategoryCodes.Production,
-                InternalMailRelatedType.MerchandiseOrder => NotificationCategoryCodes.SalesOrder,
-                InternalMailRelatedType.Customer => NotificationCategoryCodes.Customer,
-                _ => NotificationCategoryCodes.InternalMail
-            };
+            var category = InternalMailAreaAccessService.LegacyUnreadBadgeCategory(legacy.Key);
             categoryCounts[category] += legacy.Value;
             var key = (category, "message");
             eventGroupCounts[key] = eventGroupCounts.GetValueOrDefault(key) + legacy.Value;

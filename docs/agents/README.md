@@ -11,15 +11,15 @@ Dành cho user và agent khi quản lý, sửa hoặc kiểm tra điều hướn
 | Nguyên tắc chung mọi project, cách dùng context | [AGENTS dùng chung](C:/Users/it01/.codex/AGENTS.md) |
 | Đường dẫn HRM, giới hạn repo D/F | [Workspace HRM](workspace.md) |
 | Trình bày cấu trúc file/thư mục khi bàn bạc thay đổi FE/BE | [Quy ước chung trong Workspace HRM](workspace.md#trình-bày-cấu-trúc-code-khi-bàn-bạc-thay-đổi-hrm) |
-| Trigger bàn giao/hiệu năng HRM | [Router BE](../../AGENTS.md), [Router FE](D:/UserInterface/hrm-mobile/AGENTS.md) |
+| Trigger bàn giao/hiệu năng HRM | [Router BE](../../AGENTS.md), [Router FE](D:/Vietaus_one_websites/VietausOne.FE.Next/AGENTS.md) |
 | Tiếp tục công việc từ chat cũ | [Bàn giao chat](chat-handoff.md) |
 | Chẩn đoán chậm, xin phép thêm timing | [Hiệu năng HRM](hrm-performance.md) |
 | Trigger BE, security, module | [Router BE](../../AGENTS.md) |
 | Cách tổ chức và bảo toàn rule BE | [Authoring BE](../../.agents/agent-authoring.md) |
-| Trigger FE, form, UI, API | [Router FE](D:/UserInterface/hrm-mobile/AGENTS.md) |
-| Cách sửa tài liệu và rule FE | [Documentation FE](D:/UserInterface/hrm-mobile/docs/agents/docs.md) |
+| Trigger FE, form, UI, API | [Router FE](D:/Vietaus_one_websites/VietausOne.FE.Next/AGENTS.md) |
+| Cách sửa tài liệu và rule FE | [Documentation FE](D:/Vietaus_one_websites/VietausOne.FE.Next/docs/agents/docs.md) |
 | Nghiệp vụ, quyền, API, status, side effect | README gần feature được router repo/module dẫn tới; không chép lại tại trang này |
-| Quyền Git/nhánh | [Git BE](../../.agents/git-and-build.md), [Git FE](D:/UserInterface/hrm-mobile/docs/agents/git.md) và invariant repo |
+| Quyền Git/nhánh | [Git BE](../../.agents/git-and-build.md), [Git FE](D:/Vietaus_one_websites/VietausOne.FE.Next/docs/agents/git.md) và invariant repo |
 | Lệnh chat `save`, `load`, `laod` | [Đồng bộ BE/FE qua main](workspace.md#đồng-bộ-befe-qua-main) |
 | Thuật ngữ FE/BE | [Glossary](../glossary/README.md) |
 | Thêm/sửa/đổi tên/xóa cờ tính năng FE/BE, biến môi trường hoặc cấu hình build/deploy liên quan | AGENTS FE/BE → [quy tắc cập nhật sổ tính năng](../feature-flags.md#quy-tắc-cập-nhật-bắt-buộc); nguồn duy nhất cho danh mục và quy tắc cập nhật |

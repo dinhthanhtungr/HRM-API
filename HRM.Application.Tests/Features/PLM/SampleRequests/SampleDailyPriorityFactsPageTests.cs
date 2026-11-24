@@ -12,7 +12,7 @@ public sealed class SampleDailyPriorityFactsPageTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task FinalizationCountsAndPriorityExcludeOrdinaryConfirmation(bool grouped)
+    public async Task FinalizationFilterExcludesOrdinaryConfirmation(bool grouped)
     {
         var ordinary = Row(Guid.NewGuid(), new() { Open = true, FormulaStatus = "Draft" }, "InProgress", false, null);
         var final = Row(Guid.NewGuid(), new() { Open = true, FormulaStatus = "Approved", LabFinalizationRequested = true,
@@ -26,7 +26,7 @@ public sealed class SampleDailyPriorityFactsPageTests
         Assert.Equal(1, page.TaskCounts!["FinalizeFormula"]);
         Assert.Equal(1, page.TaskCounts["ApproveFormula"]);
         Assert.Equal(final.State.RequestId, Assert.Single(page.Payload.States).RequestId);
-        Assert.Equal(2, page.TotalCustomers);
+        Assert.Equal(1, page.TotalCustomers);
     }
 
     [Theory]
@@ -55,7 +55,7 @@ public sealed class SampleDailyPriorityFactsPageTests
         var first = await SampleRequestDailyPriorityFactsPage.FromRowsAsync(Stream([pending, fresh]), raw, access, DateTime.Today, 1, 1, default);
         var second = await SampleRequestDailyPriorityFactsPage.FromRowsAsync(Stream([pending, fresh]), raw, access, DateTime.Today, 2, 1, default);
         Assert.Equal(1, first.TaskCounts!["NewRequest"]);
-        Assert.Equal(1, first.TaskCounts["ApproveFormula"]);
+        Assert.Equal(2, first.TaskCounts["ApproveFormula"]);
         Assert.Equal(fresh.State.RequestId, Assert.Single(first.Payload.States).RequestId);
         Assert.Equal(pending.State.RequestId, Assert.Single(second.Payload.States).RequestId);
         Assert.Equal(2, first.TotalCustomers);
@@ -68,7 +68,7 @@ public sealed class SampleDailyPriorityFactsPageTests
     {
         var facts = new SampleWorkFacts { Open = true, FormulaStatus = "Draft" };
         var decision = SampleWorkDecisionRules.Resolve(facts);
-        Assert.Equal(new[] { "NewRequest" }, SampleWorkTaskPriority.Tasks(facts, decision, audience, false, "New"));
+        Assert.Equal(new[] { "NewRequest", "ApproveFormula" }, SampleWorkTaskPriority.Tasks(facts, decision, audience, false, "New"));
         Assert.Equal(new[] { "ApproveFormula" }, SampleWorkTaskPriority.Tasks(facts, decision, audience, false, "InProgress"));
         var closed = facts with { Open = false };
         Assert.Empty(SampleWorkTaskPriority.Tasks(closed, SampleWorkDecisionRules.Resolve(closed), audience, false, "Completed"));
@@ -77,10 +77,10 @@ public sealed class SampleDailyPriorityFactsPageTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task SelectedTaskMovesAcrossPageBoundaryWithoutDroppingOtherTasks(bool grouped)
+    public async Task LabTaskFiltersBeforePagingAndSupportsMultipleSelections(bool grouped)
     {
         var ordinary = Row(Guid.NewGuid(), new() { Open = true, FormulaStatus = "Draft" }, "InProgress", false, null);
-        var preferred = Row(Guid.NewGuid(), new() { Open = true, FormulaStatus = "Approved", RequestedKg = true }, "InProgress", false, null);
+        var preferred = Row(ordinary.CustomerId, new() { Open = true, FormulaStatus = "Approved", RequestedKg = true }, "InProgress", false, null);
         var access = new SampleRequestDailyPriorityFactsPage.Access(SampleRequestWorkAudience.Lab,
             true, false, false, false, [], "Lab", SampleRequestWorkBucket.ActionRequired,
             PriorityTasks: ["SendSample"], GroupByCustomer: grouped);
@@ -88,10 +88,18 @@ public sealed class SampleDailyPriorityFactsPageTests
         var first = await SampleRequestDailyPriorityFactsPage.FromRowsAsync(Stream([ordinary, preferred]), raw, access, DateTime.Today, 1, 1, default);
         var second = await SampleRequestDailyPriorityFactsPage.FromRowsAsync(Stream([ordinary, preferred]), raw, access, DateTime.Today, 2, 1, default);
         Assert.Equal(preferred.State.RequestId, Assert.Single(first.Payload.States).RequestId);
-        Assert.Equal(ordinary.State.RequestId, Assert.Single(second.Payload.States).RequestId);
-        Assert.Equal(2, first.TotalCustomers);
+        Assert.Empty(second.Payload.States);
+        Assert.Equal(1, first.TotalCustomers);
         Assert.Equal(1, first.TaskCounts!["SendSample"]);
         Assert.Equal(1, first.TaskCounts["ApproveFormula"]);
+        var combined = await SampleRequestDailyPriorityFactsPage.FromRowsAsync(Stream([ordinary, preferred]), raw,
+            access with { PriorityTasks = ["SendSample", "ApproveFormula"] }, DateTime.Today, 1, 2, default);
+        Assert.Equal(grouped ? 1 : 2, combined.TotalCustomers);
+        Assert.Equal(2, combined.Payload.States.Count);
+
+        var unfiltered = await SampleRequestDailyPriorityFactsPage.FromRowsAsync(Stream([ordinary, preferred]), raw,
+            access with { PriorityTasks = [] }, DateTime.Today, 1, 2, default);
+        Assert.Equal(2, unfiltered.Payload.States.Count);
     }
 
     [Fact]
@@ -106,6 +114,34 @@ public sealed class SampleDailyPriorityFactsPageTests
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SaleSelectionFiltersRowsAndEmptySelectionStillSorts(bool grouped)
+    {
+        var resume = Row(Guid.NewGuid(), new() { Open = true, LabPaused = true }, "InProgress", true, null);
+        var sample = Row(resume.CustomerId, new() { Open = true, PendingTrial = true, Kg = true },
+            "InProgress", true, null);
+        var raw = Array.Empty<SampleRequestSampleTrialReportRow>().AsQueryable();
+        var access = new SampleRequestDailyPriorityFactsPage.Access(SampleRequestWorkAudience.Sale,
+            false, true, false, false, [], "Sale", SampleRequestWorkBucket.MyActionRequired, GroupByCustomer: grouped);
+        var rows = new[] { resume, sample };
+        var filtered = await SampleRequestDailyPriorityFactsPage.FromRowsAsync(Stream(rows), raw,
+            access with { PriorityTasks = ["ResumeAfterLabRejection"] }, DateTime.Today, 1, 1, default);
+        Assert.Equal(resume.State.RequestId, Assert.Single(filtered.Payload.States).RequestId);
+        Assert.Equal(1, filtered.TotalCustomers);
+        Assert.Equal(1, filtered.TaskCounts!["SampleFeedback"]);
+
+        var sorted = await SampleRequestDailyPriorityFactsPage.FromRowsAsync(Stream(rows), raw,
+            access, DateTime.Today, 1, 2, default);
+        Assert.Equal(new[] { sample.State.RequestId, resume.State.RequestId }, sorted.Payload.States.Select(x => x.RequestId));
+        Assert.Equal(grouped ? 1 : 2, sorted.TotalCustomers);
+
+        var combined = await SampleRequestDailyPriorityFactsPage.FromRowsAsync(Stream(rows), raw,
+            access with { PriorityTasks = ["ResumeAfterLabRejection", "SampleFeedback"] }, DateTime.Today, 1, 2, default);
+        Assert.Equal(2, combined.Payload.States.Count);
+    }
+
+    [Theory]
     [InlineData(null, true)]
     [InlineData("BP", false)]
     public void SelectedSmartFilterKeepsFactsPagingWhileSuggestionsKeepTheirOwnPipeline(string? suggestion, bool enabled)
@@ -116,6 +152,25 @@ public sealed class SampleDailyPriorityFactsPageTests
             SearchSelections = "[{\"field\":\"colourCode\",\"value\":\"BP51076\"}]", SuggestionKeyword = suggestion };
         Assert.Equal(enabled, SampleRequestDailyPriorityFactsPage.CanRead(request));
     }
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(1, true)]
+    [InlineData(100, true)]
+    [InlineData(101, false)]
+    public void BoundedUngroupedPriorityRefreshUsesFactsPaging(int requestCount, bool expected)
+    {
+        var request = new GetSampleRequestSampleTrialsQuery
+        {
+            WorkAudience = SampleRequestWorkAudience.Sale,
+            WorkBucket = SampleRequestWorkBucket.All,
+            WorkSort = SampleRequestWorkSort.WorkPriority,
+            GroupByCustomer = false,
+            SampleRequestIds = Enumerable.Range(0, requestCount).Select(_ => Guid.NewGuid()).ToArray()
+        };
+
+        Assert.Equal(expected, SampleRequestDailyPriorityFactsPage.CanRead(request));
+    }
+
     [Fact]
     public async Task PinnedCustomerAtEndOfStreamIsSelectedBeforeEarlierCustomers()
     {
@@ -263,6 +318,7 @@ public sealed class SampleDailyPriorityFactsPageTests
                     ManagerBy = x.SaleWritable ? owner : Guid.NewGuid(), InfoType = x.State.Facts.Quotation ? "quotation" : "chip",
                     SampleQuantity = x.State.Facts.RequestedKg ? 2 : 0, ExpectedPriceQuoteDate = x.Due, ExpectedDeliveryDate = x.Due },
                 WorkDecision = SampleWorkDecisionRules.Resolve(x.State.Facts),
+                LabTaskRank = SampleWorkTaskPriority.ResolveLabRank(x.State.Facts, SampleWorkDecisionRules.Resolve(x.State.Facts).Code),
                 HasSalePriceWork = SampleWorkDecisionRules.HasSalePriceWork(x.State.Facts),
                 HasSaleFeedbackWork = SampleWorkDecisionRules.HasSaleFeedbackWork(x.State.Facts)
             }).AsQueryable();
@@ -275,6 +331,29 @@ public sealed class SampleDailyPriorityFactsPageTests
                 new(2026, 11, 6), 1, 15, CancellationToken.None);
             Assert.Equal(expectedIds, result.CustomerIds);
         }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task LabPriorityPutsOrderDeliveryAndExistingFormulasBeforePreparation(bool grouped)
+    {
+        var due = new DateTime(2026, 11, 1);
+        var prepare = Row(Guid.NewGuid(), new() { Open = true }, "New", false, due);
+        var approve = Row(Guid.NewGuid(), new() { Open = true, FormulaStatus = "Draft" }, "InProgress", false, null);
+        var chip = Row(Guid.NewGuid(), new() { Open = true, FormulaStatus = "Approved" }, "InProgress", false, null);
+        var kg = Row(Guid.NewGuid(), new() { Open = true, FormulaStatus = "Approved", RequestedKg = true }, "InProgress", false, null);
+        var finish = Row(Guid.NewGuid(), new() { Open = true, FormulaStatus = "Approved", Quotation = true,
+            LabFinalizationRequested = true, AcceptedPrice = true }, "InProgress", false, null);
+        var access = new SampleRequestDailyPriorityFactsPage.Access(SampleRequestWorkAudience.Lab, true, false, false, false, [],
+            GroupByCustomer: grouped);
+        var rows = new[] { prepare, approve, chip, kg, finish };
+        var raw = Array.Empty<SampleRequestSampleTrialReportRow>().AsQueryable();
+        var first = await SampleRequestDailyPriorityFactsPage.FromRowsAsync(Stream(rows), raw, access, due.AddDays(1), 1, 4, default);
+        var rest = await SampleRequestDailyPriorityFactsPage.FromRowsAsync(Stream(rows), raw, access, due.AddDays(1), 2, 4, default);
+        Assert.Equal(new[] { finish.State.RequestId, kg.State.RequestId, chip.State.RequestId, approve.State.RequestId },
+            first.Payload.States.Select(x => x.RequestId));
+        Assert.Equal(prepare.State.RequestId, Assert.Single(rest.Payload.States).RequestId);
     }
 
     [Fact]

@@ -40,6 +40,14 @@ internal sealed class CreateProductionOrderInformCommandHandler(
         {
             error = await references.ValidateInformAsync(request, companyId, ct);
             if (error is not null) return OperationResult<CreateProductionOrderInformResult>.Fail(error);
+            if (items.Count > 0 && await db.MerchandiseOrderDetails.AsNoTracking().AnyAsync(x =>
+                    x.MerchandiseOrderDetailId == request.MerchandiseOrderDetailId
+                    && x.MerchandiseOrder.CompanyId == companyId
+                    && x.ReplacementSourceManufacturingFormulaId != null, ct))
+            {
+                return OperationResult<CreateProductionOrderInformResult>.Fail(
+                    "Tạo lệnh trước, sau đó tạo công thức từ VA nguồn đã chọn trên đơn khiếu nại.");
+            }
             var now = clock.Now;
             var order = ProductionOrderInformFactory.Create(request, companyId, employeeId, now,
                 await externalIds.GenerateMonthlyCodeAsync(companyId, DocumentPrefix.MFG.ToString(), ct));

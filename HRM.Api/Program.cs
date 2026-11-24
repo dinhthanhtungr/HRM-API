@@ -53,7 +53,7 @@ app.UseForwardedHeaders(new ForwardedHeadersOptions
 //app.UseHttpsRedirection();
 app.UseMiddleware<HRM.Api.Diagnostics.SampleWorkRequestTimingMiddleware>();
 app.UseMiddleware<HRM.Api.Diagnostics.WarehouseMovementRequestTimingMiddleware>();
-app.UseMiddleware<HRM.Api.Diagnostics.NotificationRequestTimingMiddleware>();
+app.UseMiddleware<HRM.Api.Diagnostics.NotificationRequestTimingMiddleware>(app.Environment.IsDevelopment());
 app.UseMiddleware<HRM.Api.Diagnostics.IqcSuggestionRequestTimingMiddleware>();
 app.UseRouting();
 app.UseCors("DefaultCors");

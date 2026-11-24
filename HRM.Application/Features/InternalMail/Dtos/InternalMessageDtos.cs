@@ -37,9 +37,13 @@ public sealed class InternalMessageDto
     public InternalMessageReactionSummaryDto Reactions { get; set; } = InternalMessageReactionSummaryDto.Empty;
     public bool IsRead { get; set; }
     public DateTime? ReadAt { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<InternalMessageUnreadBadgeDto>? UnreadBadges { get; set; }
     public IReadOnlyList<InternalMessageReferenceDto> References { get; set; } = Array.Empty<InternalMessageReferenceDto>();
     public IReadOnlyList<InternalMessageAttachmentDto> Attachments { get; set; } = Array.Empty<InternalMessageAttachmentDto>();
 }
+
+public sealed record InternalMessageUnreadBadgeDto(string Key, string? CategoryCode, string? EventGroupCode, bool ForMe = false);
 
 public sealed class InternalMessageReplyDto
 {

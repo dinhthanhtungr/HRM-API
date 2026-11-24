@@ -86,6 +86,27 @@ public sealed class NotificationRequestTimingTests
         Assert.Single(header.Split(',').Where(metric => metric.TrimStart().StartsWith("nm_handler;", StringComparison.Ordinal)));
     }
 
+    [Theory]
+    [InlineData("/api/v1/internal-mail/conversations/10000000-0000-0000-0000-000000000001", true, true)]
+    [InlineData("/api/v1/internal-mail/conversations/10000000-0000-0000-0000-000000000001/messages", true, true)]
+    [InlineData("/api/v1/internal-mail/conversations/10000000-0000-0000-0000-000000000001/messages", false, false)]
+    [InlineData("/api/v1/internal-mail/conversations/10000000-0000-0000-0000-000000000001/messages/search", true, false)]
+    public async Task ThreadTimingIsEnabledOnlyForDevelopmentThreadReads(string path, bool development, bool expected)
+    {
+        var (context, response) = Create("GET", path, true);
+        var middleware = new NotificationRequestTimingMiddleware(async ctx =>
+        {
+            using (var timing = new NotificationQueryTiming(null, "thread-messages",
+                Activity.Current?.GetTagItem(NotificationDiagnosticTags.ThreadTiming) is "enabled"))
+                await timing.RunAsync("thread-badges", () => Task.CompletedTask);
+            await response.StartHeaders();
+        }, development);
+        await middleware.InvokeAsync(context);
+        var header = context.Response.Headers["Server-Timing"].ToString();
+        if (expected) Assert.Contains("nm_thread_badges;dur=", header);
+        else Assert.Empty(header);
+    }
+
     [Fact]
     public async Task ConcurrentRequestsDoNotMixPhasesAndHeadersCaptureSerializationTime()
     {

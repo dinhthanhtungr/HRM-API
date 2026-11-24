@@ -1,4 +1,5 @@
 using HRM.Application.Features.CRM.Quotations.Dtos;
+using System.Diagnostics;
 using HRM.Application.Commons.Authorization;
 using HRM.Application.Features.CRM.Quotations.Services;
 using HRM.Domain.Enums.CustomerEnum;
@@ -45,6 +46,8 @@ internal sealed class GetInternalMessagesQueryHandler
             return null;
         }
 
+        using var timing = new NotificationQueryTiming(null, "thread-messages",
+            Activity.Current?.GetTagItem(NotificationDiagnosticTags.ThreadTiming) is "enabled");
         var visibleIds = _areas.Messages().Select(m => m.InternalMessageId);
         var messageQuery = _areas.Messages(request.AreaCode)
             .AsNoTracking()
@@ -52,10 +55,10 @@ internal sealed class GetInternalMessagesQueryHandler
 
         // Preserve the authorized conversation check, including empty/wrong-area pages,
         // while counting messages in the same database round trip.
-        var access = await _areas.Conversations()
+        var access = await timing.RunAsync("thread-access", () => _areas.Conversations()
             .Where(c => c.InternalConversationId == request.ConversationId)
             .Select(c => new { TotalCount = messageQuery.Count() })
-            .FirstOrDefaultAsync(cancellationToken);
+            .FirstOrDefaultAsync(cancellationToken));
         if (access is null)
         {
             return null;
@@ -65,7 +68,7 @@ internal sealed class GetInternalMessagesQueryHandler
         var pageNumber = request.NormalizedPageNumber;
         var pageSize = request.NormalizedPageSize;
 
-        var items = await messageQuery
+        var items = await timing.RunAsync("thread-page", () => messageQuery
             .OrderByDescending(x => x.SentAt)
             .ThenByDescending(x => x.InternalMessageId)
             .Skip((pageNumber - 1) * pageSize)
@@ -106,7 +109,7 @@ internal sealed class GetInternalMessagesQueryHandler
                     .Select(state => state.ReadAt)
                     .FirstOrDefault()
             })
-            .ToListAsync(cancellationToken);
+            .ToListAsync(cancellationToken));
 
         var confirmationMessages = items.Select(x => new { Message = x, Payload = QuotationSendService.ReadPayload(x.PayloadJson) })
             .Where(x => x.Payload is not null).ToArray();
@@ -214,6 +217,9 @@ internal sealed class GetInternalMessagesQueryHandler
         if (_reactions is not null) await _reactions.AttachAsync(items, cancellationToken);
         await _areas.MaskPriceMessagesAsync(items, cancellationToken);
         await InternalMessageSampleWorkAudience.AttachAsync(items, _dbContext, _areas, companyId.Value, cancellationToken);
+        if (request.IncludeUnreadBadges && pageNumber == 1 && items.Count > 0)
+            await timing.RunAsync("thread-badges",
+                () => _areas.AttachUnreadBadgesAsync(request.ConversationId, items, cancellationToken));
         return new PagedResult<InternalMessageDto>(items, totalCount, pageNumber, pageSize);
     }
 }

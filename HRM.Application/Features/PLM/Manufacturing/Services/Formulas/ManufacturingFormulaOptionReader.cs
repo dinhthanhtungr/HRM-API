@@ -20,6 +20,34 @@ internal static class ManufacturingFormulaOptionReader
     )
     {
         var company = order.CompanyId;
+        var replacementIds = await db.MfgOrderPOs.AsNoTracking()
+            .Where(x => x.IsActive && x.MfgProductionOrderId == order.MfgProductionOrderId
+                && x.Detail.IsActive && x.Detail.MerchandiseOrder.IsActive
+                && x.Detail.MerchandiseOrder.CompanyId == company
+                && x.Detail.ReplacementSourceManufacturingFormulaId != null)
+            .Select(x => x.Detail.ReplacementSourceManufacturingFormulaId!.Value)
+            .Distinct()
+            .Take(2)
+            .ToListAsync(ct);
+        if (replacementIds.Count > 0)
+        {
+            if (replacementIds.Count != 1) return [];
+
+            var replacementId = replacementIds[0];
+            var replacement = await db.ManufacturingFormulas.AsNoTracking()
+                .Where(x => x.CompanyId == company && x.IsActive && x.ManufacturingFormulaId == replacementId)
+                .Select(x => new { x.ExternalId, x.CreatedDate, x.Note })
+                .SingleOrDefaultAsync(ct);
+            return replacement is null ? [] :
+            [
+                new ProductionOrderFormulaOptionDto(replacementId, replacement.ExternalId,
+                    ProductionOrigin(replacement.CreatedDate), null, replacement.CreatedDate, true)
+                {
+                    Note = replacement.Note
+                }
+            ];
+        }
+
         var standard = await db.ProductStandardFormulas.AsNoTracking().Where(x => x.CompanyId == company && x.ProductId == order.ProductId && x.ValidTo == null
             && x.ManufacturingFormula != null
             && x.ManufacturingFormula.IsActive

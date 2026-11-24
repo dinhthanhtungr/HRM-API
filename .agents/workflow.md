@@ -5,6 +5,7 @@
 ## Trước Khi Làm
 
 - Nói ngắn gọn rule liên quan đã đọc, phạm vi hiểu được, rủi ro chính và cách verify.
+- Khi có nhiều cách hiểu có thể làm thay đổi đáng kể hành vi, phạm vi hoặc tiêu chí nghiệm thu, đối chiếu tài liệu và code liên quan trước. Nếu vẫn chưa rõ, diễn giải ngắn cách mình hiểu yêu cầu, nêu hệ quả cụ thể và hỏi đúng quyết định cần người dùng chốt.
 - Nếu vẫn làm trọn an toàn trong một lượt, tiến hành luôn; không tạo nghi thức hoặc kế hoạch dài không cần thiết.
 - Chỉ đề xuất goal khi task dài, nhiều module và có nguy cơ trôi ngữ cảnh.
 - Nếu user chỉ xin giải thích, prompt hoặc code mẫu, không tự sửa repo.

@@ -145,3 +145,6 @@ Notification không có conversation vẫn là item riêng. Tab legacy_data gi�
 Lịch sử hội thoại, unread counts, publish, recipient, SignalR/Web Push không thay đổi.
 API feed notification thông thường vẫn trả lịch sử; quy tắc mới chỉ áp dụng Hub items.
 Việc chọn đại diện chạy trong SQL, không tải toàn bộ inbox về bộ nhớ; metadata vẫn theo trang.
+Trong lượt tải chưa đọc, kết quả lọc các ID BBG bị loại được tái sử dụng khi lấy
+các notification độc lập. Kết quả chỉ sống trong cùng request. Khi danh sách
+vượt giới hạn, luồng vẫn lọc bằng biểu thức SQL đầy đủ.

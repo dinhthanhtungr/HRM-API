@@ -1,6 +1,7 @@
 using System.Text.Json;
 using HRM.Application.Abstractions.Commons.Time;
 using HRM.Application.Features.InternalMail.Commands.MarkConversationRead;
+using HRM.Application.Features.InternalMail.Dtos;
 using HRM.Application.Features.InternalMail.Services;
 using HRM.Application.Features.Notifications.Services;
 using HRM.Infrastructure.DatabaseContext.ApplicationDbs;
@@ -86,6 +87,12 @@ public sealed partial class InternalConversationGroupStoragePostgresTests
         Assert.Equal(3,summary.TotalUnread);
         Assert.Equal(1,summary.Categories.Single(c=>c.CategoryCode=="quotation").UnreadCount);
         Assert.Equal(summary.TotalUnread,await service.GetUnreadCountAsync());
+        var quoteMessage = await db.InternalMessages.Where(message =>
+                message.InternalConversationId == ids[0] && !message.IsDeleted)
+            .Select(message => new InternalMessageDto { MessageId = message.InternalMessageId })
+            .SingleAsync();
+        await areas.AttachUnreadBadgesAsync(ids[0], [quoteMessage], default);
+        Assert.Equal("quotation", Assert.Single(quoteMessage.UnreadBadges!).CategoryCode);
         var inbox=db.Notifications.Where(n=>n.CompanyId==user.CompanyId && n.UserStates.Any(s=>s.UserId==user.EmployeeId));
         var feedKeys=await areas.UnreadHubConversationIds(inbox).ToArrayAsync();
         Assert.Contains(ids[0],feedKeys);
