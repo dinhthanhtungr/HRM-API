@@ -1,8 +1,8 @@
 # AGENTS.md
 
-## Bắt buộc dùng repo chính ở ổ D
+## Bắt buộc dùng repo chính của máy hiện tại
 
-Trước mọi thao tác ghi/build/test/chạy dịch vụ cho HRM, đọc và áp dụng [quy định workspace HRM](docs/agents/workspace.md). Đây là nguồn chuẩn cho đường dẫn FE/BE và giới hạn D/F. Chỉ dùng repo D được quy định, giữ nguyên nhánh và thay đổi hiện có; thiếu quyền thì báo blocker, không sửa bản F thay thế.
+Trước mọi thao tác ghi/build/test/chạy dịch vụ cho HRM, dùng [quy định workspace HRM](docs/agents/workspace.md) để xác minh cặp repo trên máy hiện tại. Giữ nguyên nhánh và thay đổi hiện có; nếu thiếu quyền, báo blocker. Bản F chỉ dùng để tham khảo.
 
 Router bắt buộc cho coding agent trong repo `HRM.api`. Chỉ đọc rule đúng với phạm vi task; không nạp toàn bộ `.agents` theo mặc định.
 

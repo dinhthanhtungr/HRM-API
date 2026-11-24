@@ -2,10 +2,12 @@
 
 Áp dụng cho mọi cuộc trò chuyện/agent làm việc với HRM, kể cả khi cwd, workspace, lịch sử chat, bản tóm tắt hoặc cấu hình cũ còn trỏ tới ổ F.
 
-| Phạm vi | Repo chính duy nhất được sửa và chạy kiểm tra |
-| --- | --- |
-| FE hrm-mobile | `D:\Vietaus_one_websites\VietausOne.FE.Next` |
-| BE HRM.api | `D:\Vietaus_one_websites\VietausOne.BE.Next\HRM.api` |
+| Máy | FE `dinhthanhtungr/hrm-mobile` | BE `dinhthanhtungr/HRM-API` |
+| --- | --- | --- |
+| Máy công ty | `D:\UserInterface\hrm-mobile` | `D:\VIETAUS\ASP-NET-CORE\HRM.api` |
+| Laptop | `D:\Vietaus_one_websites\VietausOne.FE.Next` | `D:\Vietaus_one_websites\VietausOne.BE.Next\HRM.api` |
+
+Xác định cặp repo bằng thư mục Git gốc đang mở trong workspace và các đường dẫn trong bảng. Dùng `git rev-parse --show-toplevel` tại từng ứng viên để xác nhận thư mục Git gốc và kiểm tra `origin` khớp đúng repo GitHub theo tên chủ sở hữu và repo, dù dùng HTTPS hay SSH. Nếu chỉ một cặp khớp workspace, dùng cặp đó. Nếu workspace không chỉ ra cặp nào, chỉ tự chọn khi trên máy có đúng một cặp hợp lệ. Nếu thiếu repo, remote sai hoặc có nhiều cặp mà workspace không phân biệt được, hỏi user xác nhận đường dẫn trước khi ghi. Không ghép FE của một dòng với BE của dòng khác.
 
 - `F:\UserInterface\hrm-mobile` và `F:\VIETAUS\ASP-NET-CORE\HRM.api` là các bản cũ, chỉ đọc để tham khảo. Không sửa, format, build, test có ghi file, sinh code, commit hoặc chạy server tại các bản này. Không tự đồng bộ/copy đè thay đổi giữa F và D.
 - Trước thao tác ghi, sửa code, format, build/test, Git có ghi hoặc khởi chạy dịch vụ: xác minh đường dẫn tuyệt đối của repo đích, đọc AGENTS.md của repo chính và kiểm tra nhánh/trạng thái tại đúng repo D. Dùng workdir và đường dẫn file thuộc repo D; không dựa vào cwd mặc định.
@@ -20,7 +22,7 @@
 
 - **Save:** hỏi “Bạn có muốn lưu code của cả BE và FE lên `main` trên GitHub không?”
 - **Load:** hỏi “Bạn có muốn tải code của cả BE và FE từ `main` trên GitHub về máy này không?”
-- Chờ đồng ý rõ cho lần đó trước khi fetch, stage, commit, push, cập nhật nhánh hoặc sửa file. Xác minh đúng repo, remote, nhánh, trạng thái và phạm vi ở cả hai repo. Áp dụng quy định Git của từng repo. Nếu một repo bị chặn, báo rõ trước khi đồng bộ riêng repo còn lại.
+- Chờ đồng ý rõ cho lần đó trước khi fetch, stage, commit, push, cập nhật nhánh hoặc sửa file. Dùng cặp repo đã xác minh theo bảng trên, rồi kiểm tra nhánh, trạng thái và phạm vi ở cả hai repo. Áp dụng quy định Git của từng repo. Nếu một repo bị chặn, báo rõ trước khi đồng bộ riêng repo còn lại.
 - Cấu hình được bảo vệ gồm `.env`, `.env.*`, `appsettings.json`, `appsettings.*.json` và cấu hình riêng từng máy hoặc máy chủ như URL backend, đường dẫn lưu trữ, connection string và khóa. Giữ nguyên nội dung hiện có, kể cả file Git đang theo dõi. Khi báo kết quả, chỉ nêu tên file và phạm vi thay đổi, không in giá trị nhạy cảm.
 - **Sau khi xác nhận save:** rà code và lịch sử commit sắp đưa lên, loại cấu hình được bảo vệ, secret và artifact build khỏi phạm vi push. Nếu commit đã có chứa thay đổi cấu hình được bảo vệ, chỉ đưa lên phần code an toàn qua cách tích hợp giữ nguyên lịch sử `main`; dừng nếu chưa có phương án an toàn. Kiểm tra phù hợp trước khi push và xác minh commit trên GitHub.
 - **Sau khi xác nhận load:** fetch `origin/main` rồi kiểm tra diff và thay đổi local trước khi áp dụng. Chỉ cập nhật `main` local bằng fast-forward khi đủ điều kiện. Nếu cập nhật sẽ tạo, xóa hoặc ghi đè cấu hình được bảo vệ, chồng lên thay đổi local hoặc gặp lịch sử phân kỳ, dừng và báo file hoặc blocker để user quyết định. Nếu cần chuyển nhánh, nêu nhánh hiện tại và nhánh đích rồi xin xác nhận riêng.

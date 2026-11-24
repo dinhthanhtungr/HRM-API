@@ -9,7 +9,7 @@ Dành cho user và agent khi quản lý, sửa hoặc kiểm tra điều hướn
 | Nhu cầu | Nơi sửa chính |
 | --- | --- |
 | Nguyên tắc chung mọi project, cách dùng context | [AGENTS dùng chung](C:/Users/it01/.codex/AGENTS.md) |
-| Đường dẫn HRM, giới hạn repo D/F | [Workspace HRM](workspace.md) |
+| Nhận diện cặp repo HRM trên máy công ty và laptop, giới hạn repo D/F | [Workspace HRM](workspace.md) |
 | Trình bày cấu trúc file/thư mục khi bàn bạc thay đổi FE/BE | [Quy ước chung trong Workspace HRM](workspace.md#trình-bày-cấu-trúc-code-khi-bàn-bạc-thay-đổi-hrm) |
 | Trigger bàn giao/hiệu năng HRM | [Router BE](../../AGENTS.md), [Router FE](D:/Vietaus_one_websites/VietausOne.FE.Next/AGENTS.md) |
 | Tiếp tục công việc từ chat cũ | [Bàn giao chat](chat-handoff.md) |
