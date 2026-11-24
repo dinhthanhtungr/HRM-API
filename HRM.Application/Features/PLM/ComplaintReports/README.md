@@ -91,7 +91,7 @@ Draft reception update và resubmit không tạo `CustomerInteraction`. Interact
 - `GET /api/v1/plm/complaint-reports`: pagination và filter `customerId`, `status`, `resolutionType`, `reportedFrom`, `reportedTo`, `keyword`, `assignedToMe`, `sourceOrderId`.
 - `GET /source-lines`: trả delivery details, lots, MFG/công thức thực tế, lượng đã complaint và remaining quantity.
 - `GET /{id}`: trả reception, investigation, lines/lots, actions, risk/effectiveness, approval history, handling order/MFG, attachments và `allowedActions`.
-- `GET /by-source-order/{merchandiseOrderId}`: trả badge/status cần cho timeline.
+- `GET /by-source-order/{merchandiseOrderId}` trả dữ liệu khiếu nại cho timeline, kèm mã đơn xử lý và `handlingOrderCreatedDate` khi có đơn xử lý đang hoạt động.
 
 Mọi read/write API áp dụng company scope, customer visibility và không trả EF entity trực tiếp.
 

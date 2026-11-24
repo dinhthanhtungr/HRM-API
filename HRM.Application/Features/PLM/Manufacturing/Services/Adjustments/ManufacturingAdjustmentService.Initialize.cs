@@ -17,6 +17,7 @@ internal sealed partial class ManufacturingAdjustmentService
         if (order is null) return OperationResult<ManufacturingAdjustmentEditor>.Fail("Không tìm thấy lệnh sản xuất trong công ty.");
         var planned = Math.Max(order.NumOfBatches ?? 0, 1);
         ManufacturingAdjustmentInput draft;
+        ManufacturingAdjustmentCalculation? savedCalculation = null;
         if (adjustmentId.HasValue)
         {
             var data = await ManufacturingAdjustmentMapping.ProjectToDto(Scoped().Where(
@@ -24,10 +25,13 @@ internal sealed partial class ManufacturingAdjustmentService
                 .FirstOrDefaultAsync(ct);
             if (data is null)
                 return OperationResult<ManufacturingAdjustmentEditor>.Fail("Không tìm thấy phiếu chỉnh màu trong lệnh/công ty.");
+            if (!TryReadStatus(data.Status, out var status) || data.Batches.Any(b => !TryReadStatus(b.Status, out _)))
+                return OperationResult<ManufacturingAdjustmentEditor>.Fail("Phiếu có trạng thái lịch sử không hỗ trợ chỉnh sửa.");
+            savedCalculation = ToCalculation(data);
             draft = new()
             {
                 ManufacturingFormulaId = data.ManufacturingFormulaId,
-                Status = Enum.Parse<AdjustmentStatus>(data.Status), Note = data.Note,
+                Status = status, Note = data.Note,
                 PreviewCreatedDate = data.CreatedDate,
                 Ranges = data.Batches.Select(b => new ManufacturingAdjustmentRangeInput
                 {
@@ -71,14 +75,21 @@ internal sealed partial class ManufacturingAdjustmentService
             };
         }
         draft = ManufacturingAdjustmentInputNormalization.Normalize(draft);
-        var calculation = await CalculateDraftAsync(orderId, draft, ct, adjustmentId);
-        if (!calculation.Success || calculation.Data is null)
-            return OperationResult<ManufacturingAdjustmentEditor>.Fail(calculation.Message ?? "Không khởi tạo được phiếu.");
+        if (savedCalculation is null)
+        {
+            var calculation = await CalculateDraftAsync(orderId, draft, ct);
+            if (!calculation.Success || calculation.Data is null)
+                return OperationResult<ManufacturingAdjustmentEditor>.Fail(calculation.Message ?? "Không khởi tạo được phiếu.");
+            savedCalculation = calculation.Data;
+        }
         return OperationResult<ManufacturingAdjustmentEditor>.Ok(new ManufacturingAdjustmentEditor()
         {
             SourceAdjustmentId = adjustmentId, PlannedBatchCount = planned,
             PlannedBatchQuantityGram = (order.TotalQuantity ?? order.TotalQuantityRequest) / planned * 1000m,
-            Draft = draft, Calculation = calculation.Data
+            Draft = draft, Calculation = savedCalculation
         });
     }
+
+    private static bool TryReadStatus(string value, out AdjustmentStatus status) =>
+        Enum.TryParse(value, out status) && Enum.IsDefined(status);
 }

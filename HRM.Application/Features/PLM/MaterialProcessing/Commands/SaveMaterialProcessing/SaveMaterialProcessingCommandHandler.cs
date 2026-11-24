@@ -5,5 +5,5 @@ namespace HRM.Application.Features.PLM.MaterialProcessing.Commands.SaveMaterialP
 internal sealed class SaveMaterialProcessingCommandHandler(MaterialProcessingWriter writer) : IRequestHandler<SaveMaterialProcessingCommand, MaterialProcessingResult>
 {
     public Task<MaterialProcessingResult> Handle(SaveMaterialProcessingCommand command, CancellationToken ct)
-        => writer.SaveAsync(command.Id, command.Request, ct);
+        => writer.SaveAsync(command.Id, command.Request, ct, recordTiming: command.RecordTiming);
 }

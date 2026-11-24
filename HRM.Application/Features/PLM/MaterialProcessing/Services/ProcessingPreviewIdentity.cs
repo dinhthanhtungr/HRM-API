@@ -1,5 +1,6 @@
 using HRM.Application.Abstractions.Persistence.PLM;
 using HRM.Domain.Entities.SampleRequestSchema;
+using HRM.Domain.Entities.MaterialSchema;
 using Microsoft.EntityFrameworkCore;
 
 namespace HRM.Application.Features.PLM.MaterialProcessing.Services;
@@ -40,5 +41,32 @@ internal static class ProcessingPreviewIdentity
         if (pending is not null) return pending;
         var resolved = await ProcessingProductResolver.ResolveAsync(db, root.MaterialId, process, company, employee, now, ct);
         return resolved.Product ?? throw new InvalidOperationException("Cannot prepare processing material: " + resolved.Error);
+    }
+
+    public static async Task<Material?> ResolveMaterialAsync(IPLMWriteDbContext db, Guid reference, Guid company,
+        Guid employee, DateTime now, CancellationToken ct)
+    {
+        var product = await db.Products.FirstOrDefaultAsync(x => x.ProductId == reference && x.CompanyId == company
+            && x.IsActive && x.ColourCode != null
+            && (x.ColourCode.Trim().ToUpper().EndsWith("-N") || x.ColourCode.Trim().ToUpper().EndsWith("-B"))
+            && x.SampleRequests.Any(s => s.IsActive && s.CompanyId == company && s.RequestType == SemiFinishedProcessing.RequestType), ct)
+            ?? await ResolveAsync(db, reference, company, employee, now, ct);
+        if (product is null) return null;
+
+        await db.LockPurchasingCatalogAsync(company, ct);
+        var code = product.ColourCode!.Trim().ToUpperInvariant();
+        var pending = db.Materials.Local.FirstOrDefault(x => x.CompanyId == company && x.ExternalId == product.ColourCode);
+        if (pending is not null) return pending;
+        var existing = await db.Materials.Where(x => x.CompanyId == company && x.ExternalId != null
+            && x.ExternalId.Trim().ToUpper() == code).Take(2).ToListAsync(ct);
+        if (existing.Count == 1 && existing[0].IsActive == true &&
+            existing[0].CategoryId == product.CategoryId && existing[0].Unit == product.Unit)
+            return existing[0];
+        if (existing.Count != 0)
+            throw new InvalidOperationException("Cannot prepare processing material: OutputCodeExists");
+        var source = await ProcessingProductResolver.SourceAsync(db, product.ProductId, company, ct);
+        if (source is null || employee == Guid.Empty)
+            throw new InvalidOperationException("Cannot prepare processing material: InvalidSource");
+        return ProcessingProductResolver.AddMaterial(db, source, product, employee, now);
     }
 }

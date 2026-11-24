@@ -105,9 +105,10 @@ Lot options tái sử dụng lookup hợp lệ đã có, không đặt URL giả
   SetQuantity không gửi takenQuantityGram. VAE cũ có rule bắt nhập riêng, không tự áp lại
   như một yêu cầu của BE nếu chưa có yêu cầu sản phẩm.
 - Khi calculate lỗi: giữ input người dùng, hiển thị message và đánh dấu kết quả cũ là stale;
-  không coi tổng cũ là kết quả của draft mới. ranges=null không hợp lệ, [] là draft rỗng.
-- Tối đa 100 range và tổng 100 cặp mẻ/trial sau bung range; mỗi range tối đa 100 mẻ,
-  1..1000 items. Không tự cắt mất lịch sử để vượt giới hạn.
+  không coi tổng cũ là kết quả của draft mới. ranges=null không hợp lệ; [] giữ lịch sử ở chế độ append và là draft rỗng ở chế độ thay thế.
+- Với `appendToStoredHistory: true` và `adjustmentId`, BE đọc lịch sử đã lưu,
+  FE chỉ gửi range mới. Tối đa 100 range và tổng 100 cặp mẻ/trial sau bung range; mỗi range tối đa 100 mẻ,
+  1..1000 items. BE giữ đầy đủ lịch sử để tính.
 - FE chỉ validate cơ bản, format số, quản lý input/focus/loading, chọn range/kiểu chỉnh.
 
 4. Lưu và PDF

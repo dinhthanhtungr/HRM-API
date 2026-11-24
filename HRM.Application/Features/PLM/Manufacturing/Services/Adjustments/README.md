@@ -123,3 +123,8 @@ Chưa xác nhận parity dữ liệu thực tế, transaction/concurrency và �
 - [GetProductionOrderWorkspace](../../Queries/GetProductionOrderWorkspace/)
 - [ListManufacturingAdjustments](../../Queries/ListManufacturingAdjustments/)
 - [PreviewManufacturingAdjustmentPdf](../../Queries/PreviewManufacturingAdjustmentPdf/)
+
+Khi mở phiếu đã lưu, initialize tính số liệu hiển thị từ các dòng đã lưu. Khi
+calculate hoặc preview PDF với `adjustmentId` và `appendToStoredHistory: true`,
+chỉ gửi các range mới. BE đọc lịch sử theo phiếu và giới hạn 100 cặp chỉ tính
+các range gửi trong lượt đó. Request không có cờ vẫn theo contract thay thế cũ.

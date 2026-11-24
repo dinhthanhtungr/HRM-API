@@ -9,13 +9,15 @@ using HRM.Application.Features.PLM.MaterialProcessing.Commands.PatchMaterialProc
 using HRM.Application.Features.PLM.MaterialProcessing.Queries.GetProcessingOptions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Diagnostics;
+using System.Globalization;
 
 namespace HRM.Api.Controllers.PLM;
 
 [ApiController]
 [Authorize]
 [Route("api/v1/plm/material-processing-formulas")]
-public sealed class MaterialProcessingController(ISender sender) : ControllerBase
+public sealed class MaterialProcessingController(ISender sender, IWebHostEnvironment environment) : ControllerBase
 {
     [HttpGet("options")]
     public async Task<IActionResult> Options(CancellationToken ct)
@@ -60,16 +62,36 @@ public sealed class MaterialProcessingController(ISender sender) : ControllerBas
     }
 
     [HttpPost]
-    public async Task<IActionResult> Create([FromBody] SaveMaterialProcessingRequest request, CancellationToken ct)
-        => WriteResult(await sender.Send(new SaveMaterialProcessingCommand(null, request), ct));
+    public Task<IActionResult> Create([FromBody] SaveMaterialProcessingRequest request, CancellationToken ct)
+        => SaveWithTimingAsync(timing => sender.Send(new SaveMaterialProcessingCommand(null, request) { RecordTiming = timing }, ct));
 
     [HttpPut("{id:guid}")]
-    public async Task<IActionResult> Update(Guid id, [FromBody] SaveMaterialProcessingRequest request, CancellationToken ct)
-        => WriteResult(await sender.Send(new SaveMaterialProcessingCommand(id, request), ct));
+    public Task<IActionResult> Update(Guid id, [FromBody] SaveMaterialProcessingRequest request, CancellationToken ct)
+        => SaveWithTimingAsync(timing => sender.Send(new SaveMaterialProcessingCommand(id, request) { RecordTiming = timing }, ct));
 
     [HttpPatch("{id:guid}")]
-    public async Task<IActionResult> Patch(Guid id, [FromBody] PatchMaterialProcessingRequest request, CancellationToken ct)
-        => WriteResult(await sender.Send(new PatchMaterialProcessingCommand(id, request), ct));
+    public Task<IActionResult> Patch(Guid id, [FromBody] PatchMaterialProcessingRequest request, CancellationToken ct)
+        => SaveWithTimingAsync(timing => sender.Send(new PatchMaterialProcessingCommand(id, request) { RecordTiming = timing }, ct));
+
+    private async Task<IActionResult> SaveWithTimingAsync(
+        Func<Action<string, double>?, Task<MaterialProcessingResult>> save)
+    {
+        if (!environment.IsDevelopment())
+            return WriteResult(await save(null));
+
+        var timings = new List<string>();
+        var start = Stopwatch.GetTimestamp();
+        void Record(string phase, double duration) =>
+            timings.Add($"{phase};dur={duration.ToString("F2", CultureInfo.InvariantCulture)}");
+
+        var result = await save(Record);
+        if (result.Code == "Ok")
+        {
+            Record("mpf_save_total", Stopwatch.GetElapsedTime(start).TotalMilliseconds);
+            Response.Headers.Append("Server-Timing", string.Join(", ", timings));
+        }
+        return WriteResult(result);
+    }
 
     [HttpPost("{id:guid}/confirm")]
     public async Task<IActionResult> Confirm(Guid id, [FromBody] ConfirmMaterialProcessingRequest request, CancellationToken ct)

@@ -222,6 +222,7 @@ public sealed class ComplaintReportListItemDto
     public string TimelineBadge { get; init; } = string.Empty;
     public Guid? HandlingMerchandiseOrderId { get; init; }
     public string? HandlingMerchandiseOrderExternalId { get; init; }
+    public DateTime? HandlingOrderCreatedDate { get; init; }
 }
 
 public sealed class ComplaintSourceDeliveryDto

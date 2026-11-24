@@ -25,6 +25,13 @@ internal static class ManufacturingFormulaStockReader
         string? Code(ProductionOrderFormulaSourceItemDto x) => Material(x.ItemType) ? x.Code : products.GetValueOrDefault(x.ItemId) ?? x.Code;
         static string Key(string? code) => code?.Trim().ToUpperInvariant() ?? string.Empty;
         var codes = items.Select(x => Key(Code(x))).Where(x => x.Length > 0).Distinct().ToArray();
+        var processedCodes = codes.Where(x => x.EndsWith("-N", StringComparison.Ordinal) ||
+            x.EndsWith("-B", StringComparison.Ordinal)).ToArray();
+        var processedProducts = processedCodes.Length == 0 ? new HashSet<string>() :
+            (await db.Products.AsNoTracking().Where(x => x.CompanyId == company && x.IsActive &&
+                x.ColourCode != null && processedCodes.Contains(x.ColourCode.Trim().ToUpper())
+                && x.SampleRequests.Any(s => s.CompanyId == company && s.IsActive && s.RequestType == "SemiFinished"))
+                .Select(x => x.ColourCode!.Trim().ToUpper()).ToListAsync(ct)).ToHashSet();
         var stock = await db.WarehouseShelfStocks.AsNoTracking()
             .Where(x => x.CompanyId == company && codes.Contains(x.Code.Trim().ToUpper())
                 && x.WarehouseShelves != null && x.WarehouseShelves.CompanyId == company && x.WarehouseShelves.IsActive
@@ -49,8 +56,9 @@ internal static class ManufacturingFormulaStockReader
         {
             var code = Code(item);
             var key = Key(code);
-            var goodType = Material(item.ItemType) ? StockType.RawMaterial : StockType.FinishedGood;
-            var badType = Material(item.ItemType) ? StockType.DefectiveRawMaterial : StockType.DefectiveFinishedGood;
+            var rawStock = Material(item.ItemType) && !processedProducts.Contains(key);
+            var goodType = rawStock ? StockType.RawMaterial : StockType.FinishedGood;
+            var badType = rawStock ? StockType.DefectiveRawMaterial : StockType.DefectiveFinishedGood;
             var lots = lotRows.Where(x => x.Code == key && (x.Lot.StockType == goodType || x.Lot.StockType == badType))
                 .Select(x => x.Lot).ToList();
             if (!lots.Any(x => !x.IsDefective))

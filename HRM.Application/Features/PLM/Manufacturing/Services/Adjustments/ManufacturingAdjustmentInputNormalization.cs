@@ -7,6 +7,7 @@ internal static class ManufacturingAdjustmentInputNormalization
 {
     public static ManufacturingAdjustmentInput Normalize(ManufacturingAdjustmentInput input) => new()
     {
+        AppendToStoredHistory = input.AppendToStoredHistory,
         ManufacturingFormulaId = input.ManufacturingFormulaId, Status = input.Status,
         Note = input.Note, PreviewCreatedDate = input.PreviewCreatedDate,
         Ranges = input.Ranges?.Select(Normalize).ToList()

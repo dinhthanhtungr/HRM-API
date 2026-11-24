@@ -7,6 +7,7 @@ using HRM.Application.Features.PLM.SampleRequests.Rules;
 using HRM.Application.Features.PLM.SampleRequests.DataChangeRequests;
 using HRM.Application.Features.PLM.SampleRequests.SampleTrials;
 using HRM.Domain.Entities.SampleRequestSchema;
+using HRM.Domain.Entities.MaterialSchema;
 using HRM.Domain.Enums.Category;
 using HRM.Domain.Enums.Formulas;
 using HRM.Domain.Enums.Manufacturings;
@@ -192,6 +193,21 @@ internal sealed class FormulaWriteService
             row.IsActive = false;
         }
 
+        var materialIds = requests.Where(x => IsMaterialType(x.ItemType))
+            .Select(x => x.ItemId).Distinct().ToArray();
+        var materialSnapshots = new Dictionary<Guid, ItemSnapshot>();
+        if (materialIds.Length > 1)
+        {
+            materialSnapshots = await AvailableMaterials(companyId)
+                .Where(x => materialIds.Contains(x.MaterialId))
+                .Select(x => new
+                {
+                    x.MaterialId,
+                    Snapshot = new ItemSnapshot(x.CategoryId, x.Name ?? "", x.ExternalId ?? "", x.Unit)
+                })
+                .ToDictionaryAsync(x => x.MaterialId, x => x.Snapshot, cancellationToken);
+        }
+
         var lineNo = 1;
         foreach (var request in requests)
         {
@@ -200,7 +216,7 @@ internal sealed class FormulaWriteService
                 request,
                 companyId,
                 lineNo,
-                cancellationToken, actingEmployeeId);
+                cancellationToken, actingEmployeeId, materialSnapshots);
 
             await _dbContext.FormulaMaterials.AddAsync(row, cancellationToken);
             lineNo++;
@@ -485,7 +501,8 @@ internal sealed class FormulaWriteService
         UpsertFormulaMaterialRequest request,
         Guid companyId,
         int fallbackLineNo,
-        CancellationToken cancellationToken, Guid? actingEmployeeId)
+        CancellationToken cancellationToken, Guid? actingEmployeeId,
+        IReadOnlyDictionary<Guid, ItemSnapshot> materialSnapshots)
     {
         ValidateMaterialRequest(request);
 
@@ -501,9 +518,24 @@ internal sealed class FormulaWriteService
             ? await ProcessingPreviewIdentity.ResolveAsync(_dbContext, request.ItemId, companyId,
                 (actingEmployeeId ?? formula.UpdatedBy ?? formula.CreatedBy).GetValueOrDefault(), DateTime.Now, cancellationToken) : null;
         if (previewProduct is not null) productId = previewProduct.ProductId;
-        var snapshot = previewProduct is null
-            ? await ResolveItemSnapshotAsync(request, companyId, cancellationToken)
-            : new ItemSnapshot(previewProduct.CategoryId, previewProduct.Name ?? "", previewProduct.ColourCode ?? "", previewProduct.Unit);
+        ItemSnapshot? materialSnapshot = null;
+        if (materialId is Guid requestedMaterialId && !materialSnapshots.TryGetValue(requestedMaterialId, out materialSnapshot))
+        {
+            materialSnapshot = await FindMaterialSnapshotAsync(requestedMaterialId, companyId, cancellationToken);
+            if (materialSnapshot is null)
+            {
+                var prepared = await ProcessingPreviewIdentity.ResolveMaterialAsync(_dbContext, requestedMaterialId, companyId,
+                    (actingEmployeeId ?? formula.UpdatedBy ?? formula.CreatedBy).GetValueOrDefault(), DateTime.Now, cancellationToken);
+                if (prepared is not null)
+                {
+                    materialId = prepared.MaterialId;
+                    materialSnapshot = new ItemSnapshot(prepared.CategoryId, prepared.Name ?? "", prepared.ExternalId ?? "", prepared.Unit);
+                }
+            }
+        }
+        var snapshot = previewProduct is not null
+            ? new ItemSnapshot(previewProduct.CategoryId, previewProduct.Name ?? "", previewProduct.ColourCode ?? "", previewProduct.Unit)
+            : materialSnapshot ?? await ResolveItemSnapshotAsync(request, companyId, cancellationToken);
 
         return new FormulaMaterial
         {
@@ -549,6 +581,14 @@ internal sealed class FormulaWriteService
         }
     }
 
+    private IQueryable<Material> AvailableMaterials(Guid companyId) =>
+        _dbContext.Materials.AsNoTracking().Where(x =>
+            x.CompanyId == companyId &&
+            x.IsActive == true &&
+            (!EnforceMaterialPurchaseAvailabilityOnFormulaWrite ||
+             x.PurchaseAvailability == null ||
+             x.PurchaseAvailability.Status != MaterialPurchaseStatus.Unavailable));
+
     private async Task<ItemSnapshot> ResolveItemSnapshotAsync(
         UpsertFormulaMaterialRequest request,
         Guid companyId,
@@ -556,23 +596,7 @@ internal sealed class FormulaWriteService
     {
         if (IsMaterialType(request.ItemType))
         {
-            var material = await _dbContext.Materials
-                .AsNoTracking()
-                .Where(x =>
-                    x.MaterialId == request.ItemId &&
-                    x.CompanyId == companyId &&
-                    x.IsActive == true &&
-                    (!EnforceMaterialPurchaseAvailabilityOnFormulaWrite ||
-                     x.PurchaseAvailability == null ||
-                     x.PurchaseAvailability.Status != MaterialPurchaseStatus.Unavailable))
-                .Select(x => new ItemSnapshot(
-                    x.CategoryId,
-                    x.Name ?? string.Empty,
-                    x.ExternalId ?? string.Empty,
-                    x.Unit))
-                .FirstOrDefaultAsync(cancellationToken);
-
-            return material ?? throw new InvalidOperationException(
+            throw new InvalidOperationException(
                 EnforceMaterialPurchaseAvailabilityOnFormulaWrite
                     ? "Formula material was not found, is inactive, or is no longer available for purchase."
                     : "Formula material was not found or is inactive.");
@@ -593,6 +617,11 @@ internal sealed class FormulaWriteService
 
         return product ?? throw new InvalidOperationException("Formula product item was not found or is inactive.");
     }
+
+    private Task<ItemSnapshot?> FindMaterialSnapshotAsync(Guid materialId, Guid companyId, CancellationToken ct) =>
+        AvailableMaterials(companyId).Where(x => x.MaterialId == materialId)
+            .Select(x => new ItemSnapshot(x.CategoryId, x.Name ?? "", x.ExternalId ?? "", x.Unit))
+            .FirstOrDefaultAsync(ct);
 
     private static bool IsMaterialType(ItemType itemType)
     {

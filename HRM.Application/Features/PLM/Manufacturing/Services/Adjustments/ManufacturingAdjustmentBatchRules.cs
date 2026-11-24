@@ -217,13 +217,15 @@ internal static class ManufacturingAdjustmentBatchRules
         }
 
         var all = existing.Concat(result).Where(x => x.IsActive).ToList();
-        var sequenceError = ValidateSequence(all, planned);
+        var changedBatchNumbers = result.Concat(originalBatches ?? []).Select(batch => batch.BatchNo).ToHashSet();
+        var affected = all.Where(batch => changedBatchNumbers.Contains(batch.BatchNo));
+        var sequenceError = ValidateSequence(affected, planned);
         if (sequenceError is not null)
         {
             return Fail(sequenceError);
         }
 
-        var totals = MfgAdjustmentQuantityCalculator.CalculateTrialTotals(all.SelectMany(ToRows)).ToDictionary(x => (x.BatchNo, x.TrialNo), x => x.FinalQuantityGram);
+        var totals = MfgAdjustmentQuantityCalculator.CalculateTrialTotals(affected.SelectMany(ToRows)).ToDictionary(x => (x.BatchNo, x.TrialNo), x => x.FinalQuantityGram);
         foreach (var invalid in totals.Where(x => x.Value <= 0))
             return Fail($"Mẻ {invalid.Key.BatchNo}, lần chỉnh {invalid.Key.TrialNo}: khối lượng sau chỉnh phải lớn hơn 0.");
         foreach (var batch in result)

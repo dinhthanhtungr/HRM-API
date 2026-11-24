@@ -13,4 +13,5 @@ public sealed class GetFormulaItemLookupQuery
 {
     public ItemType? ItemType { get; init; }
     public Guid? CategoryId { get; init; }
+    public bool ProcessingAsMaterial { get; init; }
 }

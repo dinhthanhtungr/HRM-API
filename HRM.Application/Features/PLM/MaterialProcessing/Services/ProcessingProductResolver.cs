@@ -72,6 +72,35 @@ internal static class ProcessingProductResolver
         db.SampleRequests.Add(sample);
         if (!await ProcessingDefaultFormula.EnsureAsync(db, productNew, sample, source, process, employee, now, ct))
             return ("OutputCodeExists", null, null);
+        if (process is "N" or "B")
+            AddMaterial(db, source, productNew, employee, now);
         return (null, productNew, source);
+    }
+
+    internal static Material AddMaterial(IPLMWriteDbContext db, Material source, Product product,
+        Guid employee, DateTime now)
+    {
+        var material = new Material
+        {
+            MaterialId = Guid.CreateVersion7(),
+            ExternalId = product.ColourCode,
+            Name = product.Name,
+            CustomCode = source.CustomCode,
+            CategoryId = source.CategoryId,
+            Weight = source.Weight,
+            Unit = source.Unit,
+            Package = source.Package,
+            Comment = source.Comment,
+            MinQuantity = source.MinQuantity,
+            CompanyId = source.CompanyId,
+            IsActive = source.IsActive,
+            AttachmentCollectionId = source.AttachmentCollectionId,
+            CreatedBy = employee,
+            CreatedDate = now,
+            UpdatedBy = employee,
+            UpdatedDate = now
+        };
+        db.Materials.Add(material);
+        return material;
     }
 }

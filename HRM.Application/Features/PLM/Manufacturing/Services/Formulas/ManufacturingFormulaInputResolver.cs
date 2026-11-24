@@ -195,32 +195,44 @@ internal sealed class ManufacturingFormulaInputResolver(IManufacturingDbContext 
         }
 
         var prepared = false;
+        Task<Dictionary<Guid, ItemData>> LoadMaterialsAsync(Guid[] ids) =>
+            db.Materials.AsNoTracking().Where(x => ids.Contains(x.MaterialId) && x.CompanyId == order.CompanyId && x.IsActive == true)
+                .Select(x => new ItemData(x.MaterialId, x.ExternalId, x.Name, x.CategoryId, x.Unit))
+                .ToDictionaryAsync(x => x.Id, ct);
+
+        var requestedMaterialIds = requested.Where(x => ProductionOrderCreationRules.IsMaterial(x.ItemType))
+            .Select(x => x.ItemId).Distinct().ToArray();
+        var materials = await LoadMaterialsAsync(requestedMaterialIds);
+        var preparedMaterials = new HashSet<Guid>();
+        var employee = order.UpdatedBy != Guid.Empty ? order.UpdatedBy : order.CreatedBy;
         for (var i = 0; i < requested.Count; i++)
         {
             var row = requested[i];
-            if (ProductionOrderCreationRules.IsMaterial(row.ItemType)) continue;
+            var isMaterial = ProductionOrderCreationRules.IsMaterial(row.ItemType);
+            if (isMaterial && materials.ContainsKey(row.ItemId)) continue;
             try
             {
-                var product = await ProcessingPreviewIdentity.ResolveAsync(db, row.ItemId, order.CompanyId,
-                    order.UpdatedBy != Guid.Empty ? order.UpdatedBy : order.CreatedBy, clock.Now, ct);
-                if (product is null) continue;
-                requested[i] = new ManufacturingFormulaInputItem { ItemId = product.ProductId, ItemType = row.ItemType,
+                var resolvedId = isMaterial
+                    ? (await ProcessingPreviewIdentity.ResolveMaterialAsync(db, row.ItemId, order.CompanyId, employee, clock.Now, ct))?.MaterialId
+                    : (await ProcessingPreviewIdentity.ResolveAsync(db, row.ItemId, order.CompanyId, employee, clock.Now, ct))?.ProductId;
+                if (!resolvedId.HasValue) continue;
+                requested[i] = new ManufacturingFormulaInputItem { ItemId = resolvedId.Value, ItemType = row.ItemType,
                     SourceItemId = row.SourceItemId, Quantity = row.Quantity, LotNo = row.LotNo };
                 prepared = true;
+                if (isMaterial) preparedMaterials.Add(resolvedId.Value);
             }
             catch (InvalidOperationException ex) { return Fail(ex.Message); }
         }
         // The caller owns the transaction; make default formula/pricing available to the shared resolver.
         if (prepared) await db.SaveChangesAsync(ct);
-        var materialIds = requested.Where(x => ProductionOrderCreationRules.IsMaterial(x.ItemType)).Select(x => x.ItemId)
-            .Distinct()
-            .ToArray();
+        if (preparedMaterials.Count > 0)
+        {
+            foreach (var (id, data) in await LoadMaterialsAsync(preparedMaterials.ToArray()))
+                materials[id] = data;
+        }
         var productIds = requested.Where(x => !ProductionOrderCreationRules.IsMaterial(x.ItemType)).Select(x => x.ItemId)
             .Distinct()
             .ToArray();
-        var materials = await db.Materials.AsNoTracking().Where(x => materialIds.Contains(x.MaterialId) && x.CompanyId == order.CompanyId && x.IsActive == true)
-            .Select(x => new ItemData(x.MaterialId, x.ExternalId, x.Name, x.CategoryId, x.Unit))
-            .ToDictionaryAsync(x => x.Id, ct);
         var products = await db.Products.AsNoTracking().Where(x => productIds.Contains(x.ProductId) && x.CompanyId == order.CompanyId && x.IsActive)
             .Select(x => new { x.ProductId, x.ColourCode, x.Name, x.CategoryId, x.Unit, SampleCode = x.SampleRequests.Where(s => s.IsActive && s.CompanyId == order.CompanyId).OrderByDescending(s => s.CreatedDate)
             .Select(s => s.ExternalId)

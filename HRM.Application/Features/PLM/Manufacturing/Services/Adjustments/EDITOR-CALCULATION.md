@@ -3,7 +3,7 @@
 Base: `/api/v1/plm/manufacturing-adjustments`. Tất cả route có `[Authorize]`.
 Hai use case mới dùng `plm.manufacturing-adjustment.manage`, company hợp lệ,
 employee hợp lệ và `plm.formula-material.view`. Không cấp thêm quyền hoặc trả giá/cost.
-Order, phiếu, VA và vật tư/lot được kiểm tra active/company; VA phải thuộc lịch sử chọn của order.
+Order và phiếu được kiểm tra active/company. Khi tính range gửi lên, VA và vật tư/lot được kiểm tra theo danh mục hiện tại; VA phải thuộc lịch sử chọn của order. Mở phiếu đã lưu dùng các dòng lịch sử.
 Không ghi DB, không lock, không xuất kho và không phát notification trong initialize/calculate/preview.
 
 ## Khởi tạo
@@ -119,8 +119,9 @@ Quy tắc giữ từ FE VAE và calculator legacy:
 - Mẻ bổ sung bắt đầu trial 1 SetQuantity, base=0; BE phân loại từ kế hoạch.
 - Range phải tách riêng mẻ chính/bổ sung, không đi qua ranh giới kế hoạch.
 - Tổng cuối phải >0. Mỗi range tối đa 100 mẻ, 1..1000 items.
-- Mỗi request draft tối đa 100 range và tổng 100 cặp mẻ/trial sau bung range;
-  một mẻ có 3 trial tính là 3. ranges=null bị từ chối, ranges=[] là bản nháp rỗng.
+- Với `appendToStoredHistory: true` và `adjustmentId`, BE đọc lịch sử đã lưu,
+  FE chỉ gửi range mới. Mỗi request draft tối đa 100 range và tổng 100 cặp mẻ/trial sau bung range;
+  một mẻ có 3 trial tính là 3. ranges=null bị từ chối, ranges=[] giữ lịch sử ở chế độ append và là bản nháp rỗng ở chế độ thay thế.
 - note tối đa 20000 ký tự; lotNo tối đa 100; enum/ID/lot không hợp lệ bị từ chối.
 - Không round bổ sung: dùng decimal như calculator hiện hành. FE chỉ format để hiển thị.
 
@@ -130,7 +131,7 @@ trả ProblemDetails. Không trả kết quả tính một phần khi draft khô
 ## PDF và lưu
 
 `POST /production-orders/{orderId}/pdf-preview?adjustmentId={optional-guid}`
-nhận cùng full draft; dùng chính CalculateDraftAsync trước khi map PDF.
+nhận cùng payload với calculate và dùng CalculateDraftAsync trước khi map PDF.
 Query adjustmentId mới là tùy chọn, tương thích caller cũ; cần truyền khi sửa phiếu
 để PDF dùng baseline giống calculate. Thành công trả application/pdf, lỗi trả JSON.
 

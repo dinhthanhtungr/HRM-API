@@ -12,6 +12,7 @@ public sealed class FormulaItemLookupDto
 {
     public Guid ItemId { get; init; }
     public bool IsProcessingPreview { get; init; }
+    public bool IsProcessedMaterial { get; init; }
 
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public ItemType ItemType { get; init; }

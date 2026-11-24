@@ -480,11 +480,17 @@ namespace HRM.Infrastructure.Services.Pricing
             var result = await LoadLatestItemPriceInfoDictAsync(
                 itemList.Where(x => x.ItemType is ItemType.Material or ItemType.MaterialFailure),
                 cancellationToken);
-            var productIds = itemList
+            var processedMaterials = await LoadProcessedMaterialProductsAsync(companyId,
+                NormalizeIds(itemList.Where(x => x.ItemType == ItemType.Material).Select(x => x.MaterialId)).ToArray(),
+                cancellationToken);
+            var requestedProductIds = itemList
                 .Where(x => (x.ItemType is ItemType.Product or ItemType.ProductFailure) &&
                             x.ProductId.HasValue &&
                             x.ProductId.Value != Guid.Empty)
                 .Select(x => x.ProductId!.Value)
+                .ToHashSet();
+            var productIds = requestedProductIds
+                .Concat(processedMaterials.Values)
                 .Distinct()
                 .ToArray();
 
@@ -614,7 +620,45 @@ namespace HRM.Infrastructure.Services.Pricing
                 }
             }
 
+            foreach (var (materialId, productId) in processedMaterials)
+            {
+                if (result.TryGetValue(new(ItemType.Product, productId), out var price) &&
+                    price.PriceSource != LatestPriceSourceType.Unknown)
+                {
+                    result[new(ItemType.Material, materialId)] = new LatestItemPriceDto
+                    {
+                        ItemType = ItemType.Material,
+                        ItemId = materialId,
+                        CurrentPrice = price.CurrentPrice,
+                        PriceDate = price.PriceDate,
+                        PriceSource = price.PriceSource,
+                        Calculation = price.Calculation
+                    };
+                }
+            }
+            foreach (var productId in processedMaterials.Values)
+            {
+                if (!requestedProductIds.Contains(productId))
+                    result.Remove(new(ItemType.Product, productId));
+            }
             return result;
+        }
+
+        private async Task<Dictionary<Guid, Guid>> LoadProcessedMaterialProductsAsync(
+            Guid companyId, Guid[] materialIds, CancellationToken ct)
+        {
+            if (companyId == Guid.Empty || materialIds.Length == 0) return [];
+            var matches = await (
+                from material in _dbContext.Materials.AsNoTracking()
+                join product in _dbContext.Products.AsNoTracking() on material.ExternalId equals product.ColourCode
+                where materialIds.Contains(material.MaterialId) && material.CompanyId == companyId
+                    && product.CompanyId == companyId && product.IsActive && material.ExternalId != null
+                    && product.CategoryId == material.CategoryId
+                    && (material.ExternalId.Trim().ToUpper().EndsWith("-N") || material.ExternalId.Trim().ToUpper().EndsWith("-B"))
+                    && product.SampleRequests.Any(s => s.CompanyId == companyId && s.IsActive && s.RequestType == "SemiFinished")
+                select new { material.MaterialId, product.ProductId }).ToListAsync(ct);
+            return matches.GroupBy(x => x.MaterialId).Where(x => x.Count() == 1)
+                .ToDictionary(x => x.Key, x => x.Single().ProductId);
         }
 
         /// <summary>
@@ -641,6 +685,7 @@ namespace HRM.Infrastructure.Services.Pricing
             var formulaCandidatesByProduct =
                 new Dictionary<Guid, IReadOnlyList<HRM.Domain.Entities.SampleRequestSchema.Formula>>();
             var materialLinesByFormula = new Dictionary<Guid, List<HRM.Domain.Entities.SampleRequestSchema.FormulaMaterial>>();
+            var processedMaterialProducts = new Dictionary<Guid, Guid>();
 
             while (true)
             {
@@ -687,6 +732,14 @@ namespace HRM.Infrastructure.Services.Pricing
                 foreach (var group in materialLines.GroupBy(x => x.FormulaId))
                 {
                     materialLinesByFormula[group.Key] = group.ToList();
+                }
+
+                var newMaterialIds = NormalizeIds(materialLines.Select(x => x.MaterialId))
+                    .Where(x => !processedMaterialProducts.ContainsKey(x)).ToArray();
+                foreach (var (materialId, productId) in await LoadProcessedMaterialProductsAsync(companyId, newMaterialIds, cancellationToken))
+                {
+                    processedMaterialProducts[materialId] = productId;
+                    discoveredProductIds.Add(productId);
                 }
 
                 foreach (var productId in materialLines
@@ -777,6 +830,9 @@ namespace HRM.Infrastructure.Services.Pricing
                     {
                         decimal? unitPrice = line.itemType switch
                         {
+                            ItemType.Material or ItemType.MaterialFailure when line.MaterialId.HasValue &&
+                                processedMaterialProducts.TryGetValue(line.MaterialId.Value, out var processedProductId)
+                                => ResolveProductCost(processedProductId)?.Cost,
                             ItemType.Material or ItemType.MaterialFailure when line.MaterialId.HasValue &&
                                 latestMaterialPriceById.TryGetValue(line.MaterialId.Value, out var materialPrice) &&
                                 materialPrice.PriceSource != MaterialPriceSource.Unknown

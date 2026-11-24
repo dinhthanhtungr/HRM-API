@@ -8,6 +8,7 @@ using HRM.Domain.Entities.ManufacturingSchema;
 using HRM.Domain.Entities.MaterialSchema;
 using HRM.Domain.Entities.OrderSchema;
 using HRM.Domain.Entities.SampleRequestSchema;
+using HRM.Domain.Entities.WarehouseSchema;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
@@ -44,6 +45,7 @@ public interface ISaleOrderDbContext
     DbSet<SampleRequest> SampleRequests { get; }
     DbSet<SampleRequestSampleTrial> SampleRequestSampleTrials { get; }
     DbSet<SampleRequestWorkflowEvent> SampleRequestWorkflowEvents { get; }
+    DbSet<WarehouseRequest> WarehouseRequests { get; }
 
     Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default);
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);

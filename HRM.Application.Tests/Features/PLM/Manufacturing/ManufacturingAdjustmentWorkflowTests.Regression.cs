@@ -73,6 +73,45 @@ public sealed partial class ManufacturingAdjustmentWorkflowTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public async Task StoredHistory_Opens120PairsAndValidatesOnlyNewInput(bool inactiveMaterial)
+    {
+        var f = new Fixture();
+        f.Base.Order.NumOfBatches = 101;
+        var history = Enumerable.Range(1, 120).Select(trial =>
+        {
+            var batch = HistoricalBatch(f, trial, 1000, 1);
+            batch.BatchNo = 101;
+            return batch;
+        }).ToArray();
+        var stored = f.Existing(history);
+        f.Base.Material.IsActive = !inactiveMaterial;
+        var orderId = f.Base.Order.MfgProductionOrderId;
+        var id = stored.ManufacturingFormulaAdjustmentId;
+
+        var opened = await f.Service.InitializeAsync(orderId, id, default);
+        Assert.True(opened.Success, opened.Message);
+        Assert.Equal(120, opened.Data!.Calculation.Adjustment.Batches.Count);
+
+        var newRange = f.Range(101, AdjustmentType.AddQuantity, 1);
+        var preview = await f.Service.CalculateDraftAsync(orderId,
+            new() { AppendToStoredHistory = true, Ranges = [newRange] }, default, id);
+        Assert.Equal(!inactiveMaterial, preview.Success);
+        if (!inactiveMaterial)
+        {
+            Assert.Contains(preview.Data!.Adjustment.Batches, batch => batch.BatchNo == 101 && batch.TrialNo == 121);
+            var saved = await f.Service.SaveRangeAsync(id, null, newRange, true, default);
+            Assert.True(saved.Success, saved.Message);
+            Assert.Equal(121, saved.Data!.Batches.Count);
+        }
+
+        var tooMany = await f.Service.CalculateDraftAsync(orderId,
+            new() { AppendToStoredHistory = true, Ranges = Enumerable.Repeat(newRange, 101).ToArray() }, default, id);
+        Assert.False(tooMany.Success);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task DuplicateRows_AreMergedOnBackendWithoutLosingQuantity(bool differentLots)
     {
         var f = new Fixture();
@@ -115,7 +154,7 @@ public sealed partial class ManufacturingAdjustmentWorkflowTests
         var opened = await f.Service.InitializeAsync(f.Base.Order.MfgProductionOrderId, entity.ManufacturingFormulaAdjustmentId, default);
         Assert.True(opened.Success, opened.Message);
         Assert.Single(Assert.Single(opened.Data!.Draft.Ranges!).Items);
-        Assert.Single(Assert.Single(opened.Data.Calculation.Adjustment.Batches).Items);
+        Assert.Equal(2, Assert.Single(opened.Data.Calculation.Adjustment.Batches).Items.Count);
         Assert.Equal(2, batch.Items.Count);
         Assert.Equal(0, f.Base.Store.Saves);
         Assert.Empty(f.Base.Store.Added);

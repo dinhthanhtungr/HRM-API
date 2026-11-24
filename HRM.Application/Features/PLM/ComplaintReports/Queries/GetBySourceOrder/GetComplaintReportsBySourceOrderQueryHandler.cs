@@ -71,7 +71,7 @@ internal sealed class GetComplaintReportsBySourceOrderQueryHandler
                 HasOpenActions = x.CapaActions.Any(action => action.IsActive && action.CompletedAt == null),
                 HandlingOrder = x.ProcessingMerchandiseOrders
                     .Where(order => order.IsActive)
-                    .Select(order => new { order.MerchandiseOrderId, order.ExternalId })
+                    .Select(order => new { order.MerchandiseOrderId, order.ExternalId, order.CreateDate })
                     .FirstOrDefault()
             })
             .ToListAsync(cancellationToken);
@@ -94,7 +94,8 @@ internal sealed class GetComplaintReportsBySourceOrderQueryHandler
             HasOpenActions = x.HasOpenActions,
             TimelineBadge = ComplaintReportReadRules.TimelineBadge(x.Status),
             HandlingMerchandiseOrderId = x.HandlingOrder?.MerchandiseOrderId,
-            HandlingMerchandiseOrderExternalId = x.HandlingOrder?.ExternalId
+            HandlingMerchandiseOrderExternalId = x.HandlingOrder?.ExternalId,
+            HandlingOrderCreatedDate = x.HandlingOrder?.CreateDate
         }).ToList();
     }
 }

@@ -27,6 +27,8 @@ internal static class PurchasingMaterialCatalogPage
     {
         var products = db.Products.AsNoTracking().Where(x => x.CompanyId == company && (request.IncludeInactive || x.IsActive)
             && x.SampleRequests.Any(s => s.IsActive && s.CompanyId == company && s.RequestType == "SemiFinished"));
+        var outputProducts = products;
+        materials = materials.Where(x => !outputProducts.Any(p => p.ColourCode != null && p.ColourCode == x.ExternalId));
         if (request.CategoryId.HasValue) products = products.Where(x => x.CategoryId == request.CategoryId.Value);
         if (request.SupplierId.HasValue || request.PurchaseStatus.HasValue && request.PurchaseStatus != MaterialPurchaseStatus.Available
             || request.PriceStatus.HasValue && request.PriceStatus != MaterialPriceReviewStatus.MissingPrice)

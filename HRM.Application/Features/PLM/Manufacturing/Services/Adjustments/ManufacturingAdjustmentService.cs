@@ -80,7 +80,7 @@ internal sealed partial class ManufacturingAdjustmentService(
             return Fail(error);
         }
 
-        if (orderId == Guid.Empty || id == Guid.Empty
+        if (orderId == Guid.Empty || id == Guid.Empty || request.AppendToStoredHistory
             || request.Status.HasValue && !Enum.IsDefined(request.Status.Value)
             || request.Ranges?.Count > 100
             || request.Ranges?.Any(x => x is null) == true)

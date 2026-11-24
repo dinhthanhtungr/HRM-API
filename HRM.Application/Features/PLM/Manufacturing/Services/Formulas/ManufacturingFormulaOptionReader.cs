@@ -43,7 +43,8 @@ internal static class ManufacturingFormulaOptionReader
                 new ProductionOrderFormulaOptionDto(replacementId, replacement.ExternalId,
                     ProductionOrigin(replacement.CreatedDate), null, replacement.CreatedDate, true)
                 {
-                    Note = replacement.Note
+                    Note = replacement.Note,
+                    IsComplaintSource = true
                 }
             ];
         }

@@ -5,7 +5,21 @@
 API /api/v1/plm/material-processing-formulas giữ route và DTO hiện hành nhưng
 không đọc/ghi MaterialProcessingFormulas hoặc MaterialProcessingFormulaDetails.
 Các entity cũ chỉ còn làm adapter contract trong bộ nhớ, không được Add vào DbContext.
-Không tạo Material đầu ra, không tạo/xóa bảng/cột, migration hay backfill.
+Khi tạo Product Băm/Nghiền mới, tạo thêm Material cùng mã và tên đầu ra trong
+cùng transaction. Material có ID và audit riêng, dùng các thông tin NVL gốc
+và để trống barcode để tránh trùng mã quét. Danh sách vật tư mua hàng ưu tiên
+Product bán thành phẩm cùng mã để mỗi mã chỉ hiện một lần.
+Lookup công thức Lab và lệnh sản xuất gửi `processingAsMaterial=true` để chọn
+mã Băm/Nghiền làm Material đầu vào. Nếu chọn mã dự kiến hoặc mã Product cũ
+chưa có Material, khi lưu hệ thống tạo/bổ sung Material và lưu MaterialId thật.
+Giá đầu vào tiếp tục dùng quy tắc giá của Product bán thành phẩm cùng mã.
+Các dòng công thức cũ đã lưu Product vẫn đọc và lưu theo kiểu cũ.
+Đầu ra lệnh nội bộ tiếp tục dùng ProductId, kể cả lệnh Trộn.
+
+Trong Development, phản hồi lưu thành công có `Server-Timing` cho thời gian lấy
+khóa catalog (`mpf_save_lock`), xử lý đầu vào kho (`mpf_save_warehouse_input`),
+đồng bộ giữ chỗ (`mpf_save_reservation`), ghi và commit (`mpf_save_commit`) và
+tổng thời gian backend (`mpf_save_total`).
 
 - Product là NVL đầu ra, cùng category/unit NVL gốc; tên thêm (Băm)/(Nghiền)/(Trộn).
 - Khi lưu luồng Băm, `Product.ColourName` và `MfgProductionOrder.ColorName` được gán

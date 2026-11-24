@@ -94,6 +94,11 @@ public sealed class ProcessingCreationPostgresTests(IsolatedGroupStoragePostgres
         Assert.Contains(previews, x => x.ExternalId == "NVL_NH_TEST-B");
         var ground = await formulaLookup.Handle(new() { Keyword = "NVL_NH_TEST nghien", CategoryId = category }, default);
         Assert.Equal("NVL_NH_TEST-N", Assert.Single(ground.Items).ExternalId);
+        var groundAsMaterial = await formulaLookup.Handle(new() { Keyword = "NVL_NH_TEST nghien",
+            CategoryId = category, ProcessingAsMaterial = true }, default);
+        var materialPreview = Assert.Single(groundAsMaterial.Items);
+        Assert.True(materialPreview.IsProcessingPreview);
+        Assert.Equal(HRM.Domain.Enums.Formulas.ItemType.Material, materialPreview.ItemType);
         Assert.False(await db.Products.AnyAsync());
         await using (var previewTransaction = await db.BeginTransactionAsync(default))
         {
@@ -121,6 +126,14 @@ public sealed class ProcessingCreationPostgresTests(IsolatedGroupStoragePostgres
             var parentRow = await db.FormulaMaterials.SingleAsync(x => x.FormulaId == parentFormula.FormulaId);
             Assert.Equal(preparedProduct.ProductId, parentRow.ProductId);
             Assert.NotEqual(preview.ItemId, parentRow.ProductId);
+            await new HRM.Application.Features.PLM.Formulas.Services.FormulaWriteService(db, new Codes()).ReplaceMaterialsAsync(parentFormula,
+                [new() { ItemId = materialPreview.ItemId, ItemType = HRM.Domain.Enums.Formulas.ItemType.Material, Quantity = 1, UnitPrice = 123 }],
+                user.CompanyId.Value, default, user.EmployeeId.Value);
+            await db.SaveChangesAsync();
+            var savedMaterialRow = await db.FormulaMaterials.SingleAsync(x => x.FormulaId == parentFormula.FormulaId && x.IsActive);
+            Assert.Equal(HRM.Domain.Enums.Formulas.ItemType.Material, savedMaterialRow.itemType);
+            Assert.Equal((await db.Materials.SingleAsync(x => x.ExternalId == "NVL_NH_TEST-N")).MaterialId, savedMaterialRow.MaterialId);
+            Assert.Null(savedMaterialRow.ProductId);
             await previewTransaction.RollbackAsync();
         }
         db.ChangeTracker.Clear();
@@ -168,7 +181,12 @@ public sealed class ProcessingCreationPostgresTests(IsolatedGroupStoragePostgres
         Assert.Null(firstSchedule.PlanDate);
         Assert.Equal(100, saved.Data.TotalQuantityRequest);
         Assert.Equal(new decimal[] { 80, 20 }, saved.Data.Details.Select(x => x.QuantityKg));
-        Assert.Equal(2, await db.Materials.CountAsync());
+        Assert.Equal(3, await db.Materials.CountAsync());
+        var groundMaterial = await db.Materials.SingleAsync(x => x.ExternalId == "NVL_NH_TEST-N");
+        Assert.Equal("Resin (Nghiền)", groundMaterial.Name);
+        Assert.Equal(category, groundMaterial.CategoryId);
+        Assert.Equal("kg", groundMaterial.Unit);
+        Assert.NotEqual(saved.Data.MaterialId, groundMaterial.MaterialId);
         Assert.Single(await db.Products.ToListAsync());
         var sample = await db.SampleRequests.SingleAsync();
         Assert.Equal("SemiFinished", sample.RequestType);
@@ -184,6 +202,11 @@ public sealed class ProcessingCreationPostgresTests(IsolatedGroupStoragePostgres
         Assert.Equal(HRM.Domain.Enums.Formulas.ItemType.Product, processedOption.ItemType);
         Assert.Equal("NH", processedOption.CategoryCode);
         Assert.Equal("NVL_NH_TEST-N", processedOption.ExternalId);
+        var materialOptions = await lookup.Handle(new() { ProcessingAsMaterial = true, CategoryId = category,
+            Keyword = "NVL_NH_TEST-N" }, default);
+        var materialOption = Assert.Single(materialOptions.Items);
+        Assert.Equal(groundMaterial.MaterialId, materialOption.ItemId);
+        Assert.Equal(HRM.Domain.Enums.Formulas.ItemType.Material, materialOption.ItemType);
         var catalog = await HRM.Application.Features.Purchasing.Materials.Services.PurchasingMaterialCatalogPage.ReadAsync(db,
             db.Materials.Where(x => x.CompanyId == user.CompanyId && x.IsActive == true), user.CompanyId!.Value,
             new() { PageSize = 1, PageNumber = 3, SortBy = "externalId", SortDirection = "asc" }, default);
@@ -272,6 +295,7 @@ public sealed class ProcessingCreationPostgresTests(IsolatedGroupStoragePostgres
         Assert.Equal("Ok", chopped.Code);
         Assert.Equal(1000m, chopped.Data!.TotalQuantityRequest);
         Assert.Equal("BĂM-NB", (await db.Products.SingleAsync(x => x.ProductId == chopped.Data!.MaterialId)).ColourName);
+        Assert.Equal("Resin (Băm)", (await db.Materials.SingleAsync(x => x.ExternalId == "NVL_NH_TEST-B")).Name);
         Assert.Equal("BĂM-NB", (await db.MfgProductionOrders.SingleAsync(x => x.MfgProductionOrderId == chopped.Data!.Id)).ColorName);
         var mixed = await writer.SaveAsync(null, request with { ProcessingType = "L", TotalQuantityRequest = 10,
             Details = [request.Details[0] with { QuantityKg = 10 }] }, default);

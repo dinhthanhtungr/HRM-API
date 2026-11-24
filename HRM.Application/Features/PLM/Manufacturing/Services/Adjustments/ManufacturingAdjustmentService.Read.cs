@@ -133,7 +133,16 @@ internal sealed partial class ManufacturingAdjustmentService
 
     private static void Calculate(GetManufacturingFormulaAdjustment data)
     {
-        var totals = MfgAdjustmentQuantityCalculator.CalculateTrialTotals(data.Batches.SelectMany(b => b.Items.Select(i => new MfgAdjustmentQuantityRow(
+        var totals = MfgAdjustmentQuantityCalculator.CalculateTrialTotals(ReadQuantityRows(data))
+            .ToDictionary(x => (x.BatchNo, x.TrialNo), x => x.FinalQuantityGram);
+        foreach (var batch in data.Batches)
+        {
+            batch.FinalQuantityGram = totals.GetValueOrDefault((batch.BatchNo, batch.TrialNo));
+        }
+    }
+
+    private static IEnumerable<MfgAdjustmentQuantityRow> ReadQuantityRows(GetManufacturingFormulaAdjustment data) =>
+        data.Batches.SelectMany(b => b.Items.Select(i => new MfgAdjustmentQuantityRow(
             b.BatchNo,
             b.TrialNo,
             b.IsAdditionalBatch,
@@ -144,11 +153,5 @@ internal sealed partial class ManufacturingAdjustmentService
             i.AdjustedQuantity,
             i.DeltaQuantity,
             i.Unit
-        ))))
-            .ToDictionary(x => (x.BatchNo, x.TrialNo), x => x.FinalQuantityGram);
-        foreach (var batch in data.Batches)
-        {
-            batch.FinalQuantityGram = totals.GetValueOrDefault((batch.BatchNo, batch.TrialNo));
-        }
-    }
+        )));
 }

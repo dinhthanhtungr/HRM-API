@@ -11,6 +11,7 @@ public sealed record ProductionOrderFormulaOptionDto(
     bool RequiresFormulaReview
 )
 {
+    public bool IsComplaintSource { get; init; }
     public string? Note { get; init; }
     public string? PlpuNote { get; init; }
     public string? LabNote { get; init; }

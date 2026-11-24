@@ -7,11 +7,13 @@ using HRM.Application.Features.Timeline.Dtos;
 using HRM.Application.Features.Timeline.Services;
 using HRM.Domain.Entities.AttachmentSchema;
 using HRM.Domain.Entities.OrderSchema;
+using HRM.Domain.Entities.WarehouseSchema;
 using HRM.Domain.Enums.Category;
 using HRM.Domain.Enums.Logs;
 using HRM.Domain.Enums.Merchadises;
 using HRM.Domain.Enums.Orders;
 using HRM.Domain.Enums.Products;
+using HRM.Domain.Enums.WareHouses;
 using Microsoft.EntityFrameworkCore;
 
 namespace HRM.Application.Features.PLM.SaleOrders.Commands.CreateSaleOrder.Services;
@@ -22,6 +24,7 @@ namespace HRM.Application.Features.PLM.SaleOrders.Commands.CreateSaleOrder.Servi
 /// </summary>
 internal sealed class SaleOrderCreationService
 {
+    private const string CustomerReturnRequestTitle = "PHIẾU YÊU CẦU NHẬP HÀNG TRẢ VỀ TỪ KH";
     private readonly HRM.Application.Features.CRM.CustomerCare.SampleSharingGroups.CustomerSampleSharingService _sampleSharing;
     private readonly ISaleOrderDbContext _dbContext;
     private readonly IExternalIdService _externalIdService;
@@ -266,6 +269,7 @@ internal sealed class SaleOrderCreationService
             return OperationResult<MerchandiseOrder>.Fail("Chỉ đơn khiếu nại được chọn ĐHG gốc và VA nguồn.");
         }
 
+        var returnLines = new List<WarehouseRequestDetail>();
         foreach (var detailRequest in details)
         {
             var totalPrice = Math.Round(
@@ -313,9 +317,20 @@ internal sealed class SaleOrderCreationService
                 {
                     var options = await ComplaintOrderSourceReader.ReadVaAsync(
                         _dbContext, companyId, source.MerchandiseOrderDetailId, cancellationToken);
-                    if (!options.Any(x => x.ManufacturingFormulaId == vaId))
+                    var selectedVa = options.SingleOrDefault(x => x.ManufacturingFormulaId == vaId);
+                    if (selectedVa is null)
                         return OperationResult<MerchandiseOrder>.Fail("VA nguồn không thuộc dòng hàng của ĐHG gốc.");
                     newDetail.ReplacementSourceManufacturingFormulaId = vaId;
+                    returnLines.Add(new WarehouseRequestDetail
+                    {
+                        ProductCode = source.ProductExternalIdSnapshot,
+                        ProductName = source.ProductNameSnapshot,
+                        LotNumber = selectedVa.ExternalId,
+                        WeightKg = newDetail.ExpectedQuantity,
+                        UnitName = "Kg",
+                        ItemStockType = StockType.Waiter,
+                        StockStatus = nameof(StockType.Waiter)
+                    });
                 }
 
                 var complaintLine = new ComplaintReportLine
@@ -366,6 +381,25 @@ internal sealed class SaleOrderCreationService
         }
 
         await _leadConversionService.ApplyAsync(order, employeeId, now, cancellationToken);
+        if (returnLines.Count > 0)
+        {
+            _dbContext.WarehouseRequests.Add(new WarehouseRequest
+            {
+                RequestCode = await _externalIdService.GenerateMonthlyCodeAsync(
+                    companyId, DocumentPrefix.PRQ.ToString(), cancellationToken),
+                RequestName = CustomerReturnRequestTitle,
+                ReqType = WareHouseRequestType.ImportReturn,
+                ReqStatus = WarehouseRequestStatus.Pending,
+                codeFromRequest = order.ExternalId,
+                CompanyId = companyId,
+                CreatedDate = now,
+                CreatedBy = employeeId,
+                UpdatedDate = now,
+                UpdatedBy = employeeId,
+                WarehouseRequestDetails = returnLines
+            });
+        }
+
         await _dbContext.MerchandiseOrders.AddAsync(order, cancellationToken);
         await _eventLogWriter.AddAsync(new EventLogCreateRequest
         {

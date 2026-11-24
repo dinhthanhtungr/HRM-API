@@ -63,7 +63,10 @@ internal sealed class GetFormulaItemLookupQueryHandler
             .Where(x =>
                 includeMaterials &&
                 x.CompanyId == companyId &&
-                x.IsActive == true);
+                x.IsActive == true &&
+                (request.ProcessingAsMaterial || !_dbContext.Products.Any(p => p.CompanyId == companyId && p.IsActive &&
+                    p.ColourCode != null && p.ColourCode == x.ExternalId &&
+                    p.SampleRequests.Any(s => s.CompanyId == companyId && s.IsActive && s.RequestType == SemiFinishedProcessing.RequestType))));
 
         var products = _dbContext.Products
             .AsNoTracking()
@@ -76,6 +79,17 @@ internal sealed class GetFormulaItemLookupQueryHandler
                 x.SampleRequests.Any(sr =>
                     sr.IsActive &&
                     sr.CompanyId == companyId && (sr.RequestType == "SemiFinished" || sr.Status == sampleSentStatus || sr.Status == completedStatus)));
+
+        if (request.ProcessingAsMaterial)
+        {
+            var processed = products.Where(x =>
+                (x.ColourCode!.Trim().ToUpper().EndsWith("-N") || x.ColourCode.Trim().ToUpper().EndsWith("-B")) &&
+                x.SampleRequests.Any(s => s.CompanyId == companyId && s.IsActive && s.RequestType == SemiFinishedProcessing.RequestType));
+            products = products.Where(x => processed.Any(p => p.ProductId == x.ProductId)
+                ? includeMaterials && !_dbContext.Materials.Any(m =>
+                    m.CompanyId == companyId && m.IsActive == true && m.ExternalId == x.ColourCode)
+                : includeProducts);
+        }
 
         if (request.CategoryId is { } categoryId && categoryId != Guid.Empty)
         {
@@ -140,7 +154,12 @@ internal sealed class GetFormulaItemLookupQueryHandler
                 ? null
                 : x.PurchaseAvailability.ExpectedAvailableDate,
             CreatedDate = x.CreatedDate,
-            ProcessingType = null
+            ProcessingType = null,
+            ProcessingAlias = request.ProcessingAsMaterial && x.ExternalId != null &&
+                (x.ExternalId.Trim().ToUpper().EndsWith("-N") || x.ExternalId.Trim().ToUpper().EndsWith("-B")) &&
+                _dbContext.Products.Any(p => p.CompanyId == companyId && p.IsActive &&
+                    p.ColourCode == x.ExternalId &&
+                    p.SampleRequests.Any(s => s.CompanyId == companyId && s.IsActive && s.RequestType == SemiFinishedProcessing.RequestType))
         });
 
         var productRows = products.Select(x => new FormulaItemLookupRow
@@ -168,7 +187,10 @@ internal sealed class GetFormulaItemLookupQueryHandler
             PurchaseStatusEffectiveFrom = null,
             ExpectedAvailableDate = null,
             CreatedDate = x.CreatedDate,
-            ProcessingType = null
+            ProcessingType = null,
+            ProcessingAlias = request.ProcessingAsMaterial &&
+                (x.ColourCode!.Trim().ToUpper().EndsWith("-N") || x.ColourCode.Trim().ToUpper().EndsWith("-B")) &&
+                x.SampleRequests.Any(s => s.CompanyId == companyId && s.IsActive && s.RequestType == SemiFinishedProcessing.RequestType)
         });
 
         IQueryable<FormulaItemLookupRow> PreviewRows(string process)
@@ -196,7 +218,7 @@ internal sealed class GetFormulaItemLookupQueryHandler
                     CategoryId = x.CategoryId, CategoryCode = x.Category.ExternalId, Weight = x.Weight, Unit = x.Unit,
                     Package = null, PurchaseStatus = null, PurchaseStatusReason = null,
                     PurchaseStatusEffectiveFrom = null, ExpectedAvailableDate = null,
-                    ProcessingType = process, CreatedDate = x.CreatedDate
+                    ProcessingType = process, CreatedDate = x.CreatedDate, ProcessingAlias = request.ProcessingAsMaterial
                 });
         }
         var query = materialRows.Concat(productRows);
@@ -242,7 +264,8 @@ internal sealed class GetFormulaItemLookupQueryHandler
                 {
                     ItemId = x.ProcessingType is null ? x.ItemId : ProcessingPreviewIdentity.Id(x.ItemId, x.ProcessingType),
                     IsProcessingPreview = x.ProcessingType is not null,
-                    ItemType = x.ItemType,
+                    IsProcessedMaterial = x.ProcessingAlias,
+                    ItemType = x.ProcessingAlias ? ItemType.Material : x.ItemType,
                     ExternalId = x.ExternalId,
                     StockCode = x.StockCode,
                     CustomCode = x.CustomCode,
@@ -325,6 +348,7 @@ internal sealed class GetFormulaItemLookupQueryHandler
         public string? CustomCode { get; init; }
         public string Name { get; init; } = string.Empty;
         public Guid? CategoryId { get; init; }
+        public bool ProcessingAlias { get; init; }
         public string? CategoryCode { get; init; }
         public double? Weight { get; init; }
         public string? Package { get; init; }

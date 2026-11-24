@@ -40,6 +40,8 @@ public sealed class ManufacturingAdjustmentRangeInput
 
 public sealed class ManufacturingAdjustmentInput
 {
+    /// <summary>Cộng thay đổi vào lịch sử khi tính hoặc xem trước PDF.</summary>
+    public bool AppendToStoredHistory { get; init; }
     /// <summary>Chỉ dùng khi preview PDF, không ghi đè ngày tạo phiếu đã lưu.</summary>
     public DateTime? PreviewCreatedDate { get; init; }
     public Guid? ManufacturingFormulaId { get; init; }

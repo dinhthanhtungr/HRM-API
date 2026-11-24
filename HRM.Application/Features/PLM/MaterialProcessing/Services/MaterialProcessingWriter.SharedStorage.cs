@@ -12,6 +12,7 @@ using HRM.Domain.Enums.Manufacturings;
 using HRM.Domain.Enums.Formulas;
 using HRM.Domain.Enums.Category;
 using Microsoft.EntityFrameworkCore;
+using System.Diagnostics;
 
 namespace HRM.Application.Features.PLM.MaterialProcessing.Services;
 
@@ -20,14 +21,16 @@ public sealed class MaterialProcessingWriter(IMaterialProcessingDbContext db, IC
     IExternalIdService externalIds, ProcessingWarehouseService warehouse)
 {
     public async Task<MaterialProcessingResult> SaveAsync(Guid? id, SaveMaterialProcessingRequest? request, CancellationToken ct,
-        PatchMaterialProcessingRequest? patch = null)
+        PatchMaterialProcessingRequest? patch = null, Action<string, double>? recordTiming = null)
     {
         if (!CanWrite(id is null)) return new("Forbidden");
         if (id is null && !permissions.HasPermission(ApplicationPermissions.PLM.ManageMaterialProcessing)
             && request?.Status is not (nameof(ManufacturingProductOrder.New) or nameof(ManufacturingProductOrder.Scheduling))) return new("Forbidden");
         var company = user.CompanyId!.Value;
         await using var transaction = await db.BeginTransactionAsync(ct);
+        var phase = Stopwatch.GetTimestamp();
         await db.LockPurchasingCatalogAsync(company, ct);
+        recordTiming?.Invoke("mpf_save_lock", Stopwatch.GetElapsedTime(phase).TotalMilliseconds);
         MfgProductionOrder? order = null;
         ManufacturingFormula? formula = null;
         if (id.HasValue)
@@ -113,7 +116,9 @@ public sealed class MaterialProcessingWriter(IMaterialProcessingDbContext db, IC
         order.QcCheck = string.IsNullOrWhiteSpace(input.QcCheck) ? null : input.QcCheck.Trim();
         order.UpdatedBy = user.EmployeeId.Value;
         order.UpdatedDate = stamp;
+        phase = Stopwatch.GetTimestamp();
         var resolved = await warehouse.ResolveAsync(order, formula, input, ratios, ct);
+        recordTiming?.Invoke("mpf_save_warehouse_input", Stopwatch.GetElapsedTime(phase).TotalMilliseconds);
         if (resolved.Items is null) return new("InvalidWarehouseInput", Message: resolved.Error);
         if (formula is null)
         {
@@ -150,7 +155,9 @@ public sealed class MaterialProcessingWriter(IMaterialProcessingDbContext db, IC
             formula.ManufacturingFormulaMaterials.Add(detail);
             db.ManufacturingFormulaMaterials.Add(detail);
         }
+        phase = Stopwatch.GetTimestamp();
         var reservationError = await warehouse.ReserveAsync(order, resolved.Items, stamp, ct);
+        recordTiming?.Invoke("mpf_save_reservation", Stopwatch.GetElapsedTime(phase).TotalMilliseconds);
         if (reservationError is not null) return new("InvalidWarehouseInput", Message: reservationError);
         var schedule = await db.SchedualMfgs.FirstOrDefaultAsync(x => x.MfgProductionOrderId == order.MfgProductionOrderId
             && x.MfgProductionOrder != null && x.MfgProductionOrder.CompanyId == company, ct);
@@ -163,8 +170,10 @@ public sealed class MaterialProcessingWriter(IMaterialProcessingDbContext db, IC
             schedule.requirement = order.Requirement;
             schedule.StepOfProduct = order.StepOfProduct;
         }
+        phase = Stopwatch.GetTimestamp();
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
+        recordTiming?.Invoke("mpf_save_commit", Stopwatch.GetElapsedTime(phase).TotalMilliseconds);
         return new("Ok", MaterialProcessingProjection.ToDto(SemiFinishedProcessing.Adapt(order, formula), output.Source));
     }
 
