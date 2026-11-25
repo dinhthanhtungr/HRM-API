@@ -1,6 +1,7 @@
 using HRM.Application.Abstractions.Security;
 using HRM.Application.Commons.Authorization;
 using HRM.Application.Features.Reports.PLPU;
+using HRM.Application.Features.Reports.PLPU.Queries;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -56,6 +57,15 @@ public sealed class PLPUReportController(ISender sender, ICurrentUser user, ICur
 
     [HttpGet("body")]
     public async Task<IActionResult> GetBody([FromQuery] GetPLPUBodyQuery query, CancellationToken ct)
+    {
+        if (!PLPUReportAccess.CanRead(user, permissions, query.CompanyId)) return Forbid();
+        var result = await sender.Send(query, ct);
+        return result.Success ? Ok(result.Data) : BadRequest(result);
+    }
+
+    [HttpGet("material-activity")]
+    [ProducesResponseType(typeof(PLPUMaterialActivityDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetMaterialActivity([FromQuery] GetPLPUMaterialActivityQuery query, CancellationToken ct)
     {
         if (!PLPUReportAccess.CanRead(user, permissions, query.CompanyId)) return Forbid();
         var result = await sender.Send(query, ct);

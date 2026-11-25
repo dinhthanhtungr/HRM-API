@@ -20,6 +20,9 @@ public partial class PLPUPurchaseOverviewReportService
             _repository = repository;
         }
 
+        public Task<PLPUMaterialActivityDto?> GetMaterialActivityAsync(PLPUPurchaseOverviewQuery query, CancellationToken ct)
+            => _repository.GetMaterialActivityAsync(query, ct);
+
         /// <summary>
         /// Lấy dữ liệu header dashboard cho báo cáo mua hàng.
         /// </summary>

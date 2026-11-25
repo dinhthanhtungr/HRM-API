@@ -5,7 +5,9 @@ using Microsoft.EntityFrameworkCore;
 namespace HRM.Application.Features.Reports.PLPU;
 public partial class PLPUPurchaseOverviewReportRepository
 {
-        private IQueryable<PLPUPurchaseReceiptReportDto> BuildReceiptQuery(PLPUPurchaseOverviewQuery query)
+        private IQueryable<PLPUPurchaseReceiptReportDto> BuildReceiptQuery(
+            PLPUPurchaseOverviewQuery query, bool byMovementDate = false, bool supplierReturns = false,
+            bool specialDecisions = false)
         {
             var fromDate = query.From?.Date;
             var toDate = query.To?.Date.AddDays(1);
@@ -25,11 +27,17 @@ public partial class PLPUPurchaseOverviewReportRepository
                 join ledger in _context.WarehouseShelfLedgers.AsNoTracking()
                     on vd.VoucherDetailId equals ledger.VoucherDetailId
                 where wr.CompanyId == query.CompanyId && v.CompanyId == query.CompanyId && ledger.CompanyId == query.CompanyId
-                      && PurchaseReceiptVoucherTypes.Contains(v.VoucherType)
-                      && ledger.DeltaKg > 0
-                let qcLatest = _context.QCInputByQCs.AsNoTracking()
+                      && (supplierReturns
+                          ? wr.ReqType == WareHouseRequestType.ExportReturn
+                            && v.VoucherType == (int)WareHouseRequestType.ExportReturn
+                            && !vd.IsIncrease && ledger.StockType == StockType.DefectiveRawMaterial
+                          : (PurchaseReceiptVoucherTypes.Contains(v.VoucherType)
+                             || byMovementDate && v.VoucherType == (int)WareHouseRequestType.ImportDefectiveRawMaterial)
+                            && ledger.DeltaKg > 0)
+                let qcLatest = byMovementDate && !specialDecisions ? null : _context.QCInputByQCs.AsNoTracking()
                     .Where(qc => qc.VoucherDetailId == vd.VoucherDetailId)
                     .OrderByDescending(qc => qc.CreatedDate)
+                    .ThenByDescending(qc => qc.QCInputByQCId)
                     .Select(qc => new
                     {
                         qc.QCInputByQCId,
@@ -41,19 +49,30 @@ public partial class PLPUPurchaseOverviewReportRepository
 
             q = q.Where(x => (x.po.OrderType ?? "") == SupplierOrderType);
 
-            q = q.Where(x =>
-                EF.Functions.ILike(
-                    x.ledger.ProductCode ?? x.vd.ProductCode ?? "",
-                    IncludedMaterialCodePrefix + "%"));
-
-            foreach (var keyworde in ExcludedMaterialCodeKeywords)
+            if (byMovementDate)
             {
-                var pattern = "%" + keyworde + "%";
-
+                q = q.Where(x => (x.ledger.ProductCode ?? x.vd.ProductCode) != null &&
+                    _context.PurchaseOrderDetails.Any(line =>
+                    line.PurchaseOrderId == x.po.PurchaseOrderId &&
+                    line.Material.CompanyId == query.CompanyId &&
+                    line.Material.Category.CompanyId == query.CompanyId &&
+                    line.Material.Category.Types == "NVL" &&
+                    (line.MaterialExternalIDSnapshot ?? line.Material.ExternalId) ==
+                        (x.ledger.ProductCode ?? x.vd.ProductCode)));
+            }
+            else
+            {
                 q = q.Where(x =>
-                    !EF.Functions.ILike(
+                    EF.Functions.ILike(
                         x.ledger.ProductCode ?? x.vd.ProductCode ?? "",
-                        pattern));
+                        IncludedMaterialCodePrefix + "%"));
+
+                foreach (var excludedKeyword in ExcludedMaterialCodeKeywords)
+                {
+                    var pattern = "%" + excludedKeyword + "%";
+                    q = q.Where(x => !EF.Functions.ILike(
+                        x.ledger.ProductCode ?? x.vd.ProductCode ?? "", pattern));
+                }
             }
 
             q = q.Where(x =>
@@ -63,10 +82,22 @@ public partial class PLPUPurchaseOverviewReportRepository
             if (!query.IncludeInactive)
                 q = q.Where(x => x.po.IsActive == true && x.wr.IsActive);
 
-            if (fromDate.HasValue)
+            if (byMovementDate)
+            {
+                q = q.Where(x => !x.ledger.VoucherId.HasValue || x.ledger.VoucherId == x.v.VoucherId);
+                q = q.Where(x => !_context.PurchaseOrders.Any(other => other.CompanyId == x.po.CompanyId
+                    && other.ExternalId == x.po.ExternalId && other.PurchaseOrderId != x.po.PurchaseOrderId));
+                q = specialDecisions
+                    ? q.Where(x => _context.QCInputByQCs.Any(qc => qc.VoucherDetailId == x.vd.VoucherDetailId
+                        && qc.ImportWarehouseType == QcDecision.Special
+                        && qc.CreatedDate >= fromDate && qc.CreatedDate < toDate
+                        && qc.QCInputByQCId == x.qcLatest!.QCInputByQCId))
+                    : q.Where(x => x.ledger.CreatedAt >= fromDate && x.ledger.CreatedAt < toDate);
+            }
+            else if (fromDate.HasValue)
                 q = q.Where(x => x.po.CreateDate >= fromDate.Value);
 
-            if (toDate.HasValue)
+            if (!byMovementDate && toDate.HasValue)
                 q = q.Where(x => x.po.CreateDate < toDate.Value);
 
             if (query.CompanyId.HasValue)

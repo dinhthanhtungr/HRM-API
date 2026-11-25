@@ -139,6 +139,8 @@ tổng Std bằng 1 (100%). Dán chưa ghi DB và không tạo danh mục vật 
 | Tên nhãn khách hàng | Tên sản phẩm riêng được cấu hình cho đúng một cặp khách hàng và sản phẩm. | Phiếu giao ưu tiên CustomerLabelDetail có FieldKey=Name; thiếu tên hợp lệ thì dùng Product.Name. |
 | Mã nhãn tạm theo khách hàng | Mã nhận diện nhãn khi sản phẩm chưa có ColorCode; số tăng dần riêng theo khách hàng, không phải mã màu chính thức. | `KH_375_1` được thay bằng ColorCode hiện hành khi Lab tạo mã trên cùng sản phẩm, giữ nguyên nội dung nhãn. |
 | Yêu cầu xuất hàng trả NCC | Đề nghị kho xuất lượng hàng không đạt để trả nhà cung cấp; tạo yêu cầu chưa làm giảm tồn. | Mua hàng tạo ExportReturn=12, codeFromRequest là mã ĐĐH; lý do lưu tại chứng từ nội bộ của PO. |
+| Chấp nhận đặc biệt | Quyết định IQC cho phép sử dụng lô theo ngoại lệ đã được chấp nhận. | Báo cáo mua hàng ghi nhận mã vật tư theo ngày quyết định IQC `Special`. |
+| So sánh cùng kỳ năm trước | So số liệu trong khoảng ngày được chọn với khoảng ngày tương ứng lùi một năm. | Từ 05/11 đến 20/11 được đối chiếu với 05/11 đến 20/11 của năm trước. |
 | Debounce / Chờ thao tác tạm dừng | Gộp các sự kiện liên tiếp và chỉ chạy xử lý sau một khoảng yên lặng để giảm công việc lặp. | Theo dõi mẫu đo lại vị trí thẻ sau khi cuộn hoặc đổi kích thước tạm dừng 120ms. |
 | Dashboard / Bảng tổng quan | Màn tập hợp số liệu, biểu đồ và chi tiết để theo dõi một nghiệp vụ trong cùng phạm vi lọc và quyền. | Báo cáo giao hàng tính tổng kg/bao và biểu đồ từ dữ liệu sau khi giới hạn khách hàng của Sale. |
 | KPI / Chỉ số chính | Số liệu được chọn để theo dõi nhanh hoạt động; cần đi kèm đơn vị, kỳ và nguồn ghi nhận. | Tổng hợp công ty đặt doanh số, tấn giao và giá trị nhập lên đầu trang; tiền vật tư chưa tính đủ vẫn phải có cảnh báo. |

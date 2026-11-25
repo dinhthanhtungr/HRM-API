@@ -17,6 +17,7 @@ Token explicit permission set phải có claim reports.plpu.view và thuộc m�
 | --- | --- | --- |
 | `/header` | `PLPUPurchaseOverviewSummaryDto` | Phần summary của `GetHeaderReportAsync` |
 | `/body` | `PLPUPurchaseBodyDto` | Tám collection biểu đồ của `GetHeaderReportAsync` |
+| `/material-activity` | `PLPUMaterialActivityDto` | Tổng hợp nhập hàng và chất lượng theo ngày phát sinh |
 | `/orders` | Page của `PLPUPurchaseOrderRowDto` | `GetRowsAsync` |
 | `/orders/{id}` | Header của một PO, Lines, Receipts, QcRows | `GetOrderDetailAsync` |
 | `/lines` | Page của `PLPUPurchaseOrderDetailReportDto` | `GetDetailLinesAsync` |
@@ -26,6 +27,26 @@ Token explicit permission set phải có claim reports.plpu.view và thuộc m�
 | `/finish` | Danh sách `FinishRow` | `GetFinishReportAsync` |
 | `/finish/export` | Excel 18 cột, sheet Giao hàng hoàn tất | `ExportFinishReportExcel` |
 | `/drilldown?metric=...` | Page PO/dòng đóng góp vào KPI, kèm tổng đối soát | Cùng allocation, detail/header builder và summary của `/header` |
+
+### Tổng hợp nhập hàng và chất lượng
+
+`/material-activity` yêu cầu đủ `From` và `To`. Ví dụ rút gọn:
+`{ "total": { "from": "2026-11-05T00:00:00", "to": "2026-11-20T00:00:00", "current": { "receivedCodes": 4, "receivedKg": 1200, "returnedDefectiveCodes": 1, "specialAcceptanceCodes": 0 }, "priorYear": { "receivedCodes": 3, "receivedKg": 1000, "returnedDefectiveCodes": 0, "specialAcceptanceCodes": 0 } }, "months": [...] }`.
+`total` đếm mã duy nhất trên cả kỳ. Mỗi dòng `months` dùng phần tháng nằm
+trong khoảng chọn, tính cả hai đầu ngày và cùng khoảng lùi một năm để so sánh.
+Thiếu ngày trả 400. Số 0 nghĩa là không có phát sinh
+khớp nguồn trong kỳ. `priorYear: null` nghĩa là ngày nằm ngoài phạm vi so sánh.
+
+Bảng dùng phạm vi công ty và quyền PLPU. Group Type NVL lấy từ `Material.Category.Types`
+của vật tư trên dòng đơn liên kết với mã kho. Bảng áp dụng phân loại này cho cả
+nhập kho, trả NCC và chấp nhận đặc biệt. Ngày tạo đơn không giới hạn
+số liệu bảng này. Số nhập và kg lấy phát sinh dương trong sổ kho mua hàng, gồm cả
+phiếu nhập hàng lỗi. Số mã lỗi trả NCC dựa trên lượng xuất ròng theo mã/lô và
+yêu cầu kho `ExportReturn` từ tồn NVL lỗi trong kỳ. Chấp nhận đặc biệt lấy quyết
+định IQC mới nhất trên dòng nhập có sổ kho, theo ngày IQC. Dữ liệu nguyên nhân lỗi
+và xác minh hiệu quả xử lý NCC chưa được chuẩn hóa để tổng hợp.
+
+### Phạm vi truy cập
 
 Chưa đăng nhập trả 401; thiếu company/capability hoặc yêu cầu company khác trả 403.
 PO không thuộc company hoặc không thuộc bộ lọc report trả 404 ở `/orders/{id}`.
@@ -41,7 +62,7 @@ không có chế độ mở report rồi che một vài field.
 Các API mua hàng dùng `From`, `To`, `CompanyId`, `PurchaseOrderId`, `SupplierId`,
 `MaterialId`, `OrderType`, `Status`, `Keyword`, `IncludeInactive`, `OnlyNeedAction`,
 `PageNumber`, `PageSize`. CompanyId bỏ trống được gán current company; không được mở rộng scope.
-From/To lọc **ngày tạo PO**, bỏ giờ, To inclusive; bỏ trống không giới hạn đầu/cuối kỳ.
+From/To lọc **ngày tạo PO** cho các chỉ số PO, bỏ giờ, To inclusive. Bỏ trống không giới hạn đầu/cuối kỳ.
 Receipt/QC của các PO đó lấy toàn bộ lịch sử liên quan, không giới hạn ngày nhập bằng From/To.
 Keyword giữ phép Contains và phân biệt hoa/thường như nguồn.
 
