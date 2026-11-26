@@ -101,10 +101,13 @@ public sealed partial class InternalMailAreaAccessService(IInternalMailDbContext
     }
 
     public IQueryable<InternalMessage> Messages(string? area = null)
+        => MessagesForCandidates(null, area);
+
+    internal IQueryable<InternalMessage> MessagesForCandidates(Guid[]? candidates, string? area = null)
     {
         if (area is not (null or InternalMailAreas.Technical or InternalMailAreas.Pricing or InternalMailAreas.Custom or InternalMailAreas.General))
             return db.InternalMessages.Where(_ => false);
-        var visible = Conversations().Select(c => c.InternalConversationId);
+        var visible = ConversationsForCandidates(candidates).Select(c => c.InternalConversationId);
         if (area is null) return db.InternalMessages.Where(m => visible.Contains(m.InternalConversationId));
         var groups = GroupScopes(user.CompanyId ?? Guid.Empty);
         if (area == InternalMailAreas.Technical) groups = groups.Where(g => g.GroupType == InternalConversationGroupType.Technical);
@@ -478,7 +481,7 @@ public sealed partial class InternalMailAreaAccessService(IInternalMailDbContext
         if (candidates.Count == 0) return [];
         var candidateIds = candidates.Select(m => m.InternalConversationId).Distinct().ToArray();
         // InboxConversations includes Conversations(): the same full read scope as Messages(), exactly once.
-        var allowed = await InboxConversations(false)
+        var allowed = await InboxConversations(false, candidateIds)
             .Where(c => candidateIds.Contains(c.InternalConversationId) && c.IsMember &&
                 (!c.IsMuted || c.Conversation.RelatedType == InternalMailRelatedType.ConversationTechnical ||
                  c.Conversation.RelatedType == InternalMailRelatedType.ConversationPricing ||

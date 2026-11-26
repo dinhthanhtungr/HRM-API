@@ -41,6 +41,11 @@ mở lại để gửi chip rồi kg, từng lần gửi mới có Trial riêng;
 
 ## Giao diện và thao tác
 
+Lưu kèm khi xác nhận: lưu thay đổi đang nhập cùng thao tác gửi hoặc hoàn thành,
+không cần bấm Lưu riêng. Ví dụ công thức PLM dùng status transition cho gửi chip;
+gửi mẫu nhiều VU lưu editor trước rồi mới mở bước gửi. Đây là thao tác do người dùng
+bấm xác nhận, không phải tự lưu ngầm trong lúc nhập.
+
 Đợt giao / Delivery schedule là một phần số lượng của cùng dòng đơn hàng, có ngày khách yêu cầu và ngày hứa riêng. Phân bổ phiếu giao / Delivery schedule allocation là lượng của dòng phiếu gắn vào một đợt; phiếu đang chờ vẫn có thể giữ lượng phân bổ. Ví dụ phiếu 500 kg phân bổ 400 kg đợt 1 và 100 kg đợt 2, chưa có nghĩa khách đã nhận 500 kg. Ngày dự kiến MFG vẫn thuộc lệnh sản xuất, không tự biến thành ngày hứa của mọi đợt.
 
 Font family / Kiểu chữ là bộ nét chữ được dùng, khác font size / cỡ chữ và mật độ
@@ -258,6 +263,7 @@ tổng Std bằng 1 (100%). Dán chưa ghi DB và không tạo danh mục vật 
 | Fingerprint / Mã đối chiếu dữ liệu | Mã băm của dữ liệu chuẩn hóa, dùng phát hiện nội dung khác nhau; không phải token cấp quyền. | Kế hoạch watcher đổi thì đối soát lại. Tóm tắt mẫu chỉ báo đã đồng bộ khi fingerprint bản lưu khớp nguồn hiện hành. `work-changes` dùng mã đối chiếu các mốc cập nhật để chỉ đọc lại thẻ mẫu đã đổi; số tin chưa đọc được kiểm tra riêng theo người dùng. |
 | Materialized projection / Bản dựng lưu sẵn | Dữ liệu hiển thị được dựng từ nguồn và lưu để đọc lại, có thể cần đồng bộ khi nguồn đổi. Khác với projection chỉ chọn cột trong một truy vấn. | Mỗi yêu cầu mẫu có một bản tóm tắt hiện hành riêng; tin ban đầu vẫn là lịch sử. |
 | Workflow facts / Dữ kiện quyết định công việc | Các giá trị nguồn như trạng thái lần gửi, VU và phản hồi dùng để tính hành động tiếp theo. Không phải trạng thái mới lưu vào DB. | Lịch sử mẫu đọc dữ kiện của trang đang xem rồi tính quyết định cho từng lần gửi, tránh lặp toàn bộ điều kiện trong SQL. |
+| Truy vấn chỉ đếm / Count-only query | Chỉ trả số lượng theo bộ lọc và quyền; không dựng dữ liệu chi tiết của danh sách. | Menu theo dõi mẫu dùng `menuCounts=true` để lấy số nhóm và loại công việc trong một request, thay vì tải lại danh sách cho từng nhóm. |
 | Phản hồi chip tùy chọn / Optional chip feedback | Phản hồi riêng cho lần gửi chip, không bắt buộc khi cùng TP chuyển sang theo dõi mẫu kg. | Lab gửi chip rồi kg; Sale chỉ cần phản hồi mẫu, vẫn có thể nhập phản hồi chip cũ mà không đổi kết quả kg hoặc VU đã chốt. |
 | Backpressure / Điều tiết hàng đợi | Tạm giảm hoặc dừng xếp việc khi bên xử lý chưa theo kịp. | Công cụ Dev chờ khi có từ 200 job tóm tắt đang chờ, thay vì xếp ngay toàn bộ mã cũ. |
 | Audience / Recipient | Audience là tập người được gửi; recipient là từng người nhận. | BE chọn người nhận theo nhóm hoặc sự kiện nghiệp vụ. |
@@ -527,6 +533,13 @@ ExchangeRate là số VND cho một đơn vị ngoại tệ. Ví dụ tỷ giá 
 
 Customer sample sharing group là nhóm khách cùng công ty được dùng mẫu đủ điều kiện của nhau khi lên đơn. Mỗi khách có tối đa một nhóm active; không phải team Sale hay phân loại CustomerGroup. Ví dụ: KH_A dùng mẫu của KH_B cùng nhóm, nhưng đơn và công nợ vẫn thuộc KH_A. Contract: [SampleSharingGroups](../../HRM.Application/Features/CRM/CustomerCare/SampleSharingGroups/README.md).
 Trong workspace liên kết khách, anchor customer là khách đang làm việc trong expand/detail; không phải khách sở hữu mẫu được chọn. Membership là liên kết một khách với nhóm, được đóng bằng IsActive=false khi bỏ/chuyển để giữ lịch sử. Batch nguyên tử là lưu toàn bộ thay đổi thành viên trong một transaction: thành công tất cả hoặc rollback; revision là token đối chiếu dữ liệu đồng thời, không thay thế kiểm tra quyền.
+
+## Đọc và tải lịch sử hội thoại
+
+Mốc đọc hội thoại (read boundary) là cặp thời gian/ID tin đã được kiểm tra quyền dùng để
+giới hạn lượt đánh dấu đọc; khác thời gian máy người dùng bấm. Snapshot đọc là tập ID đã
+chụp cho lượt đó, không bao gồm tin đến sau. Tải lịch sử theo thao tác (on-demand history)
+nghĩa là chỉ lấy trang cũ khi bấm Xem thêm/Xem tin cũ; không tự cho tin cũ thành đã đọc.
 
 ## Cờ tính năng
 

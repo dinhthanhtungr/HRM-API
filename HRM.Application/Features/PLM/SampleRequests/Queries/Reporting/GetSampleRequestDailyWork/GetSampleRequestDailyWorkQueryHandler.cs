@@ -42,6 +42,7 @@ internal sealed class GetSampleRequestDailyWorkQueryHandler
         using var timings = new SampleWorkQueryTimings(_logger, request.Audience.HasValue || request.WorkflowDetail || request.ReadSelectedReportPage, "report");
         if (request.Audience is { } audience && !SampleRequestWorkQueueAccess.CanRead(_currentUser, audience))
             throw new UnauthorizedAccessException("The current user cannot access this sample work queue.");
+        if (request.MenuCounts && !request.Audience.HasValue) throw new ArgumentException("Menu counts require a work audience.");
         var date = request.Date ?? DateOnly.FromDateTime(DateTime.Today);
         var workSort = string.Equals(request.NormalizedSortBy, "CustomerCode", StringComparison.OrdinalIgnoreCase)
             ? SampleRequestWorkSort.CustomerCode : string.Equals(request.NormalizedSortBy, "Newest", StringComparison.OrdinalIgnoreCase)
@@ -50,16 +51,17 @@ internal sealed class GetSampleRequestDailyWorkQueryHandler
         var sampleTrialsQuery = new GetSampleRequestSampleTrialsQuery
         {
             DailyWorkDate = date,
+            MenuCounts = request.MenuCounts,
             WorkflowDetail = request.WorkflowDetail,
             ReadSelectedReportPage = request.ReadSelectedReportPage,
             UseOperationalScope = request.UseOperationalScope,
             DailyWorkView = request.Audience.HasValue ? SampleRequestDailyView.All : request.View,
             WorkAudience = request.Audience,
             GroupByCustomer = request.GroupByCustomer && workSort != SampleRequestWorkSort.Newest,
-            WorkSort = request.WorkflowDetail || request.ReadSelectedReportPage ? null : workSort,
+            WorkSort = request.MenuCounts || request.WorkflowDetail || request.ReadSelectedReportPage ? null : workSort,
             LabTeam = request.LabTeam ?? (request.Audience == SampleRequestWorkAudience.LabAdmin &&
                 request.Bucket == SampleRequestWorkBucket.LabProgress ? Services.SampleLabTeamFilter.All : null),
-            WorkBucket = request.Bucket,
+            WorkBucket = request.MenuCounts ? SampleRequestWorkBucket.All : request.Bucket,
             PriorityTasks = request.Bucket is SampleRequestWorkBucket.MyActionRequired or SampleRequestWorkBucket.ActionRequired
                 ? SampleWorkTaskPriority.Normalize(request.PriorityTasks) : [],
             CustomerId = request.CustomerId,
@@ -77,6 +79,7 @@ internal sealed class GetSampleRequestDailyWorkQueryHandler
             Currency = request.Currency
         };
         var report = await _sender.Send(sampleTrialsQuery, cancellationToken);
+        if (request.MenuCounts) return report;
         if (report.SearchSuggestions is not null) return report;
         timings.Mark("sample-query");
         var creatorIds = report.Items.Where(x => x.FormulaCreatedByEmployeeId.HasValue)

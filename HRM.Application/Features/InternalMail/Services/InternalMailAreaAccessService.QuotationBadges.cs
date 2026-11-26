@@ -35,7 +35,7 @@ public sealed partial class InternalMailAreaAccessService
     {
         var roots = db.InternalConversations.Where(c => c.CompanyId == user.CompanyId && c.IsActive &&
             c.RelatedType == InternalMailRelatedType.Quotation).Select(c => c.InternalConversationId);
-        return Conversations().Where(c => ids.Contains(c.InternalConversationId) &&
+        return ConversationsForCandidates(ids).Where(c => ids.Contains(c.InternalConversationId) &&
             (c.RelatedType == InternalMailRelatedType.Quotation ||
              ((c.RelatedType == InternalMailRelatedType.ConversationTechnical || c.RelatedType == InternalMailRelatedType.ConversationPricing ||
                c.RelatedType == InternalMailRelatedType.ConversationCustom) && c.RelatedId.HasValue && roots.Contains(c.RelatedId.Value))))
@@ -43,8 +43,11 @@ public sealed partial class InternalMailAreaAccessService
     }
 
     internal IQueryable<NotificationUserState> BadgeStates()
+        => BadgeStates(States());
+
+    internal IQueryable<NotificationUserState> BadgeStates(IQueryable<NotificationUserState> authorizedStates)
     {
         var suppressed = db.QueryQuotationBadgeSuppressedNotificationIds(user.CompanyId ?? Guid.Empty, user.EmployeeId ?? Guid.Empty);
-        return States().Where(s => !suppressed.Contains(s.NotificationId));
+        return authorizedStates.Where(s => !suppressed.Contains(s.NotificationId));
     }
 }

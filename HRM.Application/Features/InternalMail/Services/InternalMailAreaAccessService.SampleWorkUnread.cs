@@ -21,8 +21,8 @@ public sealed partial class InternalMailAreaAccessService
             select new { groupScope.ConversationId, SampleRequestId = root.RelatedId!.Value }).Distinct().ToArrayAsync(ct);
         timings?.Mark("visible-groups");
         if (groups.Length == 0) return new Dictionary<Guid, int>();
-        var counts = await NotificationUnreadCounts(groups.Select(g => g.ConversationId).ToArray())
-            .ToDictionaryAsync(c => c.ConversationId, c => c.UnreadCount, ct);
+        var counts = await PageNotificationUnreadCountsAsync(
+            groups.Select(g => g.ConversationId).Distinct().ToArray(), ct);
         timings?.Mark("counts");
         return groups.GroupBy(g => g.SampleRequestId)
             .ToDictionary(g => g.Key, g => g.Sum(c => counts.GetValueOrDefault(c.ConversationId)));

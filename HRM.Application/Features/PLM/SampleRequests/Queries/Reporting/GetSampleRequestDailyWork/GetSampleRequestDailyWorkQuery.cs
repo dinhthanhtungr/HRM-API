@@ -35,6 +35,8 @@ public sealed class GetSampleRequestDailyWorkQuery
     public bool UseOperationalScope { get; init; }
     public SampleRequestDailyView View { get; init; } = SampleRequestDailyView.Today;
     public SampleRequestWorkAudience? Audience { get; init; }
+    /// <summary>Chỉ đếm các nhóm từ một lượt đọc facts có scope, không dựng payload danh sách.</summary>
+    public bool MenuCounts { get; init; }
     /// <summary>Page complete customer groups instead of individual requests. Pagination counts customers when enabled.</summary>
     public bool GroupByCustomer { get; init; }
     public HRM.Application.Features.PLM.SampleRequests.Services.SampleLabTeamFilter? LabTeam { get; init; }

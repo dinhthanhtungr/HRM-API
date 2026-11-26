@@ -142,6 +142,53 @@ public sealed class NotificationRequestTimingTests
         Assert.False(context.Response.Headers.ContainsKey("Server-Timing"));
     }
 
+    [Theory]
+    [InlineData("POST", "read", true, true, 200, true)]
+    [InlineData("POST", "read", true, true, 204, true)]
+    [InlineData("POST", "read", false, true, 200, false)]
+    [InlineData("POST", "read", true, false, 200, false)]
+    [InlineData("POST", "read", true, true, 403, false)]
+    [InlineData("POST", "read", true, true, 500, false)]
+    [InlineData("GET", "read", true, true, 200, false)]
+    [InlineData("POST", "messages", true, true, 200, false)]
+    [InlineData("POST", "read/extra", true, true, 200, false)]
+    public async Task ReadReceiptTimingIsDevelopmentOnlyAndKeepsBothSequentialTotals(
+        string method, string suffix, bool development, bool authenticated, int status, bool expected)
+    {
+        const string id = "10000000-0000-0000-0000-000000000001";
+        var (context, response) = Create(method, $"/api/v1/internal-mail/conversations/{id}/{suffix}", authenticated);
+        context.Request.QueryString = new QueryString("?throughMessageId=PRIVATE&areaCode=general&returnState=true");
+        var middleware = new NotificationRequestTimingMiddleware(async ctx =>
+        {
+            NotificationRequestTimingMiddleware.MarkDispatch(ctx);
+            var enabled = Activity.Current?.GetTagItem(NotificationDiagnosticTags.ThreadTiming) is "enabled";
+            using (var write = new NotificationQueryTiming(null, "private-operation", enabled, "read-write-total"))
+                await write.RunAsync("read-messages", () => Task.CompletedTask);
+            if (status == 200)
+            {
+                using var state = new NotificationQueryTiming(null, "private-operation", enabled, "read-state-total");
+                await state.RunAsync("read-state-counts", () => Task.CompletedTask);
+            }
+            ctx.Response.StatusCode = status;
+            await response.StartHeaders();
+        }, development);
+        await middleware.InvokeAsync(context);
+        var header = context.Response.Headers["Server-Timing"].ToString();
+        if (!expected) { Assert.Empty(header); return; }
+        Assert.Contains("nm_read_messages;dur=", header);
+        Assert.Contains("nm_read_write_total;dur=", header);
+        Assert.Contains("app_total;dur=", header);
+        if (status == 200)
+        {
+            Assert.Contains("nm_read_state_counts;dur=", header);
+            Assert.Contains("nm_read_state_total;dur=", header);
+        }
+        else Assert.DoesNotContain("nm_read_state_total", header);
+        Assert.DoesNotContain(id, header);
+        Assert.DoesNotContain("PRIVATE", header);
+        Assert.DoesNotContain("private-operation", header);
+    }
+
     private static (DefaultHttpContext, Response) Create(string method, string path, bool authenticated)
     {
         var response = new Response();

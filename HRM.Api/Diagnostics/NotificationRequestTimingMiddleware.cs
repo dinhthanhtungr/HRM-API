@@ -24,11 +24,13 @@ public sealed class NotificationRequestTimingMiddleware(RequestDelegate next, bo
     public async Task InvokeAsync(HttpContext context)
     {
         var threadRead = includeThreadReads && IsThreadRead(context.Request.Path);
-        if (!HttpMethods.IsGet(context.Request.Method) ||
+        var readReceipt = includeThreadReads && HttpMethods.IsPost(context.Request.Method) &&
+            IsReadReceipt(context.Request.Path);
+        if (!readReceipt && (!HttpMethods.IsGet(context.Request.Method) ||
             !(context.Request.Path.Equals(new PathString("/api/v1/internal-mail/conversations")) ||
               context.Request.Path.Equals(new PathString("/api/v1/notifications/feed")) ||
               context.Request.Path.Equals(new PathString("/api/v1/notification-hub/items")) ||
-              threadRead))
+              threadRead)))
         {
             await next(context);
             return;
@@ -37,10 +39,12 @@ public sealed class NotificationRequestTimingMiddleware(RequestDelegate next, bo
         var state = new TimingState();
         context.Items[StateKey] = state;
         using var activity = new Activity("notification-request-timing").Start();
-        if (threadRead) activity.SetTag(NotificationDiagnosticTags.ThreadTiming, "enabled");
+        if (threadRead || readReceipt) activity.SetTag(NotificationDiagnosticTags.ThreadTiming, "enabled");
         context.Response.OnStarting(() =>
         {
-            if (context.User.Identity?.IsAuthenticated == true && context.Response.StatusCode == StatusCodes.Status200OK)
+            if (context.User.Identity?.IsAuthenticated == true &&
+                (context.Response.StatusCode == StatusCodes.Status200OK ||
+                 (readReceipt && context.Response.StatusCode == StatusCodes.Status204NoContent)))
             {
                 var phases = NotificationDiagnosticTags.ValidateServerTiming(activity.GetTagItem(NotificationDiagnosticTags.ServerTiming) as string);
                 var metrics = new List<string>();
@@ -64,5 +68,13 @@ public sealed class NotificationRequestTimingMiddleware(RequestDelegate next, bo
         var segments = remaining.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries);
         return segments is { Length: 1 or 2 } && Guid.TryParse(segments[0], out _) &&
             (segments.Length == 1 || string.Equals(segments[1], "messages", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool IsReadReceipt(PathString path)
+    {
+        if (!path.StartsWithSegments("/api/v1/internal-mail/conversations", out var remaining)) return false;
+        var segments = remaining.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        return segments is { Length: 2 } && Guid.TryParse(segments[0], out _) &&
+            string.Equals(segments[1], "read", StringComparison.OrdinalIgnoreCase);
     }
 }

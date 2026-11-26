@@ -15,6 +15,27 @@ namespace HRM.Application.Tests.Features.PLM.SampleRequests;
 public sealed class SampleRequestWorkScopeTests
 {
     [Fact]
+    public void MenuScopeDropsUntrackedHistoryBeforeReadingFactsButKeepsExplicitLegacyWork()
+    {
+        var historical = Enumerable.Range(0, 10_000).Select(_ => Request(new(2026, 10, 1))).ToArray();
+        var current = Request(new(2026, 11, 1));
+        var tracked = historical[0];
+        var followedUp = historical[1];
+        var wrongCompany = historical[2];
+        followedUp.WorkflowEvents.Add(Event(followedUp,
+            HRM.Application.Features.PLM.SampleRequests.Services.Workflow.SampleFollowUpRules.Started, 2));
+        var include = Event(tracked, SampleRequestWorkScope.LegacyIncluded, 1);
+        var foreignInclude = Event(wrongCompany, SampleRequestWorkScope.LegacyIncluded, 1);
+        foreignInclude.CompanyId = Guid.NewGuid();
+        var selected = SampleRequestWorkScope.ApplyMenu(historical.Append(current).AsQueryable(),
+            new[] { include, foreignInclude }.AsQueryable()).ToArray();
+        Assert.Equal(3, selected.Length);
+        Assert.Contains(current, selected);
+        Assert.Contains(tracked, selected);
+        Assert.Contains(followedUp, selected);
+        Assert.DoesNotContain(wrongCompany, selected);
+    }
+    [Fact]
     public void CutoffIsInclusiveAndDelayDoesNotIncludeLegacyWork()
     {
         var old = Request(new DateTime(2026, 10, 31, 23, 59, 59));

@@ -29,6 +29,11 @@ public partial class ApplicationDbContext
                 AND NOT message."IsDeleted"
                 AND conversation."CompanyId" = {companyId}
                 AND conversation."IsActive"
+                AND NOT EXISTS (
+                    SELECT 1 FROM "InternalMail"."InternalMessageReadStates" AS read_state
+                    WHERE read_state."InternalMessageId" = message."InternalMessageId"
+                        AND read_state."EmployeeId" = {employeeId} AND read_state."IsRead"
+                )
                 AND EXISTS (
                     SELECT 1 FROM "InternalMail"."InternalConversationParticipants" AS participant
                     WHERE participant."InternalConversationId" = conversation."InternalConversationId"

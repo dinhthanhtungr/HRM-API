@@ -18,6 +18,7 @@ public sealed partial class InternalConversationGroupStoragePostgresTests
     [InlineData("Developer")]
     [InlineData("LabUser")]
     [InlineData("SaleUser")]
+    [InlineData("President")]
     public async Task QuotationUnreadApisExecuteWithRealMetadataOnIsolatedPostgres(string role)
     {
         await PresidentBusinessSchemaAsync();
@@ -170,6 +171,43 @@ public sealed partial class InternalConversationGroupStoragePostgresTests
             role, quoteRoots = 120, privateChildren = 60, unrelatedRoots = 400, records
         }));
         var pageIds = firstConversations.Items.Select(i => i.ConversationId).ToArray();
+        var allPage = await handler.Handle(new GetInternalConversationsQuery
+        {
+            RelatedType = InternalMailRelatedType.Quotation, Archived = false,
+            PageNumber = 1, PageSize = 50
+        }, default);
+        Assert.Equal(pageIds, allPage.Items.Select(item => item.ConversationId));
+        var baselineSql = new PageBadgeBaselineSql();
+        await using var baselineDb = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseNpgsql(connection).AddInterceptors(baselineSql).Options);
+        baselineDb.Database.SetCommandTimeout(10);
+        var baselineAreas = new InternalMailAreaAccessService(baselineDb, user);
+        async Task<Dictionary<Guid, int>> BaselineBadges() => await baselineAreas.NotificationUnreadCounts(pageIds)
+            .ToDictionaryAsync(item => item.ConversationId, item => item.UnreadCount);
+        async Task<Dictionary<Guid, int>> CurrentBadges() => await areas.PageNotificationUnreadCountsAsync(pageIds, default);
+        var expectedCounts = await BaselineBadges();
+        var beforeTimes = new List<double>();
+        var afterTimes = new List<double>();
+        async Task MeasureBadges(bool baseline)
+        {
+            var clock = Stopwatch.StartNew();
+            var result = baseline ? await BaselineBadges() : await CurrentBadges();
+            (baseline ? beforeTimes : afterTimes).Add(clock.Elapsed.TotalMilliseconds);
+            Assert.Equal(expectedCounts.OrderBy(pair => pair.Key), result.OrderBy(pair => pair.Key));
+        }
+        Assert.Equal(expectedCounts.OrderBy(pair => pair.Key), (await CurrentBadges()).OrderBy(pair => pair.Key));
+        for (var sample = 0; sample < 5; sample++)
+        {
+            await MeasureBadges(sample % 2 == 0);
+            await MeasureBadges(sample % 2 != 0);
+        }
+        Assert.True(baselineSql.Replacements > 0);
+        await File.WriteAllTextAsync(Path.Combine(destination, role + "-page-badges.json"), JsonSerializer.Serialize(new
+        {
+            role, pageSize = pageIds.Length, samples = 5, identicalCounts = true,
+            beforeMedianMs = beforeTimes.Order().ElementAt(2), beforeMinMs = beforeTimes.Min(), beforeMaxMs = beforeTimes.Max(),
+            afterMedianMs = afterTimes.Order().ElementAt(2), afterMinMs = afterTimes.Min(), afterMaxMs = afterTimes.Max()
+        }));
         var links = db.QueryInternalMailNotificationLinks(user.CompanyId!.Value);
         var visibleMessages = areas.Messages().Where(m => pageIds.Contains(m.InternalConversationId) && !m.IsDeleted);
         var chatTopics = HRM.Domain.Enums.Notifications.NotificationTopicCatalog.GetTopics(null, "message")
@@ -201,9 +239,26 @@ public sealed partial class InternalConversationGroupStoragePostgresTests
             .Select(n => new { n.Id, n.Topic, n.Title, n.Message, n.CreatedDate }).ToArrayAsync();
         Assert.Equal(baselineFeed.Select(n => (n.Id, n.Topic, n.Title, n.Message, n.CreatedDate)),
             firstFeed.Select(n => (n.Id, n.Topic, n.Title, n.Message, n.CreatedDate)));
+        await CompareBoundedInboxStagesAsync(db, areas, feed, user, role);
     }
 
     private sealed record QuotationCommandMetric(int Sequence, double Milliseconds, int SqlCharacters, string Shape);
+
+    private sealed class PageBadgeBaselineSql : DbCommandInterceptor
+    {
+        public int Replacements { get; private set; }
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command, CommandEventData data, InterceptionResult<DbDataReader> result,
+            CancellationToken cancellationToken = default)
+        {
+            const string pattern = "conversation\\.\"InternalConversationId\"\\s*=\\s*CASE\\s+WHEN link\\.value ~\\* \\S+ THEN link\\.value::uuid ELSE NULL END";
+            var replaced = System.Text.RegularExpressions.Regex.Replace(command.CommandText, pattern,
+                "conversation.\"InternalConversationId\"::text = lower(link.value)");
+            if (replaced != command.CommandText) Replacements++;
+            command.CommandText = replaced;
+            return ValueTask.FromResult(result);
+        }
+    }
 
     private sealed class QuotationCommandMetrics : DbCommandInterceptor
     {

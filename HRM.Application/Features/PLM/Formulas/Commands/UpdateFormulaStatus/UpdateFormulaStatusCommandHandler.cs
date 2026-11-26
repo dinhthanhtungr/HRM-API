@@ -78,11 +78,15 @@ internal sealed class UpdateFormulaStatusCommandHandler
         }
 
         var targetStatus = command.Request.Status;
-        if (targetStatus is not FormulaStatus.Approved and not FormulaStatus.SampleSent)
+        if (targetStatus is not FormulaStatus.Approved and not FormulaStatus.SampleSent and not FormulaStatus.Completed)
         {
             return OperationResult<FormulaWriteResultDto>.Fail(
-                "Formula status can only be changed to Approved or SampleSent by this endpoint.");
+                "Formula status can only be changed to Approved, SampleSent, or eligible internal Completed by this endpoint.");
         }
+
+        if (targetStatus == FormulaStatus.Completed &&
+            (!command.Request.SampleRequestId.HasValue || command.Request.SampleRequestId == Guid.Empty || command.Request.ExpectedUpdatedDate is null))
+            return OperationResult<FormulaWriteResultDto>.Fail("An explicit sample request and formula concurrency token are required for internal completion.");
 
         var formula = await _dbContext.Formulas
             .Include(x => x.Product)
@@ -132,9 +136,24 @@ internal sealed class UpdateFormulaStatusCommandHandler
             return OperationResult<FormulaWriteResultDto>.Fail("Formula was changed by another user. Please reload before saving.");
         }
 
-        var internalRequest = flowRequest is not null && await _dbContext.Customers.AsNoTracking().AnyAsync(x =>
-            x.CustomerId == flowRequest.CustomerId && x.CompanyId == companyId &&
-            x.ExternalId == HRM.Application.Features.PLM.Shared.Rules.PLMCustomerRules.InternalCustomerExternalId, cancellationToken);
+        var requestCustomer = flowRequest is null ? null : await _dbContext.Customers.AsNoTracking()
+            .Where(x => x.CustomerId == flowRequest.CustomerId && x.CompanyId == companyId)
+            .Select(x => new { x.ExternalId, x.IsActive }).SingleOrDefaultAsync(cancellationToken);
+        var internalRequest = requestCustomer?.ExternalId == HRM.Application.Features.PLM.Shared.Rules.PLMCustomerRules.InternalCustomerExternalId;
+        if (targetStatus == FormulaStatus.Completed)
+        {
+            if (flowRequest is null || requestCustomer?.IsActive != true ||
+                !HRM.Application.Features.PLM.Shared.Rules.PLMInternalSampleRules.CanCompleteDirectly(flowRequest.RequestType, requestCustomer.ExternalId) ||
+                !SampleFlowRules.IsOpen(flowRequest.Status) ||
+                !_currentUser.IsAuthenticated || !_permissions.HasPermission(ApplicationPermissions.PLM.ManageSampleLabWorkflow) ||
+                !await _dbContext.Employees.AsNoTracking().AnyAsync(x => x.EmployeeId == employeeId && x.CompanyId == companyId && x.IsActive, cancellationToken))
+                return OperationResult<FormulaWriteResultDto>.Fail("Only authorized Lab staff can complete an internal KH_VIETAUS request directly.");
+            if (command.Request.DeliveredSampleQuantityKg.HasValue)
+                return OperationResult<FormulaWriteResultDto>.Fail("Internal completion does not accept a delivered quantity.");
+            if (command.Request.ExpectedRequestUpdatedDate != flowRequest.UpdatedDate ||
+                formula.Status is not ("Draft" or "Approved" or "Rework" or "SampleSent"))
+                return OperationResult<FormulaWriteResultDto>.Fail("Request or formula state changed. Reload before completing.");
+        }
         if (targetStatus == FormulaStatus.SampleSent && flowRequest is not null &&
             (await SampleFollowUpRules.IsLegacyAsync(_dbContext, flowRequest, cancellationToken) || !internalRequest))
         {
@@ -193,9 +212,25 @@ internal sealed class UpdateFormulaStatusCommandHandler
             return OperationResult<FormulaWriteResultDto>.Fail(sampleSentValidationError);
         }
 
-        await using var deliveryTransaction = targetStatus == FormulaStatus.SampleSent
+        await using var deliveryTransaction = targetStatus is FormulaStatus.SampleSent or FormulaStatus.Completed
             ? await _dbContext.BeginTransactionAsync(cancellationToken) : null;
-        if (deliveryTransaction is not null && flowRequest is not null)
+        if (targetStatus == FormulaStatus.Completed && flowRequest is not null)
+        {
+            // A product has one selected formula. Serialize completion across sibling VUs/TPs.
+            var lockedProduct = await _dbContext.Products.Where(x => x.ProductId == formula.ProductId && x.CompanyId == companyId && x.IsActive)
+                .ExecuteUpdateAsync(set => set.SetProperty(x => x.ProductId, x => x.ProductId), cancellationToken);
+            if (lockedProduct != 1)
+                return OperationResult<FormulaWriteResultDto>.Fail("The product is no longer available.");
+            var lockedRequest = await _dbContext.SampleRequests.Where(x => x.SampleRequestId == flowRequest.SampleRequestId &&
+                x.CompanyId == companyId && x.IsActive && x.UpdatedDate == flowRequest.UpdatedDate)
+                .ExecuteUpdateAsync(set => set.SetProperty(x => x.UpdatedDate, x => x.UpdatedDate), cancellationToken);
+            var lockedFormula = await _dbContext.Formulas.Where(x => x.FormulaId == formula.FormulaId && x.CompanyId == companyId &&
+                x.IsActive && x.UpdatedDate == formula.UpdatedDate && x.Status == formula.Status)
+                .ExecuteUpdateAsync(set => set.SetProperty(x => x.UpdatedDate, x => x.UpdatedDate), cancellationToken);
+            if (lockedRequest != 1 || lockedFormula != 1)
+                return OperationResult<FormulaWriteResultDto>.Fail("Request or formula changed. Reload before completing.");
+        }
+        if (targetStatus == FormulaStatus.SampleSent && deliveryTransaction is not null && flowRequest is not null)
         {
             // Serialize different VUs sending to the same TP, as well as concurrent Sale plans/cancellation.
             var locked = await _dbContext.SampleRequests.Where(x => x.SampleRequestId == flowRequest.SampleRequestId &&
@@ -209,7 +244,7 @@ internal sealed class UpdateFormulaStatusCommandHandler
                 return OperationResult<FormulaWriteResultDto>.Fail("Record feedback for the pending delivery before sending another delivery.");
         }
         var now = DateTime.Now;
-        var materialsChanged = await _pricingReview.RequiresMaterialReviewAsync(
+        var materialsChanged = targetStatus != FormulaStatus.Completed && await _pricingReview.RequiresMaterialReviewAsync(
             formula, command.Request.FormulaUpdate, companyId, cancellationToken);
 
         try
@@ -265,7 +300,7 @@ internal sealed class UpdateFormulaStatusCommandHandler
         formula.UpdatedBy = employeeId;
         formula.UpdatedDate = now;
 
-        if (targetStatus == FormulaStatus.Approved || materialsChanged)
+        if (targetStatus is FormulaStatus.Approved or FormulaStatus.Completed || materialsChanged)
         {
             formula.CheckBy = employeeId;
             formula.CheckDate = now;
@@ -353,6 +388,16 @@ internal sealed class UpdateFormulaStatusCommandHandler
             formula.SentDate = now;
         }
 
+        var completedTargets = 0;
+        if (targetStatus == FormulaStatus.Completed)
+        {
+            var completion = await MarkFormulaCompletedAsync(formula.FormulaId, formula.ProductId, companyId, employeeId,
+                now, flowRequest!.SampleRequestId, cancellationToken);
+            if (!completion.Success) return OperationResult<FormulaWriteResultDto>.Fail(completion.Message ?? "Could not complete internal request.");
+            completedTargets = completion.Data?.Count ?? 0;
+            _dbContext.SampleRequestWorkflowEvents.Add(SampleRequestWorkflowEvents.Create(flowRequest.SampleRequestId,
+                companyId, employeeId, now, SampleFlowRules.CompletedWithoutTrial, formulaId: formula.FormulaId));
+        }
         var reviewQueued = true;
         if (targetStatus == FormulaStatus.Approved && flowRequest is not null)
         {
@@ -360,7 +405,7 @@ internal sealed class UpdateFormulaStatusCommandHandler
             _dbContext.SampleRequestWorkflowEvents.Add(confirmedEvent);
             SampleRequestWorkflowNotificationQueue.Queue(_dbContext, confirmedEvent, materialsChanged: materialsChanged);
         }
-        else if (materialsChanged)
+        else if (materialsChanged && targetStatus != FormulaStatus.Completed)
             reviewQueued = await _pricingReview.QueueMaterialChangeAsync(
                 formula, companyId, employeeId, now, command.Request.SampleRequestId, cancellationToken);
 
@@ -389,7 +434,7 @@ internal sealed class UpdateFormulaStatusCommandHandler
         if (!reviewQueued)
         {
             return OperationResult<FormulaWriteResultDto>.Ok(
-                FormulaWriteService.ToResult(formula, sampleSentTargets.Count, sampleRequestSampleTrialId),
+                FormulaWriteService.ToResult(formula, sampleSentTargets.Count + completedTargets, sampleRequestSampleTrialId),
                 "Updated formula successfully, but no active sample request was found for the pricing-review notification.");
         }
 
@@ -398,7 +443,7 @@ internal sealed class UpdateFormulaStatusCommandHandler
         return OperationResult<FormulaWriteResultDto>.Ok(
             FormulaWriteService.ToResult(
                 formula,
-                sampleSentTargets.Count,
+                sampleSentTargets.Count + completedTargets,
                 sampleRequestSampleTrialId),
             "Updated formula status successfully.");
     }

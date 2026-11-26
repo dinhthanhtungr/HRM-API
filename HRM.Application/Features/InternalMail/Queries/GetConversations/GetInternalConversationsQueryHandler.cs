@@ -169,8 +169,8 @@ internal sealed class GetInternalConversationsQueryHandler
             return new PagedResult<InternalConversationListItemDto>(items, totalCount, pageNumber, pageSize);
 
         var conversationIds = items.Select(item => item.ConversationId).ToArray();
-        var notificationCounts = await timing.RunAsync("badges", () => _areas.NotificationUnreadCounts(conversationIds)
-            .ToDictionaryAsync(item => item.ConversationId, item => item.UnreadCount, cancellationToken));
+        var notificationCounts = await timing.RunAsync("badges", () =>
+            _areas.PageNotificationUnreadCountsAsync(conversationIds, cancellationToken));
 
         foreach (var item in items)
         {

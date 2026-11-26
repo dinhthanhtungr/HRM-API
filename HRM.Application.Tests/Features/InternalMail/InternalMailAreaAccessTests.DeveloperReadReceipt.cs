@@ -25,6 +25,9 @@ public sealed partial class InternalMailAreaAccessTests
     public async Task AuthorizedObserverWithoutMembershipCanAcknowledgeVisibleThreadWithoutCreatingReadStates(
         string role, InternalMailRelatedType type, bool withBoundary)
     {
+        using var activity = new System.Diagnostics.Activity("read-receipt-test").Start();
+        if (withBoundary)
+            activity.SetTag(NotificationDiagnosticTags.ThreadTiming, "enabled");
         var user = new User(role);
         var store = CreateStore(user, type, false);
         store.Root.RelatedType = InternalMailRelatedType.SampleRequest;
@@ -51,6 +54,16 @@ public sealed partial class InternalMailAreaAccessTests
         Assert.True(((ReadReceiptTransaction)(object)transaction).Committed);
         Assert.Empty(store.Db.InternalConversationParticipants);
         Assert.Empty(store.Db.InternalMessageReadStates);
+        var metrics = activity.GetTagItem(NotificationDiagnosticTags.ServerTiming) as string;
+        if (withBoundary)
+        {
+            Assert.Contains("nm_read_access;dur=", metrics);
+            Assert.Contains("nm_read_boundary;dur=", metrics);
+            Assert.Contains("nm_read_inbox_update;dur=", metrics);
+            Assert.DoesNotContain("nm_read_inbox_legacy;dur=", metrics);
+            Assert.Contains("nm_read_write_total;dur=", metrics);
+        }
+        else Assert.Null(metrics);
     }
 
     [Theory]

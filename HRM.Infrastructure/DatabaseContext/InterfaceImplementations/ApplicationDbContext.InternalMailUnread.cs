@@ -20,6 +20,9 @@ public partial class ApplicationDbContext
         => Database.SqlQuery<InternalMailNotificationLink>($$"""
             SELECT n.id AS "NotificationId", c."InternalConversationId" AS "ConversationId",
                 (link.value IS NOT NULL) AS "HasConversation",
+                EXISTS (SELECT 1 FROM jsonb_each(CASE WHEN jsonb_typeof(n.payload_json) = 'object'
+                    THEN n.payload_json ELSE jsonb_build_object() END) property
+                    WHERE lower(property.key) = 'messageid' AND property.value <> 'null'::jsonb) AS "HasMessageValue",
                 CASE WHEN message_link.value ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
                     THEN message_link.value::uuid ELSE NULL END AS "MessageId"
             FROM notification.notifications n
@@ -34,7 +37,9 @@ public partial class ApplicationDbContext
                 WHERE lower(metadata.key) = 'messageid' LIMIT 1
             ) message_link ON TRUE
             LEFT JOIN "InternalMail"."InternalConversations" c
-                ON c."InternalConversationId"::text = lower(link.value) AND c."CompanyId" = {{companyId}}
+                ON c."InternalConversationId" = CASE
+                    WHEN link.value ~* {{InternalMailGuidPattern}} THEN link.value::uuid ELSE NULL END
+                    AND c."CompanyId" = {{companyId}}
             WHERE n.company_id = {{companyId}}
             """);
 
@@ -114,7 +119,8 @@ public partial class ApplicationDbContext
                 LIMIT 1
             ) AS link ON TRUE
             JOIN "InternalMail"."InternalConversations" AS conversation
-                ON conversation."InternalConversationId"::text = lower(link.value)
+                ON conversation."InternalConversationId" = CASE
+                    WHEN link.value ~* {InternalMailGuidPattern} THEN link.value::uuid ELSE NULL END
             LEFT JOIN "InternalMail"."InternalConversations" quote_parent
                 ON conversation."RelatedId" = quote_parent."InternalConversationId"
                 AND conversation."RelatedType" = ANY({new[] { (int)HRM.Domain.Enums.InternalMailEnums.InternalMailRelatedType.ConversationTechnical, (int)HRM.Domain.Enums.InternalMailEnums.InternalMailRelatedType.ConversationPricing, (int)HRM.Domain.Enums.InternalMailEnums.InternalMailRelatedType.ConversationCustom }})

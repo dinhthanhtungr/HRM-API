@@ -9,6 +9,32 @@ namespace HRM.Application.Tests.Features.PLM.SampleRequests;
 
 public sealed class SampleDailyPriorityFactsPageTests
 {
+    [Fact]
+    public async Task MenuCountsKeepAllLegacyScopeAndPersonalOwnershipSeparate()
+    {
+        var owner = Guid.NewGuid();
+        var mine = new SampleRequestDailyPriorityFactsPage.ReadRow
+        {
+            ManagerBy = owner, SaleWritable = true, Status = "InProgress",
+            State = new(Guid.NewGuid(), null, new() { Open = true, FormulaStatus = "SampleSent", HasTrial = true, PendingTrial = true, RequestedKg = true, HasSentKg = true, Kg = true }, null, null, false)
+        };
+        var other = new SampleRequestDailyPriorityFactsPage.ReadRow
+        {
+            ManagerBy = Guid.NewGuid(), SaleWritable = true, Status = mine.Status, State = mine.State
+        };
+        async IAsyncEnumerable<SampleRequestDailyPriorityFactsPage.MenuRow> Rows()
+        {
+            yield return new() { Row = mine, InAll = true, InOperational = true };
+            yield return new() { Row = other, InAll = false, InOperational = true };
+            yield return new() { Row = other, InAll = false, InOperational = false };
+            await Task.CompletedTask;
+        }
+        var counts = await SampleRequestDailyPriorityFactsPage.CountMenuRowsAsync(Rows(), SampleRequestWorkAudience.Sale, owner, false, DateTime.Today, default);
+        Assert.Equal(1, counts["workBuckets"]["all"]);
+        Assert.Equal(2, counts["workBuckets"]["actionRequired"]);
+        Assert.Equal(1, counts["workBuckets"]["myActionRequired"]);
+        Assert.Equal(2, counts["workBuckets"]["waitingSale"]);
+    }
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -235,6 +261,8 @@ public sealed class SampleDailyPriorityFactsPageTests
     [InlineData(SampleRequestWorkBucket.Completed, "InProgress", false, 0)]
     [InlineData(SampleRequestWorkBucket.Cancelled, "Cancelled", false, 1)]
     [InlineData(SampleRequestWorkBucket.Cancelled, "Completed", false, 0)]
+    [InlineData(SampleRequestWorkBucket.LabDeclined, "LabDeclined", false, 1)]
+    [InlineData(SampleRequestWorkBucket.LabDeclined, "InProgress", false, 0)]
     [InlineData(SampleRequestWorkBucket.FeedbackReceived, "Completed", true, 1)]
     [InlineData(SampleRequestWorkBucket.FeedbackReceived, "InProgress", true, 1)]
     [InlineData(SampleRequestWorkBucket.FeedbackReceived, "InProgress", false, 0)]

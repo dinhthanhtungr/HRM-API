@@ -7,4 +7,6 @@ public sealed class InternalMailNotificationLink
     public Guid? ConversationId { get; set; }
     public Guid? MessageId { get; set; }
     public bool HasConversation { get; set; }
+    // Distinguishes an absent/null message link from a historical noncanonical GUID.
+    public bool HasMessageValue { get; set; }
 }

@@ -82,7 +82,7 @@ internal sealed class GetSampleRequestSampleTrialsQueryHandler
             request.NormalizedPageNumber == 1 && request.DailyWorkView == SampleRequestDailyView.All;
         var leanPayload = workflowDetail || selectedReportPage;
         var historyPayload = request.UseTrialHistoryPayload;
-        var deferDecision = leanPayload || historyPayload;
+        var deferDecision = leanPayload || historyPayload || request.MenuCounts;
         var historyTiming = request.SampleRequestId.HasValue && request.IncludeTrialHistory &&
             System.Diagnostics.Activity.Current?.GetTagItem(SampleWorkDiagnosticTags.NamedTimingEnabled) is true;
         using var timings = new SampleWorkQueryTimings(_logger, request.WorkAudience.HasValue || leanPayload || historyTiming,
@@ -134,12 +134,14 @@ internal sealed class GetSampleRequestSampleTrialsQueryHandler
             visibleSampleRequests = visibleSampleRequests.Where(x => snapshotIds.Contains(x.SampleRequestId));
 
         // Tất cả mẫu của Sale/Lab không kéo lịch sử trước mốc triển khai.
-        if (request.WorkAudience.HasValue && request.WorkBucket == SampleRequestWorkBucket.All)
+        if (request.MenuCounts)
+            visibleSampleRequests = SampleRequestWorkScope.ApplyMenu(visibleSampleRequests, _dbContext.SampleRequestWorkflowEvents);
+        if (!request.MenuCounts && request.WorkAudience.HasValue && request.WorkBucket == SampleRequestWorkBucket.All)
             visibleSampleRequests = visibleSampleRequests.Where(x => (x.CreatedDate >= Services.Workflow.SampleFlowRules.StartsAt || x.WorkflowEvents.Any(e => e.CompanyId == x.CompanyId && e.EventType == HRM.Application.Features.PLM.SampleRequests.Services.Workflow.SampleFollowUpRules.Started)));
 
         // Các màn tra cứu khác giữ phạm vi hiện có; company/customer/ownership scope không đổi.
-        if (request.UseOperationalScope || (request.WorkAudience.HasValue && request.WorkBucket != SampleRequestWorkBucket.All) ||
-            (!request.WorkAudience.HasValue && request.DailyWorkDate.HasValue && request.DailyWorkView != SampleRequestDailyView.All))
+        if (!request.MenuCounts && (request.UseOperationalScope || (request.WorkAudience.HasValue && request.WorkBucket != SampleRequestWorkBucket.All) ||
+            (!request.WorkAudience.HasValue && request.DailyWorkDate.HasValue && request.DailyWorkView != SampleRequestDailyView.All)))
             visibleSampleRequests = SampleRequestWorkScope.Apply(visibleSampleRequests, _dbContext.SampleRequestWorkflowEvents);
 
         if (request.AdminMetric is { } adminMetric && request.AdminPeriodFrom is { } adminFrom && request.AdminPeriodTo is { } adminTo)
@@ -269,7 +271,7 @@ internal sealed class GetSampleRequestSampleTrialsQueryHandler
 
         query = SampleRequestSampleTrialReportQueryRules.ApplyReportType(query, request);
         if (singlePassPriority && request.WorkBucket is SampleRequestWorkBucket.Completed or
-            SampleRequestWorkBucket.Cancelled or SampleRequestWorkBucket.FeedbackReceived)
+            SampleRequestWorkBucket.Cancelled or SampleRequestWorkBucket.LabDeclined or SampleRequestWorkBucket.FeedbackReceived)
             query = SampleRequestWorkQueueQuery.Apply(query, request, _crmDbContext);
         else if ((singlePassPriority || singlePassNewest) && request.WorkBucket != SampleRequestWorkBucket.All)
             query = query.Where(x => x.SampleRequest.Status != "Completed" && x.SampleRequest.Status != "Cancelled" && x.SampleRequest.Status != "LabDeclined");
@@ -343,6 +345,27 @@ internal sealed class GetSampleRequestSampleTrialsQueryHandler
 
         if (await smartSearch.SuggestionsAsync<SampleRequestSampleTrialReportDto>(query, request, cancellationToken) is { } suggestions)
             return suggestions;
+        if (request.MenuCounts && request.WorkAudience is { } menuAudience)
+        {
+            var writable = writeScope == null ? _dbContext.SampleRequests.Where(_ => false) :
+                _visibilityService.ApplySampleRequestVisibility(_dbContext.SampleRequests.AsNoTracking(), _dbContext.Customers.AsNoTracking(), writeScope);
+            var companyRequests = _dbContext.SampleRequests.AsNoTracking().Where(x => x.CompanyId == scope.CompanyId && x.IsActive);
+            var allRequests = companyRequests.Where(x => x.CreatedDate >= Services.Workflow.SampleFlowRules.StartsAt ||
+                x.WorkflowEvents.Any(e => e.CompanyId == x.CompanyId && e.EventType == Services.Workflow.SampleFollowUpRules.Started));
+            var operational = SampleRequestWorkScope.Apply(companyRequests, _dbContext.SampleRequestWorkflowEvents);
+            var facts = SampleRequestDailyPriorityFactsPage.ReadRows(query, _dbContext, _crmDbContext, request.NormalizedCurrency,
+                new(menuAudience, false, activeSaleActor, false, false, allowedSaleOwners), writable, forMenu: true)
+                .Select(row => new SampleRequestDailyPriorityFactsPage.MenuRow
+                {
+                    Row = row,
+                    InAll = allRequests.Any(x => x.SampleRequestId == row.RequestId),
+                    InOperational = operational.Any(x => x.SampleRequestId == row.RequestId)
+                });
+            var menu = await SampleRequestDailyPriorityFactsPage.CountMenuRowsAsync(facts.AsAsyncEnumerable(), menuAudience,
+                _currentUser.EmployeeId, request.UseOperationalScope,
+                (request.DailyWorkDate ?? DateOnly.FromDateTime(DateTime.Today)).ToDateTime(TimeOnly.MinValue), cancellationToken);
+            return new PagedResult<SampleRequestSampleTrialReportDto>([], 0, 1, 1) { Facets = menu };
+        }
         query = SampleRequestSampleTrialReportQueryRules.ApplySorting(query, request);
         var unrankedDailyRows = query;
         {

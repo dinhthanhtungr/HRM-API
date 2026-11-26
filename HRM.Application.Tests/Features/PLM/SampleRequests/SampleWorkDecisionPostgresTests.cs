@@ -29,7 +29,7 @@ public sealed class SampleWorkDecisionPostgresTests(IsolatedGroupStoragePostgres
     {
         await using var connection = await postgres.OpenAsync();
         await using var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>().UseNpgsql(connection).Options);
-        foreach (var type in new[] { typeof(Product), typeof(SampleRequest), typeof(SampleRequestSampleTrial), typeof(Formula), typeof(ProductPricingVersion), typeof(SampleRequestWorkflowEvent) })
+        foreach (var type in new[] { typeof(Customer), typeof(Product), typeof(SampleRequest), typeof(SampleRequestSampleTrial), typeof(Formula), typeof(ProductPricingVersion), typeof(SampleRequestWorkflowEvent) })
             await CreateTable(connection, db.Model.FindEntityType(type)!);
         Scenario[] cases =
         [
@@ -65,6 +65,11 @@ public sealed class SampleWorkDecisionPostgresTests(IsolatedGroupStoragePostgres
             new("30-chip-sample-no-quotation", "CompleteRequest", "Sale", Formula: "SampleSent", Kg: 100, Trial: SampleTrialStatus.Approved, Delivered: 100)
         ];
         var company = Guid.NewGuid();
+        await Insert(connection, db.Model.FindEntityType(typeof(Customer))!, new()
+        {
+            [nameof(Customer.CustomerId)] = Guid.Empty, [nameof(Customer.CompanyId)] = company,
+            [nameof(Customer.ExternalId)] = "KH_TEST", [nameof(Customer.IsActive)] = true
+        });
         var accepted = new List<Guid>();
         var finalized = new List<Guid>();
         foreach (var item in cases)
@@ -184,6 +189,18 @@ public sealed class SampleWorkDecisionPostgresTests(IsolatedGroupStoragePostgres
                 ? x.Role is "Lab" or "LabAdmin" : x.Role == audience.ToString() ||
                     audience == SampleRequestWorkAudience.Sale && x.Name == "29-chip-sent-kg-next").Select(x => x.Name).Order().ToArray();
             Assert.Equal(expected.Length, await queue.CountAsync());
+            var menuRows = SampleRequestDailyPriorityFactsPage.ReadRows(source, db, db, "VND",
+                new(audience, true, true, true, true, [Guid.Empty]), db.SampleRequests.Where(x => x.CompanyId == company), forMenu: true)
+                .Select(row => new SampleRequestDailyPriorityFactsPage.MenuRow
+                {
+                    Row = row,
+                    InAll = db.SampleRequests.Any(x => x.CompanyId == company && x.SampleRequestId == row.RequestId),
+                    InOperational = db.SampleRequests.Any(x => x.CompanyId == company && x.SampleRequestId == row.RequestId)
+                });
+            var menuCounts = await SampleRequestDailyPriorityFactsPage.CountMenuRowsAsync(menuRows.AsAsyncEnumerable(), audience,
+                Guid.Empty, false, new(2026, 11, 7), CancellationToken.None);
+            Assert.Equal(expected.Length, menuCounts["workBuckets"]["actionRequired"]);
+            Assert.Equal(cases.Length, menuCounts["workBuckets"]["all"]);
             var page = queue.OrderBy(x => x.SampleRequest.ExternalId).Skip(1).Take(3).Select(x => x.SampleRequest.ExternalId);
             Assert.Contains("LIMIT", page.ToQueryString());
             Assert.Equal(expected.Skip(1).Take(3), await page.ToArrayAsync());

@@ -142,3 +142,23 @@ Ví dụ nội dung: `DHG260900213 | OT41059 | VA260900325`.
 Endpoint và handler dùng quyền đọc phiếu giao hàng hiện có (DeliveryOrderAccessRules),
 kiểm tra đăng nhập và CompanyId hợp lệ. Không thêm capability, không trả vật tư/giá/cost.
 Không ghi database, storage hoặc thay đổi schema.
+
+## VA theo danh sách NVL (Developer)
+POST /api/v1/excel-special/materials/va-usage/excel
+Body: {"materialCodes":["NVL_NH_009","NVL_NH_026"]}.
+Từ 1–500 mã Material.ExternalId, tối đa 100 ký tự/mã; trim, không phân biệt hoa thường, bỏ mã lặp.
+Mã không tồn tại/không active trong company hiện tại trả 400 và liệt kê mã; không âm thầm bỏ qua.
+Yêu cầu Developer, company hợp lệ, ViewProductionOrders và CanViewFormulaMaterials; thiếu quyền trả 403 trước query.
+Không xuất giá. Không ghi DB/storage, không migration.
+Chỉ VA active có mã VA%, liên kết ProductionSelectVersion (kể cả lịch sử) tới MFG active và Product active cùng company.
+NVL active của VA thuộc Material hoặc MaterialFailure; không nhầm Product với Material trùng GUID.
+Mỗi ColourCode một dòng: VA gần nhất có ít nhất một NVL được nhập (OR); CreatedDate giảm dần, ExternalId và GUID phá hòa.
+NVL sử dụng chỉ gồm mã trong danh sách nhập có mặt trong VA được chọn, bỏ lặp, sắp xếp, ghép dấu phẩy.
+Cột cuối là ngày tạo VA mới nhất của mã màu trong toàn bộ VA hợp lệ, có thể khác VA phù hợp ở cột trước.
+Workbook 6 cột: STT, Mã màu, Tên sản phẩm, VA gần nhất, NVL sử dụng, Ngày VA mới nhất.
+Giữ text nguyên dạng, ngày Excel dd/MM/yyyy theo giá trị DB; không đổi múi giờ. Không có kết quả vẫn có header.
+Giới hạn 50.000 cặp VA/mã màu phù hợp; vượt giới hạn trả lỗi thay vì cắt dữ liệu.
+Bộ lọc thời gian tùy chọn: body thêm from/to (yyyy-MM-dd), lọc ngày tạo VA phù hợp trước khi chọn VA gần nhất.
+Tính trọn cả ngày bắt đầu và kết thúc (>= from.Date, < to.Date + 1 ngày).
+Cho phép chỉ nhập một đầu; ngày đảo ngược hoặc to=9999-12-31 trả 400.
+Ngày VA mới nhất ở cột cuối vẫn lấy toàn bộ lịch sử hợp lệ của mã màu, không bị cắt theo khoảng lọc.

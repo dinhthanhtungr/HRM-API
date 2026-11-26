@@ -15,9 +15,19 @@ internal static class SampleRequestWorkScope
 
     public static IQueryable<SampleRequest> Apply(IQueryable<SampleRequest> requests,
         IQueryable<SampleRequestWorkflowEvent> events)
+        => ApplyFrom(requests, events, StartedAt);
+
+    /// <summary>Hợp phạm vi các nhóm menu; lọc trước khi dựng facts, không quét toàn bộ TP lịch sử.</summary>
+    public static IQueryable<SampleRequest> ApplyMenu(IQueryable<SampleRequest> requests,
+        IQueryable<SampleRequestWorkflowEvent> events)
+        => ApplyFrom(requests, events, StartedAt <= Services.Workflow.SampleFlowRules.StartsAt
+            ? StartedAt : Services.Workflow.SampleFlowRules.StartsAt);
+
+    private static IQueryable<SampleRequest> ApplyFrom(IQueryable<SampleRequest> requests,
+        IQueryable<SampleRequestWorkflowEvent> events, DateTime startedAt)
     {
         var tracking = TrackingEvents(events);
-        return requests.Where(request => request.CreatedDate >= StartedAt ||
+        return requests.Where(request => request.CreatedDate >= startedAt ||
             request.WorkflowEvents.Any(e => e.CompanyId == request.CompanyId && e.EventType == Services.Workflow.SampleFollowUpRules.Started) ||
             tracking.Where(e => e.CompanyId == request.CompanyId && e.SampleRequestId == request.SampleRequestId)
                 .OrderByDescending(e => e.RecordedAt).ThenByDescending(e => e.Id)

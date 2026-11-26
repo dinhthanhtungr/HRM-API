@@ -1,0 +1,2 @@
+namespace HRM.Application.Features.ExcelSpecial.Queries.ExportMaterialUsage;
+public sealed record MaterialUsageExcelRow(string ColourCode, string ProductName, string VaCode, string MaterialCodes, DateTime LatestVaDate);

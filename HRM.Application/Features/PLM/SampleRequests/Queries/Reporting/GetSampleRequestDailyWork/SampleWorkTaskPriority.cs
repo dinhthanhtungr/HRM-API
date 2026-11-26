@@ -18,7 +18,7 @@ internal static class SampleWorkTaskPriority
 
     // Four priority tiers ahead of the ordinary work ranks.
     internal static readonly Expression<Func<SampleWorkFacts, string, int>> LabRank = (facts, code) =>
-        code == "FinalizeQuotation" || code == "FinalizeChip" ? -4 :
+        code == "FinalizeQuotation" || code == "FinalizeChip" || (facts.InternalDirect && code == "ApproveFormula") ? -4 :
         code == "SendSample" ? (!facts.Legacy && (!facts.RequestedKg || facts.ChipFirstPending) ? -2 : -3) :
         code == "ApproveFormula" && facts.FormulaStatus != null ? -1 : 2;
 
@@ -44,9 +44,11 @@ internal static class SampleWorkTaskPriority
                 tasks.Add("NewRequest");
             if (decision.Role == "Lab")
             {
-                if (decision.Code is "FinalizeQuotation" or "FinalizeChip") tasks.Add("FinalizeFormula");
-                tasks.Add(decision.Code == "SendSample" && !facts.Legacy && (!facts.RequestedKg || facts.ChipFirstPending)
-                    ? "SendChip" : decision.Code);
+                if (decision.Code is "FinalizeQuotation" or "FinalizeChip" || (facts.InternalDirect && decision.Code == "ApproveFormula"))
+                    tasks.Add("FinalizeFormula");
+                if (!facts.InternalDirect || decision.Code != "ApproveFormula")
+                    tasks.Add(decision.Code == "SendSample" && !facts.Legacy && (!facts.RequestedKg || facts.ChipFirstPending)
+                        ? "SendChip" : decision.Code);
             }
         }
         return Codes.Where(tasks.Contains).ToArray();

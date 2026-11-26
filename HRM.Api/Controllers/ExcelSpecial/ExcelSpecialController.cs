@@ -1,3 +1,5 @@
+using HRM.Application.Features.ExcelSpecial.Queries.ExportMaterialUsage;
+using HRM.Application.Commons.Authorization;
 using HRM.Application.Features.ExcelSpecial.Queries.ExportMerchandiseOrderVa;
 using HRM.Application.Features.ExcelSpecial.Queries.ExportMaterials;
 using HRM.Application.Features.ExcelSpecial.Queries.ExportManufacturingVa;
@@ -14,6 +16,19 @@ namespace HRM.Api.Controllers.ExcelSpecial;
 [Route("api/v1/excel-special")]
 public sealed class ExcelSpecialController(ISender sender) : ControllerBase
 {
+    [HttpPost("materials/va-usage/excel")]
+    [Authorize(Roles = ApplicationRoles.Developer)]
+    public async Task<IActionResult> ExportMaterialUsage([FromBody] ExportMaterialUsageQuery query, CancellationToken ct)
+    {
+        try
+        {
+            var result = await sender.Send(query, ct);
+            return result.Success && result.Data is not null
+                ? File(result.Data, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "material-va-usage.xlsx")
+                : BadRequest(result);
+        }
+        catch (UnauthorizedAccessException) { return Forbid(); }
+    }
     [HttpGet("manufacturing/va/excel")]
     public async Task<IActionResult> ExportManufacturingVa(
         [FromQuery] ExportManufacturingVaQuery query, CancellationToken ct)

@@ -124,3 +124,7 @@ Feature hiện không publish notification và không thay đổi SignalR/Web Pu
 Danh sách lệnh sản xuất mẫu gợi ý công thức, ColorCode, tên sản phẩm và TP liên quan.
 
 Contract tùy chọn `searchSelections`/`suggestionKeyword`, OR/AND badge, giới hạn 10 và hướng dẫn thêm field: [Searching](../../../Commons/Searching/README.md). Không mở rộng quyền hoặc áp dụng tự động cho lookup.
+
+### Công thức nguồn khi tạo lệnh mẫu
+
+Formula Draft đã lưu có thể dùng để tạo lệnh nếu công thức và sản phẩm còn active trong phạm vi công ty, có vật tư active và người dùng có quyền tạo lệnh. Lệnh lưu snapshot vật tư và giữ trạng thái gốc của công thức.

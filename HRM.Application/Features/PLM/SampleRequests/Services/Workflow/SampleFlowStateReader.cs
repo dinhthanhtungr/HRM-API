@@ -22,7 +22,7 @@ internal static class SampleFlowStateReader
     {
         var ids = items.Select(x => x.SampleRequestId).Distinct().ToArray();
         if (ids.Length == 0) return;
-        var requests = await db.SampleRequests.AsNoTracking().Where(x => x.CompanyId == company && ids.Contains(x.SampleRequestId) && x.IsActive)
+        var requests = await db.SampleRequests.AsNoTracking().Include(x => x.Customer).Where(x => x.CompanyId == company && ids.Contains(x.SampleRequestId) && x.IsActive)
             .ToDictionaryAsync(x => x.SampleRequestId, ct);
         var trials = await db.SampleRequestSampleTrials.AsNoTracking().Where(x => ids.Contains(x.SampleRequestId) &&
                 x.SampleRequest.CompanyId == company && x.IsActive).OrderByDescending(x => x.TrialNo).ToListAsync(ct);
@@ -155,8 +155,12 @@ internal static class SampleFlowStateReader
             x.DeliveredSampleQuantityKg > 0 && x.SentDate != null, ct);
         var hasCandidate = formula == null && await DeliveryOptions.SampleDeliveryRules.RequestsWithUnsentConfirmedFormula(
                 db.SampleRequests.Where(x => x.CompanyId == request.CompanyId && x.SampleRequestId == request.SampleRequestId), db.Formulas, db.SampleRequestSampleTrials).AnyAsync(ct);
+        var customerCode = request.Customer?.ExternalId ?? await db.Customers.AsNoTracking()
+            .Where(x => x.CustomerId == request.CustomerId && x.CompanyId == request.CompanyId)
+            .Select(x => x.ExternalId).SingleOrDefaultAsync(ct);
+        var internalDirect = HRM.Application.Features.PLM.Shared.Rules.PLMInternalSampleRules.CanCompleteDirectly(request.RequestType, customerCode);
         var state = Build(request, trial, formula, events, lab, sale,
-            formula != null && approvedSource?.SourceFormulaId is not null, evidence.LabFormulaConfirmedAt.HasValue, hasSentKg, approvedSource?.At, requestTrials, hasCandidate);
+            formula != null && approvedSource?.SourceFormulaId is not null, evidence.LabFormulaConfirmedAt.HasValue, hasSentKg, approvedSource?.At, requestTrials, hasCandidate, internalDirect);
         if (state.PlanActions.Any(x => x is "RequestChip" or "RequestSample" or ChipThenSampleRules.Action) &&
             await ChipThenSampleRules.BlockingPending(db.SampleRequestSampleTrials.AsNoTracking())
                 .AnyAsync(x => x.SampleRequestId == request.SampleRequestId, ct))
@@ -167,7 +171,7 @@ internal static class SampleFlowStateReader
     public static SampleFlowStateDto Build(SampleRequest request, SampleRequestSampleTrial? trial, Formula? formula,
         IReadOnlyList<SampleRequestWorkflowEvent> events, bool lab, bool sale,
         bool hasApprovedPrice = false, bool labConfirmed = false, bool hasSentKg = false, DateTime? approvedPriceAt = null,
-        IReadOnlyCollection<SampleRequestSampleTrial>? trials = null, bool hasUnlinkedDeliveryCandidate = false)
+        IReadOnlyCollection<SampleRequestSampleTrial>? trials = null, bool hasUnlinkedDeliveryCandidate = false, bool internalDirect = false)
     {
         var legacy = SampleFollowUpRules.IsLegacy(request, events);
         if (request.Status == "LabDeclined")
@@ -183,6 +187,11 @@ internal static class SampleFlowStateReader
                 formula is null ? null : formula.UpdatedDate ?? formula.CreatedDate, request.SampleQuantity,
                 sale ? ["ResumeAfterLabRejection"] : [])
             { IsLabPaused = true, LabRejectionReason = SampleRequestLabPauseRules.Latest(events)?.Note, CompletionBlockers = ["LabPaused"], CompletionVisible = false };
+        var directInternal = internalDirect || request.Customer?.CompanyId == request.CompanyId && HRM.Application.Features.PLM.Shared.Rules.PLMInternalSampleRules.CanCompleteDirectly(request.RequestType, request.Customer?.ExternalId);
+        if (directInternal)
+            return new("InternalDirect", SampleFlowRules.IsOpen(request.Status) ? "InternalFormulaCompletion" : "Closed", formula?.FormulaId,
+                request.UpdatedDate, formula is null ? null : formula.UpdatedDate ?? formula.CreatedDate, request.SampleQuantity, [])
+                { CompletionVisible = false, CompletionBlockers = ["InternalCompletionOnly"] };
         var actions = new List<string>();
         var lastChipDecision = events.FirstOrDefault(x => x.EventType is SampleFlowRules.ChipFinalized or SampleFlowRules.ChipReopened &&
             x.FormulaId == formula?.FormulaId && x.SampleRequestSampleTrialId == trial?.SampleRequestSampleTrialId);
@@ -280,7 +289,7 @@ internal static class SampleFlowStateReader
 
     internal static Services.SampleWorkDecision ResolveDecision(SampleRequest request, SampleRequestSampleTrial? trial, Formula? formula,
         IReadOnlyList<SampleRequestWorkflowEvent> events, bool hasApprovedPrice, bool labConfirmed, bool hasSentKg, DateTime? approvedPriceAt,
-        IReadOnlyCollection<SampleRequestSampleTrial>? trials = null, bool hasUnlinkedDeliveryCandidate = false)
+        IReadOnlyCollection<SampleRequestSampleTrial>? trials = null, bool hasUnlinkedDeliveryCandidate = false, bool internalDirect = false)
     {
         var lastChipDecision = events.FirstOrDefault(x => x.EventType is SampleFlowRules.ChipFinalized or SampleFlowRules.ChipReopened &&
             x.FormulaId == formula?.FormulaId && x.SampleRequestSampleTrialId == trial?.SampleRequestSampleTrialId);
@@ -293,6 +302,7 @@ internal static class SampleFlowStateReader
         return Services.SampleWorkDecisionRules.Resolve(new Services.SampleWorkFacts
         {
             HasUnlinkedDeliveryCandidate = hasUnlinkedDeliveryCandidate,
+            InternalDirect = internalDirect || request.Customer?.CompanyId == request.CompanyId && HRM.Application.Features.PLM.Shared.Rules.PLMInternalSampleRules.CanCompleteDirectly(request.RequestType, request.Customer?.ExternalId),
             Open = SampleFlowRules.IsOpen(request.Status), Legacy = SampleFollowUpRules.IsLegacy(request, events), Sent = request.Status == "SampleSent",
             LabPaused = SampleRequestLabPauseRules.IsPaused(events),
             Quotation = SampleRequestCustomerPriceRules.IsQuotation(request.InfoType), RequestedKg = request.SampleQuantity > 0,

@@ -13,6 +13,27 @@ của phiên để nội dung từ phiên đầy đủ không được dùng l�
 
 PLM ghi một outbox thông báo SampleSent tóm tắt toàn đợt (các mã VU), gắn với một Event SampleSent con để dùng trusted publication/topic/recipient hiện có. Event cha SampleOptionsBatchSent chỉ nhóm lịch sử. Khi Sale báo cáo, một CustomerFeedbackRecorded của option được thao tác phát thông báo kết quả/nội dung; các SampleOptionNotSelected tự ghi Không đạt không tạo thêm thông báo. Không thêm topic/quyền/người nhận, không đưa giá/cost/NVL vào payload; SignalR/Web Push và worker dùng đường dispatch hiện hành. Retry batchId/operationId không thêm outbox mới.
 
+## Phạm vi ứng viên khi đọc feed và tổng chưa đọc
+
+Timeline thường `/notifications/feed` chọn cửa sổ ID theo cùng category/event group,
+CreatedDate/ID và cursor, rồi kiểm tra đầy đủ quyền cùng default lab presentation scope.
+Nếu có dòng bị ẩn, tiếp tục cửa sổ sau đến đủ take hoặc hết dữ liệu. Sau 8 cửa sổ dùng
+query gốc để tránh nhiều round trip, không trả trang thiếu giả. Hub latest/unread/@Tôi
+giữ nguyên thứ tự winner/filter nghiệp vụ trước phân trang; không chuyển sang window này.
+`nm_feed_scope` gồm chọn ứng viên và kiểm tra quyền; `nm_feed_page` đo bước projection
+cuối. Đánh giá cả tổng request, không coi việc chuyển chi phí giữa hai metric là tăng tốc.
+
+Summary xác thực scope conversation một lần trong request, chỉ giữ ID đã qua quyền,
+rồi aggregate inbox chưa đọc/chưa archived của đúng employee/company bằng scope đó.
+Không materialize notification ID/grant theo từng delivery và không cache qua request.
+Quá 16384 conversation được phép thì dùng query gốc, không cắt số đếm. Query cuối vẫn
+kiểm tra company/active và visibility của notification; `nm_summary_scope` đo lấy scope,
+aggregate nằm ở `nm_summary_topics`;
+`nm_summary_topics` tiếp tục loại notification BBG không đại diện tin hiển thị/đếm trùng,
+group topic/category, còn reaction và legacy giữ nguồn đếm riêng không chồng lấn.
+Không giới hạn summary theo take và không bỏ tin mới để trả số 0 nhanh. Tin đến sau snapshot
+ID được phản ánh ở refresh sau. DTO, quyền và cách hiển thị FE giữ nguyên.
+
 ## Tối ưu đếm cảm xúc chưa đọc (14/11/2026)
 
 `unread-summary` giữ nguyên DTO và số đếm theo quyền. Nhánh `nm_summary_reactions` trả 0 ngay khi tính năng cảm xúc tắt; khi bật, lấy ID notification cảm xúc chưa đọc/chưa archived của đúng employee/company trước, rồi kiểm tra lại state và toàn bộ quyền hội thoại/tác giả/actor theo từng lô tối đa 256 ID. Không cache số đếm, không tải nội dung, không đổi read-state hay gửi thêm thông báo. Notification mới đến sau bước lấy ID sẽ được phản ánh ở lượt refresh tiếp theo.

@@ -9,7 +9,11 @@ public static class NotificationDiagnosticTags
         "summary-legacy", "summary-reactions", "summary-topics", "personal-message-keys", "personal-event-keys", "personal-conversation-keys", "personal-latest", "feed-scope", "feed-page", "reactions", "titles", "conversation-metadata",
         "hub-feed", "hub-conversations", "hub-badges", "hub-groups", "hub-parents",
         "hub-samples", "hub-quotations", "hub-quick-groups", "hub-masking",
-        "thread-access", "thread-page", "thread-badges"];
+        "thread-access", "thread-page", "thread-badges",
+        "read-access", "read-inbox-scope", "summary-scope", "read-event-snapshot", "read-membership", "read-boundary", "read-legacy-check",
+        "read-message-snapshot", "read-begin", "read-messages", "read-notifications", "read-participant",
+        "read-commit", "read-inbox-update", "read-inbox-legacy", "read-write-total",
+        "read-state-access", "read-state-groups", "read-state-counts", "read-state-latest", "read-state-total"];
     private static readonly HashSet<string> Metrics = HeaderStages.Select(stage => "nm_" + stage.Replace('-', '_'))
         .Append("nm_handler").ToHashSet(StringComparer.Ordinal);
 

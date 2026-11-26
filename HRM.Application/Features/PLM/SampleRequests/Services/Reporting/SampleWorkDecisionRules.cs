@@ -4,6 +4,7 @@ namespace HRM.Application.Features.PLM.SampleRequests.Services;
 
 internal sealed record SampleWorkFacts
 {
+    public bool InternalDirect { get; init; }
     public bool Open { get; init; }
     public bool LabPaused { get; init; }
     public bool Legacy { get; init; }
@@ -64,7 +65,7 @@ internal static class SampleWorkDecisionRules
     internal static bool HasSalePriceWork(SampleWorkFacts facts) => PricePendingCompiled(facts);
     internal static bool HasSaleFeedbackWork(SampleWorkFacts facts) => FeedbackPendingCompiled(facts);
     internal static readonly Expression<Func<SampleWorkFacts, string>> Action = f =>
-        !f.Open ? "" : f.LabPaused ? "ResumeAfterLabRejection" : f.Legacy ? (f.Sent ? (f.FormulaStatus == "SampleSent" ? "CompleteRequest" : "ReviewSample") : f.FormulaStatus == "Approved" ? "SendSample" : "ApproveFormula") :
+        !f.Open ? "" : f.LabPaused ? "ResumeAfterLabRejection" : f.InternalDirect ? "ApproveFormula" : f.Legacy ? (f.Sent ? (f.FormulaStatus == "SampleSent" ? "CompleteRequest" : "ReviewSample") : f.FormulaStatus == "Approved" ? "SendSample" : "ApproveFormula") :
         f.ChipToSample ? (f.FormulaStatus == "Approved" || f.FormulaStatus == "SampleSent" ? "SendSample" : "ApproveFormula") :
         f.DeliveryRequested && !f.PendingTrial ? ((f.HasUnlinkedDeliveryCandidate || !f.HasSentKg && (f.FormulaStatus == "Approved" || f.FormulaStatus == "Rework" || f.FormulaStatus == "SampleSent" && f.Chip && f.Approved) || f.HasSentKg && (f.FormulaStatus == "SampleSent" || f.FormulaStatus == "Completed")) ? "SendSample" : "ApproveFormula") :
         f.ChipFirstPending ? (f.HasSentKg ? "ReviewSample" : f.PendingTrial ? (f.Chip ? "FollowUpCustomer" : "ReviewSample") :
@@ -102,7 +103,7 @@ internal static class SampleWorkDecisionRules
         f.FormulaStatus == "Approved" || f.FormulaStatus == "Rework" ? "SendSample" : "ApproveFormula";
 
     private static readonly Expression<Func<SampleWorkFacts, string, string>> Stage = (f, code) =>
-        code == "" ? "Closed" : code == "ResumeAfterLabRejection" ? "LabRejected" : code == "ReviewSample" ? "NeedsReview" : code == "CreateNewRequest" ? "NewRequestRequired" :
+        code == "" ? "Closed" : code == "ResumeAfterLabRejection" ? "LabRejected" : f.InternalDirect ? "InternalFormulaCompletion" : code == "ReviewSample" ? "NeedsReview" : code == "CreateNewRequest" ? "NewRequestRequired" :
         f.Legacy ? (f.Sent ? "LegacySent" : "LegacyPreparation") :
         f.ChipFirstPending ? (code == "FollowUpCustomer" ? "AwaitingChipFeedback" : code == "ReworkFormula" ? "ReworkChip" : "PrepareChip") :
         code == "ChooseAfterPrice" ? "AwaitingSaleAfterPrice" :

@@ -65,6 +65,10 @@ internal static class SampleWorkDecisionQuery
                         Facts = new SampleWorkFacts
                         {
                             HasUnlinkedDeliveryCandidate = formula == null && candidateRequests.Any(id => id == basis.Row.SampleRequest.SampleRequestId),
+                            InternalDirect = HRM.Application.Features.PLM.Shared.Rules.PLMInternalSampleRules.QueryKinds.Contains(
+                                (basis.Row.SampleRequest.RequestType ?? "").Trim().ToLower().Replace(" ", "").Replace("_", "").Replace("-", "")) &&
+                                crm.Customers.Any(c => c.CustomerId == basis.Row.SampleRequest.CustomerId && c.CompanyId == basis.Row.SampleRequest.CompanyId && c.IsActive == true &&
+                                    (c.ExternalId ?? "").Trim().ToLower() == HRM.Application.Features.PLM.Shared.Rules.PLMCustomerRules.InternalCustomerExternalId.ToLower()),
                             Open = basis.Row.SampleRequest.Status != "Completed" && basis.Row.SampleRequest.Status != "Cancelled" && basis.Row.SampleRequest.Status != "LabDeclined",
                             LabPaused = basis.LabPaused,
                             Legacy = (basis.Row.SampleRequest.CreatedDate < SampleFlowRules.StartsAt && !basis.Row.SampleRequest.WorkflowEvents.Any(e => e.CompanyId == basis.Row.SampleRequest.CompanyId && e.EventType == HRM.Application.Features.PLM.SampleRequests.Services.Workflow.SampleFollowUpRules.Started)),

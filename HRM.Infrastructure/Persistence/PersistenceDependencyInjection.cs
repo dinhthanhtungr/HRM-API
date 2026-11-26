@@ -69,6 +69,7 @@ internal static class PersistenceDependencyInjection
         services.AddSingleton<IManufacturingFormulaExcelRenderer, ManufacturingFormulaExcelRenderer>();
         services.AddSingleton<IMerchandiseOrderVaExcelRenderer, MerchandiseOrderVaExcelRenderer>();
         services.AddSingleton<IMaterialsExcelRenderer, MaterialsExcelRenderer>();
+        services.AddSingleton<IMaterialUsageExcelRenderer, MaterialUsageExcelRenderer>();
         services.AddSingleton<IManufacturingVaExcelRenderer, ManufacturingVaExcelRenderer>();
         services.AddSingleton<IPurchaseOrderPdfRenderer, PurchaseOrderPdfRenderer>();
         services.AddSingleton<IPurchaseOrderExcelRenderer, PurchaseOrderExcelRenderer>();

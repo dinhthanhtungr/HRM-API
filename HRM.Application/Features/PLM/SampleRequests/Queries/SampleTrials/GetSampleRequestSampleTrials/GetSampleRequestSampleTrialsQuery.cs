@@ -27,6 +27,7 @@ public sealed class GetSampleRequestSampleTrialsQuery
     [JsonIgnore]
     internal Guid[]? SampleRequestIds { get; init; }
     internal bool ReadSelectedReportPage { get; init; }
+    internal bool MenuCounts { get; init; }
     [JsonIgnore]
     public bool UseOperationalScope { get; init; }
     public Guid? CustomerId { get; init; }

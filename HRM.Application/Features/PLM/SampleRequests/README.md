@@ -1,5 +1,27 @@
 # Sample Requests — Yêu cầu phối mẫu
 
+## Số lượng nhóm trong menu theo dõi mẫu
+
+`GET /api/v1/plm/sample-requests/reports/daily?audience=lab&menuCounts=true`
+đọc facts một lần sau company/customer/team/keyword/smart-search/date filters.
+Hợp phạm vi All và vận hành được lọc ngay trên SampleRequest trước join Trial và
+facts: không dựng dữ kiện cho lịch sử chưa được đưa vào theo dõi. Menu không sắp
+xếp theo khách và không resolve FormulaId/LabConfirmedAt cho payload trang.
+Không dựng trang thẻ, tính giá hiển thị, creator leaders hoặc số tin chưa đọc. Audience
+bắt buộc và kiểm tra bằng quyền đọc queue hiện hành. Không thay đổi truy vấn
+danh sách khi thiếu `menuCounts` hoặc giá trị false.
+
+Response rút gọn: `{"items":[],"totalCount":0,"facets":{"workBuckets":{"all":42,"actionRequired":10,"completed":8},"workTasks":{"ApproveFormula":6,"SendSample":4}}}`.
+`totalCount=0` chỉ vì không trả danh sách; số đúng nằm trong facets. Mỗi count là
+số TP, không phải khách hoặc lượt gửi, và có thể xuất hiện trong nhiều nhóm.
+Các giá trị 0 là đã đếm; thiếu facets là không có dữ liệu, không suy ra 0.
+`workBuckets` chứa mã bucket camelCase; `workTasks` chứa mã loại việc hiện hành.
+All giữ cutoff/follow-up hiện có; các bucket khác giữ phạm vi vận hành gồm legacy
+được theo dõi lại. Sale `myActionRequired` và workTasks chỉ đếm chủ sở hữu cá nhân
+được phép xử lý; `actionRequired` giữ phạm vi được xem như danh sách hiện hành.
+Số liệu tính tại lúc đọc, FE dùng một query cho cả menu và cache 30 giây theo
+identity/company/filter. Không chứa giá hoặc dữ liệu chi tiết bị che quyền.
+
 ## API theo dõi hồ sơ cho IMS
 
 `GET /api/v1/plm/sample-requests/tracking` trả `items` cùng thông tin phân trang.
@@ -285,6 +307,7 @@ Middleware Development bổ sung phase cho GET trang mẫu và hội thoại li�
 - `lab_teams_active-employee/memberships`: kiểm tra nhân viên và đọc nhóm Lab.
 - `work_changes_visibility-scope/team-scope/revisions/approved-prices/unread`: kiểm tra thay đổi.
 - `sample_unread_visible-groups/counts`: nhóm hội thoại được phép xem và số chưa đọc.
+  Phần counts chỉ đếm trên các hội thoại hợp lệ của trang hiện tại bằng `PageNotificationUnreadCountsAsync`; giữ kiểm tra quyền và cộng tin legacy không trùng notification. Không dùng truy vấn tổng hợp unread toàn inbox cho từng trang daily.
 - `nm_summary_reactions/topics/legacy`: số chưa đọc theo phản ứng, chủ đề và dữ liệu cũ.
 - `sale_filters`, `lab_teams`, `work_changes`, `unread_summary` có thêm `_pre_dispatch` và `_total`.
 
@@ -991,3 +1014,9 @@ khác vẫn dùng quyền của danh tính đích, không cộng quyền Develop
 
 ## Lookup mẫu theo nhóm khách
 GET lookup khi có CustomerId và CustomerSampleSharing.Enabled dùng service nhóm hiện có để xác minh quyền khách đích và resolve các owner active cùng công ty. Cả lookup báo giá (ForSaleOrder=false) và lookup đơn hàng đều dùng nhóm; đơn hàng giữ điều kiện status/formula riêng. Không truyền CustomerId thì giữ visibility cũ, không suy quyền đọc toàn bộ nhóm. Mẫu nhóm cần active, Product/Customer active cùng company; loại semi-finished như cũ. Filter keyword/mã màu/mã mẫu/VU và Take hiện hành giữ nguyên. Chỉ DTO lookup tối thiểu, không mở detail/attachment/giá hoặc quyền sửa mẫu.
+
+## Nhánh nội bộ KH_VIETAUS hoàn thành trực tiếp
+
+Chỉ khi vừa là KH_VIETAUS vừa có RequestType nội bộ, Lab đủ quyền hoàn thành TP và VU cùng lúc, chọn đúng FormulaId và IsSelect, giữ Product/ColorCode. Dùng API status/status-transition của Formula với Completed và token TP/VU; không qua gửi hoặc phản hồi mẫu/giá. TP đóng, sai scope/quyền hoặc stale token không được hoàn thành. Chi tiết transaction, hợp đồng và giới hạn ở [README Formula](../Formulas/README.md#hoàn-thành-trực-tiếp-yêu-cầu-nội-bộ-kh_vietaus).
+
+Daily SQL và workflow reader cùng nhận diện điều kiện AND; công việc Lab vẫn mở editor qua ApproveFormula nhưng stage InternalFormulaCompletion/mode InternalDirect hiển thị Hoàn thành. Ưu tiên FinalizeFormula gom việc này thay vì nhóm xác nhận thông thường. Không đổi quyền/phạm vi đọc, rule thông báo nội bộ OR, dữ liệu cũ hoặc quy trình khách hàng ngoài nhánh này.

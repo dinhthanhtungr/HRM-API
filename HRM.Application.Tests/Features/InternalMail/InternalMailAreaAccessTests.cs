@@ -477,6 +477,13 @@ public sealed partial class InternalMailAreaAccessTests
         public T ExecuteAsync<T>(Expression expression, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (expression is MethodCallExpression call && call.Method.Name == "ExecuteUpdate")
+            {
+                // This memory fixture supports only the genuinely empty update. Positive
+                // mutations and affected-row semantics are tested on isolated PostgreSQL.
+                Assert.Empty(inner.CreateQuery(call.Arguments[0]).Cast<object>());
+                return (T)(object)Task.FromResult(0);
+            }
             var value = inner.Execute(expression);
             return (T)typeof(Task).GetMethod(nameof(Task.FromResult))!.MakeGenericMethod(typeof(T).GetGenericArguments()[0]).Invoke(null, [value])!;
         }

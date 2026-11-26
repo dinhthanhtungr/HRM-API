@@ -4,7 +4,8 @@ using Microsoft.Extensions.Logging;
 namespace HRM.Application.Features.InternalMail.Services;
 
 /// <summary>One slow-request summary; never records SQL, parameters, identities or business content.</summary>
-internal sealed class NotificationQueryTiming(ILogger? logger, string operation, bool enabled) : IDisposable
+internal sealed class NotificationQueryTiming(ILogger? logger, string operation, bool enabled,
+    string? totalStage = null) : IDisposable
 {
     private readonly Activity? _activity = Activity.Current;
     private readonly Stopwatch _total = Stopwatch.StartNew();
@@ -43,7 +44,10 @@ internal sealed class NotificationQueryTiming(ILogger? logger, string operation,
     {
         if (enabled && !_cancelled && _activity is { } activity)
         {
-            _serverTimings.Add($"nm_handler;dur={_total.ElapsedMilliseconds.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+            var totalMetric = totalStage is null ? "nm_handler" :
+                NotificationDiagnosticTags.HeaderStages.Contains(totalStage) ? "nm_" + totalStage.Replace('-', '_') : null;
+            if (totalMetric is not null)
+                _serverTimings.Add($"{totalMetric};dur={_total.ElapsedMilliseconds.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
             // Preserve phases from a nested feed call; the outer handler owns the total.
             var nested = NotificationDiagnosticTags.ValidateServerTiming(
                 activity.GetTagItem(NotificationDiagnosticTags.ServerTiming) as string);

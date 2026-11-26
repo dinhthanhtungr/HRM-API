@@ -347,7 +347,9 @@ internal sealed partial class NotificationService : INotificationService, IInter
                 () => _areas.UnreadHubConversationIdsAsync(inbox, cancellationToken));
         var unreadConversationScope = initialUnreadKeys?.ConversationIds is { Length: <= 4096 } boundedUnreadIds
             ? boundedUnreadIds : null;
-        var readScope = await timing.RunAsync("feed-scope", () => _areas.DefaultLabInboxSelectionAsync(
+        var readScope = await timing.RunAsync("feed-scope", () => !latestForHub && !unreadOnly && !mentionedOnly
+            ? PlainFeedWindowAsync(inbox, normalizedTake, afterId, afterCreated, categoryCode, eventGroupCode, cancellationToken)
+            : _areas.DefaultLabInboxSelectionAsync(
             inbox, cancellationToken, excludeReactions: !mentionedOnly,
             candidateConversationIds: personalConversationScope ?? unreadConversationScope,
             candidateEventIds: personalEventIds));
@@ -544,7 +546,8 @@ internal sealed partial class NotificationService : INotificationService, IInter
         var reactionTopics = InternalMailPersonalActivity.ReactionTopics;
         var personalReactionCount = await timing.RunAsync("summary-reactions", () =>
             _areas.PersonalReactionUnreadCountAsync(cancellationToken));
-        var topicCounts = await timing.RunAsync("summary-topics", () => _areas.BadgeStates().Where(s => !reactionTopics.Contains(s.Notification.Topic))
+        var unreadScope = await timing.RunAsync("summary-scope", () => _areas.UnreadBadgeStatesAsync(cancellationToken));
+        var topicCounts = await timing.RunAsync("summary-topics", () => _areas.BadgeStates(unreadScope).Where(s => !reactionTopics.Contains(s.Notification.Topic))
             .AsNoTracking()
             .Where(x =>
                 x.UserId == employeeId &&

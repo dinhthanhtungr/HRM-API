@@ -87,6 +87,22 @@ public sealed partial class InternalConversationGroupStoragePostgresTests
         Assert.Equal(3,summary.TotalUnread);
         Assert.Equal(1,summary.Categories.Single(c=>c.CategoryCode=="quotation").UnreadCount);
         Assert.Equal(summary.TotalUnread,await service.GetUnreadCountAsync());
+        // Plain feed giữ thứ tự/cursor và số dòng sau khi chuyển sang đọc cửa sổ ứng viên.
+        var plainInbox = db.Notifications.Where(n => n.CompanyId == user.CompanyId &&
+            n.UserStates.Any(s => s.UserId == user.EmployeeId && !s.IsArchived) &&
+            !InternalMailPersonalActivity.ReactionTopics.Contains(n.Topic));
+        var referenceFeed = await areas.DefaultLabInboxNotificationsAsync(plainInbox, default, excludeReactions: true);
+        var expectedFirst = await referenceFeed.OrderByDescending(n => n.CreatedDate).ThenByDescending(n => n.Id)
+            .Take(2).Select(n => n.Id).ToArrayAsync();
+        var actualFirst = await service.GetFeedAsync(take: 2);
+        Assert.Equal(expectedFirst, actualFirst.Select(n => n.Id));
+        var last = actualFirst[^1];
+        var expectedNext = await referenceFeed.Where(n => n.CreatedDate < last.CreatedDate ||
+                (n.CreatedDate == last.CreatedDate && n.Id.CompareTo(last.Id) < 0))
+            .OrderByDescending(n => n.CreatedDate).ThenByDescending(n => n.Id).Take(2).Select(n => n.Id).ToArrayAsync();
+        var actualNext = await service.GetFeedAsync(take: 2, afterId: last.Id, afterCreated: last.CreatedDate);
+        Assert.Equal(expectedNext, actualNext.Select(n => n.Id));
+        Assert.Empty(actualFirst.Select(n => n.Id).Intersect(actualNext.Select(n => n.Id)));
         var quoteMessage = await db.InternalMessages.Where(message =>
                 message.InternalConversationId == ids[0] && !message.IsDeleted)
             .Select(message => new InternalMessageDto { MessageId = message.InternalMessageId })

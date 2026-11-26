@@ -46,6 +46,9 @@ public sealed class UpdateFormulaStatusRequest
     [JsonConverter(typeof(NullableGuidEmptyStringConverter))]
     public Guid? SampleRequestId { get; init; }
 
+    /// <summary>Parent concurrency token for direct internal completion only.</summary>
+    public DateTime? ExpectedRequestUpdatedDate { get; init; }
+
     public decimal? DeliveredSampleQuantityKg { get; init; }
 
     /// <summary>

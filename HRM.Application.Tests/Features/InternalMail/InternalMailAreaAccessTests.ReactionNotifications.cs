@@ -50,6 +50,10 @@ public sealed partial class InternalMailAreaAccessTests
             var topics = InternalMailPersonalActivity.ReactionTopics;
             var expected = await areas.States().CountAsync(s => !s.IsRead && !s.IsArchived && topics.Contains(s.Notification.Topic));
             Assert.Equal(expected, await areas.PersonalReactionUnreadCountAsync(default));
+            var candidateScope = await areas.UnreadCandidateStatesAsync(fixture.Conversation.InternalConversationId, default);
+            Assert.Equal(expected, await candidateScope.Query.CountAsync(s => topics.Contains(s.Notification.Topic)));
+            Assert.Empty((await areas.UnreadCandidateStatesAsync(null, default, excludeReactions: true)).EventIds);
+            Assert.Empty(await (await areas.UnreadBadgeStatesAsync(default)).ToArrayAsync());
             if (scenario == "visible") Assert.Equal(1, expected);
         }
     }

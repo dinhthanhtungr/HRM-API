@@ -1,5 +1,80 @@
 # InternalMail API và luồng Notification
 
+## Server-Timing của thao tác đọc (Development)
+
+Middleware hiện có đo thêm `POST /api/v1/internal-mail/conversations/{id}/read` trong
+Development, chỉ trả header cho request authenticated thành công (200 hoặc 204). Không
+thêm flag/config, không nới authorization, không ghi thêm dữ liệu hoặc log ID/SQL/payload.
+Các môi trường khác không bật timing POST này. Chạy lại API sau build để nạp code mới;
+build ra artifacts không cập nhật tiến trình đang chạy.
+
+Trong Network → Timing/Headers của request read:
+
+| Metric | Ý nghĩa |
+|---|---|
+| `nm_read_write_total` | Tổng handler ghi đọc, gồm scope, snapshot và commit |
+| `nm_read_access`, `nm_read_membership`, `nm_read_boundary` | Kiểm tra quyền, membership, mốc tin đã tải |
+| `nm_read_inbox_scope` | Chọn ID inbox chưa đọc và kiểm tra quyền theo đúng tập hội thoại ứng viên |
+| `nm_read_event_snapshot`, `nm_read_legacy_check`, `nm_read_message_snapshot` | Chụp sự kiện/tin và xác định nhánh tương thích |
+| `nm_read_begin`, `nm_read_messages`, `nm_read_participant`, `nm_read_commit` | Mở transaction, upsert read-state, cập nhật LastReadAt, commit |
+| `nm_read_notifications` | Tổng đối soát notification |
+| `nm_read_inbox_update`, `nm_read_inbox_legacy` | Cập nhật tập chuẩn và toàn bộ nhánh batch/JSON lịch sử |
+| `nm_read_state_total` | Tổng lấy trạng thái trả về khi returnState=true |
+| `nm_read_state_access`, `nm_read_state_groups` | Kiểm tra lại quyền và lấy nhóm được xem |
+| `nm_read_state_counts`, `nm_read_state_latest` | Tính lại số chưa đọc, lấy mốc tin mới nhất |
+| `app_pre_dispatch`, `app_total` | Thời gian pipeline trước dispatch và đến lúc bắt đầu trả header |
+
+Tên metric và duration là whitelist, không có ID/role/giá/thông tin nghiệp vụ. Bước không
+chạy có thể không có metric. Total và bước con lồng nhau không được cộng chồng; các số đo
+EF gồm dịch query/network/materialization, không phải thời gian PostgreSQL thuần. Không
+đổi SQL hoặc thứ tự thao tác để thêm timing. Các GET đã có nm_handler giữ nguyên ý nghĩa;
+write/state có tổng riêng để hai handler chạy nối tiếp không ghi đè thời gian của nhau.
+
+## Đọc hội thoại có lịch sử dài
+
+Receipt chọn ID notification chưa đọc/chưa archived của employee/company và đúng conversation
+trước khi kiểm tra quyền. Tập ứng viên không phải quyền: vẫn qua ConversationsForCandidates,
+visibility của reaction và liên kết JSON hiện hành. Snapshot ID đã được xác thực chỉ dùng trong
+request, dùng chung cho chọn message, sự kiện thread-only, cập nhật canonical và legacy.
+Không giữ query quyền toàn inbox trong các bước ghi. Query message/boundary giới hạn đúng
+conversation nhưng vẫn kiểm tra area/group và quyền như Messages(). Tin đến sau snapshot,
+nhóm chưa mở và message sau boundary không bị đánh dấu. Giao dịch và response không đổi.
+
+Nhánh cập nhật inbox giữ scope quyền/company/employee; mỗi tập ID canonical hoặc legacy
+đã giới hạn đúng conversation nên không lặp thêm phép nối JSON conversation ở outer scope.
+Khi snapshot đầu request không có liên kết message kiểu cũ, bỏ hoàn toàn vòng truy vấn legacy;
+liên kết đến sau snapshot không bị kéo vào thao tác đọc đang chạy. API và transaction không đổi.
+
+`POST conversations/{id}/read?throughMessageId=...&returnState=true` giữ nguyên contract,
+quyền company/participant/observer và mốc SentAt/ID. Snapshot xử lý gồm tin cần tạo/sửa
+read-state hoặc còn notification chưa đọc cần đối soát; không chuyển lại toàn bộ ID
+tin đã đọc không còn việc cần xử lý. Upsert bỏ qua read-state đã đọc và giữ ReadAt cũ.
+Notification có MessageId UUID chuẩn cập nhật theo tập hợp trong một lệnh, vẫn xử lý
+mọi delivery trùng của cùng tin. Payload lịch sử có GUID không chuẩn tiếp tục đi parser
+và batch cũ; không tự coi JSON thiếu/sai MessageId là sự kiện cấp thread hợp lệ.
+Thread-only pricing approval dùng đúng snapshot lúc bắt đầu; observer không được tạo
+membership/read-state. Tin ngoài snapshot, sai area/company và nhóm chưa mở giữ nguyên.
+Số đếm trả về vẫn theo policy hiện hành, không thay bằng số dòng notification vừa cập nhật.
+
+Regression `ReadLargeHistoryPreservesBoundaryAndOtherGroups` đo xen kẽ 5 mẫu sau warm-up
+trên PostgreSQL loopback tạo mới, 20.000 tin, 800/8.000 notification và bốn role; đối chiếu
+toàn bộ inbox state với handler tham chiếu trước tối ưu. Đây là phép đo handler với helper
+persistence chung, không phải HTTP/DB production hoặc thời gian toàn màn hình.
+
+## Badge danh sách và xác nhận đọc
+
+`GetInternalConversations` và compact read-state dùng `PageNotificationUnreadCountsAsync`
+cho đúng các ID đã được phân quyền trong trang/nhóm liên quan. Nhánh notification
+và legacy được tính riêng rồi cộng theo conversation, không gộp thành một query UNION
+lớn. Liên kết payload conversation dùng UUID có kiểm tra định dạng thay vì cast khóa
+conversation sang text; giữ nguyên company, employee, active, participant/observer,
+loại trừ reaction và quy tắc BBG đếm distinct message. Không thêm index/schema/cache.
+
+Benchmark `QuotationUnreadApisExecuteWithRealMetadataOnIsolatedPostgres` so ID/số đếm
+và đo luân phiên 5 lần sau warm-up trên cluster loopback tạo mới, không đọc appsettings
+hay DB thật; kết quả từng role ở `artifacts/quotation-unread-performance/*-page-badges.json`.
+Đây là số đo bước badge của fixture, không phải thời gian HTTP trên máy chủ triển khai.
+
 ## Icon sự kiện trên danh sách hội thoại
 
 Icon Hòm thư biểu thị loại notification cuối cùng trong feed đã tải, không dò ngược lịch sử để ưu tiên sự kiện nghiệp vụ cũ hơn chat. `GetInternalConversations` không gọi query `icons`; hai field optional `representativeTopicCode`/`representativeEventGroupCode` được giữ để tương thích nhưng trả null. Dòng chỉ có conversation chưa có notification trong feed dùng icon loại hội thoại ở FE. Badge, quyền, thứ tự và phân trang giữ nguyên; không thêm cache/index/schema.

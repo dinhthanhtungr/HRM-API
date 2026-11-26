@@ -35,6 +35,7 @@ internal static class SampleRequestDailyPriorityFactsPage
         public Guid RequestId { get; init; }
         public DateTime CreatedDate { get; init; }
         public Guid CustomerId { get; init; }
+        public Guid ManagerBy { get; init; }
         public SampleRequestDailyPayloadPage.State State { get; init; } = null!;
         public string Status { get; init; } = "";
         public DateTime? Due { get; init; }
@@ -49,14 +50,17 @@ internal static class SampleRequestDailyPriorityFactsPage
     }
 
     internal static IQueryable<ReadRow> ReadRows(IQueryable<SampleRequestSampleTrialReportRow> filtered,
-        IPLMDbContext db, ICRMReadDbContext crm, string currency, Access access, IQueryable<SampleRequest> writable)
-        => SampleWorkDecisionQuery.ReadFacts(filtered, db, crm, currency)
-            .OrderBy(x => x.Row.SampleRequest.Customer.ExternalId).ThenBy(x => x.Row.SampleRequest.CustomerId)
-            .Select(x => new ReadRow
+        IPLMDbContext db, ICRMReadDbContext crm, string currency, Access access, IQueryable<SampleRequest> writable,
+        bool forMenu = false)
+    {
+        var facts = SampleWorkDecisionQuery.ReadFacts(filtered, db, crm, currency);
+        if (!forMenu) facts = facts.OrderBy(x => x.Row.SampleRequest.Customer.ExternalId).ThenBy(x => x.Row.SampleRequest.CustomerId);
+        return facts.Select(x => new ReadRow
             {
                 RequestId = x.Row.SampleRequest.SampleRequestId,
                 CreatedDate = x.Row.SampleRequest.CreatedDate,
                 CustomerId = x.Row.SampleRequest.CustomerId,
+                ManagerBy = x.Row.SampleRequest.ManagerBy,
                 Status = x.Row.SampleRequest.Status,
                 HasFeedback = x.Row.HasPriceFeedback || x.Row.Trial != null && x.Row.Trial.CustomerReplyDate != null,
                 SaleWritable = access.Sale && access.SaleOwners.Contains(x.Row.SampleRequest.ManagerBy) &&
@@ -67,13 +71,14 @@ internal static class SampleRequestDailyPriorityFactsPage
                      x.Row.SampleRequest.NumberDeliverySampleDate <= (DateTime.MaxValue.Date - x.Row.SampleRequest.LabReceivedDate.Value.Date).TotalDays
                         ? (DateTime?)x.Row.SampleRequest.LabReceivedDate.Value.Date.AddDays(x.Row.SampleRequest.NumberDeliverySampleDate.GetValueOrDefault()) : null),
                 State = new SampleRequestDailyPayloadPage.State(x.Row.SampleRequest.SampleRequestId,
-                    x.Row.Trial == null ? null : x.Row.Trial.SampleRequestSampleTrialId, x.Facts,
-                    ((x.Row.SampleRequest.CreatedDate < SampleFlowRules.StartsAt && !x.Row.SampleRequest.WorkflowEvents.Any(e => e.CompanyId == x.Row.SampleRequest.CompanyId && e.EventType == HRM.Application.Features.PLM.SampleRequests.Services.Workflow.SampleFollowUpRules.Started)) ? x.Row.SampleRequest.FormulaId :
-                        x.Row.Trial == null ? null : x.Row.Trial.FormulaId) ?? x.Row.ConfirmedFormulaId ?? x.Row.SampleRequest.FormulaId,
-                    x.Row.LabFormulaConfirmedAt,
+                    forMenu || x.Row.Trial == null ? null : x.Row.Trial.SampleRequestSampleTrialId, x.Facts,
+                    forMenu ? null : (((x.Row.SampleRequest.CreatedDate < SampleFlowRules.StartsAt && !x.Row.SampleRequest.WorkflowEvents.Any(e => e.CompanyId == x.Row.SampleRequest.CompanyId && e.EventType == HRM.Application.Features.PLM.SampleRequests.Services.Workflow.SampleFollowUpRules.Started)) ? x.Row.SampleRequest.FormulaId :
+                        x.Row.Trial == null ? null : x.Row.Trial.FormulaId) ?? x.Row.ConfirmedFormulaId ?? x.Row.SampleRequest.FormulaId),
+                    forMenu ? null : x.Row.LabFormulaConfirmedAt,
                     x.Facts.Open && (x.Facts.Quotation && !x.Facts.RequestedKg ?
                         x.Row.SampleRequest.ExpectedPriceQuoteDate == null : x.Row.SampleRequest.ExpectedDeliveryDate == null))
             });
+    }
 
     internal static async Task<Result> ReadAsync(IQueryable<SampleRequestSampleTrialReportRow> filtered,
         IQueryable<SampleRequestSampleTrialReportRow> raw, IPLMDbContext db, ICRMReadDbContext crm, string currency,
@@ -145,6 +150,57 @@ internal static class SampleRequestDailyPriorityFactsPage
         return new(selected.Select(x => x.Id).ToArray(),
             SampleRequestDailyPayloadPage.FromStates(selected.SelectMany(x => x.Rows).Select(x => x.Row.State).ToArray(), raw), tieOrder)
         { TaskCounts = access.Bucket is SampleRequestWorkBucket.MyActionRequired or SampleRequestWorkBucket.ActionRequired ? taskCounts : null };
+    }
+
+    internal sealed class MenuRow
+    {
+        public ReadRow Row { get; init; } = null!;
+        public bool InAll { get; init; }
+        public bool InOperational { get; init; }
+    }
+
+    /// <summary>Đếm mọi nhóm trong một lượt facts; giữ riêng phạm vi legacy của All và scope cá nhân của Sale.</summary>
+    internal static async Task<IReadOnlyDictionary<string, IReadOnlyDictionary<string, int>>> CountMenuRowsAsync(
+        IAsyncEnumerable<MenuRow> rows, SampleRequestWorkAudience audience, Guid? employeeId,
+        bool useOperationalScope, DateTime day, CancellationToken ct)
+    {
+        var buckets = Enum.GetValues<SampleRequestWorkBucket>().ToDictionary(x => x, _ => 0);
+        var tasks = SampleWorkTaskPriority.Codes.ToDictionary(x => x, _ => 0);
+        await foreach (var item in rows.WithCancellation(ct))
+        {
+            var row = item.Row;
+            var decision = SampleWorkDecisionRules.Resolve(row.State.Facts);
+            if (item.InAll && (!useOperationalScope || item.InOperational)) buckets[SampleRequestWorkBucket.All]++;
+            if (!item.InOperational) continue;
+            var saleWork = row.State.Facts.Open && (decision.Role == "Sale" ||
+                SampleWorkDecisionRules.HasSalePriceWork(row.State.Facts) || SampleWorkDecisionRules.HasSaleFeedbackWork(row.State.Facts));
+            var action = audience switch
+            {
+                SampleRequestWorkAudience.Sale => saleWork,
+                SampleRequestWorkAudience.Lab => row.State.Facts.Open && decision.Role == "Lab",
+                _ => row.State.Facts.Open && (decision.Role == "LabAdmin" || decision.Role == "Lab" && row.State.NeedsSchedule)
+            };
+            foreach (var bucket in buckets.Keys.ToArray())
+            {
+                if (bucket == SampleRequestWorkBucket.All) continue;
+                var match = bucket switch
+                {
+                    SampleRequestWorkBucket.ActionRequired => action,
+                    SampleRequestWorkBucket.MyActionRequired => action && (audience != SampleRequestWorkAudience.Sale ||
+                        employeeId.HasValue && row.ManagerBy == employeeId && row.SaleWritable),
+                    _ => MatchesBucket(row, decision, bucket, day)
+                };
+                if (match) buckets[bucket]++;
+            }
+            var personal = audience == SampleRequestWorkAudience.Sale ? action && employeeId.HasValue && row.ManagerBy == employeeId && row.SaleWritable : action;
+            if (personal)
+                foreach (var task in SampleWorkTaskPriority.Tasks(row.State.Facts, decision, audience, row.State.NeedsSchedule, row.Status)) tasks[task]++;
+        }
+        return new Dictionary<string, IReadOnlyDictionary<string, int>>
+        {
+            ["workBuckets"] = buckets.ToDictionary(x => System.Text.Json.JsonNamingPolicy.CamelCase.ConvertName(x.Key.ToString()), x => x.Value),
+            ["workTasks"] = tasks
+        };
     }
 
     private static int CompareRows(Candidate a, Candidate b)
