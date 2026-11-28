@@ -1,4 +1,5 @@
 using HRM.Domain.Entities.Notifications;
+using HRM.Application.Features.NotificationHub.Queries.GetItems;
 using Microsoft.EntityFrameworkCore;
 
 namespace HRM.Application.Features.InternalMail.Services;
@@ -6,6 +7,29 @@ namespace HRM.Application.Features.InternalMail.Services;
 public sealed partial class InternalMailAreaAccessService
 {
     private const int EventAuthorizationBatchSize = 4096;
+    internal const int MaxInboxCandidates = 4096;
+
+    internal async Task<(IQueryable<Notification> Inbox, Guid[]? ConversationIds)> NarrowUrgentInboxAsync(
+        IQueryable<Notification> inbox, CancellationToken ct)
+    {
+        var company = user.CompanyId ?? Guid.Empty;
+        var employee = user.EmployeeId ?? Guid.Empty;
+        var candidates = await NotificationHubUrgentQuery.ConversationIds(
+                db.InternalConversations.Where(c => c.CompanyId == company && c.IsActive), employee)
+            .Take(MaxInboxCandidates + 1).ToArrayAsync(ct);
+        if (candidates.Length > MaxInboxCandidates)
+            return (UrgentHubEvents(inbox), null);
+        if (candidates.Length == 0)
+            return (inbox.Where(_ => false), candidates);
+
+        var authorized = await NotificationHubUrgentQuery.ConversationIds(
+            ConversationsForCandidates(candidates), employee).ToArrayAsync(ct);
+        var links = db.QueryInternalMailNotificationLinks(company);
+        var urgentInbox = inbox.Where(n => links.Any(link => link.NotificationId == n.Id &&
+            link.ConversationId.HasValue && authorized.Contains(link.ConversationId.Value)));
+        return (urgentInbox, authorized);
+    }
+
     internal sealed record CandidateNotificationStateScope(IQueryable<NotificationUserState> Query, Guid[] EventIds);
 
     // IDs chỉ giới hạn việc cần kiểm tra; không cấp quyền. Mỗi batch vẫn qua đầy đủ

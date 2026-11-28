@@ -39,11 +39,17 @@ read-state, quyền, topic, recipient, payload hay SignalR/Web Push và không c
 `urgentOnly=true` phục vụ tab **Gấp** và có thể kết hợp với mọi `categoryCode`/`eventGroupCode` ở thanh tab phía
 trên. Tab này chỉ tổng hợp notification có conversation mà current employee là participant active, cùng company, và
 conversation hiện còn ít nhất một tin nhắn do người khác gửi với `isUrgent=true` (đã đọc vẫn là Gấp cho đến khi tin
-nhắn bị bỏ đánh dấu hoặc xóa). Notification không có conversation không nằm trong tab Gấp. Backend dùng query liên kết
-JSON hiện có để lấy ID notification thuộc inbox và conversation Gấp được phép xem một lần, trước khi chọn sự kiện
-mới nhất và keyset/Take. Query chọn sự kiện dùng tập ID này để tránh lặp lại truy vấn JSON/quyền trong các subquery;
-vẫn kiểm tra inbox/company/area ở query trả dữ liệu và chỉ enrich trang kết quả; không quét tuần tự
-nhiều lô thông báo thường. Scope company/area và participant active vẫn được kiểm tra, kể cả với executive.
+nhắn bị bỏ đánh dấu hoặc xóa). Notification không có conversation không nằm trong tab Gấp.
+Backend tìm trước ID hội thoại Gấp trong công ty, kiểm quyền, rồi dùng liên kết JSON hiện có để lấy notification
+trong inbox. Tập ứng viên có giới hạn 4.096 ID và chỉ sống trong request. Nếu vượt giới hạn,
+BE tiếp tục lọc trong SQL với toàn bộ dữ liệu. Scope company/area và participant active vẫn được
+kiểm tra, kể cả với executive. Các bước lấy ID Gấp có timing riêng `nm_urgent_conversation_keys`
+và `nm_urgent_event_keys`.
+
+Hub có thể lấy trọn tập ID inbox nhỏ trước khi kiểm quyền để dùng cho **Tất cả** và **Chưa đọc**.
+**@Tôi** ưu tiên tập ứng viên riêng cho mention/reply/reaction và dùng tập inbox nhỏ làm phương án
+dự phòng khi tìm ứng viên riêng không đủ giới hạn. Các luồng đều giữ thứ tự chọn sự kiện đại diện
+trước khi lọc danh mục, nhóm sự kiện và cursor. Việc lấy trước ID không thay đổi nguồn đếm chưa đọc.
 
 ## Response contract
 

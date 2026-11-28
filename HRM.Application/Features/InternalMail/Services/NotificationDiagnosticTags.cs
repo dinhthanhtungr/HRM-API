@@ -9,6 +9,7 @@ public static class NotificationDiagnosticTags
         "summary-legacy", "summary-reactions", "summary-topics", "personal-message-keys", "personal-event-keys", "personal-conversation-keys", "personal-latest", "feed-scope", "feed-page", "reactions", "titles", "conversation-metadata",
         "hub-feed", "hub-conversations", "hub-badges", "hub-groups", "hub-parents",
         "hub-samples", "hub-quotations", "hub-quick-groups", "hub-masking",
+        "urgent-conversation-keys", "urgent-event-keys", "hub-candidate-events", "hub-candidate-conversations",
         "thread-access", "thread-page", "thread-badges", "thread-areas", "thread-roles",
         "thread-visible-members", "thread-eligible-members", "thread-reader-groups",
         "read-access", "read-inbox-scope", "summary-scope", "read-event-snapshot", "read-membership", "read-boundary", "read-legacy-check",

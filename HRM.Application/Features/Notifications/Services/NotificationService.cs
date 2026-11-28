@@ -302,12 +302,26 @@ internal sealed partial class NotificationService : INotificationService, IInter
         if (!mentionedOnly) inbox = inbox.Where(n => !reactionTopics.Contains(n.Topic));
         // Resolve the authorized urgent inbox once. Inlining this predicate in
         // every latest-event subquery repeats the JSON link and access queries.
+        Guid[]? urgentConversationScope = null;
+        Guid[]? urgentEventScope = null;
         if (urgentOnly)
         {
-            var urgentIds = await _areas.UrgentHubEvents(inbox)
-                .Select(notification => notification.Id).ToArrayAsync(cancellationToken);
+            var baseInbox = inbox;
+            var urgent = await timing.RunAsync("urgent-conversation-keys",
+                () => _areas.NarrowUrgentInboxAsync(inbox, cancellationToken));
+            urgentConversationScope = urgent.ConversationIds;
+            if (urgentConversationScope is { Length: 0 }) return [];
+            inbox = urgent.Inbox;
+            var urgentIds = await timing.RunAsync("urgent-event-keys", () => inbox
+                .Select(notification => notification.Id).Take(InternalMailAreaAccessService.MaxInboxCandidates + 1)
+                .ToArrayAsync(cancellationToken));
             if (urgentIds.Length == 0) return [];
-            inbox = inbox.Where(notification => urgentIds.Contains(notification.Id));
+            if (urgentIds.Length <= InternalMailAreaAccessService.MaxInboxCandidates)
+            {
+                urgentEventScope = urgentIds;
+                // Keep inbox/company/archive predicates at the point of use.
+                inbox = baseInbox.Where(notification => urgentIds.Contains(notification.Id));
+            }
         }
         Guid[]? personalMessageIds = null;
         Guid[]? personalEventIds = null;
@@ -357,12 +371,28 @@ internal sealed partial class NotificationService : INotificationService, IInter
                 () => _areas.UnreadHubConversationIdsAsync(inbox, cancellationToken));
         var unreadConversationScope = initialUnreadKeys?.ConversationIds is { Length: <= 4096 } boundedUnreadIds
             ? boundedUnreadIds : null;
+        Guid[]? hubEventScope = null;
+        Guid[]? hubConversationScope = null;
+        if (latestForHub && !urgentOnly && personalEventIds is null)
+        {
+            var ids = await timing.RunAsync("hub-candidate-events", () => inbox
+                .Select(n => n.Id).Take(InternalMailAreaAccessService.MaxInboxCandidates + 1)
+                .ToArrayAsync(cancellationToken));
+            if (ids.Length <= InternalMailAreaAccessService.MaxInboxCandidates)
+            {
+                hubEventScope = ids;
+                if (ids.Length == 0) return [];
+                if (unreadConversationScope is null)
+                    hubConversationScope = await timing.RunAsync("hub-candidate-conversations",
+                        () => _areas.HubConversationIdsForEvents(ids).ToArrayAsync(cancellationToken));
+            }
+        }
         var readScope = await timing.RunAsync("feed-scope", () => !latestForHub && !unreadOnly && !mentionedOnly
             ? PlainFeedWindowAsync(inbox, normalizedTake, afterId, afterCreated, categoryCode, eventGroupCode, cancellationToken)
             : _areas.DefaultLabInboxSelectionAsync(
             inbox, cancellationToken, excludeReactions: !mentionedOnly,
-            candidateConversationIds: personalConversationScope ?? unreadConversationScope,
-            candidateEventIds: personalEventIds));
+            candidateConversationIds: personalConversationScope ?? unreadConversationScope ?? urgentConversationScope ?? hubConversationScope,
+            candidateEventIds: personalEventIds ?? urgentEventScope ?? hubEventScope));
         var visible = readScope.Query;
         if (mentionedOnly)
         {
@@ -404,7 +434,8 @@ internal sealed partial class NotificationService : INotificationService, IInter
                 : unreadOnly && candidateConversationIds is not null
                     ? await timing.RunAsync("unread-latest", () => _areas.LatestUnreadHubEventsAsync(
                         visible, inbox, NotificationTopicCatalog.NormalizeCode(eventGroupCode), candidateConversationIds, cancellationToken, unreadStandaloneIds))
-                    : _areas.LatestHubEvents(visible, inbox, NotificationTopicCatalog.NormalizeCode(eventGroupCode), candidateConversationIds);
+                    : _areas.LatestHubEvents(visible, inbox, NotificationTopicCatalog.NormalizeCode(eventGroupCode),
+                        candidateConversationIds ?? urgentConversationScope ?? hubConversationScope);
         }
         IQueryable<NotificationDto> PageQuery(IQueryable<Notification> source)
         {

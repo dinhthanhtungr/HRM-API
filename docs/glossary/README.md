@@ -360,6 +360,8 @@ cho mỗi nhóm setting; UserId đồng thời là khóa ngoại liên kết t�
 
 Shortlist / Tập ứng viên: lấy trước các khóa có khả năng phù hợp để kiểm tra tiếp trên tập nhỏ; chưa đồng nghĩa được phép xem. Ví dụ summary lấy ID cảm xúc unread đúng employee/company rồi vẫn kiểm tra đầy đủ quyền hội thoại, tác giả và người thả.
 
+Partial index / Chỉ mục có điều kiện: chỉ lập chỉ mục cho các dòng thỏa một điều kiện. Ví dụ khi tối ưu tab Gấp, có thể đánh giá chỉ mục chứa tin nhắn được đánh dấu Gấp và chưa xóa nếu kế hoạch thực thi cho thấy bước tìm các tin này chậm.
+
 Loại sản phẩm của NVL trong Excel Special là danh mục `Category` gắn trực tiếp với
 `Material.CategoryId`; xuất mã và tên danh mục cùng mã/tên NVL, không suy ra thành phẩm
 từ công thức. Chỉ danh mục có `Types = NVL` được xuất trong danh sách này.

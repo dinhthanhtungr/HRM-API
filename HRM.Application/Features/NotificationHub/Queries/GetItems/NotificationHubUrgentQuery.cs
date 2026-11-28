@@ -14,12 +14,19 @@ internal static class NotificationHubUrgentQuery
         IQueryable<InternalConversation> authorizedConversations,
         Guid employeeId)
     {
-        var urgentIds = authorizedConversations.Where(c =>
+        return ApplyConversationIds(visible, links, ConversationIds(authorizedConversations, employeeId));
+    }
+
+    internal static IQueryable<Guid> ConversationIds(IQueryable<InternalConversation> conversations, Guid employeeId)
+        => conversations.Where(c =>
             c.Participants.Any(p => p.EmployeeId == employeeId && p.IsActive) &&
             c.Messages.Any(m => m.InternalConversationId == c.InternalConversationId &&
                 !m.IsDeleted && m.IsUrgent && m.SenderEmployeeId != employeeId))
             .Select(c => c.InternalConversationId);
 
+    internal static IQueryable<Notification> ApplyConversationIds(
+        IQueryable<Notification> visible, IQueryable<InternalMailNotificationLink> links, IQueryable<Guid> urgentIds)
+    {
         // Apply before Take/keyset paging; read-state does not remove urgency.
         return visible.Where(n => links.Any(link => link.NotificationId == n.Id &&
             link.ConversationId.HasValue && urgentIds.Contains(link.ConversationId.Value)));
