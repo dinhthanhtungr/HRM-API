@@ -36,6 +36,7 @@ Quản lý/sửa cách điều hướng: xem [Bảng quản lý điều hướng
 ## Tiếp nhận yêu cầu đặc biệt
 
 - Tin nhắn riêng `save`, `load` hoặc `laod` kích hoạt [quy trình đồng bộ BE/FE qua main](docs/agents/workspace.md#đồng-bộ-befe-qua-main). Hỏi xác nhận cho từng lần trước khi thao tác Git có ghi.
+- Trước khi sửa code, bàn giao sang máy/chat khác hoặc thao tác nhánh, áp dụng [quy tắc phối hợp và nhắc xung đột](docs/agents/workspace.md#phối-hợp-nhiều-máy-nhiều-chat-và-nhánh).
 
 - User yêu cầu tiếp tục từ tên/link/id chat cũ: đọc [Bàn giao chat](docs/agents/chat-handoff.md), chỉ lấy context liên quan; không tự tạo chat, gửi tin hoặc gọi agent con.
 - User báo chậm, tải lâu hoặc giật: đọc [Chẩn đoán hiệu năng HRM](docs/agents/hrm-performance.md); đề xuất phép đo còn thiếu và chờ đồng ý trước khi thêm, trừ khi đã được cho phép rõ trong task.
