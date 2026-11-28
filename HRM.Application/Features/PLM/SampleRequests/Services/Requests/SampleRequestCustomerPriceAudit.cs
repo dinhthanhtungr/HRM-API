@@ -16,6 +16,7 @@ internal static class SampleRequestCustomerPriceAudit
     public const string Revoked = "CustomerPriceAcceptanceRevoked";
     private static readonly string[] EventReasons = [Accepted, Revoked, "CustomerPriceConfirmed", "CustomerPriceConfirmationRevoked",
         Services.Workflow.SampleFlowRules.PriceRejected, Services.Workflow.SampleFlowRules.PriceNoResponse];
+    internal static readonly string[] ManagedEventTypes = [Created, .. EventReasons];
 
     public static IQueryable<SampleRequestWorkflowEvent> Events(IPLMDbContext db, Guid company, Guid id) =>
         db.SampleRequestWorkflowEvents.AsNoTracking().Where(x => x.CompanyId == company &&
@@ -73,7 +74,7 @@ internal static class SampleRequestCustomerPriceAudit
         if (items.Count == 0) return;
         var ids = items.Select(x => x.SampleRequestId).Distinct().ToArray();
         var source = db.SampleRequestWorkflowEvents.AsNoTracking().Where(x => x.CompanyId == company && ids.Contains(x.SampleRequestId));
-        var managed = (await source.Where(x => x.EventType == Created || EventReasons.Contains(x.EventType))
+        var managed = (await source.Where(x => ManagedEventTypes.Contains(x.EventType))
             .Select(x => x.SampleRequestId).Distinct().ToListAsync(ct)).ToHashSet();
         var events = await source.Where(x => EventReasons.Contains(x.EventType)).GroupBy(x => x.SampleRequestId)
             .Select(g => g.OrderByDescending(x => x.RecordedAt).ThenByDescending(x => x.Id).First()).ToListAsync(ct);

@@ -11,11 +11,12 @@ internal sealed class TdsExcelRenderer : ITdsExcelRenderer
         var documents = workbook.AddWorksheet("Documents");
         var specifications = workbook.AddWorksheet("Specifications");
         var review = workbook.AddWorksheet("Review");
+        var names = workbook.AddWorksheet("Đối chiếu tên");
         WriteRow(documents, 1, "File", "SHA256", "Status", "Duplicate of", "Normalization", "Document type", "Product",
             "Product code / grade", "Manufacturer", "Revision", "Issue date (source)", "Language", "Applications", "Storage",
             "Match status", "Material ID", "Material code", "Candidate codes", "Requires review");
         WriteRow(specifications, 1, "File", "Material code", "Specification", "Value / range (original)", "Unit",
-            "Test method", "Conditions", "Source location", "Evidence (original)", "Requires review", "Validation codes");
+            "Test method", "Conditions", "Source location", "Evidence (original)", "Requires review", "Validation codes", "SHA256");
         WriteRow(review, 1, "File", "Code", "Detail");
         var documentRow = 2;
         var specificationRow = 2;
@@ -31,13 +32,28 @@ internal sealed class TdsExcelRenderer : ITdsExcelRenderer
             foreach (var item in data?.Specifications ?? [])
                 WriteRow(specifications, specificationRow++, result.FileName, result.MaterialExternalId,
                     item.Name, item.Value, item.Unit, item.TestMethod, item.Conditions, item.SourceLocation, item.Evidence, "Yes",
-                    string.Join("; ", item.ValidationCodes));
+                    string.Join("; ", item.ValidationCodes), result.Hash);
             foreach (var warning in result.Warnings)
                 WriteRow(review, reviewRow++, result.FileName, warning, "Check the original document before using the extracted data.");
             if (result.Status == "duplicate") WriteRow(review, reviewRow++, result.FileName, "duplicate_content", result.DuplicateOf);
             if (result.NormalizationMethod is "word_paragraphs_and_tables" or "excel_cached_values")
                 WriteRow(review, reviewRow++, result.FileName, "office_text_only",
                     "Embedded images/charts are not extracted; Excel formulas use cached values and are not recalculated.");
+        }
+        WriteRow(names, 1, "Tên gốc", "Số tài liệu", "Số dòng", "Ví dụ (giá trị, đơn vị, điều kiện, tệp)",
+            "Tên chuẩn QC chọn", "Trạng thái đối chiếu", "Ghi chú QC");
+        var groups = results.Where(x => TdsExtractionRules.IsTechnicalOrSafetySheet(x.Data?.DocumentType))
+            .SelectMany(file => file.Data!.Specifications.Where(item => !string.IsNullOrWhiteSpace(item.Name))
+                .Select(item => new { File = file, Item = item }))
+            .GroupBy(x => x.Item.Name!, StringComparer.Ordinal)
+            .OrderBy(group => group.Key, StringComparer.Ordinal);
+        var nameRow = 2;
+        foreach (var group in groups)
+        {
+            var examples = group.Select(x => $"{x.Item.Value} {x.Item.Unit} | {x.Item.Conditions} | {x.File.FileName}")
+                .Distinct(StringComparer.Ordinal).Take(3);
+            WriteRow(names, nameRow++, group.Key, group.Select(x => x.File).Distinct().Count().ToString(),
+                group.Count().ToString(), string.Join("\n", examples), "", "", "");
         }
         foreach (var sheet in workbook.Worksheets)
         {
@@ -55,6 +71,7 @@ internal sealed class TdsExcelRenderer : ITdsExcelRenderer
             sheet.Rows(2, Math.Max(2, range.RowCount())).Height = 42;
         }
         specifications.Column(9).Width = 65;
+        names.Column(4).Width = 65;
         review.Column(3).Width = 75;
         using var output = new MemoryStream();
         workbook.SaveAs(output);

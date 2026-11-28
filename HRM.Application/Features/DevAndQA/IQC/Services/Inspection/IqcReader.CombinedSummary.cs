@@ -1,3 +1,4 @@
+using HRM.Application.Commons.Diagnostics;
 using HRM.Application.Features.DevAndQA.IQC.Dtos;
 using HRM.Application.Commons.Searching;
 using Microsoft.EntityFrameworkCore;
@@ -61,23 +62,29 @@ internal sealed partial class IqcReader
     {
         var pageNumber = query.PageNumber <= 0 ? 1 : query.PageNumber;
         var pageSize = query.PageSize <= 0 ? 20 : query.PageSize;
+        var step = RequestTiming.StartStep();
         var keys = BuildCombinedSummaryKeys(query);
         var total = await keys.CountAsync(ct);
+        RequestTiming.FinishStep("iqc_count", ref step);
         var page = await keys.OrderByDescending(x => x.SortDate)
             .ThenByDescending(x => x.VoucherDetailId).ThenByDescending(x => x.LabTestId)
             .Skip((pageNumber - 1) * pageSize).Take(pageSize).ToListAsync(ct);
+        RequestTiming.FinishStep("iqc_page_keys", ref step);
         return await LoadSummaryPageAsync(page, total, pageNumber, pageSize, ct);
     }
 
     private async Task<IqcPagedResult<GetSummaryQCInput>> LoadSummaryPageAsync(
         IReadOnlyList<SummarySourceKey> page, int total, int pageNumber, int pageSize, CancellationToken ct)
     {
+        var step = RequestTiming.StartStep();
         var voucherIds = page.Where(x => x.LabTestId is null).Select(x => x.VoucherDetailId).ToArray();
         var testIds = page.Where(x => x.LabTestId.HasValue).Select(x => x.LabTestId!.Value).ToArray();
         var warehouseRows = await BuildSummaryItemsQuery(voucherIds).ToListAsync(ct);
+        RequestTiming.FinishStep("iqc_warehouse_rows", ref step);
         foreach (var row in warehouseRows)
             row.QCDescription = IqcRules.ToVietnamese(row.VoucherType);
 
+        RequestTiming.FinishStep("iqc_map", ref step);
         var testRows = await (
             from test in context.LabTests.AsNoTracking()
             where test.CompanyId == _companyId && testIds.Contains(test.Id)
@@ -91,10 +98,12 @@ internal sealed partial class IqcReader
                 HasQC = true, QCCreatedDate = test.CreatedDate,
                 QCEmployeeName = employee == null ? "" : employee.FullName ?? ""
             }).ToListAsync(ct);
+        RequestTiming.FinishStep("iqc_lab_rows", ref step);
         var byVoucher = warehouseRows.ToDictionary(x => x.VoucherDetailId);
         var byTest = testRows.ToDictionary(x => x.LabTestId!.Value);
         var items = page.Select(x => x.LabTestId is { } id ? byTest.GetValueOrDefault(id) : byVoucher.GetValueOrDefault(x.VoucherDetailId))
             .Where(x => x is not null).Select(x => x!).ToList();
+        RequestTiming.FinishStep("iqc_map", ref step);
         return new(items, total, pageNumber, pageSize);
     }
 

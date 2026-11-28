@@ -25,7 +25,8 @@ internal sealed class UseProductionOrderStockCommandHandler(
     ICurrentUserPermissionService permissions,
     IDateTimeProvider clock,
     IEventLogWriter timeline,
-    PromisedDeliveryNotifier promisedDelivery
+    PromisedDeliveryNotifier promisedDelivery,
+    HRM.Application.Features.PLM.SaleOrders.DeliverySchedules.DeliveryScheduleService? deliverySchedules = null
 ) : IRequestHandler<UseProductionOrderStockCommand, OperationResult>
 {
     public async Task<OperationResult> Handle(UseProductionOrderStockCommand command, CancellationToken ct)
@@ -146,6 +147,12 @@ internal sealed class UseProductionOrderStockCommandHandler(
                 }
             }
 
+            if (command.DeliveryPromises is { } promises)
+            {
+                if (deliverySchedules is null) return OperationResult.Fail("Không thể lưu ngày hứa cùng yêu cầu xuất kho.");
+                var saved = await deliverySchedules.SaveManufacturingPromisesAsync(command.Id, promises, transaction.TransactionId, ct);
+                if (!saved.Success) return saved;
+            }
             await db.SaveChangesAsync(ct);
             await promisedDelivery.PublishAsync(order.MfgProductionOrderId, order.ExternalId, previousExpectedDate, order.ExpectedDate, ct);
             await transaction.CommitAsync(ct);

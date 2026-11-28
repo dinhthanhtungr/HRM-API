@@ -1,5 +1,13 @@
 # Notification
 
+## Thay đổi ngày hứa từng đợt giao
+
+`DeliverySchedulePromiseNotifier` tái sử dụng topic 55 cho lịch nhiều đợt. Mỗi đợt đổi ngày gửi một tin cho Sale phụ trách đơn (`ManagerById`, nhân viên hoạt động cùng công ty); chính sách Developer quan sát của NotificationService vẫn áp dụng. Payload lưu ngày cũ/mới, ID đợt, khối lượng, ngày yêu cầu và tham chiếu đơn; không chia sẻ giá. Gán, đổi hoặc xóa ngày hứa đều được biểu diễn; ngày không đổi hoặc chỉ đổi khối lượng không phát tin.
+
+API `PATCH .../delivery-schedules/promises` cũng dùng publisher này cho lịch đã persist chỉ có một đợt. Không áp dụng cho dòng legacy chưa có lịch; không thay hành vi notification ExpectedDate MFG hoặc PUT lịch đầy đủ. Response phân biệt nguồn Single/Split và Legacy/Schedules theo [contract lịch giao](../PLM/SaleOrders/DeliverySchedules/README.md#chỉ-ghi-ngày-hứa-và-gửi-thông-báo).
+
+Publisher chạy trong transaction lưu lịch/MFG. Notification, inbox và outbox cùng commit hoặc rollback; transport hiện có xử lý sau commit. Không gọi SignalR/push trực tiếp. Luồng ExpectedDate MFG cũ và người nhận Sale/leader của luồng đó giữ nguyên. Không đổi schema hoặc topic catalog.
+
 SignalR và Web Push kiểm tra lại role IMS tại thời điểm phát. Người nhận được
 xác định theo nhân viên, nên một nhân viên có tài khoản mang role IMS active
 không nhận tín hiệu Hub đầy đủ qua các kênh này, kể cả với outbox đã xếp hàng.
@@ -222,6 +230,8 @@ Thông báo gửi toàn bộ thành viên active của team tương ứng, gồm
 không dùng danh sách người nhận notification làm phạm vi công việc. Rule mở rộng áp dụng khi audience nghiệp vụ chọn nhóm Lab, không mở rộng các thông báo cá nhân/Sale/President sang cả team. Sender/muted và scope company vẫn được kiểm tra. Không phát lại lịch sử.
 
 Hòm thư mặc định của thành viên R&D/Màu chỉ liệt kê phối mẫu thuộc mapping loại sản phẩm của team (GCO thuộc cả hai). Tìm kiếm conversation bỏ bộ lọc trình bày này nhưng vẫn giữ quyền đọc/company/membership; không mở nhóm Giá hoặc nhóm riêng R&D cho người ngoài. Feed lọc trước phân trang; unread summary vẫn là tổng thông báo thực tế, không đánh dấu đọc vì ẩn khỏi danh sách. Hồ sơ Chung cũ bổ sung thành viên team còn thiếu khi gửi tin mới, không khôi phục participant bị xóa chủ động.
+
+Khi lọc @Tôi theo loại, nếu tập ứng viên đầy đủ không có sự kiện nào thuộc loại và khoảng ngày được yêu cầu, feed trả rỗng sớm. Khi có ứng viên phù hợp, toàn bộ tập vẫn qua quyền và bước chọn sự kiện mới nhất. Với timeline thường, nếu một dòng vừa được lưu trữ giữa lúc chọn ID và tải trang, API dùng lại truy vấn có quyền để bù trang một lần.
 
 Feed resolve team hiện tại một lần trước query trang (`feed-scope`); người quan sát toàn công ty hoặc không thuộc team Lab không ghép bộ lọc loại sản phẩm. Với thành viên Lab, bộ lọc được ghép vào tập conversation đã có authorization để liên kết notification JSON chỉ được kiểm tra một lần. Không đổi category/cursor/thứ tự, quyền nhóm riêng hoặc trạng thái đọc. Đo đối chiếu query đầy đủ 30 dòng/trang trong snapshot chỉ đọc trên tài khoản đại diện (role fallback, không phải phiên trình duyệt): hai trang của Báo giá/Phối mẫu/Đơn hàng giữ nguyên ID và thứ tự; số đo query không đại diện HTTP/render.
 
@@ -850,7 +860,7 @@ Hòm thư tách hai luồng chỉ đọc, giữ nguyên category/topic/người 
 - `GET /api/v1/notifications/sales-order-stream?direction=initial|older|newer&cursorId=<guid>`: mỗi trang tối đa 30 tin theo thời gian tăng dần, phá hòa bằng ID. `older/newer` bắt buộc cursor; cursor chỉ được tra trong query đã giới hạn người nhận/công ty/quyền. Response gồm `items`, `firstUnreadId`, `unreadCount`, `hasOlder`, `hasNewer`.
 - Initial mở tại tin chưa đọc cũ nhất; nếu đã đọc hết thì lấy trang mới nhất. Tải trước/sau dùng cursor, không OFFSET. GET không đổi trạng thái đọc.
 - Mỗi tin giữ nguyên `NotificationUserState` của từng nhân viên, company scope, giới hạn ngày dữ liệu hiện hành, archive và masking hiện hành. Không dùng membership chung để cấp quyền; quyền President nhận cảnh báo vẫn do publisher/recipient hiện hành quyết định.
-- Đây là luồng hệ thống chỉ đọc. FE dùng endpoint đánh dấu từng notification đã có khi tin hiện trong vùng xem và tab có focus; không tự gọi đọc toàn bộ luồng. Nút Đánh dấu đã đọc toàn Hub hiện hành vẫn là thao tác chủ động riêng.
+- Đây là luồng hệ thống chỉ đọc. Trang initial không có cursor trả thêm openingUnread (ID và eventGroupCode) và mốc firstUnreadId từ cùng một lần lấy danh sách chưa đọc. FE gửi các ID đã chốt qua API đọc theo lô khi mở luồng; các tin đến sau cần lượt đọc tiếp theo. Nút Đánh dấu đã đọc toàn Hub hiện hành vẫn là thao tác chủ động riêng.
 - Không thêm bảng/migration/backfill, không copy dữ liệu cũ hoặc phát lại thông báo. Các notification cũ còn trong inbox hiện hành tự tham gia luồng theo điều kiện trên. Realtime/Push và publisher không thay đổi.
 - Verification: test `InternalMailAreaAccessTests.SalesOrderStream` dùng bộ nhớ kiểm tra người nhận, công ty, archive, loại sự kiện, loại trừ hội thoại thật, cursor và phân trang cùng timestamp; không dùng DB thật.
 
@@ -1077,3 +1087,9 @@ Marker không queue tin riêng. Những sự kiện mới từ thời điểm ma
 qua luồng PLM/outbox hiện hành; sự kiện legacy trước marker vẫn giữ quy tắc bỏ qua
 tracking-only, không phát lại lịch sử. Topic, người nhận, scope và payload nhạy cảm
 không được mở rộng bởi việc mở lại TP. Xem README SampleRequests cho contract kế hoạch.
+
+### Xác nhận đọc theo danh sách ID
+
+`POST /api/v1/notifications/read-batch` nhận mảng JSON gồm 1–100 GUID thông báo. API chỉ xác nhận trạng thái inbox còn hiển thị theo quyền của nhân viên và công ty hiện tại, loại mục lưu trữ, bỏ ID trùng và trả mảng ID đã đọc sau giao dịch. Gửi lại cùng danh sách giữ nguyên thời điểm đọc lần đầu. Tin đến sau thời điểm chụp danh sách chỉ được xác nhận khi có ID trong một lượt đọc sau. Khi mất phản hồi hoặc gặp lỗi tạm thời, Hub gửi lại cùng nhóm ID còn hiệu lực trong phiên đăng nhập. Đổi hội thoại vẫn cho phép hoàn tất lượt đọc đang chờ. Đổi tài khoản hủy lượt đọc cũ. Nếu API chỉ xác nhận một phần, Hub chỉ ghi nhận các ID được trả về.
+
+GET /api/v1/internal-mail/conversations/{id} trả Server-Timing cho phản hồi 200 của người dùng đã xác thực ở mọi môi trường. Trong DevTools, nm_thread_access đo truy vấn quyền và dữ liệu chính, nm_thread_areas đo toàn bộ phần nhóm, nm_thread_badges là thời gian tính số chưa đọc nằm trong nm_thread_areas. Các bước người tham gia, yêu cầu mẫu và báo giá xuất hiện khi được thực hiện. Header chứa tên bước cố định và thời lượng theo ms.

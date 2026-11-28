@@ -34,4 +34,5 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <Import Project="..\tools\RequestTiming.Generator\RequestTiming.targets" />
 </Project>

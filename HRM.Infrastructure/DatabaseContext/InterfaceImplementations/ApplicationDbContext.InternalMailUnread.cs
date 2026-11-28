@@ -43,6 +43,35 @@ public partial class ApplicationDbContext
             WHERE n.company_id = {{companyId}}
             """);
 
+    // The caller supplies message keys from the authorized page. A delivery only
+    // represents that message if both its payload keys match and this reader has a state.
+    public IQueryable<Guid> QueryRepresentedInternalMessageIds(Guid companyId, Guid employeeId, Guid[] messageIds)
+        => Database.SqlQuery<Guid>($"""
+            WITH delivered AS MATERIALIZED (
+                SELECT DISTINCT lower(link.value) AS conversation_key, lower(message_link.value) AS message_key
+                FROM notification.notification_user_states s
+                JOIN notification.notifications n ON n.id = s.notification_id AND n.company_id = {companyId}
+                JOIN LATERAL (
+                    SELECT metadata.value FROM jsonb_each_text(CASE WHEN jsonb_typeof(n.payload_json) = 'object'
+                        THEN n.payload_json ELSE jsonb_build_object() END) metadata
+                    WHERE lower(metadata.key) = 'messageid' LIMIT 1
+                ) message_link ON TRUE
+                JOIN LATERAL (
+                    SELECT metadata.value FROM jsonb_each_text(CASE WHEN jsonb_typeof(n.payload_json) = 'object'
+                        THEN n.payload_json ELSE jsonb_build_object() END) metadata
+                    WHERE lower(metadata.key) = 'conversationid' LIMIT 1
+                ) link ON TRUE
+                WHERE s.user_id = {employeeId}
+            )
+            SELECT m."InternalMessageId" AS "Value"
+            FROM "InternalMail"."InternalMessages" m
+            JOIN "InternalMail"."InternalConversations" c ON c."InternalConversationId" = m."InternalConversationId"
+                AND c."CompanyId" = {companyId}
+            JOIN delivered ON delivered.conversation_key = c."InternalConversationId"::text
+                AND delivered.message_key = m."InternalMessageId"::text
+            WHERE m."InternalMessageId" = ANY({messageIds})
+            """);
+
     public IQueryable<InternalMailBusinessEventRow> QueryLatestInternalMailBusinessEvents(Guid companyId, Guid[] conversationIds, int[] topics)
         => Database.SqlQuery<InternalMailBusinessEventRow>($$"""
             SELECT DISTINCT ON (m."InternalConversationId") n.id AS "Id", m."InternalConversationId" AS "ConversationId",
@@ -129,7 +158,9 @@ public partial class ApplicationDbContext
             LEFT JOIN LATERAL (
                 SELECT metadata.value FROM jsonb_each_text(CASE WHEN jsonb_typeof(notification.payload_json) = 'object'
                     THEN notification.payload_json ELSE jsonb_build_object() END) metadata
-                WHERE lower(metadata.key) = 'messageid' LIMIT 1
+                WHERE (conversation."RelatedType" = {(int)HRM.Domain.Enums.InternalMailEnums.InternalMailRelatedType.Quotation}
+                    OR quote_parent."InternalConversationId" IS NOT NULL)
+                    AND lower(metadata.key) = 'messageid' LIMIT 1
             ) message_link ON TRUE
             LEFT JOIN "InternalMail"."InternalMessages" message
                 ON message."InternalMessageId" = CASE

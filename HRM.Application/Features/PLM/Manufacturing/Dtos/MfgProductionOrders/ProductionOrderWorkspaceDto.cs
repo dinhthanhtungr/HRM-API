@@ -15,6 +15,7 @@ public sealed record ProductionOrderFormulaOptionDto(
     public string? Note { get; init; }
     public string? PlpuNote { get; init; }
     public string? LabNote { get; init; }
+    public string? QcCheck { get; init; }
     public string? Requirement { get; init; }
 }
 public sealed record ManufacturingProductLotDto(

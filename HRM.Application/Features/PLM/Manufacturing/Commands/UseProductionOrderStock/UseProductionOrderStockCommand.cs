@@ -8,4 +8,5 @@ public sealed record UseProductionOrderStockCommand(Guid Id, UseProductionOrderS
 {
     public string? ExpectedRevision { get; init; }
     public Guid? SourceFormulaId { get; init; }
+    public IReadOnlyList<ManufacturingDeliveryPromisePatch>? DeliveryPromises { get; init; }
 }

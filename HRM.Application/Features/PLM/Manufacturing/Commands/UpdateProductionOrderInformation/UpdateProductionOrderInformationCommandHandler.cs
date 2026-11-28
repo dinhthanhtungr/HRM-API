@@ -1,3 +1,5 @@
+using HRM.Application.Features.PLM.Manufacturing.Dtos.MfgProductionOrders;
+using HRM.Application.Features.PLM.Manufacturing.Services.Formulas;
 using HRM.Application.Abstractions.Commons.Time;
 using HRM.Application.Abstractions.Persistence.PLM.Manufacturing;
 using HRM.Application.Abstractions.Security;
@@ -67,13 +69,33 @@ internal sealed class UpdateProductionOrderInformationCommandHandler(
             if (formulaEditLock is not null && (request.TotalQuantity.HasValue && request.TotalQuantity != order.TotalQuantity
                 || request.NumOfBatches.HasValue && request.NumOfBatches != order.NumOfBatches))
                 return OperationResult.Fail(formulaEditLock);
+            ProductionOrderFormulaOptionDto? requestedSource = null;
+            if (command.SourceFormulaId.HasValue)
+            {
+                if (command.Action != ManufacturingInformationAction.RequestFormula ||
+                    !permissions.HasPermission(ApplicationPermissions.PLM.ViewFormulaMaterials))
+                    return OperationResult.Fail("Không có quyền hoặc thao tác không hỗ trợ chọn nguồn công thức.");
+                requestedSource = await ManufacturingRequestedSource.ResolveAsync(db, order, command.SourceFormulaId.Value, ct);
+                if (requestedSource is null)
+                    return OperationResult.Fail("Nguồn công thức không thuộc lựa chọn của lệnh trong công ty.");
+                if (formulaEditLock is not null)
+                    return OperationResult.Fail(formulaEditLock);
+            }
+            var labNote = command.Action == ManufacturingInformationAction.RequestFormula
+                ? ManufacturingNoteRules.Inherit(request.LabNote, order.LabNote, requestedSource?.LabNote) : request.LabNote;
+            var plpuNote = command.Action == ManufacturingInformationAction.RequestFormula
+                ? ManufacturingNoteRules.Inherit(request.PlpuNote, order.PlpuNote, requestedSource?.PlpuNote) : request.PlpuNote;
+            var qcCheck = command.Action == ManufacturingInformationAction.RequestFormula
+                ? ManufacturingNoteRules.Inherit(request.QcCheck, order.QcCheck, requestedSource?.QcCheck) : request.QcCheck;
+            if (new[] { labNote, plpuNote, qcCheck }.Any(x => x?.Length > 20000))
+                return OperationResult.Fail("Ghi chú kế thừa vượt giới hạn 20000 ký tự.");
             var previousExpectedDate = order.ExpectedDate;
             if (!ManufacturingAccess.IsInformOperator(user))
                 return OperationResult.Fail("Chỉ PLPUUser, President và Developer được sửa thông tin kế hoạch lệnh.");
             if (order.Status == nameof(ManufacturingProductOrder.WaitingForStandardSample)
                 || request.Status == nameof(ManufacturingProductOrder.WaitingForStandardSample))
                 return OperationResult.Fail("Lệnh đang chờ Sale xác nhận mẫu chuẩn; chưa được thao tác kế hoạch.");
-            error = ManufacturingAccess.ValidatePlpuNoteChange(permissions, order.PlpuNote, request.PlpuNote);
+            error = ManufacturingAccess.ValidatePlpuNoteChange(permissions, order.PlpuNote, plpuNote);
             if (error is not null) return OperationResult.Fail(error);
             error = ManufacturingAccess.ValidateRequirementChange(permissions, order.Requirement, request.Requirement);
             if (error is not null) return OperationResult.Fail(error);
@@ -96,13 +118,21 @@ internal sealed class UpdateProductionOrderInformationCommandHandler(
                 }
             }
 
+            if (command.Action != ManufacturingInformationAction.RequestFormula)
+            {
+                labNote = request.LabNote;
+                plpuNote = request.PlpuNote;
+                qcCheck = request.QcCheck;
+            }
+            if (requestedSource is not null)
+                await ManufacturingRequestedSource.StoreAsync(db, order, requestedSource, employee, now, ct);
             order.UpdatedBy = employee;
             order.UpdatedDate = now;
             order.StepOfProduct = request.StepOfProduct;
-            PatchHelper.SetIfNotNull(request.PlpuNote, () => order.PlpuNote, v => order.PlpuNote = v);
-            PatchHelper.SetIfNotNull(request.LabNote, () => order.LabNote, v => order.LabNote = v);
+            PatchHelper.SetIfNotNull(plpuNote, () => order.PlpuNote, v => order.PlpuNote = v);
+            PatchHelper.SetIfNotNull(labNote, () => order.LabNote, v => order.LabNote = v);
             PatchHelper.SetIfNotNull(request.Requirement, () => order.Requirement, v => order.Requirement = v);
-            PatchHelper.SetIfNotNull(request.QcCheck, () => order.QcCheck, v => order.QcCheck = v);
+            PatchHelper.SetIfNotNull(qcCheck, () => order.QcCheck, v => order.QcCheck = v);
             PatchHelper.SetNullable(request.TotalQuantity, () => order.TotalQuantity, v => order.TotalQuantity = v);
             PatchHelper.SetNullable(request.NumOfBatches, () => order.NumOfBatches, v => order.NumOfBatches = v);
             PatchHelper.SetNullable(request.ExpectedDate, () => order.ExpectedDate, v => order.ExpectedDate = v);

@@ -31,6 +31,8 @@ internal static class SampleWorkTaskPriority
     internal static string[] Tasks(SampleWorkFacts facts, SampleWorkDecision decision, SampleRequestWorkAudience? audience, bool needsSchedule, string requestStatus)
     {
         var tasks = new HashSet<string>(StringComparer.Ordinal);
+        if (audience != SampleRequestWorkAudience.Sale && SampleWorkDecisionRules.WaitsForPriceBeforeSample(facts, decision.Code))
+            return [];
         if (audience == SampleRequestWorkAudience.Sale)
         {
             if (SampleWorkDecisionRules.HasSalePriceWork(facts)) tasks.Add("PriceFeedback");

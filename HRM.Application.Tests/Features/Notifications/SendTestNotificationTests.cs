@@ -27,9 +27,11 @@ public sealed class SendTestNotificationTests
         var spy = (PublishSpy)(object)service;
         var handler = new SendTestNotificationCommandHandler(user, service);
 
+        using var timing = new HRM.Application.Commons.Diagnostics.RequestTiming();
         var result = await handler.Handle(new SendTestNotificationCommand(), CancellationToken.None);
 
         Assert.Equal(expected, result.Success);
+        Assert.Equal(expected, timing.Snapshot().Any(step => step.Key == "step_SendTestNotificationCommandHandler_id_PublishAsync"));
         if (!expected)
         {
             Assert.Null(spy.Request);

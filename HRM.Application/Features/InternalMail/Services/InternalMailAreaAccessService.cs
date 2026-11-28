@@ -428,15 +428,20 @@ public sealed partial class InternalMailAreaAccessService(IInternalMailDbContext
         var states = db.NotificationUserStates.Where(s => s.UserId == employee &&
             s.Notification.CompanyId == user.CompanyId);
         var inbox = InboxConversations(false);
-        return Messages().Where(m => !m.IsDeleted && m.SenderEmployeeId != employee &&
+        // InboxConversations already includes the full conversation visibility predicate.
+        var representedMessages = from link in links
+                                  join state in states on link.NotificationId equals state.NotificationId
+                                  join message in db.InternalMessages on link.MessageId equals (Guid?)message.InternalMessageId
+                                  where link.ConversationId == message.InternalConversationId
+                                  select message.InternalMessageId;
+        return db.InternalMessages.Where(m => !m.IsDeleted && m.SenderEmployeeId != employee &&
             (m.PayloadJson == null || !EF.Functions.JsonContains(m.PayloadJson, InternalMailMentions.AudienceMarker)) &&
             m.ReadStates.Any(s => s.EmployeeId == employee && !s.IsRead) &&
             inbox.Any(c => c.InternalConversationId == m.InternalConversationId && c.IsMember &&
                 (!c.IsMuted || c.Conversation.RelatedType == InternalMailRelatedType.ConversationTechnical ||
                  c.Conversation.RelatedType == InternalMailRelatedType.ConversationPricing ||
                  c.Conversation.RelatedType == InternalMailRelatedType.ConversationCustom)) &&
-            !links.Any(l => l.ConversationId == m.InternalConversationId && l.MessageId == m.InternalMessageId &&
-                states.Any(s => s.NotificationId == l.NotificationId)));
+            !representedMessages.Contains(m.InternalMessageId));
     }
 
     internal async Task<Dictionary<InternalMailRelatedType, int>> LegacyUnreadCountsByTypeAsync(CancellationToken ct)
@@ -491,20 +496,15 @@ public sealed partial class InternalMailAreaAccessService(IInternalMailDbContext
         candidates = candidates.Where(m => allowedIds.Contains(m.InternalConversationId)).ToList();
         if (candidates.Count == 0) return [];
         var messageIds = candidates.Select(m => m.InternalMessageId).ToArray();
-        var states = db.NotificationUserStates.Where(s => s.UserId == employee && s.Notification.CompanyId == company);
-        var linked = await db.QueryInternalMailNotificationLinks(company)
-            .Where(l => l.ConversationId.HasValue && allowed.Contains(l.ConversationId.Value) &&
-                l.MessageId.HasValue && messageIds.Contains(l.MessageId.Value) &&
-                states.Any(s => s.NotificationId == l.NotificationId))
-            .Select(l => new { l.ConversationId, l.MessageId }).Distinct().ToListAsync(ct);
-        var linkedKeys = linked.Select(l => (l.ConversationId!.Value, l.MessageId!.Value)).ToHashSet();
-        return candidates.Where(m => !linkedKeys.Contains((m.InternalConversationId, m.InternalMessageId)))
+        var represented = (await db.QueryRepresentedInternalMessageIds(company, employee, messageIds)
+            .ToArrayAsync(ct)).ToHashSet();
+        return candidates.Where(m => !represented.Contains(m.InternalMessageId))
             .GroupBy(m => m.InternalConversationId).ToDictionary(g => g.Key, g => g.Count());
     }
 
     // The caller has already loaded this DTO through Conversations(); do not repeat that query.
     internal async Task<IReadOnlyList<InternalMailAreaDto>> DescribeAsync(InternalConversationDetailDto current, CancellationToken ct,
-        InternalConversation? parent = null, InternalConversationGroupInfo? groupInfo = null)
+        InternalConversation? parent = null, InternalConversationGroupInfo? groupInfo = null, NotificationQueryTiming? timing = null)
     {
         var companySender = CanSendCompanyMessages;
         var currentGroup = groupInfo ?? (await GroupInfoAsync([current.ConversationId], ct))[current.ConversationId];
@@ -516,8 +516,8 @@ public sealed partial class InternalMailAreaAccessService(IInternalMailDbContext
                 CanSend = companySender || g.Conversation.Participants.Any(p => p.EmployeeId == user.EmployeeId && p.IsActive) ||
                     (researchIds.Contains(g.ConversationId) && researchMembers.Contains(user.EmployeeId!.Value)) }).ToListAsync(ct);
         var ids = siblings.Select(c => c.Id).Append(current.ConversationId).ToArray();
-        var notifications = await NotificationUnreadCounts(ids).Where(c => ids.Contains(c.ConversationId))
-            .ToDictionaryAsync(c => c.ConversationId, c => c.UnreadCount, ct);
+        Task<Dictionary<Guid, int>> LoadUnreadCounts() => PageNotificationUnreadCountsAsync(ids, ct);
+        var notifications = timing is null ? await LoadUnreadCounts() : await timing.RunAsync("thread-badges", LoadUnreadCounts);
         current.UnreadCount = notifications.GetValueOrDefault(current.ConversationId);
         var result = siblings.Select(c => new InternalMailAreaDto(AreaOf(c.GroupType), c.Id, c.CanSend,
             notifications.GetValueOrDefault(c.Id), Name: c.Subject)).ToList();

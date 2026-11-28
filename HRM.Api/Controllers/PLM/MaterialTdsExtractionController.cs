@@ -1,4 +1,5 @@
 using HRM.Application.Features.PLM.Materials.TdsExtraction;
+using HRM.Application.Abstractions.Persistence.PLM;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -9,11 +10,15 @@ namespace HRM.Api.Controllers.PLM;
 [Authorize]
 [Route("api/v1/plm/materials/tds-extraction")]
 public sealed class MaterialTdsExtractionController(TdsExtractionAccess access, ITdsJobQueue queue,
-    IOptions<TdsExtractionOptions> options) : ControllerBase
+    IOptions<TdsExtractionOptions> options, IPLMReadDbContext db) : ControllerBase
 {
     /// <summary>Đọc thư mục cấu hình; không import attachment hoặc cập nhật NVL.</summary>
     [HttpPost("jobs/source")]
-    public IActionResult StartSource([FromQuery] int offset = 0, [FromQuery] int? limit = null) => Start(null, offset, limit);
+    public Task<IActionResult> StartSource(CancellationToken ct, [FromQuery] int offset = 0, [FromQuery] int? limit = null)
+        => StartAsync(null, ct, offset, limit);
+
+    [HttpPost("jobs/source/all")]
+    public Task<IActionResult> StartAllSourceBatches(CancellationToken ct) => StartAsync(null, ct, allSourceBatches: true);
 
     /// <summary>Nhận nhiều file, đọc bằng Gemini và tạo Excel để kiểm tra.</summary>
     [HttpPost("jobs/upload")]
@@ -44,7 +49,7 @@ public sealed class MaterialTdsExtractionController(TdsExtractionAccess access, 
             }
         }
         catch (TdsProcessingException exception) { return BadRequest(new { errorCode = exception.Code }); }
-        return Start(uploads);
+        return await StartAsync(uploads, cancellationToken);
     }
 
     [HttpGet("jobs/{jobId:guid}")]
@@ -77,10 +82,11 @@ public sealed class MaterialTdsExtractionController(TdsExtractionAccess access, 
         return access.Remove(queue, jobId) ? NoContent() : Conflict(new { job.Status });
     }
 
-    private IActionResult Start(IReadOnlyList<TdsInputFile>? files, int sourceOffset = 0, int? sourceLimit = null)
+    private async Task<IActionResult> StartAsync(IReadOnlyList<TdsInputFile>? files, CancellationToken ct,
+        int sourceOffset = 0, int? sourceLimit = null, bool allSourceBatches = false)
     {
         if (!access.CanExtract) return Forbid();
-        var result = access.Start(queue, files, sourceOffset, sourceLimit);
+        var result = await access.StartAsync(queue, db, options.Value, files, ct, sourceOffset, sourceLimit, allSourceBatches);
         if (result.Accepted) return AcceptedAtAction(nameof(GetJob), new { jobId = result.Job!.JobId }, result.Job);
         return result.ErrorCode switch
         {

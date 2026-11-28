@@ -243,7 +243,7 @@ tổng Std bằng 1 (100%). Dán chưa ghi DB và không tạo danh mục vật 
 | Request coalescing / Gom lượt tải | Nhiều yêu cầu tải cùng dữ liệu dùng chung lượt đang chạy hoặc một lượt theo sau, thay vì tạo nhiều request đồng thời. | Notification giữ một lượt tải cho mỗi thread; invalidation mới được giữ để đối soát tiếp, không bị bỏ mất. |
 | Request-local reuse / Tái sử dụng trong một lượt xử lý | Dùng lại kết quả đã kiểm tra trong cùng một lời gọi, không lưu qua request khác. Không thay thế cache hoặc kiểm tra quyền ở lượt sau. | Nhóm nhanh dùng lại ID nhóm hợp quyền. @Tôi dùng tập ID notification đã qua đủ quyền cho trang và số reaction; read/archive vẫn đọc theo trạng thái hiện tại, lượt tải sau kiểm tra quyền mới. |
 | Projection / Chọn dữ liệu trả về | Chỉ chọn và tính các field thật sự cần cho kết quả truy vấn. | Detail Notification bỏ phép đếm unread legacy vì bước sau đã dùng nguồn đếm thống nhất. Danh sách sản phẩm liên quan BBG chỉ lấy mã/tên snapshot và ID hội thoại Chung được phép xem, không tải detail giá. |
-| Stage timing / Đo theo giai đoạn | Đo riêng từng bước trong một lần xử lý để tìm bước gây chậm. | Hai API Báo giá chưa đọc ghi tổng thời gian và từng phase khi chậm; không ghi nội dung nghiệp vụ. |
+| Stage timing / Đo theo giai đoạn | Đo thời lượng từng bước để tìm bước gây chậm. Thời gian bước cha bao gồm các bước con chạy trong nó. | Trong Development, tra cứu nhân viên có bước đếm và tải trang, IQC có `iqc_count` và `iqc_page_keys`. Nhãn `step_...` lấy từ tên hàm trong mã nguồn. Hai API Báo giá chưa đọc ghi tổng thời gian và từng phase khi chậm. |
 | Cold start / Khởi động lạnh | Lượt xử lý đầu khi tiến trình hoặc đường truy vấn chưa được khởi tạo; khác với tải lại trang khi API đã chạy nóng. | Nghiệm thu mở tin phải báo riêng request đầu sau khi API khởi động và lần tải trang mới; không bỏ mẫu vượt mốc vì chưa warm-up. |
 | Compiled model / Mô hình EF biên dịch sẵn | Sinh trước mã mô tả ánh xạ entity để giảm việc dựng model lúc khởi động; không lưu kết quả dữ liệu hay quyền. | Nếu thử cho HRM, phải khớp cả cấu hình ConversationSummary bật/tắt và sinh lại khi mapping đổi; đây mới là phương án, chưa được áp dụng. |
 | EXISTS / Kiểm tra tồn tại | Kiểm tra có ít nhất một dòng thỏa điều kiện, không cần tính tổng số dòng. | Bộ lọc Chưa đọc kiểm tra có tin hợp lệ; chỉ đếm badge chính xác cho các cuộc trò chuyện trong trang trả về. |
@@ -311,6 +311,10 @@ tổng Std bằng 1 (100%). Dán chưa ghi DB và không tạo danh mục vật 
 | Fast Refresh / HMR | Cơ chế cập nhật code và giao diện trong lúc chạy môi trường phát triển, thường không cần tải lại cả trang. | Khi cập nhật nóng bị lỗi tải chunk của Notification Hub, trang có thể giữ trạng thái hoặc stylesheet không đồng bộ cho tới khi tải lại; cần log và kiểm tra trình duyệt để xác nhận nguyên nhân cụ thể. |
 
 ## API và dữ liệu
+
+TDS (phiếu dữ liệu kỹ thuật) và SDS/MSDS (phiếu an toàn hóa chất) là hai loại tài liệu
+nguồn của NVL. Trong Excel đối chiếu, tên gốc là cách viết trên từng tài liệu, còn tên chuẩn
+là tên QC chọn để tra chung, ví dụ “Viscosity” và “Độ nhớt”.
 
 MATERIALIZED CTE / Kết quả truy vấn tạm trong một câu SQL: buộc DB tính riêng phần
 WITH để dùng lại trong câu lệnh đó, không phải cache giữa các request. Điều kiện lọc
@@ -547,4 +551,12 @@ Feature flag là cờ cấu hình chọn bật/tắt một khả năng hoặc nh
 
 ## Đợt giao và phân bổ phiếu
 
+Ngày yêu cầu (requestedDate) là ngày khách muốn nhận; ngày hứa (promisedDate) là ngày được bộ phận phụ trách cam kết, null nghĩa chưa hẹn. Trong API lịch giao, Single là một đợt, Split là nhiều đợt kể cả trùng ngày; Legacy là dữ liệu một ngày chưa có entity đợt, Schedules là lịch từng đợt đã lưu. Không đồng nhất những ngày này với ngày dự kiến sản xuất của MFG.
+
+Lưu nguyên tử MFG và ngày hứa / Atomic MFG promise save: một request Lưu chung cập nhật thông tin lệnh cùng ngày hứa của các đợt trong một transaction DB. Nếu revision lịch cũ hoặc một bước ghi lỗi thì không commit phần nào. `SaveChanges` trung gian chưa phải commit; mỗi dòng lịch vẫn có revision riêng, còn ngày dự kiến sản xuất giữ độc lập.
+
 Đợt giao (delivery schedule) là một phần số lượng/ngày yêu cầu/ngày hứa của cùng detail đơn hàng, không phải một mã hàng mới. Phân bổ đợt (schedule allocation) là lượng của một DeliveryOrderDetail được gắn vào đợt đó; một dòng phiếu có thể phân bổ nhiều đợt. Lượng đã phân bổ bao gồm phiếu Pending còn hiệu lực, khác khách đã nhận hàng. Lượng ngoài lịch (unscheduled quantity) là phần dòng phiếu chưa gắn đợt, ví dụ giao vượt PO; không tự cộng vào capacity của đợt. Revision là fingerprint opaque để kiểm tra thay đổi đồng thời, không phải ngày hoặc số đợt. Contract: [DeliverySchedules](../../HRM.Application/Features/PLM/SaleOrders/DeliverySchedules/README.md).
+
+## Kế thừa ghi chú kế hoạch và QA
+Kế thừa ghi chú / Note inheritance: lấy yêu cầu QA/QC/SX và ghi chú nguồn vào bản đang soạn nhưng chỉ ghi vào lệnh khi người dùng lưu/gửi. Nội dung đã lưu hoặc đã sửa tay được giữ ưu tiên; ghi chú của VA và yêu cầu của MFG vẫn là hai phần riêng.
+Nguồn chờ QA / Pending formula source: liên kết ProductionSelectVersion chưa kích hoạt (ValidFrom=null) ghi nhận VA kế hoạch đã chọn, không phải xác nhận công thức sản xuất hay phát sinh giữ chỗ NVL.

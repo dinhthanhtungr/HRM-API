@@ -19,8 +19,14 @@ Sai scope/owner hoặc job không tồn tại trả 404; thiếu capability tr�
 Query đối chiếu NVL chỉ lấy material active trong company đã chụp lúc tạo job.
 Không gửi danh mục NVL của DB sang Gemini; đối chiếu thực hiện ở backend.
 
-Upload được xử lý như tài liệu do người gọi cung cấp. Với thư mục server,
-`MaterialTdsExtraction:SourceCompanyId` bắt buộc khớp company hiện tại để tránh
+Upload được xử lý như tài liệu do người gọi cung cấp. Với `jobs/source/all`,
+nếu server bật `MaterialTdsExtraction:SharedSourceExport` và bỏ trống `SourceCompanyId`,
+các thư mục nguồn được dùng chung cho mọi tài khoản có quyền trích xuất. API và worker
+đọc toàn bộ nguồn mà không tra danh mục công ty; đối chiếu NVL và tải kết quả vẫn theo
+phạm vi đăng nhập. Cấu hình Development đã bật chế độ này. Trong các trường hợp khác,
+`MaterialTdsExtraction:SourceCompanyId` nếu đã đặt phải khớp công ty hiện tại. Khi bỏ trống,
+API và worker tự dùng công ty duy nhất trong danh mục công ty. Nếu danh mục rỗng, có nhiều
+công ty hoặc công ty duy nhất khác công ty đăng nhập, hệ thống từ chối đọc nguồn để tránh
 đọc tài liệu từ thư mục của công ty khác. Thư mục cấu hình phải chứa tài liệu
 được phép sử dụng bởi công ty đó; không trộn tài liệu của nhiều công ty trong cùng nguồn.
 API không nhận đường dẫn tuyệt đối từ client, không trả storage path.
@@ -43,7 +49,18 @@ không được snapshot xuyên job. Scan bị cắt do `MaterialDocumentImport:
 job thất bại `source_scan_truncated`; không xử lý âm thầm một phần scan.
 Batch vượt dung lượng trả lỗi; chọn `limit` nhỏ hơn để chạy lại.
 
-### Tạo job từ upload
+### Tạo một workbook từ toàn bộ thư mục
+
+Để xuất chung toàn bộ thư mục, gọi `POST /api/v1/plm/materials/tds-extraction/jobs/source/all`
+không cần body hoặc offset. Job quét danh sách một lần, đọc tuần tự qua các batch theo giới hạn
+số file và dung lượng, kiểm tra SHA-256 xuyên batch và trả một workbook qua endpoint tải Excel
+bên dưới. Tiến độ tính trên toàn danh sách. Giữ nguồn ổn định trong lúc đọc.
+Documents ghi nhận cả file lỗi, bản trùng và file phân loại ngoài TDS/SDS/MSDS (`excluded`).
+Các file excluded không đóng góp dòng thông số. Cần kiểm tra Documents và Review để phát hiện
+phân loại nhầm hoặc tài liệu cần đọc lại. Quyền, giới hạn scan, thời hạn tải và owner giống job source.
+Job tổng hợp vẫn giữ kết quả trong RAM đến khi render workbook; dung lượng phụ thuộc số dòng trích.
+
+### Upload nhiều file
 
 ```http
 POST /api/v1/plm/materials/tds-extraction/jobs/upload
@@ -139,12 +156,17 @@ backend vẫn kiểm tra tối đa 30 material codes và 300 chỉ tiêu trướ
 - **Specifications**: mỗi chỉ tiêu một dòng, giữ giá trị/range dạng text, unit/method/conditions,
   source location, evidence và validation codes. Không có chỉ tiêu thì không tạo dòng giả.
 - **Review**: các code cần đối chiếu, lỗi từng file, duplicate và giới hạn Office text-only.
+- **Đối chiếu tên**: mỗi cách viết tên chỉ tiêu trong TDS/SDS/MSDS có một dòng, phân biệt dấu,
+  hoa/thường và khoảng trắng. Có số tài liệu, số lần xuất hiện và tối đa ba ví dụ kèm tệp.
+  QC tự điền tên chuẩn, trạng thái và ghi chú trong Excel. Specifications giữ các dòng gốc cùng SHA-256.
 
 Ô trống nghĩa tài liệu không có giá trị hoặc chưa trích được; `0` nguyên văn vẫn là `0`.
 Issue date là chuỗi từ tài liệu, không tự suy ra format ngày. Evidence/page là do AI trích;
 với PDF/ảnh chưa có kiểm chứng evidence bằng text deterministic. Mọi ô đều được ghi dạng text,
 không biến dữ liệu bắt đầu bằng `=`, `+`, `-`, `@` thành công thức.
 Ô dài hơn giới hạn Excel được cắt với dấu `[truncated for Excel]`.
+Riêng tên hoặc giá trị chỉ tiêu vượt giới hạn 32.767 ký tự làm file đó báo lỗi
+`excel_original_cell_limit` để tránh đưa dữ liệu gốc bị cắt vào bảng đối chiếu.
 
 ## Cấu hình vận hành
 
@@ -166,7 +188,8 @@ Feature mặc định tắt. Cấu hình không chứa secret:
 }
 ```
 
-Đặt `MaterialTdsExtraction__SourceCompanyId` bằng company được phép dùng thư mục nguồn.
+Với nguồn riêng và nhiều công ty, đặt `MaterialTdsExtraction__SourceCompanyId` bằng GUID công ty sở hữu thư mục nguồn.
+Với một công ty, có thể bỏ cấu hình này.
 Đặt `MaterialTdsExtraction__LibreOfficePath` bằng absolute path tới executable nếu cần DOC/XLS.
 Đặt `Gemini__Enabled=true`, `Gemini__ApiKey` qua secret store/environment và
 `Gemini__Model` bằng model hỗ trợ PDF/ảnh/structured outputs. Không ghi API key vào repo.

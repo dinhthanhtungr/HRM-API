@@ -30,6 +30,8 @@ public sealed class NotificationRequestTimingTests
     [InlineData("POST", "/api/v1/notification-hub/items", 200, true, false)]
     [InlineData("POST", "/api/v1/internal-mail/conversations", 200, true, false)]
     [InlineData("GET", "/api/v1/internal-mail/conversations/id", 200, true, false)]
+    [InlineData("GET", "/api/v1/internal-mail/conversations/10000000-0000-0000-0000-000000000001", 200, false, false)]
+    [InlineData("GET", "/api/v1/internal-mail/conversations/10000000-0000-0000-0000-000000000001", 403, true, false)]
     [InlineData("GET", "/api/v1/internal-mail/conversations", 403, true, false)]
     [InlineData("GET", "/api/v1/internal-mail/conversations", 401, false, false)]
     [InlineData("GET", "/api/v1/notifications/feed", 500, true, false)]
@@ -88,10 +90,11 @@ public sealed class NotificationRequestTimingTests
 
     [Theory]
     [InlineData("/api/v1/internal-mail/conversations/10000000-0000-0000-0000-000000000001", true, true)]
+    [InlineData("/api/v1/internal-mail/conversations/10000000-0000-0000-0000-000000000001", false, true)]
     [InlineData("/api/v1/internal-mail/conversations/10000000-0000-0000-0000-000000000001/messages", true, true)]
     [InlineData("/api/v1/internal-mail/conversations/10000000-0000-0000-0000-000000000001/messages", false, false)]
     [InlineData("/api/v1/internal-mail/conversations/10000000-0000-0000-0000-000000000001/messages/search", true, false)]
-    public async Task ThreadTimingIsEnabledOnlyForDevelopmentThreadReads(string path, bool development, bool expected)
+    public async Task ThreadTimingIncludesDetailAndDevelopmentMessageReads(string path, bool development, bool expected)
     {
         var (context, response) = Create("GET", path, true);
         var middleware = new NotificationRequestTimingMiddleware(async ctx =>

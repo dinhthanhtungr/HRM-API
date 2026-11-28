@@ -12,12 +12,15 @@ internal sealed class TdsJobQueue(IOptions<TdsExtractionOptions> options) : ITds
     private readonly Channel<TdsWorkItem> _channel = Channel.CreateBounded<TdsWorkItem>(8);
 
     public TdsStartResult TryEnqueue(Guid companyId, Guid requestedBy, IReadOnlyList<TdsInputFile>? uploads,
-        int sourceOffset = 0, int? sourceLimit = null)
+        int sourceOffset = 0, int? sourceLimit = null, bool allSourceBatches = false, Guid? resolvedSourceCompany = null)
     {
         var settings = options.Value;
         if (!settings.Enabled) return new(false, null, "extraction_disabled");
         if (companyId == Guid.Empty || requestedBy == Guid.Empty) return new(false, null, "forbidden");
-        if (uploads is null && settings.SourceCompanyId != companyId) return new(false, null, "source_not_authorized");
+        if (uploads is null && !settings.UsesSharedSource(allSourceBatches) &&
+            (settings.SourceCompanyId ?? resolvedSourceCompany) != companyId)
+            return new(false, null, "source_not_authorized");
+        if (allSourceBatches && (uploads is not null || sourceOffset != 0 || sourceLimit.HasValue)) return new(false, null, "invalid_source_batch");
         if (sourceOffset < 0 || sourceLimit is < 1 || sourceLimit > settings.MaxFiles)
             return new(false, null, "invalid_source_batch");
         if (uploads is not null)
@@ -40,7 +43,7 @@ internal sealed class TdsJobQueue(IOptions<TdsExtractionOptions> options) : ITds
             var entry = new Entry(companyId, requestedBy,
                 new(id, "queued", uploads?.Count ?? 0, 0, null, DateTimeOffset.UtcNow, null));
             _jobs.Add(id, entry);
-            if (!_channel.Writer.TryWrite(new(id, companyId, requestedBy, uploads, sourceOffset, sourceLimit)))
+            if (!_channel.Writer.TryWrite(new(id, companyId, requestedBy, uploads, sourceOffset, sourceLimit, allSourceBatches)))
             {
                 _jobs.Remove(id);
                 return new(false, null, "job_capacity_reached");

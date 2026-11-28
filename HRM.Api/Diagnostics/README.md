@@ -1,4 +1,48 @@
-# Development performance comparison
+# Development API timing
+
+In Development, both Debug and Release builds return `Server-Timing` on responses
+under `/api`, including error responses. Endpoints with their own metrics keep
+their original header. Otherwise `app_total;dur=...` reports milliseconds from
+entry into the application pipeline until response headers start. For downloads
+and streaming responses this excludes the subsequent body transfer. Inspect the
+response in the browser Network panel. No probe configuration is required.
+
+Successful authenticated API calls also report completed middleware phases,
+`dispatch_to_action` (including model binding), `mvc_action`, and the interval
+from the end of the action to the start of the headers (`action_to_headers`).
+`feature_<request type>` measures each MediatR operation. The same operation
+called repeatedly is aggregated. Completed EF commands on ApplicationDbContext
+appear in completion order as `db_command_1` through `db_command_12`, with later
+commands grouped under `db_commands_remaining`. These durations exclude subsequent
+reader consumption. No SQL text, arguments or row values are captured in headers.
+Module-specific steps and existing totals are preserved. Feature, action, DB and
+module timings can overlap or nest, so their sum is not request latency.
+
+### Reading a feature across the API
+
+In the Network Timing tab, `mvc_action` identifies the controller and action.
+For example, the employee lookup reports `step_GetEmployeeLookupQueryHandler_ToPagedResultAsync`.
+Inside it the shared pagination code times `totalCount_CountAsync` and `items_ToListAsync`
+as separate steps. The notification publish step appears only when that branch actually calls
+the notification service. Repeated calls to the same labeled step accumulate duration.
+
+At build time the Roslyn generator in `tools/RequestTiming.Generator` instruments eligible
+calls in API controllers, Application features and shared code, and Infrastructure. It uses
+compiler symbols for labels, including the enclosing operation, result variable when available
+and called method. It covers immediately awaited Task/ValueTask calls, forwarded business
+Tasks, synchronous business calls with accessible signatures, and PDF/Excel rendering calls.
+Forwarded Tasks retain their identity and completion behavior. Private helper bodies can contribute their own outgoing
+steps. Local CPU-only code, deferred query expressions, queued work after the response, and
+operations still running when headers start have no individual duration. Methods using
+explicit RequestTiming steps retain those measurements.
+
+The generated calls forward directly when no request is collecting timings. Development
+only publishes details on authenticated successful responses. A roughly 4 KiB budget for
+additional header content prioritizes the slowest steps when a request touches many call
+sites. `steps_omitted` gives the number left out. For those requests, the Development logger
+`HRM.Api.Diagnostics.FeatureSteps` at Debug level includes the full list of measured steps.
+
+## Isolated performance comparison
 
 `PerformanceProbe__Enabled=true` enables an isolated read-only comparison host.
 It is off by default and startup fails if enabled outside Development. Debug and

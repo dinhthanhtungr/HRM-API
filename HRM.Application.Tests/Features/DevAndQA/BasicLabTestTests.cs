@@ -15,6 +15,21 @@ namespace HRM.Application.Tests.Features.DevAndQA;
 public sealed class BasicLabTestTests
 {
     [Fact]
+    public async Task FreeSupplierNamePersistsWithoutCatalogAndCanBeCleared()
+    {
+        var f = Fixture();
+        f.Store.ReflectAddedOnSave = true;
+        var saved = await f.Service.SaveAsync(null,
+            new("Sample", new(2026, 11, 14), SupplierName: "  NCC tự do  "), default);
+        Assert.Null(saved.SupplierId);
+        Assert.Equal("NCC tự do", saved.SupplierName);
+        Assert.Equal("NCC tự do", (await f.Service.DetailAsync(saved.Id, default)).SupplierName);
+        Assert.Equal("NCC tự do", Assert.Single((await f.Service.ListAsync(1, 15, default)).Items).SupplierName);
+        Assert.Equal("NCC tự do", (await f.Service.SaveAsync(saved.Id, new(Note: "Note"), default)).SupplierName);
+        Assert.Null((await f.Service.SaveAsync(saved.Id, new(ClearFields: ["supplierName"]), default)).SupplierName);
+    }
+
+    [Fact]
     public async Task ManualBatchAndWeightPersistPatchAndClearWithoutWarehouseLinks()
     {
         var f = Fixture();

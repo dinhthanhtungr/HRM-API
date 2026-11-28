@@ -12,6 +12,8 @@ namespace HRM.Domain.Entities.Notifications
 
     public class Notification
     {
+        public const int MaxMessageLength = 2000;
+
         public Guid Id { get; set; } = Guid.CreateVersion7();
 
         // Phân loại/tái sử dụng

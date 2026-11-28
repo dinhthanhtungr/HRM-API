@@ -7,6 +7,7 @@ namespace HRM.Infrastructure.DatabaseContext.ApplicationDbs;
 
 public partial class ApplicationDbContext : IDeliveryScheduleDbContext
 {
+    public Guid? DeliveryScheduleTransactionId => Database.CurrentTransaction?.TransactionId;
     public DbSet<DeliveryOrderScheduleAllocation> DeliveryOrderScheduleAllocations { get; set; } = null!;
     public Task<IDbContextTransaction> BeginDeliveryScheduleTransactionAsync(CancellationToken ct) => Database.BeginTransactionAsync(ct);
     public Task LockDeliveryScheduleAsync(Guid companyId, Guid detailId, CancellationToken ct)

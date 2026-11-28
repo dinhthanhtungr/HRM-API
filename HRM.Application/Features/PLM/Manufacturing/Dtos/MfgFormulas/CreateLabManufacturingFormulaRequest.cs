@@ -10,8 +10,9 @@ public sealed class CreateLabManufacturingFormulaRequest
     public FormulaSource SourceType { get; init; }
     public bool IsStandard { get; init; }
 
-    [MaxLength(2000)]
+    [MaxLength(20000)]
     public string? Note { get; init; }
+    public bool ClearNote { get; init; }
 
     [Required]
     public IReadOnlyList<ManufacturingFormulaInputItem> Items { get; init; } = [];

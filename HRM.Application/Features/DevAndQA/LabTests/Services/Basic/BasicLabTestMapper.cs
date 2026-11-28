@@ -15,7 +15,7 @@ internal static class BasicLabTestMapper
         x.Results.OrderBy(r => r.SortOrder).ThenBy(r => r.Id).Select(r => new EvaluationResultDto(r.Id,
             r.EvaluationStandardId, r.SourceTemplateItemId, r.CriterionCode, r.CriterionCode, r.CriterionName,
             true, r.Value, Configuration(r), r.CriterionNameEn, r.AttachmentCollectionId)).ToList(), x.BatchNumber, x.WeightKg,
-        x.SupplierId, x.Supplier?.CompanyId == x.CompanyId ? x.Supplier.SupplierName : null,
+        x.SupplierId, x.SupplierName ?? (x.Supplier?.CompanyId == x.CompanyId ? x.Supplier.SupplierName : null),
         x.CreatedByEmployee?.CompanyId == x.CompanyId ? x.CreatedByEmployee.FullName : null,
         x.MaterialId, x.MaterialCode);
 

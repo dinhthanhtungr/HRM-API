@@ -77,9 +77,13 @@ public sealed partial class InternalMailAreaAccessService
     }
 
     internal async Task<Guid[]> UnreadConversationIdsAsync(InternalMailRelatedType? relatedType, CancellationToken ct)
+        => (await UnreadConversationPageScopeAsync(relatedType, ct)).Ids;
+
+    internal async Task<(Guid[] Ids, IReadOnlyDictionary<Guid, int>? LegacyCounts)> UnreadConversationPageScopeAsync(
+        InternalMailRelatedType? relatedType, CancellationToken ct)
     {
         // GROUP-STORAGE-TRANSITION: switch — retain the measured legacy plan until that storage mode is retired.
-        if (!UsesGroupStorage) return await UnreadConversationIds(relatedType).Distinct().ToArrayAsync(ct);
+        if (!UsesGroupStorage) return (await UnreadConversationIds(relatedType).Distinct().ToArrayAsync(ct), null);
         var employee = user.EmployeeId ?? Guid.Empty;
         var company = user.CompanyId ?? Guid.Empty;
         var reactions = InternalMailPersonalActivity.ReactionTopics;
@@ -88,7 +92,11 @@ public sealed partial class InternalMailAreaAccessService
         // Reduce deliveries to distinct conversation keys in SQL before expanding the authorization graph.
         // Reaction notices are excluded above; their author/actor visibility does not apply to this inbox.
         var notificationIds = ownUnread.Select(s => s.NotificationId);
-        var eligibleIds = BadgeNotifications(db.Notifications.Where(n => notificationIds.Contains(n.Id))).Select(n => n.Id);
+        // A sample root and its children cannot also belong to a quotation. The final
+        // root-type and membership checks below exclude every quotation key in this branch.
+        var eligibleIds = relatedType == InternalMailRelatedType.SampleRequest
+            ? notificationIds
+            : BadgeNotifications(db.Notifications.Where(n => notificationIds.Contains(n.Id))).Select(n => n.Id);
         var links = db.QueryInternalMailNotificationLinks(company);
         var linkedIds = await links.Where(l => eligibleIds.Contains(l.NotificationId) && l.ConversationId.HasValue)
             .Select(l => l.ConversationId!.Value).Distinct().ToArrayAsync(ct);
@@ -96,22 +104,22 @@ public sealed partial class InternalMailAreaAccessService
         if (linkedIds.Length != 0)
         {
             // Same full scope as Notifications() for non-reaction linked events, plus unread-key membership.
-            var memberIds = await Conversations().Where(c => linkedIds.Contains(c.InternalConversationId) &&
+            var memberIds = await ConversationsForCandidates(linkedIds).Where(c => linkedIds.Contains(c.InternalConversationId) &&
                 (CanObserveCompanyConversations || c.Participants.Any(p => p.EmployeeId == employee && p.IsActive)))
                 .Select(c => c.InternalConversationId).ToArrayAsync(ct);
             keys.UnionWith(memberIds);
         }
         var legacy = await LegacyUnreadCountsByConversationAsync(ct);
         keys.UnionWith(legacy.Keys);
-        if (keys.Count == 0) return [];
-        if (!relatedType.HasValue) return keys.ToArray();
+        if (keys.Count == 0 || !relatedType.HasValue) return (keys.ToArray(), legacy);
         var all = keys.ToArray();
         var type = relatedType.Value;
-        return await db.InternalConversations.Where(c => c.CompanyId == company && all.Contains(c.InternalConversationId) &&
+        var ids = await db.InternalConversations.Where(c => c.CompanyId == company && all.Contains(c.InternalConversationId) &&
             (c.RelatedType == type ||
              ((c.RelatedType == InternalMailRelatedType.ConversationTechnical || c.RelatedType == InternalMailRelatedType.ConversationPricing ||
                c.RelatedType == InternalMailRelatedType.ConversationCustom) &&
               db.InternalConversations.Any(parent => parent.InternalConversationId == c.RelatedId && parent.CompanyId == company && parent.RelatedType == type))))
             .Select(c => c.InternalConversationId).ToArrayAsync(ct);
+        return (ids, legacy);
     }
 }

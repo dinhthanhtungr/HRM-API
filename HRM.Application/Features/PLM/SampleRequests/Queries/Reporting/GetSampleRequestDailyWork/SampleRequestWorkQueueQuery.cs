@@ -31,11 +31,11 @@ internal static class SampleRequestWorkQueueQuery
         if (bucket == SampleRequestWorkBucket.Cancelled) return rows.Where(x => x.SampleRequest.Status == "Cancelled");
         if (bucket == SampleRequestWorkBucket.LabDeclined) return rows.Where(x => x.SampleRequest.Status == "LabDeclined");
         var open = rows.Where(x => x.SampleRequest.Status != "Completed" && x.SampleRequest.Status != "Cancelled" && x.SampleRequest.Status != "LabDeclined");
-        if (bucket == SampleRequestWorkBucket.LabProgress) return open.Where(x => x.WorkDecision!.Role == "Lab");
+        if (bucket == SampleRequestWorkBucket.LabProgress) return open.Where(x => x.WorkDecision!.Role == "Lab" && !x.WaitsForPriceBeforeSample);
         if (bucket == SampleRequestWorkBucket.NewRequestRequired) return open.Where(x => x.WorkDecision!.Code == "CreateNewRequest");
         if (bucket == SampleRequestWorkBucket.Rework) return open.Where(x => x.WorkDecision!.Code == "ReworkFormula");
-        if (bucket == SampleRequestWorkBucket.WaitingLab) return open.Where(x => x.WorkDecision!.Role == "Lab");
-        if (bucket == SampleRequestWorkBucket.WaitingSale) return open.Where(x => x.WorkDecision!.Role == "Sale" || x.HasSalePriceWork || x.HasSaleFeedbackWork);
+        if (bucket == SampleRequestWorkBucket.WaitingLab) return open.Where(x => x.WorkDecision!.Role == "Lab" && !x.WaitsForPriceBeforeSample);
+        if (bucket == SampleRequestWorkBucket.WaitingSale) return open.Where(x => x.WaitsForPriceBeforeSample || x.WorkDecision!.Role == "Sale" || x.HasSalePriceWork || x.HasSaleFeedbackWork);
         if (bucket == SampleRequestWorkBucket.WaitingPrice) return open.Where(x => x.WorkDecision!.Role == "President");
         if (bucket == SampleRequestWorkBucket.FeedbackReceived) return rows.Where(x => x.HasPriceFeedback || x.Trial != null && x.Trial.CustomerReplyDate != null);
         if (bucket == SampleRequestWorkBucket.Overdue)
@@ -54,8 +54,8 @@ internal static class SampleRequestWorkQueueQuery
         if (bucket is SampleRequestWorkBucket.ActionRequired or SampleRequestWorkBucket.MyActionRequired)
             return request.WorkAudience switch
             {
-                SampleRequestWorkAudience.LabAdmin => open.Where(x => x.WorkDecision!.Role == "LabAdmin" || x.WorkDecision.Role == "Lab" && x.NeedsSchedule),
-                SampleRequestWorkAudience.Lab => open.Where(x => x.WorkDecision!.Role == "Lab"),
+                SampleRequestWorkAudience.LabAdmin => open.Where(x => !x.WaitsForPriceBeforeSample && (x.WorkDecision!.Role == "LabAdmin" || x.WorkDecision.Role == "Lab" && x.NeedsSchedule)),
+                SampleRequestWorkAudience.Lab => open.Where(x => x.WorkDecision!.Role == "Lab" && !x.WaitsForPriceBeforeSample),
                 _ => open.Where(x => x.WorkDecision!.Role == "Sale" || x.HasSalePriceWork || x.HasSaleFeedbackWork)
             };
         return rows;

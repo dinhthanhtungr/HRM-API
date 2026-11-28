@@ -8,6 +8,8 @@ namespace HRM.Application.Abstractions.Persistence.PLM.DeliverySchedules;
 
 public interface IDeliveryScheduleDbContext
 {
+    Guid? DeliveryScheduleTransactionId { get; }
+    DbSet<global::HRM.Domain.Entities.HrSchema.Employee> Employees { get; }
     DbSet<global::HRM.Domain.Entities.CustomerSchema.Customer> Customers { get; }
     DbSet<MerchandiseOrder> MerchandiseOrders { get; }
     DbSet<MerchandiseOrderDetail> MerchandiseOrderDetails { get; }

@@ -18,9 +18,18 @@ public sealed partial class InternalConversationGroupStoragePostgresTests
             UPDATE "InternalMail"."InternalConversations" SET "RelatedType"=16,"RelatedId"=NULL;
             INSERT INTO "InternalMail"."InternalMessages"
               ("InternalMessageId","InternalConversationId","SenderEmployeeId","Body","SentAt")
-              VALUES ('a0000000-0000-0000-0000-000000000001','{{Root}}','{{MissingPresident}}','Boundary','2026-11-01');
+              VALUES ('a0000000-0000-0000-0000-000000000001','{{Root}}','{{MissingPresident}}','Boundary','2026-11-01'),
+                     ('a0000000-0000-0000-0000-000000000002','{{Root}}','{{MissingPresident}}','Previous','2026-10-31');
             INSERT INTO "InternalMail"."InternalMessageReadStates" ("InternalMessageId","EmployeeId")
-              VALUES ('a0000000-0000-0000-0000-000000000001','{{Employee}}');
+              VALUES ('a0000000-0000-0000-0000-000000000001','{{Employee}}'),
+                     ('a0000000-0000-0000-0000-000000000002','{{Employee}}');
+            INSERT INTO notification.notifications (id,company_id,payload_json,created_date,topic)
+              SELECT md5('race-event-' || i)::uuid, '{{Company}}',
+                     jsonb_build_object('conversationId','{{Root}}','messageId',
+                         'a0000000-0000-0000-0000-' || lpad(i::text,12,'0')), '2026-11-01',38
+              FROM generate_series(1,2) i;
+            INSERT INTO notification.notification_user_states (notification_id,user_id)
+              SELECT md5('race-event-' || i)::uuid,'{{Employee}}' FROM generate_series(1,2) i;
             """);
         var lateInsert = new ReadRaceInterceptor(() => postgres.ExecuteAsync($$"""
             INSERT INTO "InternalMail"."InternalMessages"
@@ -46,6 +55,11 @@ public sealed partial class InternalConversationGroupStoragePostgresTests
             }, default);
         Assert.True(result.Success);
         Assert.True(lateInsert.Inserted);
+        Assert.Equal(2, await db.InternalMessageReadStates.CountAsync(s => s.IsRead &&
+            (s.Message.Body == "Boundary" || s.Message.Body == "Previous")));
+        var counts = await new InternalMailAreaAccessService(db, user)
+            .PageNotificationUnreadCountsAsync([Guid.Parse(Root)], default);
+        Assert.Equal(1, counts.GetValueOrDefault(Guid.Parse(Root)));
         Assert.False(await db.InternalMessageReadStates.Where(s => s.Message.Body == "Arrived after snapshot")
             .Select(s => s.IsRead).SingleAsync());
         Assert.False(await db.NotificationUserStates.Where(s => s.NotificationId == Guid.Parse("f0000000-0000-0000-0000-000000000001"))

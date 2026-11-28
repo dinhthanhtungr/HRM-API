@@ -114,6 +114,15 @@ public sealed class NotificationsController : ControllerBase
             : Ok(result);
     }
 
+    [HttpPost("read-batch")]
+    [RequestSizeLimit(16384)]
+    public async Task<ActionResult<Guid[]>> MarkBatchRead([FromBody] Guid[] ids, CancellationToken cancellationToken)
+    {
+        if (ids is not { Length: > 0 and <= 100 } || ids.Contains(Guid.Empty))
+            return BadRequest();
+        return Ok(await _notificationService.MarkBatchReadAsync(ids, cancellationToken));
+    }
+
     [HttpPost("{id:guid}/read")]
     public async Task<IActionResult> MarkRead(Guid id, CancellationToken cancellationToken)
     {

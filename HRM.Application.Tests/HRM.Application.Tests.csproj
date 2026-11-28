@@ -23,6 +23,8 @@
     <Compile Include="..\HRM.Api\Diagnostics\WarehouseMovementRequestTimingMiddleware.cs" Link="Diagnostics\WarehouseMovementRequestTimingMiddleware.cs" />
     <Compile Include="..\HRM.Api\Diagnostics\SampleWorkRequestTimingMiddleware.cs" Link="Diagnostics\SampleWorkRequestTimingMiddleware.cs" />
     <Compile Include="..\HRM.Api\Diagnostics\PerformanceProbe.cs" Link="Diagnostics\PerformanceProbe.cs" />
+    <Compile Include="..\HRM.Api\Diagnostics\DevelopmentApiTiming.cs" Link="Diagnostics\DevelopmentApiTiming.cs" />
+    <Compile Include="..\HRM.Api\Diagnostics\DevelopmentFeatureTimingBehavior.cs" Link="Diagnostics\DevelopmentFeatureTimingBehavior.cs" />
     <Compile Include="..\HRM.Api\Diagnostics\IqcSuggestionRequestTimingMiddleware.cs" Link="Diagnostics\IqcSuggestionRequestTimingMiddleware.cs" />
     <Compile Include="..\HRM.Api\Backgrounds\CRM\Quotations\QuotationPricingApprovalAutoSendWorker.cs" Link="CRM\QuotationPricingApprovalAutoSendWorker.cs" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />

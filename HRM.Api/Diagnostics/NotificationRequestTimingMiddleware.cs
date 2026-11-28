@@ -23,7 +23,7 @@ public sealed class NotificationRequestTimingMiddleware(RequestDelegate next, bo
 
     public async Task InvokeAsync(HttpContext context)
     {
-        var threadRead = includeThreadReads && IsThreadRead(context.Request.Path);
+        var threadRead = IsThreadRead(context.Request.Path, includeThreadReads);
         var readReceipt = includeThreadReads && HttpMethods.IsPost(context.Request.Method) &&
             IsReadReceipt(context.Request.Path);
         if (!readReceipt && (!HttpMethods.IsGet(context.Request.Method) ||
@@ -61,13 +61,13 @@ public sealed class NotificationRequestTimingMiddleware(RequestDelegate next, bo
         finally { context.Items.Remove(StateKey); }
     }
 
-    private static bool IsThreadRead(PathString path)
+    private static bool IsThreadRead(PathString path, bool includeMessages)
     {
         if (!path.StartsWithSegments("/api/v1/internal-mail/conversations", out var remaining))
             return false;
         var segments = remaining.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries);
         return segments is { Length: 1 or 2 } && Guid.TryParse(segments[0], out _) &&
-            (segments.Length == 1 || string.Equals(segments[1], "messages", StringComparison.OrdinalIgnoreCase));
+            (segments.Length == 1 || includeMessages && string.Equals(segments[1], "messages", StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool IsReadReceipt(PathString path)

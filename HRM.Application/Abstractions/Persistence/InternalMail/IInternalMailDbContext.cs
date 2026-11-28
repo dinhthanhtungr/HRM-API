@@ -43,6 +43,7 @@ public interface IInternalMailDbContext
     DbSet<ApplicationUserRole> UserRoles { get; }
     DbSet<Microsoft.AspNetCore.Identity.IdentityRoleClaim<Guid>> RoleClaims { get; }
     IQueryable<InternalMailNotificationLink> QueryInternalMailNotificationLinks(Guid companyId);
+    IQueryable<Guid> QueryRepresentedInternalMessageIds(Guid companyId, Guid employeeId, Guid[] messageIds);
     IQueryable<Guid> QueryQuotationBadgeSuppressedNotificationIds(Guid companyId, Guid employeeId)
         => global::HRM.Application.Features.InternalMail.Services.QuotationBadgeNotificationQuery.Suppressed(
             InternalConversations, InternalMessages, Notifications, NotificationUserStates,

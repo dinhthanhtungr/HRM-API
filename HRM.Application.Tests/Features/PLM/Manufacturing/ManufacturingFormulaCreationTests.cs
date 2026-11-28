@@ -227,10 +227,17 @@ public sealed class ManufacturingFormulaCreationTests
         public ManufacturingFormulaOrigin Origin { get; }
         public NotificationStub Notifications { get; }
         public CreateProductionOrderFormulaCommandHandler Handler { get; }
-        public Fixture(ManufacturingFormulaOrigin origin)
+        public HRM.Application.Features.PLM.SaleOrders.DeliverySchedules.DeliveryScheduleService? DeliveryService { get; }
+        public Fixture(ManufacturingFormulaOrigin origin, bool withDeliveryPromises = false)
         {
             Origin = origin;
-            (Db, Store) = ProductionOrderTestStore.CreateContext<IManufacturingDbContext>();
+            if (withDeliveryPromises)
+            {
+                var combined = DispatchProxy.Create<ManufacturingPromiseAtomicSaveTests.ICombined, ManufacturingPromiseAtomicSaveTests.Store>();
+                Db = combined;
+                Store = (ProductionOrderTestStore)(object)combined;
+            }
+            else (Db, Store) = ProductionOrderTestStore.CreateContext<IManufacturingDbContext>();
             var product = new Product { ProductId = Guid.NewGuid(), CompanyId = User.CompanyId!.Value, IsActive = true, Requirement = "product requirement" };
             Order = new() { MfgProductionOrderId = Guid.NewGuid(), ProductId = product.ProductId, Product = product, CompanyId = product.CompanyId,
                 IsActive = true, Status = "New", CreatedDate = Now.AddDays(-1), FormulaId = Guid.NewGuid() };
@@ -275,8 +282,20 @@ public sealed class ManufacturingFormulaCreationTests
             var notifications = DispatchProxy.Create<INotificationService, NotificationStub>();
             Notifications = (NotificationStub)(object)notifications;
             var prices = DispatchProxy.Create<IMaterialPriceQueryService, PriceStub>();
+            if (withDeliveryPromises)
+            {
+                var schedules = (HRM.Application.Abstractions.Persistence.PLM.DeliverySchedules.IDeliveryScheduleDbContext)Db;
+                Detail.ExpectedQuantity = 1000;
+                Detail.DeliveryRequestDate = Now.Date;
+                Store.Seed(nameof(schedules.MerchandiseOrderDetails), Detail);
+                Store.Seed(nameof(schedules.MerchandiseOrderDeliverySchedules),
+                    new MerchandiseOrderDeliverySchedule { MerchandiseOrderDeliveryScheduleId = Guid.NewGuid(), MerchandiseOrderDetailId = Detail.MerchandiseOrderDetailId, MerchandiseOrderDetail = Detail, Quantity = 400, RequestedDate = Now.Date, IsActive = true },
+                    new MerchandiseOrderDeliverySchedule { MerchandiseOrderDeliveryScheduleId = Guid.NewGuid(), MerchandiseOrderDetailId = Detail.MerchandiseOrderDetailId, MerchandiseOrderDetail = Detail, Quantity = 600, RequestedDate = Now.Date.AddDays(2), IsActive = true });
+                var options = Microsoft.Extensions.Options.Options.Create(new HRM.Application.Features.PLM.SaleOrders.DeliverySchedules.DeliveryScheduleOptions { StorageReady = true, EnableMultiScheduleUi = true });
+                DeliveryService = new(schedules, User, new CurrentUserPermissionService(User), null!, new Clock(), options, new(schedules, options));
+            }
             Handler = new(Db, User, new CurrentUserPermissionService(User), new Clock(), new Codes(), new Timeline(),
-                new ManufacturingFormulaInputResolver(Db, prices, new Clock(), new CurrentUserPermissionService(User)), new ManufacturingWorkflowNotifier(notifications), PromisedDeliveryTestFactory.Create(Db, User).Notifier, new ProductionOrderReservationService(Db));
+                new ManufacturingFormulaInputResolver(Db, prices, new Clock(), new CurrentUserPermissionService(User)), new ManufacturingWorkflowNotifier(notifications), PromisedDeliveryTestFactory.Create(Db, User).Notifier, new ProductionOrderReservationService(Db), DeliveryService);
         }
         public CreateProductionOrderFormulaRequest Request(Guid? sourceId = null, IReadOnlyList<ManufacturingFormulaInputItem>? items = null)
             => new() { SourceFormulaId = sourceId ?? SourceId, Origin = Origin, TotalQuantity = 100, NumOfBatches = 2,

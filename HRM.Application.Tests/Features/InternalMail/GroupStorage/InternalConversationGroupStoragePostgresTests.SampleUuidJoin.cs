@@ -50,10 +50,27 @@ public sealed partial class InternalConversationGroupStoragePostgresTests
         await using (var corpus = new Npgsql.NpgsqlCommand(corpusSql, (Npgsql.NpgsqlConnection)db.Database.GetDbConnection()))
             await corpus.ExecuteNonQueryAsync();
         rewrite.Enabled = false;
+        rewrite.CheckHistoricalLinks = true;
         var oldLinks = await db.QueryInternalMailNotificationLinks(company).OrderBy(l => l.NotificationId).ToArrayAsync();
         rewrite.Enabled = true;
         var newLinks = await db.QueryInternalMailNotificationLinks(company).OrderBy(l => l.NotificationId).ToArrayAsync();
         Assert.Equal(JsonSerializer.Serialize(oldLinks), JsonSerializer.Serialize(newLinks));
+        var messages = await db.InternalMessages.AsNoTracking().OrderBy(m => m.InternalMessageId)
+            .Take(100).Select(m => new { m.InternalMessageId, m.InternalConversationId }).ToArrayAsync();
+        var ids = messages.Select(m => m.InternalMessageId).ToArray();
+        foreach (var scopeCompany in new[] { company, Guid.Empty })
+        foreach (var reader in new[] { employee, Guid.Empty })
+        {
+            var receipts = await db.NotificationUserStates.Where(s => s.UserId == reader && s.Notification.CompanyId == scopeCompany)
+                .Select(s => s.NotificationId).ToArrayAsync();
+            var delivered = receipts.ToHashSet();
+            var pairs = oldLinks.Where(l => delivered.Contains(l.NotificationId))
+                .Select(l => (l.ConversationId, l.MessageId)).ToHashSet();
+            var expected = messages.Where(m => pairs.Contains((m.InternalConversationId, m.InternalMessageId)))
+                .Select(m => m.InternalMessageId).Order().ToArray();
+            var actual = await db.QueryRepresentedInternalMessageIds(scopeCompany, reader, ids).Order().ToArrayAsync();
+            Assert.Equal(expected, actual);
+        }
         foreach (var observer in new[] { false, true })
         foreach (var scopeCompany in new[] { company, Guid.Parse("10000000-0000-0000-0000-000000000002") })
         {
@@ -66,31 +83,12 @@ public sealed partial class InternalConversationGroupStoragePostgresTests
             Assert.Equal(JsonSerializer.Serialize(oldCounts), JsonSerializer.Serialize(newCounts));
         }
         rewrite.Enabled = false;
-        var referenceTimer = Stopwatch.StartNew();
+        Assert.True(rewrite.RewrittenCommands > 0);
+        rewrite.CheckHistoricalLinks = false;
+        var linkCommands = rewrite.RewrittenCommands;
         var oldResult = await handler.Handle(request, default);
-        var oldElapsed = referenceTimer.Elapsed.TotalMilliseconds;
         rewrite.Enabled = true;
-        var guardedTimer = Stopwatch.StartNew();
-        HRM.Application.Commons.Pagination.PagedResult<HRM.Application.Features.InternalMail.Dtos.InternalConversationListItemDto> newResult;
-        try
-        {
-            newResult = await handler.Handle(request, default);
-        }
-        catch (Npgsql.NpgsqlException error) when (error.InnerException is TimeoutException)
-        {
-            // Performance diagnostics must report a rejected candidate, never turn a timeout into a production change.
-            Assert.True(rewrite.RewrittenCommands > 0);
-            rewrite.Enabled = false;
-            await File.WriteAllTextAsync(Path.Combine(repositoryRoot, "artifacts", "sample-all-performance", "guarded-uuid-join.json"),
-                JsonSerializer.Serialize(new
-                {
-                    candidateStatus = "RejectedTimeout", completedWarmComparisonSamples = 0,
-                    oldReferenceMs = oldElapsed, guardedElapsedMs = guardedTimer.Elapsed.TotalMilliseconds,
-                    commandTimeoutSeconds = 10, linkParity = true, countParity = true,
-                    presentationParity = (bool?)null, rewrittenCommands = rewrite.RewrittenCommands
-                }));
-            return;
-        }
+        var newResult = await handler.Handle(request, default);
         Assert.Equal(JsonSerializer.Serialize(oldResult), JsonSerializer.Serialize(newResult));
         var oldTimes = new List<double>();
         var newTimes = new List<double>();
@@ -118,17 +116,26 @@ public sealed partial class InternalConversationGroupStoragePostgresTests
 
     private sealed class SampleUuidJoinInterceptor : DbCommandInterceptor
     {
+        public bool CheckHistoricalLinks { get; set; }
         public bool Enabled { get; set; }
         public int RewrittenCommands { get; private set; }
-        private const string Guard = "CASE WHEN link.value ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN link.value::uuid ELSE NULL END";
         public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(DbCommand command,
             CommandEventData eventData, InterceptionResult<DbDataReader> result, CancellationToken cancellationToken = default)
         {
-            if (Enabled)
+            if (CheckHistoricalLinks && !Enabled)
             {
-                var text = command.CommandText
-                    .Replace("c.\"InternalConversationId\"::text = lower(link.value)", "c.\"InternalConversationId\" = " + Guard)
-                    .Replace("conversation.\"InternalConversationId\"::text = lower(link.value)", "conversation.\"InternalConversationId\" = " + Guard);
+                var historical = System.Text.RegularExpressions.Regex.Replace(command.CommandText,
+                    """(c|conversation)\."InternalConversationId"\s*=\s*CASE\s+WHEN link\.value ~\* @\w+ THEN link\.value::uuid ELSE NULL END""",
+                    """$1."InternalConversationId"::text = lower(link.value)""");
+                if (historical != command.CommandText) RewrittenCommands++;
+                command.CommandText = historical;
+            }
+            // Run the guarded alternative against the same data as the production text join.
+            if (!CheckHistoricalLinks && Enabled)
+            {
+                var text = command.CommandText.Replace(
+                    """delivered.conversation_key = c."InternalConversationId"::text""",
+                    """c."InternalConversationId" = CASE WHEN delivered.conversation_key ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN delivered.conversation_key::uuid ELSE NULL END""");
                 if (text != command.CommandText) RewrittenCommands++;
                 command.CommandText = text;
             }

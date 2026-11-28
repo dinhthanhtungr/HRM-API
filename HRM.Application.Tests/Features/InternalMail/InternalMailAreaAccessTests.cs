@@ -398,6 +398,23 @@ public sealed partial class InternalMailAreaAccessTests
         public Dictionary<string, object> Values { get; } = [];
         protected override object? Invoke(MethodInfo? method, object?[]? args)
         {
+            if (method!.Name == nameof(IInternalMailDbContext.QueryRepresentedInternalMessageIds))
+            {
+                var company = (Guid)args![0]!;
+                var reader = (Guid)args[1]!;
+                var ids = (Guid[])args[2]!;
+                IQueryable<T> Rows<T>(string name) where T : class => Values.TryGetValue(name, out var rows)
+                    ? (IQueryable<T>)rows : Array.Empty<T>().AsQueryable();
+                var represented = from m in Rows<InternalMessage>(nameof(IInternalMailDbContext.InternalMessages))
+                    join link in Rows<InternalMailNotificationLink>(nameof(IInternalMailDbContext.QueryInternalMailNotificationLinks))
+                        on (Guid?)m.InternalMessageId equals link.MessageId
+                    join state in Rows<NotificationUserState>(nameof(IInternalMailDbContext.NotificationUserStates))
+                        on link.NotificationId equals state.NotificationId
+                    where ids.Contains(m.InternalMessageId) && link.ConversationId == m.InternalConversationId &&
+                        m.Conversation.CompanyId == company && state.Notification.CompanyId == company && state.UserId == reader
+                    select m.InternalMessageId;
+                return new AsyncQuery<Guid>(represented.Distinct());
+            }
             if (method!.Name == nameof(IInternalMailDbContext.QueryQuotationBadgeSuppressedNotificationIds))
             {
                 IQueryable<T> Rows<T>(string name) where T : class => Values.TryGetValue(name, out var rows)

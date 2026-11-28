@@ -59,7 +59,7 @@ internal sealed class GetProductionOrderWorkspaceQueryHandler(
             && x.ManufacturingFormulaAdjustment.CompanyId == company
             && x.ManufacturingFormulaAdjustment.MfgProductionOrderId == request.Id);
         var additional = await batches.Where(x => x.IsAdditionalBatch).Select(x => x.BatchNo).Distinct().CountAsync(ct);
-        var rows = await batches.SelectMany(b => b.Items.Select(i => new { b.BatchNo, b.TrialNo, b.IsAdditionalBatch, b.AdjustmentType, b.BatchQuantity, i.MaterialId, i.ProductId, i.BaseQuantity, i.AdjustedQuantity, i.DeltaQuantity, i.Unit }))
+        var rows = await batches.SelectMany(b => b.Items.Select(i => new { b.BatchNo, b.TrialNo, b.IsAdditionalBatch, b.AdjustmentType, b.BatchQuantity, i.MaterialId, i.ProductId, i.itemType, i.BaseQuantity, i.AdjustedQuantity, i.DeltaQuantity, i.Unit }))
             .ToListAsync(ct);
         var delta = MfgAdjustmentQuantityCalculator.CalculateItemTotals(rows.Select(x => new MfgAdjustmentQuantityRow(
             x.BatchNo,
@@ -67,7 +67,7 @@ internal sealed class GetProductionOrderWorkspaceQueryHandler(
             x.IsAdditionalBatch,
             x.AdjustmentType,
             x.BatchQuantity,
-            x.MaterialId.HasValue ? $"M:{x.MaterialId:N}" : $"P:{x.ProductId:N}",
+            ManufacturingAdjustmentBatchRules.ItemKey(x.itemType, x.MaterialId, x.ProductId),
             x.BaseQuantity,
             x.AdjustedQuantity,
             x.DeltaQuantity,

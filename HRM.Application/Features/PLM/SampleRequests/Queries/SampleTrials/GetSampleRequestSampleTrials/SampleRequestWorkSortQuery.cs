@@ -51,6 +51,7 @@ internal static class SampleRequestWorkSortQuery
             HasPriceFeedback = x.Row.HasPriceFeedback, HasAcceptedCustomerPrice = x.Row.HasAcceptedCustomerPrice,
             HasFinalizedChip = x.Row.HasFinalizedChip, WorkDecision = x.Row.WorkDecision, NeedsSchedule = x.Row.NeedsSchedule,
             HasSalePriceWork = x.Row.HasSalePriceWork, HasSaleFeedbackWork = x.Row.HasSaleFeedbackWork,
+            WaitsForPriceBeforeSample = x.Row.WaitsForPriceBeforeSample,
             WorkSortRank = x.Row.SampleRequest.Status == "Completed" ? 4 : (x.Row.SampleRequest.Status == "Cancelled" || x.Row.SampleRequest.Status == "LabDeclined") ? 5 : !x.Mine ? 3 :
                 audience == SampleRequestWorkAudience.Lab ? x.Row.LabTaskRank :
                 audience == SampleRequestWorkAudience.LabAdmin ? (x.Row.LabTaskRank < 0 ? x.Row.LabTaskRank : 0) :

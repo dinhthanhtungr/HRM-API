@@ -98,7 +98,8 @@ public sealed partial class InternalMailAreaAccessService
                 !reactions.Contains(s.Notification.Topic));
         var visible = db.InternalConversations.Where(c => c.CompanyId == company && c.IsActive &&
             conversations.Contains(c.InternalConversationId));
-        var permitted = NotificationsForConversations(db.NotificationUserStates.Select(s => s.Notification),
+        // The outer states already prove delivery to this reader. Scanning all recipients again multiplies shared notifications.
+        var permitted = NotificationsForConversations(db.Notifications,
             visible.Select(c => c.InternalConversationId), excludeReactions: true).Select(n => n.Id);
         return states.Where(s => permitted.Contains(s.NotificationId));
     }

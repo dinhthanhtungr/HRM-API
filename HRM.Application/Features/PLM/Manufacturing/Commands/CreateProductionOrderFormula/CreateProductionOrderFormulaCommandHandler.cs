@@ -36,7 +36,8 @@ internal sealed class CreateProductionOrderFormulaCommandHandler(
     ManufacturingFormulaInputResolver inputResolver,
     ManufacturingWorkflowNotifier notifier,
     PromisedDeliveryNotifier promisedDelivery,
-    ProductionOrderReservationService reservations
+    ProductionOrderReservationService reservations,
+    HRM.Application.Features.PLM.SaleOrders.DeliverySchedules.DeliveryScheduleService? deliverySchedules = null
 ) : IRequestHandler<CreateProductionOrderFormulaCommand, OperationResult<ProductionOrderFormulaCreatedDto>>
 {
     public async Task<OperationResult<ProductionOrderFormulaCreatedDto>> Handle(CreateProductionOrderFormulaCommand command, CancellationToken ct)
@@ -239,6 +240,12 @@ internal sealed class CreateProductionOrderFormulaCommandHandler(
                 await notifier.PriceWarningAsync(order, formula, sale, link.Detail.UnitPriceAgreed, ct);
             }
 
+            if (command.DeliveryPromises is { } promises)
+            {
+                if (deliverySchedules is null) return OperationResult<ProductionOrderFormulaCreatedDto>.Fail("Không thể lưu ngày hứa cùng yêu cầu công thức.");
+                var saved = await deliverySchedules.SaveManufacturingPromisesAsync(command.Id, promises, transaction.TransactionId, ct);
+                if (!saved.Success) return OperationResult<ProductionOrderFormulaCreatedDto>.Fail(saved.Message ?? "Không thể lưu ngày hứa.");
+            }
             await db.SaveChangesAsync(ct);
             await promisedDelivery.PublishAsync(order.MfgProductionOrderId, order.ExternalId, previousExpectedDate, order.ExpectedDate, ct);
             await transaction.CommitAsync(ct);

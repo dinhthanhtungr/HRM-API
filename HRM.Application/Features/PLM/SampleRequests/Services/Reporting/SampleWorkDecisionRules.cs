@@ -25,6 +25,7 @@ internal sealed record SampleWorkFacts
     public bool FinalizedChip { get; init; }
     public bool AcceptedPrice { get; init; }
     public bool RequiresPriceAcceptance { get; init; } = true;
+    public bool RequiresCustomerPriceTracking { get; init; }
     public bool ApprovedPrice { get; init; }
     public bool LabConfirmed { get; init; }
     public bool Quoted { get; init; }
@@ -54,6 +55,11 @@ internal sealed record SampleWorkDecision
 /// <summary>One expression for SQL queue membership and the returned work assignment. No viewer permissions here.</summary>
 internal static class SampleWorkDecisionRules
 {
+    // Phân nhóm chờ giá không thu hồi quyền gửi trước khi cần.
+    internal static readonly Expression<Func<SampleWorkFacts, string, bool>> WaitForPriceBeforeSample = (f, code) =>
+        f.Open && !f.Legacy && !f.LabPaused && !f.InternalDirect && f.RequestedKg &&
+        (f.RequiresPriceAcceptance || f.RequiresCustomerPriceTracking) && !f.AcceptedPrice && code == "SendSample";
+    internal static readonly Func<SampleWorkFacts, string, bool> WaitsForPriceBeforeSample = WaitForPriceBeforeSample.Compile();
     internal static readonly Expression<Func<SampleWorkFacts, bool>> SalePricePending = f =>
         f.Open && !f.Legacy && !f.LabPaused && f.LabConfirmed && f.ApprovedPrice &&
         (f.FormulaStatus == "Approved" || f.FormulaStatus == "SampleSent") && !f.AcceptedPrice &&

@@ -27,7 +27,7 @@ public sealed partial class InternalMailAreaAccessService
         if (ids.Length == 0) return [];
         var quoteIds = await QuotationBadgeConversationIds(ids).ToArrayAsync(ct);
         if (quoteIds.Length == 0) return [];
-        var counts = await PageNotificationUnreadCountsAsync(quoteIds, ct, requestLegacyCounts);
+        var counts = await CountAuthorizedPageAsync(quoteIds, ct, requestLegacyCounts);
         return quoteIds.ToDictionary(id => id, id => counts.GetValueOrDefault(id));
     }
 

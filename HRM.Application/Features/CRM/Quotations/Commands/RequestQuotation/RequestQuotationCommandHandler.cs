@@ -12,6 +12,7 @@ using HRM.Application.Features.CRM.Quotations.Services;
 using HRM.Application.Features.Notifications.Dtos;
 using HRM.Application.Features.Notifications.Services;
 using HRM.Domain.Entities.InternalMailSchema;
+using HRM.Domain.Entities.Notifications;
 using HRM.Domain.Entities.CustomerSchema;
 using HRM.Domain.Enums.CustomerEnum;
 using HRM.Domain.Enums.InternalMailEnums;
@@ -24,7 +25,7 @@ namespace HRM.Application.Features.CRM.Quotations.Commands.RequestQuotation;
 internal sealed class RequestQuotationCommandHandler
     : IRequestHandler<RequestQuotationCommand, OperationResult<RequestQuotationResultDto>>
 {
-    private const int MaxMessageLength = 2000;
+    private const int MaxMessageLength = 5000;
     private static readonly JsonSerializerOptions PayloadJsonOptions = new(JsonSerializerDefaults.Web);
 
     private static readonly string[] GlobalManagementRoles =
@@ -279,9 +280,7 @@ internal sealed class RequestQuotationCommandHandler
                     ? NotificationSeverity.Warning
                     : NotificationSeverity.Info,
                 Title = $"Yêu cầu báo giá {quotation.ExternalId}",
-                Message =
-                    $"{actorName} yêu cầu báo giá cho {quotation.CustomerName}: " +
-                    requestedMessage,
+                Message = BuildNotificationPreview(actorName, quotation.CustomerName, requestedMessage),
                 Link = null,
                 AggregateId = quotation.QuotationId,
                 AggregateCode = quotation.ExternalId,
@@ -304,6 +303,19 @@ internal sealed class RequestQuotationCommandHandler
                 UpdatedDate = approvalState.UpdatedDate ?? trackedQuotation.UpdatedDate
             },
             "Quotation request sent successfully.");
+    }
+
+    internal static string BuildNotificationPreview(string actorName, string customerName, string message)
+    {
+        var preview = $"{actorName} yêu cầu báo giá cho {customerName}: {message}";
+        if (preview.Length <= Notification.MaxMessageLength)
+            return preview;
+
+        var end = Notification.MaxMessageLength - 1;
+        if (char.IsHighSurrogate(preview[end - 1]))
+            end--;
+
+        return preview[..end] + "…";
     }
 
     private async Task<InternalConversation> FindOrCreateConversationAsync(

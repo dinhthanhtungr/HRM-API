@@ -56,7 +56,7 @@ internal sealed class MarkInternalConversationReadCommandHandler
         // Snapshot thread-only events before acknowledging messages. Their persisted
         // timestamps may be ahead of this API clock; incoming rows after this snapshot
         // must remain unread even when their timestamps are backdated.
-        var threadNotificationIds = request.ThroughMessageId.HasValue
+        var threadNotificationIds = request.ThroughMessageId.HasValue && inboxScope.EventIds.Length > 0
             ? await timing.RunAsync("read-event-snapshot", () => (from state in inbox
                      join link in _dbContext.QueryInternalMailNotificationLinks(companyId.Value)
                          .Where(l => inboxScope.EventIds.Contains(l.NotificationId))
@@ -109,14 +109,29 @@ internal sealed class MarkInternalConversationReadCommandHandler
                           select link;
         // Legacy GUID formats still use the existing payload parser. Only that rare
         // path requires all historical IDs; canonical inbox links stay in SQL.
-        var hasLegacyMessageLinks = await timing.RunAsync("read-legacy-check", () => unreadLinks.AnyAsync(
-            link => !link.MessageId.HasValue && link.HasMessageValue, cancellationToken));
+        // Bound memory by authorized delivery IDs; the projection below folds duplicate deliveries by message.
+        const int maxSnapshotDeliveries = 8192;
+        var useLinkSnapshot = inboxScope.EventIds.Length <= maxSnapshotDeliveries;
+        var linkSnapshot = useLinkSnapshot && inboxScope.EventIds.Length > 0
+            ? await timing.RunAsync("read-legacy-check", () => unreadLinks
+                .Select(link => new { link.MessageId, link.HasMessageValue }).Distinct().ToArrayAsync(cancellationToken))
+            : [];
+        var hasLegacyMessageLinks = useLinkSnapshot
+            ? linkSnapshot.Any(link => !link.MessageId.HasValue && link.HasMessageValue)
+            : await timing.RunAsync("read-legacy-check", () => unreadLinks.AnyAsync(
+                link => !link.MessageId.HasValue && link.HasMessageValue, cancellationToken));
+        var linkedMessageIds = linkSnapshot.Where(link => link.MessageId.HasValue)
+            .Select(link => link.MessageId!.Value).ToArray();
         var notificationMessageIds = unreadLinks.Where(link => link.MessageId.HasValue)
             .Select(link => link.MessageId!.Value);
-        var messageIds = await timing.RunAsync("read-message-snapshot", () => messageScope.AsNoTracking()
-            .Where(message => hasLegacyMessageLinks ||
+        var eligibleMessages = hasLegacyMessageLinks ? messageScope : useLinkSnapshot
+            ? messageScope.Where(message =>
                 (isParticipant && !message.ReadStates.Any(state => state.EmployeeId == employeeId.Value && state.IsRead)) ||
-                notificationMessageIds.Contains(message.InternalMessageId))
+                linkedMessageIds.Contains(message.InternalMessageId))
+            : messageScope.Where(message =>
+                (isParticipant && !message.ReadStates.Any(state => state.EmployeeId == employeeId.Value && state.IsRead)) ||
+                notificationMessageIds.Contains(message.InternalMessageId));
+        var messageIds = await timing.RunAsync("read-message-snapshot", () => eligibleMessages.AsNoTracking()
             .Select(message => message.InternalMessageId)
             .ToArrayAsync(cancellationToken));
 
@@ -147,6 +162,11 @@ internal sealed class MarkInternalConversationReadCommandHandler
         InternalMailAreaAccessService.CandidateNotificationStateScope inbox,
         NotificationQueryTiming timing, CancellationToken cancellationToken)
     {
+        if (inbox.EventIds.Length == 0)
+        {
+            await timing.RunAsync("read-inbox-update", () => Task.CompletedTask);
+            return;
+        }
         const int batchSize = 200;
         var scope = inbox.Query
             // Mốc ID đã giới hạn tập message. Không loại notification của chúng vì đồng hồ lệch.

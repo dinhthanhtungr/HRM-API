@@ -64,12 +64,23 @@ internal static class ManufacturingFormulaOptionReader
             true
         )
         {
-            Note = !string.IsNullOrWhiteSpace(x.Note) ? x.Note : x.ManufacturingFormula.Note
+            Note = x.ManufacturingFormula.Note
         })
             .FirstOrDefaultAsync(ct);
         List<ProductionOrderFormulaOptionDto> result;
         if (standard is not null)
         {
+            var notes = await db.ProductionSelectVersions.AsNoTracking()
+                .Where(x => x.CompanyId == company && x.ManufacturingFormulaId == standard.FormulaId
+                    && x.MfgProductionOrder.CompanyId == company
+                    && x.MfgProductionOrder.IsActive && x.MfgProductionOrder.ProductId == order.ProductId)
+                .OrderByDescending(x => x.ValidFrom.HasValue).ThenByDescending(x => x.ValidFrom).ThenByDescending(x => x.ProductionSelectVersionId)
+                .Select(x => new { x.MfgProductionOrderId, x.MfgProductionOrder.LabNote,
+                    x.MfgProductionOrder.PlpuNote, x.MfgProductionOrder.Requirement, x.MfgProductionOrder.QcCheck })
+                .FirstOrDefaultAsync(ct);
+            if (notes is not null)
+                standard = standard with { SourceProductionOrderId = notes.MfgProductionOrderId,
+                    LabNote = notes.LabNote, PlpuNote = notes.PlpuNote, Requirement = notes.Requirement, QcCheck = notes.QcCheck };
             result = [standard];
         }
         else
@@ -85,7 +96,7 @@ internal static class ManufacturingFormulaOptionReader
                 .ThenByDescending(x => x.ProductionSelectVersionId)
                 .Take(ProductionHistoryLimit)
                 .Select(x => new { Id = x.ManufacturingFormulaId!.Value, x.ManufacturingFormula!.ExternalId, x.MfgProductionOrderId, x.ManufacturingFormula.CreatedDate, x.ManufacturingFormula.Note,
-                    x.MfgProductionOrder.PlpuNote, x.MfgProductionOrder.LabNote, x.MfgProductionOrder.Requirement })
+                    x.MfgProductionOrder.PlpuNote, x.MfgProductionOrder.LabNote, x.MfgProductionOrder.Requirement, x.MfgProductionOrder.QcCheck })
                 .ToListAsync(ct);
             result = selections.Select(x => new ProductionOrderFormulaOptionDto(
                 x.Id,
@@ -94,15 +105,15 @@ internal static class ManufacturingFormulaOptionReader
                 x.MfgProductionOrderId,
                 x.CreatedDate,
                 true
-            ) { Note = x.Note, PlpuNote = x.PlpuNote, LabNote = x.LabNote, Requirement = x.Requirement })
+            ) { Note = x.Note, PlpuNote = x.PlpuNote, LabNote = x.LabNote, Requirement = x.Requirement, QcCheck = x.QcCheck })
                 .ToList();
         }
 
         var vu = order.FormulaId.HasValue ? await db.Formulas.AsNoTracking().Where(x => x.FormulaId == order.FormulaId && x.IsActive && x.CompanyId == company
-            && x.ProductId == order.ProductId)
+            && x.ProductId == order.ProductId && x.Product.CompanyId == company && x.Product.IsActive)
             .Select(x => new
             {
-                x.FormulaId, x.ExternalId, x.CreatedDate,
+                x.FormulaId, x.ExternalId, x.CreatedDate, QaRequirement = x.Product.Requirement,
                 Note = !string.IsNullOrWhiteSpace(x.Note) ? x.Note : x.Product.Requirement
             })
             .FirstOrDefaultAsync(ct) : null;
@@ -120,7 +131,7 @@ internal static class ManufacturingFormulaOptionReader
                 order.MfgProductionOrderId,
                 vu.CreatedDate ?? order.CreatedDate,
                 false
-            ) { Note = vu.Note, PlpuNote = order.PlpuNote, LabNote = order.LabNote, Requirement = order.Requirement }];
+            ) { Note = vu.Note, PlpuNote = order.PlpuNote, LabNote = vu.QaRequirement, Requirement = order.Requirement, QcCheck = order.QcCheck }];
         }
 
         var previousVu = await db.MfgProductionOrders.AsNoTracking().Where(x => x.IsActive && x.CompanyId == company && x.ProductId == order.ProductId
@@ -139,7 +150,7 @@ internal static class ManufacturingFormulaOptionReader
                 order.MfgProductionOrderId,
                 vu.CreatedDate ?? order.CreatedDate,
                 true
-            ) { Note = vu.Note, PlpuNote = order.PlpuNote, LabNote = order.LabNote, Requirement = order.Requirement });
+            ) { Note = vu.Note, PlpuNote = order.PlpuNote, LabNote = vu.QaRequirement, Requirement = order.Requirement, QcCheck = order.QcCheck });
         }
 
         return result;

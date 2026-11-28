@@ -62,9 +62,7 @@ public sealed partial class InternalMailAreaAccessService
         var missingCountIds = visibleChildIds.Where(id => !unreadCounts.ContainsKey(id)).ToArray();
         if (missingCountIds.Length > 0)
         {
-            var missingCounts = pageUnreadCounts is null
-                ? await NotificationUnreadCounts(missingCountIds).ToDictionaryAsync(c => c.ConversationId, c => c.UnreadCount, ct)
-                : await PageNotificationUnreadCountsAsync(missingCountIds, ct);
+            var missingCounts = await PageNotificationUnreadCountsAsync(missingCountIds, ct);
             foreach (var entry in missingCounts) unreadCounts[entry.Key] = entry.Value;
         }
         var observer = CanObserveSampleRequestGroups;

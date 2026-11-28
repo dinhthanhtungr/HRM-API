@@ -55,6 +55,10 @@ internal sealed partial class BasicLabTestService(ILabTestDbContext db, Evaluati
         };
         if (id.HasValue && request.EvaluationTemplateId.HasValue && request.EvaluationTemplateId != entity.EvaluationTemplateId)
             throw new EvaluationRequestException("Không đổi mẫu nguồn của phiếu đã lưu.", 409);
+        var clearSupplier = request.ClearFields?.Contains("supplierId") == true;
+        if (!request.SupplierId.HasValue && !clearSupplier && entity.SupplierId.HasValue &&
+            (request.SupplierName is not null || request.ClearFields?.Contains("supplierName") == true))
+            throw new EvaluationRequestException("Để nhập NCC tự do, hãy xóa supplierId bằng clearFields.");
         await ApplySampleAsync(entity, request, company, ct);
         if (creator is not null)
         {
@@ -66,12 +70,17 @@ internal sealed partial class BasicLabTestService(ILabTestDbContext db, Evaluati
         {
             entity.SupplierId = request.SupplierId;
             entity.Supplier = supplier;
+            entity.SupplierName = access.Normalize(supplier!.SupplierName);
         }
         if (request.ClearFields?.Contains("supplierId") == true)
         {
             entity.SupplierId = null;
             entity.Supplier = null;
+            entity.SupplierName = null;
         }
+        if (!entity.SupplierId.HasValue && request.SupplierName is not null)
+            entity.SupplierName = access.Normalize(request.SupplierName);
+        if (request.ClearFields?.Contains("supplierName") == true) entity.SupplierName = null;
         if (request.BatchNumber is not null)
             PatchHelper.Set(access.Normalize(request.BatchNumber), () => entity.BatchNumber, x => entity.BatchNumber = x);
         if (request.WeightKg.HasValue)
@@ -162,15 +171,18 @@ internal sealed partial class BasicLabTestService(ILabTestDbContext db, Evaluati
             throw new EvaluationRequestException("Ngày test bắt buộc; ghi chú tối đa 16000 ký tự.");
         if (request.BatchNumber?.Trim().Length > 100)
             throw new EvaluationRequestException("Số lot tối đa 100 ký tự.");
+        if (request.SupplierName?.Length > 300)
+            throw new EvaluationRequestException("Tên NCC tối đa 300 ký tự.");
         if (request.WeightKg is { } weight && (weight < 0 || weight > 999999999999.999999m || decimal.Round(weight, 6) != weight))
             throw new EvaluationRequestException("Khối lượng không âm, tối đa 12 chữ số nguyên và 6 chữ số thập phân.");
-        if (request.ClearFields?.Any(x => x is not ("note" or "batchNumber" or "weightKg" or "supplierId" or "materialId")) == true ||
+        if (request.ClearFields?.Any(x => x is not ("note" or "batchNumber" or "weightKg" or "supplierId" or "supplierName" or "materialId")) == true ||
+            (request.SupplierId.HasValue || request.SupplierName is not null) && request.ClearFields?.Contains("supplierName") == true ||
             request.MaterialId.HasValue && request.ClearFields?.Contains("materialId") == true ||
             request.SupplierId.HasValue && request.ClearFields?.Contains("supplierId") == true ||
             request.Note is not null && request.ClearFields?.Contains("note") == true ||
             request.BatchNumber is not null && request.ClearFields?.Contains("batchNumber") == true ||
             request.WeightKg.HasValue && request.ClearFields?.Contains("weightKg") == true)
-            throw new EvaluationRequestException("clearFields chỉ cho phép note, batchNumber, weightKg, supplierId, materialId và không đồng thời gửi giá trị.");
+            throw new EvaluationRequestException("clearFields chỉ cho phép note, batchNumber, weightKg, supplierId, supplierName, materialId và không đồng thời gửi giá trị.");
         if (request.Results is { } rows && (rows.Count > 200 || rows.Any(x => x is null || x.EvaluationStandardId == Guid.Empty ||
             x.ClearValue && x.Value is not null || x.ObservedText is not null || x.ClearObservedText) ||
             rows.Select(x => x.EvaluationStandardId).Distinct().Count() != rows.Count))

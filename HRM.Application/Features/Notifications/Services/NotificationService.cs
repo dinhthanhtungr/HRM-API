@@ -326,13 +326,23 @@ internal sealed partial class NotificationService : INotificationService, IInter
             {
                 personalMessageIds = candidateIds.Select(message => message.Id).ToArray();
                 var personalConversationIds = candidateIds.Select(message => message.ConversationId).Distinct().ToArray();
-                var eventIds = await timing.RunAsync("personal-event-keys", () => _areas.PersonalInboxCandidates(
+                var category = NotificationTopicCatalog.NormalizeCode(categoryCode);
+                var group = NotificationTopicCatalog.NormalizeCode(eventGroupCode);
+                var legacy = category == NotificationCategoryCodes.LegacyData;
+                var allTopics = category is null && group is null;
+                var topics = NotificationTopicCatalog.GetTopics(category, group);
+                var cutoff = NotificationTopicCategoryRules.CurrentDataStartDate;
+                var candidates = await timing.RunAsync("personal-event-keys", () => _areas.PersonalInboxCandidates(
                         inbox, personalMessageIds, personalConversationIds)
-                    .Select(notification => notification.Id).Take(maxPersonalMessageCandidates + 1)
-                    .ToArrayAsync(cancellationToken));
-                if (eventIds.Length == 0) return [];
-                if (eventIds.Length <= maxPersonalMessageCandidates)
+                    .Select(n => new { n.Id, Matches = allTopics || (legacy
+                        ? n.CreatedDate < cutoff : n.CreatedDate >= cutoff && topics.Contains(n.Topic)) })
+                    .Take(maxPersonalMessageCandidates + 1).ToArrayAsync(cancellationToken));
+                if (candidates.Length <= maxPersonalMessageCandidates)
                 {
+                    // Only a complete shortlist proves an empty category. Keep ALL
+                    // candidate IDs when there is a match, so winner selection is unchanged.
+                    if (!candidates.Any(n => n.Matches)) return [];
+                    var eventIds = candidates.Select(n => n.Id).ToArray();
                     personalEventIds = eventIds;
                     inbox = inbox.Where(notification => eventIds.Contains(notification.Id));
                 }
@@ -396,59 +406,67 @@ internal sealed partial class NotificationService : INotificationService, IInter
                         visible, inbox, NotificationTopicCatalog.NormalizeCode(eventGroupCode), candidateConversationIds, cancellationToken, unreadStandaloneIds))
                     : _areas.LatestHubEvents(visible, inbox, NotificationTopicCatalog.NormalizeCode(eventGroupCode), candidateConversationIds);
         }
-        var query = visible
-            .Select(x => new NotificationDto
+        IQueryable<NotificationDto> PageQuery(IQueryable<Notification> source)
+        {
+            var query = source
+                .Select(x => new NotificationDto
+                {
+                    Id = x.Id,
+                    Topic = x.Topic,
+                    Severity = x.Severity,
+                    Title = x.Title,
+                    Message = x.Message,
+                    Link = x.Link,
+                    PayloadJson = x.PayloadJson,
+                    CreatedDate = x.CreatedDate,
+                    CompanyId = x.CompanyId,
+                    IsRead = x.UserStates
+                        .Where(state => state.UserId == employeeId)
+                        .Select(state => state.IsRead)
+                        .FirstOrDefault(),
+                    ReadDate = x.UserStates
+                        .Where(state => state.UserId == employeeId)
+                        .Select(state => state.ReadDate)
+                        .FirstOrDefault(),
+                    CreatedBy = x.CreatedBy,
+                    CreatedByNameSnapshot = x.CreatedByNameSnapshot
+                });
+
+            var normalizedCategory = NotificationTopicCatalog.NormalizeCode(categoryCode);
+            var normalizedEventGroup = NotificationTopicCatalog.NormalizeCode(eventGroupCode);
+
+            if (normalizedCategory == NotificationCategoryCodes.LegacyData)
             {
-                Id = x.Id,
-                Topic = x.Topic,
-                Severity = x.Severity,
-                Title = x.Title,
-                Message = x.Message,
-                Link = x.Link,
-                PayloadJson = x.PayloadJson,
-                CreatedDate = x.CreatedDate,
-                CompanyId = x.CompanyId,
-                IsRead = x.UserStates
-                    .Where(state => state.UserId == employeeId)
-                    .Select(state => state.IsRead)
-                    .FirstOrDefault(),
-                ReadDate = x.UserStates
-                    .Where(state => state.UserId == employeeId)
-                    .Select(state => state.ReadDate)
-                    .FirstOrDefault(),
-                CreatedBy = x.CreatedBy,
-                CreatedByNameSnapshot = x.CreatedByNameSnapshot
-            });
+                query = query.Where(x =>
+                    x.CreatedDate < NotificationTopicCategoryRules.CurrentDataStartDate);
+            }
+            else if (normalizedCategory is not null || normalizedEventGroup is not null)
+            {
+                var topics = NotificationTopicCatalog.GetTopics(normalizedCategory, normalizedEventGroup);
+                query = query.Where(x =>
+                    x.CreatedDate >= NotificationTopicCategoryRules.CurrentDataStartDate &&
+                    topics.Contains(x.Topic));
+            }
 
-        var normalizedCategory = NotificationTopicCatalog.NormalizeCode(categoryCode);
-        var normalizedEventGroup = NotificationTopicCatalog.NormalizeCode(eventGroupCode);
-
-        if (normalizedCategory == NotificationCategoryCodes.LegacyData)
-        {
-            query = query.Where(x =>
-                x.CreatedDate < NotificationTopicCategoryRules.CurrentDataStartDate);
-        }
-        else if (normalizedCategory is not null || normalizedEventGroup is not null)
-        {
-            var topics = NotificationTopicCatalog.GetTopics(normalizedCategory, normalizedEventGroup);
-            query = query.Where(x =>
-                x.CreatedDate >= NotificationTopicCategoryRules.CurrentDataStartDate &&
-                topics.Contains(x.Topic));
+            if (afterCreated.HasValue && afterId.HasValue)
+            {
+                // Keyset paging: lấy các dòng cũ hơn item cuối FE đang có.
+                query = query.Where(x =>
+                    x.CreatedDate < afterCreated.Value ||
+                    (x.CreatedDate == afterCreated.Value && x.Id.CompareTo(afterId.Value) < 0));
+            }
+            return query.TagWith("Notification feed page").OrderByDescending(x => x.CreatedDate).ThenByDescending(x => x.Id).Take(normalizedTake);
         }
 
-        if (afterCreated.HasValue && afterId.HasValue)
+        var items = await timing.RunAsync("feed-page", () => PageQuery(visible).ToListAsync(cancellationToken));
+        if (!latestForHub && !unreadOnly && !mentionedOnly &&
+            readScope.AuthorizedEventIds?.Length == normalizedTake && items.Count < normalizedTake)
         {
-            // Keyset paging: lấy các dòng cũ hơn item cuối FE đang có.
-            query = query.Where(x =>
-                x.CreatedDate < afterCreated.Value ||
-                (x.CreatedDate == afterCreated.Value && x.Id.CompareTo(afterId.Value) < 0));
+            // A selected row was archived between selection and projection. Read the
+            // whole page in one authorized statement so the client can paginate reliably.
+            var fallback = await _areas.DefaultLabInboxSelectionAsync(inbox, cancellationToken, excludeReactions: true);
+            items = await PageQuery(fallback.Query).ToListAsync(cancellationToken);
         }
-
-        var items = await timing.RunAsync("feed-page", () => query
-            .OrderByDescending(x => x.CreatedDate)
-            .ThenByDescending(x => x.Id)
-            .Take(normalizedTake)
-            .ToListAsync(cancellationToken));
 
         foreach (var item in items)
         {
@@ -664,6 +682,25 @@ internal sealed partial class NotificationService : INotificationService, IInter
         }
 
         return result;
+    }
+
+    public async Task<Guid[]> MarkBatchReadAsync(Guid[] ids, CancellationToken cancellationToken = default)
+    {
+        var companyId = GetCurrentCompanyId();
+        var employeeId = GetCurrentEmployeeId();
+        var requested = ids.Distinct().ToArray();
+        var states = _areas.States().Where(state =>
+            requested.Contains(state.NotificationId) && !state.IsArchived &&
+            state.UserId == employeeId && state.Notification.CompanyId == companyId);
+
+        await using var transaction = await _dbContext.BeginTransactionAsync(cancellationToken);
+        await states.Where(state => !state.IsRead).ExecuteUpdateAsync(setters => setters
+            .SetProperty(state => state.IsRead, true)
+            .SetProperty(state => state.ReadDate, DateTime.Now), cancellationToken);
+        var acknowledged = await states.Where(state => state.IsRead)
+            .Select(state => state.NotificationId).Distinct().ToArrayAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return acknowledged;
     }
 
     public async Task MarkReadAsync(Guid id, CancellationToken cancellationToken = default)

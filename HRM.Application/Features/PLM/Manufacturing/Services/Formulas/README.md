@@ -41,7 +41,7 @@ Triển khai permission: [seed-defective-lot-permission.sql](../../seed-defectiv
 
 `GET /api/v1/plm/production-orders/{id}/workspace` trả `formulaOptions[].note` theo cùng nguồn và fallback với summary của legacy `GET /api/mfgproductionorder/rw/{id}`:
 
-- Standard: dùng `ProductStandardFormula.Note` nếu không trắng; fallback `ManufacturingFormula.Note`.
+- Standard: dùng `ManufacturingFormula.Note`; ghi chú đánh dấu chuẩn không thay hướng dẫn sản xuất.
 - Production/ProductionOld: dùng trực tiếp `ManufacturingFormula.Note`.
 - FromVu/Improvement: dùng `Formula.Note` nếu không trắng; fallback `Formula.Product.Requirement`.
 
@@ -51,7 +51,7 @@ Mỗi `formulaOptions[]` còn trả riêng `plpuNote`, `labNote`, `requirement` 
 
 - Production/ProductionOld: lấy từ chính `MfgProductionOrder` của PSV, cùng `sourceProductionOrderId`, active và cùng company. Không lấy ghi chú lệnh đang mở thay cho lệnh lịch sử.
 - FromVu/Improvement: `sourceProductionOrderId` là lệnh đang mở, ba field lấy từ lệnh này.
-- Standard: không có lệnh nguồn (`sourceProductionOrderId=null`), cả ba field là `null`; không suy đoán một lệnh lịch sử từ VA chuẩn.
+- Standard: tìm MFG active cùng company/product qua VA; ưu tiên liên kết đã kích hoạt, ValidFrom mới nhất rồi ID liên kết. Nếu chỉ có nguồn chờ QA thì dùng nguồn chờ mới nhất. Trả sourceProductionOrderId và các ghi chú như nguồn lịch sử.
 
 Ví dụ: `{ "externalId": "VA260900203", "origin": 2, "note": "Chạy 2 lần", "plpuNote": "Kiểm tra nguyên liệu thay thế", "labNote": "QA kiểm tra màu trước sản xuất", "requirement": "Lưu ý phản hồi khách hàng" }`.
 Đây là dữ liệu đã lưu hiện tại của lệnh nguồn, không phải snapshot theo ngày tạo VA. Giữ nguyên `null`, chuỗi rỗng và khoảng trắng; FE có thể ẩn mục không có nội dung. Bổ sung field read-only áp dụng cho cả workspace và `GET /api/v1/plm/production-orders/{id}/inform` (`workspace.formulaOptions`); không tự copy/lưu ghi chú khi người dùng chọn option, không đổi quyền xem/sửa hay contract mutation.
@@ -75,3 +75,17 @@ Inform Save đánh dấu rõ dòng NVL mới là `Added` qua DbSet, kể cả kh
 
 
 Đồng bộ kho cân trộn: nguồn tồn cho Inform/Formula loại CT.0.1 theo cả ShelfStockCode và SlotCode trước khi tính OnHandKg/AvailableKg và danh sách Lot. ReservedOpenAllKg vẫn theo reservation hiện hành; Lot đã lưu trên VA chỉ được giữ dưới dạng lịch sử theo rule cũ, không cộng tồn kho cân trộn.
+
+## Kế thừa ghi chú kế hoạch → QA → VA
+Options VA lịch sử/chuẩn thêm qcCheck; VU FromVu/Improvement trả labNote từ Product.Requirement (ô yêu cầu QA/QC/SX của yêu cầu phối mẫu).
+RequestFormula của editor nhận sourceFormulaId tùy chọn. BE kiểm tra nguồn thuộc lựa chọn của MFG, company, quyền vật tư, revision và khóa xuất kho.
+Trong transaction dưới khóa MFG: VA nguồn được ghi bằng ProductionSelectVersion chờ (ValidFrom=null), không tạo VA mới/kích hoạt lịch/reserve.
+Chọn VU đóng nguồn VA mở trước đó; VU vẫn là FormulaId hiện có của MFG. Gửi lại cùng nguồn không tạo trùng.
+Ghi chú request tường minh ưu tiên; không gửi thì giữ ghi chú MFG đã lưu; MFG trống thì kế thừa labNote/plpuNote/qcCheck nguồn.
+Không tự chép Requirement của MFG cũ vào yêu cầu khách hàng hiện tại; giữ gate EditProductionOrderRequirement.
+QA prefill FormulaRequested ưu tiên nguồn VA mở đã lưu, nếu không có thì dùng VU của MFG, không tự đổi sang chuẩn sản phẩm.
+VU prefill lấy Product.Requirement. VA prefill giữ Note nguồn; nguồn thiếu Note có thể fallback LabNote MFG.
+CreateLab VA mới: Note không gửi/trắng kế thừa nguồn VA hoặc Product.Requirement của VU; Process VA hiện có giữ Note khi không gửi/trắng.
+Cả hai nhận clearNote=true để xóa rõ; clearNote kèm Note không trắng bị từ chối. Editor Save vẫn dùng clearFields như cũ.
+Yêu cầu MFG và Note VA lưu riêng. Tạo VA không xóa LabNote/QcCheck/PlpuNote MFG, không cập nhật VA nguồn.
+Không backfill, migration hoặc thêm cột. Client QA cũ muốn xóa Note phải gửi clearNote=true.

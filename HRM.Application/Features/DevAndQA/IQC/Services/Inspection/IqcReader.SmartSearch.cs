@@ -1,3 +1,4 @@
+using HRM.Application.Commons.Diagnostics;
 using System.Linq.Expressions;
 using System.Diagnostics;
 using HRM.Application.Commons.Searching;
@@ -87,13 +88,16 @@ internal sealed partial class IqcReader
                         (long)Stopwatch.GetElapsedTime(started.Value).TotalMilliseconds);
             }
         }
+        var step = RequestTiming.StartStep();
         var total = await rows.CountAsync(ct);
+        RequestTiming.FinishStep("iqc_count", ref step);
         var pageNumber = Math.Max(1, request.PageNumber);
         var pageSize = request.PageSize <= 0 ? 20 : Math.Min(100, request.PageSize);
         var ordered = request.IncludeLabTests ? rows.OrderByDescending(x => x.SortDate).ThenByDescending(x => x.VoucherDetailId).ThenByDescending(x => x.LabTestId)
             : rows.OrderByDescending(x => x.VoucherDetailId);
         var page = await ordered.Skip((pageNumber - 1) * pageSize).Take(pageSize)
             .Select(x => new SummarySourceKey { VoucherDetailId = x.VoucherDetailId, LabTestId = x.LabTestId, SortDate = x.SortDate }).ToListAsync(ct);
+        RequestTiming.FinishStep("iqc_page_keys", ref step);
         return await LoadSummaryPageAsync(page, total, pageNumber, pageSize, ct);
     }
 

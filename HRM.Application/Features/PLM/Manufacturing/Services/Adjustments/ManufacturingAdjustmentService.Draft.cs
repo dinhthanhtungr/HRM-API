@@ -174,7 +174,9 @@ internal sealed partial class ManufacturingAdjustmentService
                     .Where(item => Guid.TryParseExact(item.ItemKey[2..], "N", out _))
                     .Select(item => new ManufacturingAdjustmentItemCalculation
                     {
-                        ItemId = Guid.ParseExact(item.ItemKey[2..], "N"), IsMaterial = item.ItemKey.StartsWith("M:"),
+                        ItemId = Guid.ParseExact(item.ItemKey[2..], "N"),
+                        ItemType = Enum.Parse<HRM.Domain.Enums.Formulas.ItemType>(item.ItemKey[..1]),
+                        IsMaterial = ManufacturingAdjustmentBatchRules.IsMaterial(Enum.Parse<HRM.Domain.Enums.Formulas.ItemType>(item.ItemKey[..1])),
                         OriginalBaseQuantityGram = item.OriginalBaseQuantityGram,
                         NewWeighingTotalGram = item.NewWeighingTotalGram,
                         ColourDeltaTotalGram = item.ColourDeltaTotalGram,

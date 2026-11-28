@@ -51,6 +51,8 @@ public interface INotificationService
     /// <summary>
     /// Đánh dấu một notification là đã đọc cho nhân viên hiện tại.
     /// </summary>
+    Task<Guid[]> MarkBatchReadAsync(Guid[] ids, CancellationToken cancellationToken = default);
+
     Task MarkReadAsync(Guid id, CancellationToken cancellationToken = default);
 
     /// <summary>

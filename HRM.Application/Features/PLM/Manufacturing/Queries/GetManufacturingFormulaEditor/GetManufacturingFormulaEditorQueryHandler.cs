@@ -1,3 +1,4 @@
+using HRM.Domain.Enums.Manufacturings;
 using HRM.Application.Abstractions.Commons.Time;
 using HRM.Application.Abstractions.Persistence.PLM.Manufacturing;
 using HRM.Application.Abstractions.Security;
@@ -43,7 +44,7 @@ internal sealed class GetManufacturingFormulaEditorQueryHandler(
             && x.Detail.IsActive
             && x.Detail.MerchandiseOrder.CompanyId == company
             && x.Detail.MerchandiseOrder.IsActive)
-            .Select(x => new { x.ProductionOrder.ProductId, x.ProductionOrder.FormulaId })
+            .Select(x => new { x.ProductionOrder.ProductId, x.ProductionOrder.FormulaId, x.ProductionOrder.Status })
             .FirstOrDefaultAsync(ct);
         if (link is null)
         {
@@ -80,32 +81,52 @@ internal sealed class GetManufacturingFormulaEditorQueryHandler(
         }
         else
         {
-            var now = clock.Now;
-            var candidate = await (
-                from s in db.ProductStandardFormulas.AsNoTracking()join f in db.ManufacturingFormulas.AsNoTracking()on s.ManufacturingFormulaId equals f.ManufacturingFormulaId
-                where s.CompanyId == company && f.CompanyId == company && s.ProductId == link.ProductId && f.IsActive
-                && s.ValidFrom <= now
-                && (s.ValidTo == null || s.ValidTo > now)orderby s.ValidFrom descending
-                select new
+            var requestedVa = link.Status == nameof(ManufacturingProductOrder.FormulaRequested)
+                ? await db.ProductionSelectVersions.AsNoTracking()
+                    .Where(x => x.CompanyId == company && x.MfgProductionOrderId == request.OrderId && x.ValidTo == null
+                        && x.ManufacturingFormula != null && x.ManufacturingFormula.IsActive && x.ManufacturingFormula.CompanyId == company)
+                    .OrderByDescending(x => x.ProductionSelectVersionId)
+                    .Select(x => x.ManufacturingFormulaId).FirstOrDefaultAsync(ct) : null;
+            if (requestedVa.HasValue)
+            {
+                sourceId = requestedVa.Value;
+                vu = false;
+            }
+            else if (link.Status == nameof(ManufacturingProductOrder.FormulaRequested) && link.FormulaId.HasValue)
+            {
+                // RequestFormula without an open VA source retains the order VU.
+                sourceId = link.FormulaId.Value;
+                vu = true;
+            }
+            else
+            {
+                var now = clock.Now;
+                var candidate = await (
+                    from s in db.ProductStandardFormulas.AsNoTracking()join f in db.ManufacturingFormulas.AsNoTracking()on s.ManufacturingFormulaId equals f.ManufacturingFormulaId
+                    where s.CompanyId == company && f.CompanyId == company && s.ProductId == link.ProductId && f.IsActive
+                    && s.ValidFrom <= now
+                    && (s.ValidTo == null || s.ValidTo > now)orderby s.ValidFrom descending
+                    select new
+                    {
+                        f.ManufacturingFormulaId,
+                        f.SourceVUFormulaId
+                    }
+
+                ).FirstOrDefaultAsync(ct);
+                vu = candidate is null || link.FormulaId.HasValue && candidate.SourceVUFormulaId != link.FormulaId;
+                if (vu && !link.FormulaId.HasValue)
                 {
-                    f.ManufacturingFormulaId,
-                    f.SourceVUFormulaId
+                    return Fail("Lệnh không có nguồn VA chuẩn hoặc VU đã chọn.");
                 }
 
-            ).FirstOrDefaultAsync(ct);
-            vu = candidate is null || link.FormulaId.HasValue && candidate.SourceVUFormulaId != link.FormulaId;
-            if (vu && !link.FormulaId.HasValue)
-            {
-                return Fail("Lệnh không có nguồn VA chuẩn hoặc VU đã chọn.");
+                sourceId = vu ? link.FormulaId!.Value : candidate!.ManufacturingFormulaId;
             }
-
-            sourceId = vu ? link.FormulaId!.Value : candidate!.ManufacturingFormulaId;
         }
 
         if (vu)
         {
-            var source = await db.Formulas.AsNoTracking().Where(x => x.FormulaId == sourceId && x.CompanyId == company && x.IsActive && x.ProductId == link.ProductId)
-                .Select(x => new { x.ExternalId, x.Name, x.CreatedDate })
+            var source = await db.Formulas.AsNoTracking().Where(x => x.FormulaId == sourceId && x.CompanyId == company && x.IsActive && x.ProductId == link.ProductId && x.Product.CompanyId == company && x.Product.IsActive)
+                .Select(x => new { x.ExternalId, x.Name, x.CreatedDate, QaRequirement = x.Product.Requirement })
                 .FirstOrDefaultAsync(ct);
             if (source is null)
             {
@@ -115,7 +136,7 @@ internal sealed class GetManufacturingFormulaEditorQueryHandler(
             code = source.ExternalId;
             name = source.Name;
             created = source.CreatedDate ?? DateTime.MinValue;
-            note = null;
+            note = source.QaRequirement;
             status = null;
             originId = sourceId;
             originType = FormulaSource.FromVU;
@@ -134,7 +155,7 @@ internal sealed class GetManufacturingFormulaEditorQueryHandler(
             code = source.ExternalId;
             name = source.Name;
             created = source.CreatedDate;
-            note = source.Note;
+            note = ManufacturingNoteRules.Inherit(null, source.Note, order.Data.LabNote);
             status = source.Status;
             originId = request.FormulaId.HasValue ? source.SourceManufacturingFormulaId ?? source.SourceVUFormulaId ?? Guid.Empty : sourceId;
             originType = request.FormulaId.HasValue ? source.SourceType : FormulaSource.FromVA;

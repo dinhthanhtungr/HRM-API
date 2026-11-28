@@ -63,6 +63,8 @@ persistence chung, không phải HTTP/DB production hoặc thời gian toàn mà
 
 ## Badge danh sách và xác nhận đọc
 
+Khi lọc Chưa đọc, danh sách dùng lại số tin legacy đã kiểm tra trong cùng request nếu chế độ lưu nhóm đã cung cấp kết quả đó. Trang vẫn kiểm tra quyền với các ID thực tế. Khi đánh dấu đọc, với tối đa 8.192 sự kiện có quyền, handler lấy một lần các liên kết để kiểm tra message và định dạng cũ. Lượt lưu vẫn giới hạn theo employee, nhóm và mốc message đã tải.
+
 `GetInternalConversations` và compact read-state dùng `PageNotificationUnreadCountsAsync`
 cho đúng các ID đã được phân quyền trong trang/nhóm liên quan. Nhánh notification
 và legacy được tính riêng rồi cộng theo conversation, không gộp thành một query UNION
@@ -345,6 +347,8 @@ ID tin mới từ receipt vào preview cũ. BE cũ trả `204` hoặc caller ch�
 Detail dùng số unread thống nhất từ `DescribeAsync`; bước projection ban đầu bỏ phép đếm read-state lịch sử
 vốn sẽ bị ghi đè ngay sau đó. Helper projection giữ mặc định legacy cho các consumer chưa đi qua bước đối soát này;
 không đổi field, quyền hay nội dung response.
+
+Khi mở chi tiết, bước `thread-badges` truyền các ID nhóm đang hiển thị vào `PageNotificationUnreadCountsAsync`. Truy vấn lọc lại các ID theo quyền, đối chiếu nguồn thông báo với tin cũ và trả số chính xác cho từng nhóm. Các client có thể rút gọn số trên giao diện mà vẫn dùng số chính xác khi đối soát thao tác đọc.
 
 PATCH preferences với `isArchived: true` đồng thời archive notification hiện có của thread cho chính employee,
 trong cùng transaction; mute không thay đổi nếu bỏ field. Khôi phục conversation không tự khôi phục notification

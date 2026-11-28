@@ -28,6 +28,8 @@ internal sealed class ExecuteProductionOrderEditorActionCommandHandler(
         var error = ManufacturingAccess.ValidateEditor(user, permissions);
         if (error is not null) return OperationResult.Fail(error);
         var r = command.Request;
+        if (r.DeliveryPromises is not null && r.Action is not ("Save" or "UseStock" or "SaveAndCreateFormula"))
+            return OperationResult.Fail("Ngày hứa giao không hỗ trợ thao tác này.");
         if ((r.FormulaNote is not null || r.ClearFields?.Contains("formulaNote") == true)
             && (!permissions.HasPermission(ApplicationPermissions.PLM.ManageManufacturingFormulas)
                 || !visibility.CanViewFormulaMaterials()))
@@ -72,7 +74,7 @@ internal sealed class ExecuteProductionOrderEditorActionCommandHandler(
                 TotalQuantity = merged.TotalQuantity, NumOfBatches = merged.NumOfBatches, StepOfProduct = merged.StepOfProduct,
                 ExpectedDate = merged.ExpectedDate, LabNote = merged.LabNote, PlpuNote = merged.PlpuNote,
                 Requirement = merged.Requirement, QcCheck = merged.QcCheck
-            }) { ExpectedRevision = r.Revision, SourceFormulaId = r.SourceFormulaId }, ct);
+            }) { ExpectedRevision = r.Revision, SourceFormulaId = r.SourceFormulaId, DeliveryPromises = r.DeliveryPromises }, ct);
         if (r.Action == "SaveAndCreateFormula")
         {
             if (!r.SourceFormulaId.HasValue || !r.Origin.HasValue || !visibility.CanViewFormulaMaterials())
@@ -83,7 +85,7 @@ internal sealed class ExecuteProductionOrderEditorActionCommandHandler(
                 TotalQuantity = merged.TotalQuantity, NumOfBatches = merged.NumOfBatches, StepOfProduct = merged.StepOfProduct,
                 ExpectedDate = merged.ExpectedDate, ManufacturingDate = merged.ManufacturingDate,
                 LabNote = merged.LabNote, PlpuNote = merged.PlpuNote, Requirement = merged.Requirement, QcCheck = merged.QcCheck
-            }) { ExpectedRevision = r.Revision }, ct);
+            }) { ExpectedRevision = r.Revision, DeliveryPromises = r.DeliveryPromises }, ct);
             return result.Success ? OperationResult.Ok("Đã lưu và tạo công thức.") : OperationResult.Fail(result.Message ?? "Không thể tạo công thức.");
         }
         var action = r.Action == "Schedule" ? ManufacturingInformationAction.Schedule : ManufacturingInformationAction.RequestFormula;
@@ -91,7 +93,9 @@ internal sealed class ExecuteProductionOrderEditorActionCommandHandler(
         {
             TotalQuantity = r.TotalQuantity ?? order.TotalQuantity, NumOfBatches = r.NumOfBatches ?? order.NumOfBatches,
             StepOfProduct = merged.StepOfProduct, ExpectedDate = merged.ExpectedDate,
-            LabNote = merged.LabNote, PlpuNote = merged.PlpuNote, Requirement = merged.Requirement, QcCheck = merged.QcCheck
-        }, action) { ExpectedRevision = r.Revision }, ct);
+            LabNote = r.Action == "RequestFormula" ? r.LabNote : merged.LabNote,
+            PlpuNote = r.Action == "RequestFormula" ? r.PlpuNote : merged.PlpuNote,
+            Requirement = merged.Requirement, QcCheck = r.Action == "RequestFormula" ? r.QcCheck : merged.QcCheck
+        }, action) { ExpectedRevision = r.Revision, SourceFormulaId = r.SourceFormulaId }, ct);
     }
 }

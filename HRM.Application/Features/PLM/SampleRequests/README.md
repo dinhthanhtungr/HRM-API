@@ -2,6 +2,17 @@
 
 ## Số lượng nhóm trong menu theo dõi mẫu
 
+Danh sách WorkPriority của Lab/LabAdmin trong nhóm cần xử lý lọc sớm nguồn đã
+được giới hạn quyền: bỏ hồ sơ đóng/tạm dừng Lab trước projection facts; SQL cũng
+loại các trường hợp chắc chắn đang chờ phản hồi kg hoặc giá trước khi đọc toàn bộ
+facts về ứng dụng. Điều kiện sớm chỉ là điều kiện đủ; legacy, nội bộ, lịch sử,
+làm lại và tình huống chưa chắc vẫn qua bộ quyết định chuẩn. Không lọc riêng
+SendSample tại bước này vì facets phải giữ số đếm của các loại việc khác.
+Quyết định chuẩn tiếp tục lọc trước gom khách, đếm và phân trang. Menu counts,
+phạm vi quyền, điều kiện cho phép gửi mẫu trước giá và public contract giữ nguyên.
+
+Nhóm Lab cần gửi mẫu loại cả TP có kg đang theo dõi phản hồi giá (`RequiresCustomerPriceConfirmation`): chưa chấp nhận giá thì thuộc Chờ Sale phản hồi, kể cả Thẻ màu chưa có ngày báo giá. Điều kiện này chỉ phân nhóm/count/phân trang, không thu hồi quyền gửi trước hoặc đổi điều kiện hoàn thành. Legacy và nhánh hoàn thành nội bộ giữ nguyên.
+
 `GET /api/v1/plm/sample-requests/reports/daily?audience=lab&menuCounts=true`
 đọc facts một lần sau company/customer/team/keyword/smart-search/date filters.
 Hợp phạm vi All và vận hành được lọc ngay trên SampleRequest trước join Trial và
@@ -165,6 +176,11 @@ nhập (hoặc dùng tóm tắt thông tin yêu cầu nếu bỏ trống), khôn
 trước hay điều kiện chip đạt. Sự kiện phương án vẫn được lưu; Note chỉ giữ số bộ/kg.
 
 ## Yêu cầu bổ sung trên TP mọi thời điểm
+
+Phân nhóm Lab tách khỏi quyền gửi: công việc gửi mẫu kg có nghĩa vụ giá chưa được
+khách đồng ý nằm Chờ Sale, không tính Cần gửi mẫu/Cần tôi xử lý. Sau đồng ý giá,
+hồ sơ trở về nhóm gửi mẫu. Cả truy vấn SQL và trang facts/đếm nhóm dùng cùng quy tắc;
+quyết định SendSample và API gửi trước trong trường hợp đặc biệt không bị khóa.
 
 Sale có capability workflow và phụ trách TP/nhóm hiện hành được yêu cầu chip, mẫu kg,
 chip kèm mẫu kg hoặc báo giá lại trên cùng TP, kể cả Completed/Cancelled và đã lên đơn.

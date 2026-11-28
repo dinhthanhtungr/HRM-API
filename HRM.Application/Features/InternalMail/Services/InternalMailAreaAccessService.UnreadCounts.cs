@@ -12,6 +12,12 @@ public sealed partial class InternalMailAreaAccessService
         // sources disjoint, as in NotificationUnreadCounts, without one large UNION plan.
         var allowedIds = await ConversationsForCandidates(conversationIds)
             .Select(c => c.InternalConversationId).ToArrayAsync(ct);
+        return await CountAuthorizedPageAsync(allowedIds, ct, requestLegacyCounts);
+    }
+
+    private async Task<Dictionary<Guid, int>> CountAuthorizedPageAsync(Guid[] allowedIds, CancellationToken ct,
+        IReadOnlyDictionary<Guid, int>? requestLegacyCounts)
+    {
         if (allowedIds.Length == 0) return [];
         var counts = await db.QueryInternalConversationNotificationUnreadCounts(
                 user.CompanyId ?? Guid.Empty, user.EmployeeId ?? Guid.Empty, allowedIds,

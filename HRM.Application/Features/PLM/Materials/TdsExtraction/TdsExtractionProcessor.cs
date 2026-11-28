@@ -18,15 +18,18 @@ public sealed class TdsExtractionProcessor(IPLMReadDbContext db, IMaterialDocume
         int? sourceTotalFiles = null;
         if (job.Uploads is null)
         {
-            if (settings.SourceCompanyId != job.CompanyId) throw new TdsProcessingException("source_not_authorized");
+            if (!settings.UsesSharedSource(job.AllSourceBatches) &&
+                await TdsSourceCompany.ResolveAsync(db, settings.SourceCompanyId, cancellationToken) != job.CompanyId)
+                throw new TdsProcessingException("source_not_authorized");
             var scan = await scanner.ScanAsync(cancellationToken);
             if (!scan.IsAvailable) throw new TdsProcessingException(scan.ErrorCode ?? "source_unavailable");
             if (scan.IsTruncated) throw new TdsProcessingException("source_scan_truncated");
             sourceTotalFiles = scan.Files.Count;
-            sourceFiles = scan.Files.OrderBy(x => x.RelativePath, StringComparer.OrdinalIgnoreCase)
-                .Skip(job.SourceOffset).Take(job.SourceLimit ?? settings.MaxFiles).ToArray();
+            var ordered = scan.Files.OrderBy(x => x.RelativePath, StringComparer.OrdinalIgnoreCase);
+            sourceFiles = job.AllSourceBatches ? ordered.ToArray()
+                : ordered.Skip(job.SourceOffset).Take(job.SourceLimit ?? settings.MaxFiles).ToArray();
             if (sourceFiles.Count == 0) throw new TdsProcessingException("source_batch_empty");
-            if (sourceFiles.Sum(x => x.SizeBytes) > settings.MaxBatchBytes)
+            if (!job.AllSourceBatches && sourceFiles.Sum(x => x.SizeBytes) > settings.MaxBatchBytes)
                 throw new TdsProcessingException("batch_size_limit");
         }
         var total = job.Uploads?.Count ?? sourceFiles!.Count;
@@ -38,6 +41,7 @@ public sealed class TdsExtractionProcessor(IPLMReadDbContext db, IMaterialDocume
         var results = new List<TdsFileResult>();
         var seen = new Dictionary<string, string>(StringComparer.Ordinal);
         long batchBytes = 0;
+        var batchFiles = 0;
         for (var index = 0; index < total; index++)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -57,6 +61,13 @@ public sealed class TdsExtractionProcessor(IPLMReadDbContext db, IMaterialDocume
                     input = new(name, await TdsFileReader.ReadBoundedAsync(stream, settings.MaxFileBytes, cancellationToken));
                 }
                 TdsExtractionRules.ValidateFile(name, input.Content.LongLength, settings);
+                if (job.AllSourceBatches && (batchFiles >= settings.MaxFiles ||
+                    batchBytes + input.Content.LongLength > settings.MaxBatchBytes))
+                {
+                    batchBytes = 0;
+                    batchFiles = 0;
+                }
+                batchFiles++;
                 batchBytes += input.Content.LongLength;
                 if (batchBytes > settings.MaxBatchBytes) throw new TdsProcessingException("batch_size_limit");
                 result.Hash = Convert.ToHexString(SHA256.HashData(input.Content));
@@ -72,6 +83,14 @@ public sealed class TdsExtractionProcessor(IPLMReadDbContext db, IMaterialDocume
                     result.Data = await client.ExtractAsync(document, cancellationToken);
                     TdsExtractionRules.ValidateAndMatch(result, materials, document);
                     result.Status = "extracted";
+                    if (job.AllSourceBatches && !TdsExtractionRules.IsTechnicalOrSafetySheet(result.Data.DocumentType))
+                    {
+                        result.Status = "excluded";
+                        result.Warnings.Add("outside_tds_sds_scope");
+                        result.Data.Specifications.Clear();
+                    }
+                    if (result.Data.Specifications.Any(x => x.Name?.Length > 32767 || x.Value?.Length > 32767))
+                        throw new TdsProcessingException("excel_original_cell_limit");
                     // Failed files do not poison deduplication: another copy can be retried.
                     seen[result.Hash] = name;
                 }

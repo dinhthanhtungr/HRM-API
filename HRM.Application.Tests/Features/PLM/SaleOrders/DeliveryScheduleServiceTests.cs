@@ -12,8 +12,71 @@ using Microsoft.Extensions.Options;
 
 namespace HRM.Application.Tests.Features.PLM.SaleOrders;
 
-public sealed class DeliveryScheduleServiceTests
+public sealed partial class DeliveryScheduleServiceTests
 {
+    [Theory]
+    [InlineData(null, "2026-12-01")]
+    [InlineData("2026-12-01", "2026-11-29")]
+    [InlineData("2026-11-29", null)]
+    public async Task ChangedSchedulePromiseQueuesOnlyResponsibleSaleWithOldNewDatesAndQuantity(string? before, string? after)
+    {
+        var f = new Fixture(true);
+        f.A.PromisedDate = before is null ? null : DateTime.Parse(before);
+        var current = (await f.Service.GetAsync(f.Order.MerchandiseOrderId, f.Detail.MerchandiseOrderDetailId, default))!;
+        var next = new[] { f.Input(f.A) with { PromisedDate = after is null ? null : DateOnly.Parse(after) }, f.Input(f.B) };
+        var result = await f.Service.SaveAsync(f.Order.MerchandiseOrderId, f.Detail.MerchandiseOrderDetailId, new(current.Revision, next, []), default);
+        Assert.True(result.Success, result.Message);
+        Assert.True(f.Store.Transaction.Committed);
+        var notification = Assert.Single(f.Notifications!.Published);
+        Assert.Equal(new[] { f.Order.ManagerById }, notification.TargetUserIds);
+        Assert.True(notification.UseExactAudience);
+        Assert.Equal(HRM.Domain.Enums.Notifications.TopicNotifications.MerchandiseOrderPromisedDeliveryNotified, notification.Topic);
+        Assert.Contains("400 kg", notification.Message);
+        Assert.Contains("→", notification.Message);
+        using var json = System.Text.Json.JsonDocument.Parse(notification.PayloadJson!);
+        Assert.Equal(before, json.RootElement.GetProperty("previousPromisedDeliveryDate").GetString());
+        Assert.Equal(after, json.RootElement.GetProperty("promisedDeliveryDate").GetString());
+        Assert.Equal(400, json.RootElement.GetProperty("deliverySchedule").GetProperty("quantity").GetDecimal());
+        var latest = (await f.Service.GetAsync(f.Order.MerchandiseOrderId, f.Detail.MerchandiseOrderDetailId, default))!;
+        Assert.True((await f.Service.SaveAsync(f.Order.MerchandiseOrderId, f.Detail.MerchandiseOrderDetailId, new(latest.Revision, [f.Input(f.A), f.Input(f.B)], []), default)).Success);
+        Assert.Single(f.Notifications.Published);
+    }
+
+    [Theory]
+    [InlineData("unchanged")]
+    [InlineData("quantity-only")]
+    [InlineData("stale")]
+    [InlineData("closed")]
+    [InlineData("foreign-sale")]
+    [InlineData("inactive-sale")]
+    [InlineData("legacy-one-date")]
+    public async Task DoesNotQueuePromiseNotificationsWithoutACommittedEligibleChange(string reason)
+    {
+        var f = new Fixture(true);
+        if (reason == "legacy-one-date") f.B.IsActive = false;
+        if (reason is "foreign-sale" or "inactive-sale")
+            f.Store.Seed(nameof(f.Db.Employees), new HRM.Domain.Entities.HrSchema.Employee { EmployeeId = f.Order.ManagerById, CompanyId = reason == "foreign-sale" ? Guid.NewGuid() : f.Company, IsActive = reason != "inactive-sale" });
+        if (reason == "closed") f.Order.Status = "Delivered";
+        var current = (await f.Service.GetAsync(f.Order.MerchandiseOrderId, f.Detail.MerchandiseOrderDetailId, default))!;
+        var next = new[] { f.Input(f.A) with { PromisedDate = reason is "unchanged" or "quantity-only" ? null : new DateOnly(2026, 12, 1), Quantity = reason == "quantity-only" ? 450 : 400 },
+            f.Input(f.B) with { Quantity = reason == "quantity-only" ? 550 : 600 } };
+        await f.Service.SaveAsync(f.Order.MerchandiseOrderId, f.Detail.MerchandiseOrderDetailId,
+            new(reason == "stale" ? "stale" : current.Revision, reason == "legacy-one-date" ? [next[0] with { Quantity = 1000 }] : next, []), default);
+        Assert.Empty(f.Notifications!.Published);
+    }
+
+    [Fact]
+    public async Task DatabaseFailureQueuesNoNotification()
+    {
+        var f = new Fixture(true);
+        var current = (await f.Service.GetAsync(f.Order.MerchandiseOrderId, f.Detail.MerchandiseOrderDetailId, default))!;
+        f.Store.ThrowOnSave = true;
+        await Assert.ThrowsAsync<InvalidOperationException>(() => f.Service.SaveAsync(f.Order.MerchandiseOrderId, f.Detail.MerchandiseOrderDetailId,
+            new(current.Revision, [f.Input(f.A) with { PromisedDate = new DateOnly(2026, 12, 1) }, f.Input(f.B)], []), default));
+        Assert.False(f.Store.Transaction.Committed);
+        Assert.True(f.Store.Transaction.RolledBack);
+        Assert.Empty(f.Notifications!.Published);
+    }
     [Fact]
     public async Task DisabledUiDoesNotTouchNewTables()
     {
@@ -121,6 +184,27 @@ public sealed class DeliveryScheduleServiceTests
         Assert.True(result.Success, result.Message); Assert.True(f.Store.Transaction.Committed);
         Assert.Equal(1000, f.Detail.ExpectedQuantity); Assert.Equal(12345, f.Detail.UnitPriceAgreed);
         Assert.Equal(1, f.Store.Saves); Assert.Single(f.Store.Added.OfType<HRM.Domain.Entities.AuditSchema.AuditLog>());
+    }
+
+    [Theory]
+    [InlineData("PLPUUser", true)]
+    [InlineData("SaleUser", false)]
+    public async Task PromiseOnlySaveUsesExistingRoleCapability(string role, bool allowed)
+    {
+        var f = new Fixture();
+        f.User.Roles = [role];
+        var current = (await f.Service.GetAsync(f.Order.MerchandiseOrderId, f.Detail.MerchandiseOrderDetailId, default))!;
+        var requestedA = f.A.RequestedDate;
+        var quantityA = f.A.Quantity;
+        var next = new[] { f.Input(f.A) with { PromisedDate = new DateOnly(2026, 12, 1) }, f.Input(f.B) };
+        var result = await f.Service.SaveAsync(f.Order.MerchandiseOrderId, f.Detail.MerchandiseOrderDetailId,
+            new(current.Revision, next, []), default);
+        Assert.Equal(allowed, result.Success);
+        Assert.Equal(allowed, f.Store.Transaction.Committed);
+        Assert.Equal(requestedA, f.A.RequestedDate);
+        Assert.Equal(quantityA, f.A.Quantity);
+        Assert.Equal(allowed ? 1 : 0, f.Store.Saves);
+        if (allowed) Assert.Equal(new DateTime(2026, 12, 1), f.A.PromisedDate);
     }
 
     [Fact]
@@ -246,7 +330,8 @@ public sealed class DeliveryScheduleServiceTests
         public IOptions<DeliveryScheduleOptions> Options { get; } = Microsoft.Extensions.Options.Options.Create(new DeliveryScheduleOptions { StorageReady = true, EnableMultiScheduleUi = true });
         public DeliveryScheduleService Service { get; }
         public DeliveryScheduleFulfillmentService Fulfillment { get; }
-        public Fixture()
+        public NotificationCapture? Notifications { get; }
+        public Fixture(bool notify = false)
         {
             Db = DispatchProxy.Create<IDeliveryScheduleDbContext, Store>(); Store = (Store)(object)Db;
             Order = new() { MerchandiseOrderId = Guid.NewGuid(), CompanyId = Company, CustomerId = Guid.NewGuid(), IsActive = true, Status = "New" };
@@ -261,7 +346,17 @@ public sealed class DeliveryScheduleServiceTests
             var visibility = DispatchProxy.Create<ICustomerVisibilityService, ScopeProxy>(); Scope = (ScopeProxy)(object)visibility;
             Scope.CustomerId = Order.CustomerId; Scope.Scope = new(Company, User.EmployeeId!.Value, false, false, new HashSet<Guid>(), new HashSet<Guid>(), Clock.NowValue);
             Fulfillment = new(Db, Options);
-            Service = new(Db, User, new CurrentUserPermissionService(User), visibility, new Clock(), Options, Fulfillment);
+            DeliverySchedulePromiseNotifier? notifier = null;
+            if (notify)
+            {
+                Order.ExternalId = "DHG-test";
+                Order.ManagerById = Guid.NewGuid();
+                Store.Seed(nameof(Db.Employees), new HRM.Domain.Entities.HrSchema.Employee { EmployeeId = Order.ManagerById, CompanyId = Company, IsActive = true });
+                var publisher = DispatchProxy.Create<HRM.Application.Features.Notifications.Services.INotificationService, NotificationCapture>();
+                Notifications = (NotificationCapture)(object)publisher;
+                notifier = new(Db, User, publisher);
+            }
+            Service = new(Db, User, new CurrentUserPermissionService(User), visibility, new Clock(), Options, Fulfillment, notifier);
         }
         public DeliveryScheduleInput Input(MerchandiseOrderDeliverySchedule row) => new(row.MerchandiseOrderDeliveryScheduleId, row.Quantity,
             DateOnly.FromDateTime(row.RequestedDate), row.PromisedDate.HasValue ? DateOnly.FromDateTime(row.PromisedDate.Value) : null, row.RequestNote, row.PromiseNote);
@@ -273,7 +368,19 @@ public sealed class DeliveryScheduleServiceTests
         {
             if (method!.Name == "SaveChangesAsync") BeforeSave?.Invoke();
             return method.Name switch { "LockDeliveryScheduleAsync" => Task.CompletedTask,
+                "get_DeliveryScheduleTransactionId" => Transaction.TransactionId,
                 "BeginDeliveryScheduleTransactionAsync" => Task.FromResult<IDbContextTransaction>(Transaction), _ => base.Invoke(method, args) };
+        }
+    }
+    public class NotificationCapture : DispatchProxy
+    {
+        public bool ThrowOnPublish { get; set; }
+        public List<HRM.Application.Features.Notifications.Dtos.PublishNotificationRequest> Published { get; } = [];
+        protected override object? Invoke(MethodInfo? method, object?[]? args)
+        {
+            if (ThrowOnPublish) throw new InvalidOperationException("Simulated notification failure");
+            Published.Add((HRM.Application.Features.Notifications.Dtos.PublishNotificationRequest)args![0]!);
+            return Task.FromResult(Guid.NewGuid());
         }
     }
     public class ScopeProxy : DispatchProxy

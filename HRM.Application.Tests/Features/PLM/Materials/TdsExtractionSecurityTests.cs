@@ -1,4 +1,8 @@
 using HRM.Application.Abstractions.Security;
+using System.Reflection;
+using HRM.Application.Abstractions.Persistence.PLM;
+using HRM.Application.Tests.Features.PLM.ProductionOrders;
+using HRM.Domain.Entities.CompanySchema;
 using HRM.Application.Commons.Authorization;
 using HRM.Application.Features.PLM.Materials.TdsExtraction;
 using HRM.Infrastructure.Services.Geminis.Materials;
@@ -8,6 +12,33 @@ namespace HRM.Application.Tests.Features.PLM.Materials;
 
 public sealed class TdsExtractionSecurityTests
 {
+    [Theory]
+    [InlineData(0, false, false, false)]
+    [InlineData(1, true, false, true)]
+    [InlineData(1, false, false, false)]
+    [InlineData(2, true, false, false)]
+    [InlineData(2, true, true, true)]
+    [InlineData(2, false, true, false)]
+    [InlineData(2, false, false, true, true)]
+    [InlineData(2, false, true, false, true)]
+    [InlineData(2, false, false, false, true, false)]
+    public async Task SourceJobUsesConfiguredOwnerOrSoleCompany(int count, bool ownerCalling,
+        bool configured, bool expected, bool shared = false, bool allBatches = true)
+    {
+        var owner = Guid.NewGuid();
+        var other = Guid.NewGuid();
+        var user = new User { CompanyId = ownerCalling ? owner : other };
+        var db = DispatchProxy.Create<IPLMReadDbContext, ProductionOrderTestStore>();
+        var companies = new[] { new Company { CompanyId = owner }, new Company { CompanyId = other } };
+        ((ProductionOrderTestStore)(object)db).Seed(nameof(db.Companies), companies.Take(count).ToArray());
+        var settings = new TdsExtractionOptions { Enabled = true, SourceCompanyId = configured ? owner : null,
+            SharedSourceExport = shared };
+        var access = new TdsExtractionAccess(user, new CurrentUserPermissionService(user));
+        var result = await access.StartAsync(CreateQueue(settings), db, settings, null, default, allSourceBatches: allBatches);
+        Assert.Equal(expected, result.Accepted);
+        Assert.Equal(expected ? null : "source_not_authorized", result.ErrorCode);
+    }
+
     [Theory]
     [InlineData(ApplicationRoles.Admin, true)]
     [InlineData(ApplicationRoles.Developer, true)]

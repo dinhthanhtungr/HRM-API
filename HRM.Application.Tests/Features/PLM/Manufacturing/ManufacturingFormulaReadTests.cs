@@ -140,6 +140,42 @@ public sealed class ManufacturingFormulaReadTests
         Assert.Equal(1, f.Prices.Calls);
     }
 
+    [Fact]
+    public async Task RequestedSource_UsesSavedVaInsteadOfProductStandard()
+    {
+        var f = new Fixture(false);
+        f.Base.Order.Status = "FormulaRequested";
+        f.Va.Note = "Chosen source instruction";
+        var other = new ManufacturingFormula { ManufacturingFormulaId = Guid.NewGuid(), CompanyId = f.Base.Order.CompanyId,
+            IsActive = true, ExternalId = "VA-OTHER", SourceVUFormulaId = f.Base.Order.FormulaId };
+        f.Store.Seed(nameof(f.Db.ManufacturingFormulas), f.Va, other);
+        f.Store.Seed(nameof(f.Db.ProductStandardFormulas), new ProductStandardFormula {
+            CompanyId = f.Base.Order.CompanyId, ProductId = f.Base.Order.ProductId,
+            ManufacturingFormulaId = other.ManufacturingFormulaId, ManufacturingFormula = other, ValidFrom = Fixture.Now.AddDays(-1) });
+        f.Selection.ManufacturingFormula = f.Va;
+        f.Selection.ValidFrom = null;
+        var result = await f.Editor.Handle(new(f.Base.Order.MfgProductionOrderId), default);
+        Assert.True(result.Success, result.Message);
+        Assert.Equal(f.Va.ManufacturingFormulaId, result.Data!.SourceFormulaId);
+        Assert.Equal("Chosen source instruction", result.Data.Note);
+    }
+
+    [Fact]
+    public async Task RequestedVu_UsesSampleRequestProductRequirement_EvenWhenStandardExists()
+    {
+        var f = new Fixture(false);
+        f.Base.Order.Status = "FormulaRequested";
+        f.Base.Order.Product.Requirement = "QA/QC/SX from sample request";
+        f.Va.SourceVUFormulaId = f.Base.Order.FormulaId;
+        f.Store.Seed<ProductionSelectVersion>(nameof(f.Db.ProductionSelectVersions));
+        f.Store.Seed(nameof(f.Db.ProductStandardFormulas), new ProductStandardFormula {
+            CompanyId = f.Base.Order.CompanyId, ProductId = f.Base.Order.ProductId,
+            ManufacturingFormulaId = f.Va.ManufacturingFormulaId, ManufacturingFormula = f.Va, ValidFrom = Fixture.Now.AddDays(-1) });
+        var result = await f.Editor.Handle(new(f.Base.Order.MfgProductionOrderId), default);
+        Assert.True(result.Success, result.Message);
+        Assert.Equal(f.Base.Order.FormulaId, result.Data!.SourceFormulaId);
+        Assert.Equal("QA/QC/SX from sample request", result.Data.Note);
+    }
     private sealed class Fixture
     {
         public static readonly DateTime Now = ManufacturingFormulaCreationTests.Fixture.Now;

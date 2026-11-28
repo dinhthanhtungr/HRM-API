@@ -1,5 +1,15 @@
 # Manufacturing workflow
 
+## Ngày yêu cầu theo đợt trong MFG
+
+Mỗi phần tử `requestedDeliverySchedules` có `merchandiseOrderDetailId` (khóa dòng bán hàng liên kết) và `promisedDate` (nullable, null là chưa hẹn). FE đọc workspace bằng ID đơn/dòng; ngày hứa được gửi trong **một request editor MFG** với `Save`, `UseStock` hoặc `SaveAndCreateFormula`, không ghi qua API lịch riêng và không ghi vào `expectedDate` sản xuất. Trạng thái Mới giữ Hủy thay đổi / Yêu cầu công thức / Yêu cầu xuất kho, không thêm nút Lưu. Sau Mới, nút Lưu hiện hành vẫn dùng chung. Quyền/scope/cờ BE, đơn đóng, lượng giao cũ và revision vẫn được kiểm tra; một ngày giữ luồng cũ.
+
+Payload của ba action trên bổ sung `deliveryPromises`, ví dụ `{"action":"UseStock","revision":"<mfg-revision>","totalQuantity":100,"numOfBatches":2,"stepOfProduct":0,"deliveryPromises":[{"orderId":"<sale-id>","detailId":"<line-id>","revision":"<schedule-revision>","dates":[{"scheduleId":"<schedule-id>","promisedDate":"2026-12-01"}]}]}`. Chỉ gửi ngày thực sự đổi; null là bỏ ngày hứa; bỏ qua cả nhóm là giữ nguyên lịch. Không thêm/xóa đợt, đổi kg/ngày yêu cầu/ghi chú hoặc ghi dòng không liên kết. Revision riêng cho MFG và từng dòng lịch; các action khác không nhận payload này.
+
+Writer tương ứng (`UpdateProductionOrderInform`, `CreateProductionOrderFormula` hoặc `UseProductionOrderStock`) sở hữu transaction và commit duy nhất. `DeliveryScheduleService.SaveManufacturingPromisesAsync` nhận đúng transaction ID của cùng scoped DbContext, không mở/commit lồng. BE khóa MFG/lịch và kiểm tra revision/quyền, dùng chung validation/audit lịch. Lịch lỗi, dòng ngoại scope, revision cũ hoặc ghi cuối lỗi đều không commit phần nào, kể cả tạo VA/chuyển trạng thái. `SaveChanges` trung gian chưa phải commit. API lịch độc lập ở màn khác giữ transaction riêng. Không đổi schema, permission mapping hay feature flag. Test store kiểm tra orchestration/rollback, không thay kiểm chứng PostgreSQL thực tế.
+
+`GET /api/v1/plm/production-orders/{id}` và `inform.workspace.order` trả `requestedDeliverySchedules`: các đợt đã persist, ngày yêu cầu, kg, ngày hứa và ID dòng bán hàng, không phải lượng phân bổ riêng cho MFG. Đọc qua MfgOrderPO/detail/đơn bán active cùng company và đúng đơn đang hiển thị; không ghép bằng mã sản phẩm. Bỏ lịch inactive/trùng ID, sắp ngày rồi ID. Không có lịch/link hợp lệ trả `[]`, không tự tạo lịch từ `requiredDate`. `expectedDate` vẫn thuộc sản xuất. Inform trả `supportsDeliveryPromisesSave: true` để FE xác nhận protocol Save mới; API cũ thiếu cờ này thì FE khóa nhập ngày hứa, tránh backend cũ bỏ qua field và báo lưu thành công giả. Cờ protocol này không cấp quyền và không phải feature flag. Không đổi schema.
+
 ## Theo dõi lệnh sản xuất dành cho IMS
 
 `GET /api/v1/plm/production-orders/tracking` và

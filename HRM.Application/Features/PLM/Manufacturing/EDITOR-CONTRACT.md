@@ -6,6 +6,16 @@
   `selectedFormula` remain; adds `revision`, `allowedActions`, `editableFields`,
   `canEditItems`, `readOnlyReason`, `stepOptions`, `formulaSources`.
 - `POST /api/v1/plm/production-orders/{id}/actions`: unified editor mutation.
+  `Save`, `UseStock` and `SaveAndCreateFormula` optionally include `deliveryPromises` (order/detail IDs, schedule revision,
+  changed schedule IDs and nullable promised dates). The Inform response advertises
+  `supportsDeliveryPromisesSave: true`; older responses must not enable this editor.
+  Header/VA changes and promised dates commit in the same MFG transaction, with
+  schedule capability, scope and concurrency rechecked. No separate schedule write
+  request or nested commit. Omitted promises preserve the existing single-date flow.
+  A New MFG retains its existing Cancel / Request formula / Request stock controls;
+  it does not gain a standalone Save button. Each existing submission carries its
+  promised-date draft into that writer's transaction.
+  See [the MFG delivery-date contract](README.md#ngày-yêu-cầu-theo-đợt-trong-mfg).
   Action `RollbackUseStock` accepts only action, revision and empty clearFields.
   It requires the Inform operator role and production-order manage capability,
   active company-scoped sale link and EmployeeId. After locking the MFG it checks

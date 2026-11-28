@@ -96,6 +96,8 @@ Nếu chưa rõ module, dùng `rg` tìm feature gần nhất rồi đọc README
 
 ## Cách Làm Việc
 
+- Nghiên cứu, phân tích, đề xuất hoặc bàn giao thay đổi HRM → [Nghiên cứu và đánh giá ảnh hưởng](docs/agents/research-review.md).
+
 Khi sử dụng, giải thích hoặc triển khai thuật ngữ chuyên môn trong task FE/BE (kể cả trao đổi không sửa code), tra và bổ sung mục liên quan trong [README thuật ngữ dùng chung](docs/glossary/README.md), theo quy ước cập nhật tại đó; không nạp toàn bộ danh mục mặc định.
 
 Trước thay đổi đáng kể, báo ngắn rule đã đọc, phạm vi dự kiến và cách verify. Không cần preamble dài, đề xuất goal hay nhắc model cho câu hỏi, tìm code hoặc sửa nhỏ rõ ràng.

@@ -40,4 +40,5 @@
     <Folder Include="Docx\" />
   </ItemGroup>
 
+  <Import Project="..\tools\RequestTiming.Generator\RequestTiming.targets" />
 </Project>

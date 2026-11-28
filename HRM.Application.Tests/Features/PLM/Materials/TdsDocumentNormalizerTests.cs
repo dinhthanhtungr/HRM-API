@@ -96,7 +96,7 @@ public sealed class TdsDocumentNormalizerTests
                 new() { Name = "Viscosity", Value = "1,000–1,500", Unit = "mPa·s" }] }, Warnings = ["ai_output_requires_review"] };
         var bytes = new TdsExcelRenderer().Render([result]);
         using var workbook = new XLWorkbook(new MemoryStream(bytes));
-        Assert.Equal(3, workbook.Worksheets.Count);
+        Assert.Equal(4, workbook.Worksheets.Count);
         Assert.False(workbook.Worksheet("Documents").Cell("A2").HasFormula);
         Assert.Equal("=1+1", workbook.Worksheet("Documents").Cell("G2").GetString());
         Assert.False(workbook.Worksheet("Documents").Cell("G2").HasFormula);

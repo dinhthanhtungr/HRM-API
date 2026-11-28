@@ -51,6 +51,7 @@ public static class DependencyInjection
         services.AddScoped<HRM.Application.Features.Dispatch.DeliveryOrders.Queries.Tracking.DeliveryTrackingReader>();
         services.AddScoped<HRM.Application.Features.PLM.SaleOrders.Queries.Tracking.SaleOrderTrackingReader>();
         services.AddScoped<HRM.Application.Features.PLM.SaleOrders.DeliverySchedules.DeliveryScheduleService>();
+        services.AddScoped<HRM.Application.Features.PLM.SaleOrders.DeliverySchedules.DeliverySchedulePromiseNotifier>();
         services.AddScoped<HRM.Application.Features.PLM.SaleOrders.DeliverySchedules.DeliveryScheduleFulfillmentService>();
         services.AddScoped<HRM.Application.Features.Dispatch.DeliveryOrders.Queries.GetDeliveryPlan.DeliverySchedulePlanService>();
         QuestPDF.Settings.License = LicenseType.Community;

@@ -81,13 +81,37 @@ public sealed class SampleWorkRequestTimingTests
     public async Task DailyKeepsNamedPhasesWithoutAddingGenericTotals()
     {
         var (context, response) = Context("/api/v1/plm/sample-requests/reports/daily", true);
-        await new SampleWorkRequestTimingMiddleware(async ctx =>
+        var feature = new SampleWorkRequestTimingMiddleware(async ctx =>
         {
             ctx.Response.Headers["Server-Timing"] = "daily_total;dur=10";
             Activity.Current!.SetTag(SampleWorkDiagnosticTags.ServerTiming, "samples_payload;dur=2");
             await response.Start();
-        }, new Environment("Development")).InvokeAsync(context);
+        }, new Environment("Development"));
+        await DevelopmentApiTiming.InvokeAsync(context, feature.InvokeAsync);
         Assert.Equal("daily_total;dur=10,samples_payload;dur=2", context.Response.Headers["Server-Timing"].ToString().Replace(", ", ","));
+    }
+
+    [Theory]
+    [InlineData("/api/v1/example", "GET", 200, true)]
+    [InlineData("/api/v1/example", "POST", 401, true)]
+    [InlineData("/api/v1/example", "PATCH", 500, true)]
+    [InlineData("/swagger", "GET", 200, false)]
+    [InlineData("/api-docs", "GET", 404, false)]
+    public async Task DevelopmentFallbackTimesOnlyApiResponses(string path, string method, int status, bool expected)
+    {
+        var (context, response) = Context(path, false);
+        context.Request.Method = method;
+        await DevelopmentApiTiming.InvokeAsync(context, ctx =>
+        {
+            ctx.Response.StatusCode = status;
+            return response.Start();
+        });
+        Assert.Equal(status, response.StatusCode);
+        var timing = context.Response.Headers["Server-Timing"].ToString();
+        if (expected)
+            Assert.Matches(@"^app_total;dur=\d+(\.\d{1,2})?$", timing);
+        else
+            Assert.Empty(timing);
     }
 
     private static (DefaultHttpContext, Response) Context(string path, bool authenticated)

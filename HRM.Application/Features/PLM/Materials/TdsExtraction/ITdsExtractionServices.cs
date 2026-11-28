@@ -18,7 +18,7 @@ public interface ITdsExcelRenderer
 public interface ITdsJobQueue
 {
     TdsStartResult TryEnqueue(Guid companyId, Guid requestedBy, IReadOnlyList<TdsInputFile>? uploads,
-        int sourceOffset = 0, int? sourceLimit = null);
+        int sourceOffset = 0, int? sourceLimit = null, bool allSourceBatches = false, Guid? resolvedSourceCompany = null);
     Task<TdsWorkItem> DequeueAsync(CancellationToken cancellationToken);
     TdsJobDto? Get(Guid jobId, Guid companyId, Guid requestedBy);
     byte[]? GetExcel(Guid jobId, Guid companyId, Guid requestedBy);

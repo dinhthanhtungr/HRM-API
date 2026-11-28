@@ -123,6 +123,12 @@ internal static class SampleWorkDecisionQuery
                                 .ThenByDescending(p => p.ApprovedAt ?? p.UpdatedDate ?? p.CreatedDate).Select(p => p.SourceFormulaId).FirstOrDefault() != null,
                             LabConfirmed = basis.Row.LabFormulaConfirmedAt.HasValue,
                             Quoted = basis.Row.SampleRequest.RealPriceQuoteDate.HasValue,
+                            // Match the response audit flag used by FE list labels, without changing completion/send gates.
+                            RequiresCustomerPriceTracking = basis.Row.SampleRequest.SampleQuantity > 0 &&
+                                (basis.Row.SampleRequest.Status == "WaitingCustomerPriceConfirmation" ||
+                                 db.SampleRequestWorkflowEvents.Any(e => e.CompanyId == basis.Row.SampleRequest.CompanyId &&
+                                    e.SampleRequestId == basis.Row.SampleRequest.SampleRequestId &&
+                                    HRM.Application.Features.PLM.SampleRequests.Rules.SampleRequestCustomerPriceAudit.ManagedEventTypes.Contains(e.EventType))),
                             RequiresPriceAcceptance = (basis.Row.SampleRequest.InfoType ?? "").Trim().ToLower() == "quotation" ||
                                 (basis.Row.SampleRequest.InfoType ?? "").Trim().ToLower() == "báo giá" ||
                                 basis.Row.SampleRequest.RealPriceQuoteDate.HasValue || basis.PriceOutcome != null ||
@@ -190,8 +196,12 @@ internal static class SampleWorkDecisionQuery
         rank = SampleWorkDecisionRules.Replace(rank, labRank.Parameters[1], code);
         var price = SampleWorkDecisionRules.Replace(SampleWorkDecisionRules.SalePricePending.Body, SampleWorkDecisionRules.SalePricePending.Parameters[0], facts);
         var feedback = SampleWorkDecisionRules.Replace(SampleWorkDecisionRules.SaleFeedbackPending.Body, SampleWorkDecisionRules.SaleFeedbackPending.Parameters[0], facts);
+        var waitingRule = SampleWorkDecisionRules.WaitForPriceBeforeSample;
+        var waiting = SampleWorkDecisionRules.Replace(waitingRule.Body, waitingRule.Parameters[0], facts);
+        waiting = SampleWorkDecisionRules.Replace(waiting, waitingRule.Parameters[1], code);
         return Expression.Lambda<Func<QueryFacts, SampleRequestSampleTrialReportRow>>(Expression.MemberInit(body.NewExpression,
             body.Bindings.Concat([
+                Expression.Bind(typeof(SampleRequestSampleTrialReportRow).GetProperty(nameof(SampleRequestSampleTrialReportRow.WaitsForPriceBeforeSample))!, waiting),
                 Expression.Bind(typeof(SampleRequestSampleTrialReportRow).GetProperty(nameof(SampleRequestSampleTrialReportRow.WorkDecision))!, decision),
                 Expression.Bind(typeof(SampleRequestSampleTrialReportRow).GetProperty(nameof(SampleRequestSampleTrialReportRow.LabTaskRank))!,
                     rank),

@@ -12,11 +12,15 @@ public sealed class TdsExtractionOptions
     public int MaxTextCharacters { get; set; } = 200_000;
     public string? LibreOfficePath { get; set; }
     public Guid? SourceCompanyId { get; set; }
+    public bool SharedSourceExport { get; set; }
+
+    public bool UsesSharedSource(bool allSourceBatches) =>
+        allSourceBatches && SharedSourceExport && SourceCompanyId is null;
 }
 
 public sealed record TdsInputFile(string FileName, byte[] Content);
 public sealed record TdsWorkItem(Guid JobId, Guid CompanyId, Guid RequestedBy, IReadOnlyList<TdsInputFile>? Uploads,
-    int SourceOffset = 0, int? SourceLimit = null);
+    int SourceOffset = 0, int? SourceLimit = null, bool AllSourceBatches = false);
 public sealed record TdsJobDto(Guid JobId, string Status, int TotalFiles, int ProcessedFiles,
     string? ErrorCode, DateTimeOffset CreatedAt, DateTimeOffset? CompletedAt,
     int? SourceOffset = null, int? SourceTotalFiles = null, int? NextSourceOffset = null);

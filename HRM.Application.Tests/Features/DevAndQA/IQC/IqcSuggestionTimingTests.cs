@@ -12,6 +12,56 @@ namespace HRM.Application.Tests.Features.DevAndQA.Iqc;
 
 public sealed class IqcSuggestionTimingTests
 {
+    private sealed record TestFeatureQuery : MediatR.IRequest<int>;
+
+    [Fact]
+    public async Task LargeTraceKeepsSlowStepsAndExistingHeader()
+    {
+        var (context, response) = Context("/api/example", true);
+        await DevelopmentApiTiming.InvokeAsync(context, async ctx =>
+        {
+            ctx.Response.Headers["Server-Timing"] = "module_total;dur=45";
+            var timing = HRM.Application.Commons.Diagnostics.RequestTiming.Current!;
+            for (var i = 0; i < 200; i++)
+                timing.Record($"step_TestService_Query_{i}", i);
+            await response.Start();
+        });
+        var header = context.Response.Headers["Server-Timing"].ToString();
+        Assert.Contains("module_total;dur=45", header);
+        Assert.Contains("step_TestService_Query_199;dur=199", header);
+        Assert.Contains("steps_omitted;desc=", header);
+        Assert.DoesNotContain("app_total;", header);
+        Assert.True(header.Length <= 4096);
+    }
+
+    [Theory]
+    [InlineData(true, 200, true)]
+    [InlineData(false, 200, false)]
+    [InlineData(true, 403, false)]
+    public async Task SharedTimingPublishesCompletedFeatureAndDatabaseSteps(bool authenticated, int status, bool details)
+    {
+        var (context, response) = Context("/api/v1/dev-and-qa/iqc", authenticated);
+        await DevelopmentApiTiming.InvokeAsync(context, async ctx =>
+        {
+            ctx.Response.StatusCode = status;
+            var behavior = new DevelopmentFeatureTimingBehavior<TestFeatureQuery, int>();
+            await behavior.Handle(new(), () =>
+            {
+                var timing = HRM.Application.Commons.Diagnostics.RequestTiming.Current!;
+                for (var i = 0; i < 14; i++) timing.RecordCommand(TimeSpan.FromMilliseconds(1));
+                return Task.FromResult(1);
+            }, default);
+            if (details) ctx.Response.Headers["Server-Timing"] = "iqc_total;dur=10, db_command_1;dur=1";
+            await response.Start();
+        });
+        var header = context.Response.Headers["Server-Timing"].ToString();
+        Assert.Equal(details, header.Contains("feature_TestFeatureQuery;dur="));
+        Assert.Equal(details, header.Contains("db_commands_remaining;dur=2"));
+        Assert.Equal(details ? 1 : 0, header.Split("db_command_1;").Length - 1);
+        Assert.Equal(!details, header.Contains("app_total;dur="));
+        Assert.Null(HRM.Application.Commons.Diagnostics.RequestTiming.Current);
+    }
+
     [Theory]
     [InlineData("Development", "GET", "/api/v1/dev-and-qa/iqc", true, true, 200, true)]
     [InlineData("Development", "GET", "/api/iqcinput/GetPaged", true, true, 200, true)]

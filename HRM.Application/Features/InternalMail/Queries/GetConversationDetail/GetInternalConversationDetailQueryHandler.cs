@@ -61,13 +61,13 @@ internal sealed class GetInternalConversationDetailQueryHandler
             return null;
         }
 
-        var group = (await _areas.GroupInfoAsync([conversation.ConversationId], cancellationToken))[conversation.ConversationId];
+        var group = (await timing.RunAsync("group-info", () => _areas.GroupInfoAsync([conversation.ConversationId], cancellationToken)))[conversation.ConversationId];
         if (request.AreaCode != null && request.AreaCode != InternalMailAreaAccessService.AreaOf(group.GroupType)) return null;
         var parent = group.RootConversationId != conversation.ConversationId
-            ? await _dbContext.InternalConversations.AsNoTracking().FirstAsync(c =>
-                c.InternalConversationId == group.RootConversationId && c.CompanyId == companyId.Value && c.IsActive, cancellationToken)
+            ? await timing.RunAsync("parents", () => _dbContext.InternalConversations.AsNoTracking().FirstAsync(c =>
+                c.InternalConversationId == group.RootConversationId && c.CompanyId == companyId.Value && c.IsActive, cancellationToken))
             : null;
-        conversation.Areas = await _areas.DescribeAsync(conversation, cancellationToken, parent, group);
+        conversation.Areas = await timing.RunAsync("thread-areas", () => _areas.DescribeAsync(conversation, cancellationToken, parent, group, timing));
         conversation.AreaCode = InternalMailAreaAccessService.AreaOf(group.GroupType);
         conversation.GroupConversationId = group.RootConversationId;
         if (InternalMailAreaAccessService.IsPrivateArea(conversation.RelatedType))
@@ -80,8 +80,8 @@ internal sealed class GetInternalConversationDetailQueryHandler
             conversation.CanManageParticipants = false;
             conversation.CanInviteParticipants = false;
         }
-        var roleSnapshot = await _areas.ParticipantRolesAsync(conversation.Participants.Select(p => p.EmployeeId).Append(conversation.CreatedBy), cancellationToken);
-        conversation.Participants = await _areas.VisibleParticipantsAsync(conversation.RelatedType, conversation.Participants, cancellationToken, roleSnapshot);
+        var roleSnapshot = await timing.RunAsync("thread-roles", () => _areas.ParticipantRolesAsync(conversation.Participants.Select(p => p.EmployeeId).Append(conversation.CreatedBy), cancellationToken));
+        conversation.Participants = await timing.RunAsync("thread-visible-members", () => _areas.VisibleParticipantsAsync(conversation.RelatedType, conversation.Participants, cancellationToken, roleSnapshot));
         if (!_areas.CanObserveCompanyConversations &&
             roleSnapshot.Developers.Contains(conversation.CreatedBy))
         {
@@ -91,11 +91,11 @@ internal sealed class GetInternalConversationDetailQueryHandler
         if (request.AreaCode != null || conversation.RelatedExternalId == InternalMailAreaAccessService.ResearchMarker)
         {
             var memberIds = conversation.Participants.Select(p => p.EmployeeId).ToArray();
-            var eligible = await _areas.EligibleParticipantsAsync(companyId.Value, request.ConversationId,
-                memberIds, cancellationToken);
+            var eligible = await timing.RunAsync("thread-eligible-members", () => _areas.EligibleParticipantsAsync(companyId.Value, request.ConversationId,
+                memberIds, cancellationToken));
             conversation.Participants = conversation.Participants.Where(p => eligible.Contains(p.EmployeeId)).ToArray();
         }
-        conversation.Participants = await _areas.WithReaderGroupsAsync(conversation.Participants, cancellationToken, roleSnapshot);
+        conversation.Participants = await timing.RunAsync("thread-reader-groups", () => _areas.WithReaderGroupsAsync(conversation.Participants, cancellationToken, roleSnapshot));
         conversation.UnreadCount = conversation.Areas.Single(area => area.ConversationId == conversation.ConversationId).UnreadCount;
 
         if (parent is not null)
@@ -113,18 +113,18 @@ internal sealed class GetInternalConversationDetailQueryHandler
         if (conversation.RelatedId is { } sampleRequestId &&
             conversation.RelatedType == InternalMailRelatedType.SampleRequest)
         {
-            sampleRequestInfoById = await _sampleRequestInfoResolver.ResolveAsync(
+            sampleRequestInfoById = await timing.RunAsync("sample-info", () => _sampleRequestInfoResolver.ResolveAsync(
                 [sampleRequestId],
                 companyId.Value,
-                cancellationToken);
+                cancellationToken));
         }
         else if (conversation.RelatedId is { } quotationId &&
                  conversation.RelatedType == InternalMailRelatedType.Quotation)
         {
-            quotationInfoById = await _quotationInfoResolver.ResolveAsync(
+            quotationInfoById = await timing.RunAsync("quotation-info", () => _quotationInfoResolver.ResolveAsync(
                 [quotationId],
                 companyId.Value,
-                cancellationToken);
+                cancellationToken));
         }
 
         InternalConversationRelatedInfoMapper.Apply(conversation, sampleRequestInfoById, quotationInfoById);

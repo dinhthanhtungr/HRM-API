@@ -12,4 +12,5 @@ public sealed record UpdateProductionOrderInformationCommand(
 ) : IRequest<OperationResult>
 {
     public string? ExpectedRevision { get; init; }
+    public Guid? SourceFormulaId { get; init; }
 }

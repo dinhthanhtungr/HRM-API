@@ -69,9 +69,14 @@ internal sealed partial class NotificationService
         if (streamKey is not (SalesOrderStreamKey or DeliveryDateStreamKey or DeliveryStatusStreamKey))
             throw new ArgumentException("Invalid notification stream.");
         var query = SalesOrderStreamQuery(streamKey);
-        var unread = await query.CountAsync(n => !n.IsRead, cancellationToken);
-        var firstUnread = await query.Where(n => !n.IsRead).OrderBy(n => n.CreatedDate).ThenBy(n => n.Id)
-            .Select(n => new { n.Id, n.CreatedDate }).FirstOrDefaultAsync(cancellationToken);
+        var unreadQuery = query.Where(n => !n.IsRead).OrderBy(n => n.CreatedDate).ThenBy(n => n.Id);
+        var opening = direction == "initial" && cursorId is null
+            ? await unreadQuery.Select(n => new { n.Id, n.CreatedDate, n.Topic }).ToListAsync(cancellationToken)
+            : null;
+        var unread = opening?.Count ?? await query.CountAsync(n => !n.IsRead, cancellationToken);
+        var firstUnread = opening is null
+            ? await unreadQuery.Select(n => new { n.Id, n.CreatedDate }).FirstOrDefaultAsync(cancellationToken)
+            : opening.Count > 0 ? new { opening[0].Id, opening[0].CreatedDate } : null;
         var anchor = cursorId.HasValue
             ? await query.Where(n => n.Id == cursorId.Value).Select(n => new { n.Id, n.CreatedDate })
                 .FirstOrDefaultAsync(cancellationToken)
@@ -108,6 +113,10 @@ internal sealed partial class NotificationService
             newer = await query.AnyAsync(n => n.CreatedDate > last.CreatedDate ||
                 (n.CreatedDate == last.CreatedDate && n.Id.CompareTo(last.Id) > 0), cancellationToken);
         }
-        return new(items, firstUnread?.Id, unread, older, newer);
+        return new(items, firstUnread?.Id, unread, older, newer)
+        {
+            OpeningUnread = opening?.Select(n => new StreamUnreadItemDto(n.Id,
+                NotificationTopicCategoryRules.GetEventGroupCode(n.Topic, n.CreatedDate))).ToArray()
+        };
     }
 }

@@ -12,6 +12,7 @@ public sealed class ProcessManufacturingFormulaRequest
 
     [MaxLength(20000)]
     public string? Note { get; init; }
+    public bool ClearNote { get; init; }
     public IReadOnlyList<ManufacturingFormulaInputItem>? Items { get; init; }
 }
 

@@ -30,7 +30,8 @@ internal sealed class UpdateProductionOrderInformCommandHandler(
     ManufacturingFormulaInputResolver inputResolver,
     ProductionOrderReservationService reservations,
     ManufacturingWorkflowNotifier notifier,
-    PromisedDeliveryNotifier promisedDelivery
+    PromisedDeliveryNotifier promisedDelivery,
+    HRM.Application.Features.PLM.SaleOrders.DeliverySchedules.DeliveryScheduleService? deliverySchedules = null
 ) : IRequestHandler<UpdateProductionOrderInformCommand, OperationResult>
 {
     public async Task<OperationResult> Handle(UpdateProductionOrderInformCommand command, CancellationToken ct)
@@ -321,6 +322,13 @@ internal sealed class UpdateProductionOrderInformCommandHandler(
                 }
             }
 
+            if (notePatch?.DeliveryPromises is { } promises)
+            {
+                if (!command.IsEditorSave || notePatch.Action != "Save" || deliverySchedules is null)
+                    return OperationResult.Fail("Không thể lưu ngày hứa cùng thông tin MFG.");
+                var promiseResult = await deliverySchedules.SaveManufacturingPromisesAsync(command.Id, promises, transaction.TransactionId, ct);
+                if (!promiseResult.Success) return promiseResult;
+            }
             await db.SaveChangesAsync(ct);
             if (order.Status == nameof(ManufacturingProductOrder.Scheduling)
                 && !await db.ProductionSelectVersions.AsNoTracking().AnyAsync(x => x.CompanyId == company

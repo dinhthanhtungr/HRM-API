@@ -108,6 +108,37 @@ public sealed class ManufacturingWorkflowTests
         Assert.Equal(expected, result.Data!.PoNo);
     }
 
+    [Theory]
+    [InlineData(true, true, 2)]
+    [InlineData(false, true, 0)]
+    [InlineData(true, false, 0)]
+    public async Task Detail_ReadsOnlyActiveLinkedRequestedSchedules(bool activeSale, bool sameCompany, int expected)
+    {
+        var f = new ManufacturingFormulaCreationTests.Fixture(ManufacturingFormulaOrigin.FromVu);
+        f.Store.Seed(nameof(f.Db.MfgProductionOrders), f.Order);
+        f.Sale.IsActive = activeSale;
+        if (!sameCompany) f.Sale.CompanyId = Guid.NewGuid();
+        f.Detail.DeliverySchedules.Add(new() { MerchandiseOrderDeliveryScheduleId = Guid.NewGuid(), MerchandiseOrderDetailId = f.Detail.MerchandiseOrderDetailId, RequestedDate = new(2026, 11, 29), PromisedDate = new(2026, 11, 30), Quantity = 12000, IsActive = true });
+        f.Detail.DeliverySchedules.Add(new() { MerchandiseOrderDeliveryScheduleId = Guid.NewGuid(), RequestedDate = new(2026, 11, 27), Quantity = 8000, IsActive = true });
+        f.Detail.DeliverySchedules.Add(new() { MerchandiseOrderDeliveryScheduleId = Guid.NewGuid(), RequestedDate = new(2026, 11, 28), Quantity = 1, IsActive = false });
+        var result = await new GetProductionOrderQueryHandler(f.Db, f.User,
+            new CurrentUserPermissionService(f.User), new Prices(false)).Handle(new(f.Order.MfgProductionOrderId), default);
+        Assert.True(result.Success, result.Message);
+        Assert.Equal(expected, result.Data!.RequestedDeliverySchedules.Length);
+        if (expected > 0)
+        {
+            Assert.Equal(new DateTime(2026, 11, 27), result.Data.RequestedDeliverySchedules[0].RequestedDate);
+            Assert.Equal(8000, result.Data.RequestedDeliverySchedules[0].Quantity);
+            Assert.Equal(12000, result.Data.RequestedDeliverySchedules[1].Quantity);
+            Assert.Equal(f.Detail.MerchandiseOrderDetailId, result.Data.RequestedDeliverySchedules[1].MerchandiseOrderDetailId);
+            Assert.Equal(new DateTime(2026, 11, 30), result.Data.RequestedDeliverySchedules[1].PromisedDate);
+            Assert.Null(result.Data.RequestedDeliverySchedules[0].PromisedDate);
+        }
+        Assert.Equal(f.Order.RequiredDate, result.Data.RequiredDate);
+        Assert.Equal(f.Order.ExpectedDate, result.Data.ExpectedDate);
+        Assert.Equal(0, f.Store.Saves);
+    }
+
     [Fact]
     public async Task Check_ValidFlagRecordsCheckerAndTimeAndNullIsRejected()
     {

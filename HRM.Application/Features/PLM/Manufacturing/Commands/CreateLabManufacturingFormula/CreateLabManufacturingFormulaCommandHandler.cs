@@ -167,7 +167,13 @@ internal sealed class CreateLabManufacturingFormulaCommandHandler(
             );
             formula.Name = $"F{next:D3}";
             formula.SourceType = r.SourceType;
-            formula.Note = r.Note;
+            if (r.ClearNote && !string.IsNullOrWhiteSpace(r.Note))
+                return Fail("Không được đồng thời xóa và nhập ghi chú VA.");
+            var inheritedNote = fromVu
+                ? await db.Products.AsNoTracking().Where(x => x.ProductId == order.ProductId && x.CompanyId == company && x.IsActive)
+                    .Select(x => x.Requirement).FirstOrDefaultAsync(ct)
+                : ManufacturingNoteRules.Inherit(null, sourceVa?.Note, order.LabNote);
+            formula.Note = ManufacturingNoteRules.FormulaNote(r.Note, r.ClearNote, inheritedNote);
             formula.UpdatedBy = employee;
             formula.UpdatedDate = now;
             // Inform's factory intentionally drops zero rows. Lab create retains every active
@@ -210,7 +216,7 @@ internal sealed class CreateLabManufacturingFormulaCommandHandler(
 
                     CreatedBy = employee,
 
-                    Note = r.Note
+                    Note = formula.Note
 
                 };
             }

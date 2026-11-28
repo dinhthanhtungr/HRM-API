@@ -13,6 +13,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HRM.Api", "HRM.Api\HRM.Api.
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HRM.Application.Tests", "HRM.Application.Tests\HRM.Application.Tests.csproj", "{27046D02-71A1-418E-B781-79A2E5E1D583}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RequestTiming.Generator", "tools\RequestTiming.Generator\RequestTiming.Generator.csproj", "{CC463B1B-314B-4618-8228-F8DD059C9BB8}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -83,6 +85,18 @@ Global
 		{27046D02-71A1-418E-B781-79A2E5E1D583}.Release|x64.Build.0 = Release|Any CPU
 		{27046D02-71A1-418E-B781-79A2E5E1D583}.Release|x86.ActiveCfg = Release|Any CPU
 		{27046D02-71A1-418E-B781-79A2E5E1D583}.Release|x86.Build.0 = Release|Any CPU
+		{CC463B1B-314B-4618-8228-F8DD059C9BB8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CC463B1B-314B-4618-8228-F8DD059C9BB8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CC463B1B-314B-4618-8228-F8DD059C9BB8}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{CC463B1B-314B-4618-8228-F8DD059C9BB8}.Debug|x64.Build.0 = Debug|Any CPU
+		{CC463B1B-314B-4618-8228-F8DD059C9BB8}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{CC463B1B-314B-4618-8228-F8DD059C9BB8}.Debug|x86.Build.0 = Debug|Any CPU
+		{CC463B1B-314B-4618-8228-F8DD059C9BB8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CC463B1B-314B-4618-8228-F8DD059C9BB8}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CC463B1B-314B-4618-8228-F8DD059C9BB8}.Release|x64.ActiveCfg = Release|Any CPU
+		{CC463B1B-314B-4618-8228-F8DD059C9BB8}.Release|x64.Build.0 = Release|Any CPU
+		{CC463B1B-314B-4618-8228-F8DD059C9BB8}.Release|x86.ActiveCfg = Release|Any CPU
+		{CC463B1B-314B-4618-8228-F8DD059C9BB8}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -39,6 +39,11 @@ Values gợi ý NCC dùng BuildSmartSupplierOrders: JOIN theo tập dòng kho đ
 kho active và DDH cùng company, Supplier cùng company. Không chạy lookup DDH tương quan
 cho từng dòng kho. Predicate badge/prefix giữ nguyên để bảo toàn semantics nhiều NCC/OR/AND.
 
+Trong Development, danh sách IQC đã xác thực có timing theo bước thực sự chạy.
+`iqc_count` đo bước đếm, `iqc_page_keys` đo lấy khóa của trang, `iqc_warehouse_rows`
+đo tải dòng kho, `iqc_lab_rows` đo tải dòng mẫu ở nhánh ghép và `iqc_map` đo xử lý
+kết quả trong bộ nhớ. Các bước này nằm trong `feature_GetIqcSummaryQuery`.
+
 Chẩn đoán gợi ý trong Development: `IqcSuggestionRequestTimingMiddleware` chỉ nhận GET
 các route summary IQC có `suggestionKeyword`. `Server-Timing` trên response 200 đã xác thực
 có `iqc_suggestions` (dựng/dịch/thực thi query và đọc metadata) và `iqc_total` (đến lúc bắt đầu

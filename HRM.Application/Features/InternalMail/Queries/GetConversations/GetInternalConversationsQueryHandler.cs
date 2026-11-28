@@ -115,12 +115,14 @@ internal sealed class GetInternalConversationsQueryHandler
 
         var pageNumber = request.NormalizedPageNumber;
         var pageSize = request.NormalizedPageSize;
+        IReadOnlyDictionary<Guid, int>? requestLegacyCounts = null;
         if (request.UnreadOnly)
         {
             // Separate eligibility from the unpaged COUNT plan. Keep only distinct conversation
             // keys (never historical notification IDs), then recheck the outer authorized scope.
-            var unreadIds = await timing.RunAsync("unread-keys", () => MeasureUnreadAsync("unread-keys", true,
-                () => _areas.UnreadConversationIdsAsync(request.RelatedType, cancellationToken), keys => keys.Length));
+            var (unreadIds, legacyCounts) = await timing.RunAsync("unread-keys", () => MeasureUnreadAsync("unread-keys", true,
+                () => _areas.UnreadConversationPageScopeAsync(request.RelatedType, cancellationToken), scope => scope.Ids.Length));
+            requestLegacyCounts = legacyCounts;
             if (unreadIds.Length == 0)
                 return new PagedResult<InternalConversationListItemDto>([], 0, pageNumber, pageSize);
             query = query.Where(row => unreadIds.Contains(row.InternalConversationId));
@@ -170,7 +172,7 @@ internal sealed class GetInternalConversationsQueryHandler
 
         var conversationIds = items.Select(item => item.ConversationId).ToArray();
         var notificationCounts = await timing.RunAsync("badges", () =>
-            _areas.PageNotificationUnreadCountsAsync(conversationIds, cancellationToken));
+            _areas.PageNotificationUnreadCountsAsync(conversationIds, cancellationToken, requestLegacyCounts));
 
         foreach (var item in items)
         {

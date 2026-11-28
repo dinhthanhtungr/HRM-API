@@ -25,6 +25,10 @@ public sealed class LabTestPersistenceModelTests
         Assert.Equal(DeleteBehavior.Restrict, materialFk.DeleteBehavior);
         Assert.True(header.FindProperty(nameof(LabTest.SupplierId))!.IsNullable);
         Assert.Equal("supplierid", header.FindProperty(nameof(LabTest.SupplierId))!.GetColumnName());
+        var supplierName = header.FindProperty(nameof(LabTest.SupplierName))!;
+        Assert.True(supplierName.IsNullable);
+        Assert.Equal("suppliername", supplierName.GetColumnName());
+        Assert.Equal(300, supplierName.GetMaxLength());
         var supplierFk = header.FindNavigation(nameof(LabTest.Supplier))!.ForeignKey;
         Assert.Equal(typeof(HRM.Domain.Entities.MaterialSchema.Supplier), supplierFk.PrincipalEntityType.ClrType);
         Assert.False(supplierFk.IsRequired);

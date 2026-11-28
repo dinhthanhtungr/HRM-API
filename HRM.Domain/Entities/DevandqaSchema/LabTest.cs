@@ -18,6 +18,8 @@ public class LabTest
     public string? MaterialCode { get; set; }
     /// <summary>Nhà cung cấp của mẫu; có thể chưa xác định.</summary>
     public Guid? SupplierId { get; set; }
+    /// <summary>Tên NCC snapshot khi chọn danh mục, hoặc tên nhập tự do khi SupplierId null.</summary>
+    public string? SupplierName { get; set; }
     /// <summary>Số lô do người test nhập; không liên kết lô nhập kho.</summary>
     public string? BatchNumber { get; set; }
     /// <summary>Khối lượng mẫu do người test nhập, đơn vị kg; null là chưa nhập.</summary>

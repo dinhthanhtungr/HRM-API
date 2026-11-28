@@ -14,6 +14,7 @@ public sealed class LabTestConfiguration : IEntityTypeConfiguration<LabTest>
         entity.Property(x => x.Id).HasColumnName("id").HasDefaultValueSql("gen_random_uuid()");
         entity.Property(x => x.CompanyId).HasColumnName("companyid");
         entity.Property(x => x.SupplierId).HasColumnName("supplierid").IsRequired(false);
+        entity.Property(x => x.SupplierName).HasColumnName("suppliername").HasMaxLength(300).IsRequired(false);
         entity.Property(x => x.MaterialId).HasColumnName("materialid").IsRequired(false);
         entity.Property(x => x.MaterialCode).HasColumnName("materialcode").HasColumnType("citext");
         entity.Property(x => x.Code).HasColumnName("code").HasColumnType("citext").HasMaxLength(50).IsRequired();

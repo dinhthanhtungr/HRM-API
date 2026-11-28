@@ -57,6 +57,13 @@ phiếu cũ được chuyển khi người dùng lưu lại.
 
 ### Lượng và thao tác mẻ
 
+Định danh tính lượng là itemType + itemId: NVL đạt/lỗi và TP đạt/lỗi cùng mã được tính
+gốc, lần cân mới và delta lịch sử riêng. Calculate trả thêm trials[].items[].itemType
+(tên enum) để FE ghép đúng dòng; isMaterial vẫn giữ để tương thích.
+Tổng mẻ chỉ cộng mỗi lượng nhập một lần; trạng thái khi lưu vẫn Approved.
+Đọc lịch sử/PDF không ghi lại BaseQuantity/AdjustedQuantity/DeltaQuantity đã lưu;
+không có backfill hoặc cập nhật DB cũ trong thay đổi này.
+
 Lệnh có trên 100 mẻ vẫn mở editor: mặc định khởi tạo mẻ 1, giữ đủ PlannedBatchCount
 và khối lượng mỗi mẻ; người dùng chọn khoảng cần chỉnh, tối đa 100 mẻ mỗi lượt như trước.
 BE chặn trùng itemId/cùng loại hàng trong một lần chỉnh, kể cả khác Lot, và kiểm tra lại

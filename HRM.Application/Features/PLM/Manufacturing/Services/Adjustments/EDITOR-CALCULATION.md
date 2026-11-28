@@ -97,7 +97,7 @@ Response `data`:
 - `groups`: cùng contract batch-groups để FE dựng các cột range. Signature là opaque.
 - `trials`: một phần tử mỗi (batchNo, trialNo), gồm originalBatchQuantityGram,
   newWeighingTotalGram, colourDeltaTotalGram, finalQuantityGram và items.
-- `trials[].items`: tích lũy qua trial hiện tại, gồm itemId, isMaterial,
+- `trials[].items`: tích lũy qua trial hiện tại, gồm itemId, itemType (tên enum), isMaterial,
   originalBaseQuantityGram, newWeighingTotalGram, colourDeltaTotalGram,
   actualQuantityGram, deltaFromOriginalGram. Gộp lot và Material/MaterialFailure
   trong cùng họ vật tư theo nghiệp vụ cũ. Đây là tổng vật lý, không phải số nhập của riêng trial.

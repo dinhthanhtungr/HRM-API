@@ -41,10 +41,17 @@ liên kết/backfill từ tên cũ. Chưa tạo migration/SQL hoặc thay đổi
 
 ## Chọn nhà cung cấp và lookup nhân viên
 
-Form hỗ trợ NCC nullable: request `supplierId`, response `supplierId`/`supplierName`.
-PATCH bỏ/null giữ nguyên; `clearFields:["supplierId"]` bỏ liên kết; không vừa gửi ID vừa clear.
-ID mới phải là NCC active của cùng company. Lưu không chỉnh NCC vẫn giữ liên kết cũ nếu nguồn đã inactive.
-Không nhận tên NCC tùy ý; backend lấy tên từ nguồn được scope.
+Form hỗ trợ một dropdown vừa nhập vừa chọn: request/response `supplierId`/`supplierName`.
+Chọn NCC: gửi supplierId, BE kiểm tra active/cùng company và lưu tên nguồn thành snapshot,
+không tin tên client gửi kèm. PATCH bỏ/null cả hai trường giữ nguyên snapshot, kể cả nguồn đổi tên/inactive.
+Nhập tự do: gửi supplierName (trim, tối đa 300 ký tự), supplierId để null/bỏ khi tạo.
+Sửa chữ sau khi chọn: gửi `{"supplierName":"NCC tự do","clearFields":["supplierId"]}`.
+Không nhận tên nhập tay trên liên kết đang giữ nếu không clear ID. Clear supplierId đơn lẻ xóa cả tên;
+xóa tên tự do dùng `clearFields:["supplierName"]`. Không vừa gửi giá trị vừa clear cùng trường.
+Không tạo API riêng; áp dụng cả JSON và payload multipart. Company/permission/transaction giữ nguyên.
+Entity/EF thêm cột nullable `devandqa.LabTest.suppliername`, tối đa 300 ký tự, không thêm FK.
+Chưa tạo/chạy migration hay sửa DB: cần đồng bộ cột này trước deploy. Phiếu cũ chưa có snapshot
+được trả tên từ NCC cùng company nếu còn liên kết; không tự backfill. Không bật SupplierCustomerName/import cũ.
 
 GET `/lookups/suppliers` và `/lookups/lab-employees` dùng ViewIqc + company scope.
 Nhận keyword (tối đa 200), pageNumber/pageSize, selectedId tùy chọn; trả wrapper chứa PagedResult

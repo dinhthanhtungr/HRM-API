@@ -1,4 +1,6 @@
+using System.Data.Common;
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using HRM.Application.Abstractions.Commons.Time;
 using HRM.Application.Features.InternalMail.Commands.MarkConversationRead;
 using HRM.Application.Features.InternalMail.Dtos;
@@ -12,6 +14,22 @@ namespace HRM.Application.Tests.Features.InternalMail.GroupStorage;
 
 public sealed partial class InternalConversationGroupStoragePostgresTests
 {
+    private sealed class ArchiveBeforeFeedPage(Func<Task> archive) : DbCommandInterceptor
+    {
+        public bool Triggered { get; private set; }
+        public override async ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (!Triggered && command.CommandText.Contains("-- Notification feed page", StringComparison.Ordinal))
+            {
+                Triggered = true;
+                await archive();
+            }
+            return result;
+        }
+    }
+
     [PostgresGroupStorageTheory]
     [InlineData("President", true)]
     [InlineData("Developer", true)]
@@ -103,6 +121,32 @@ public sealed partial class InternalConversationGroupStoragePostgresTests
         var actualNext = await service.GetFeedAsync(take: 2, afterId: last.Id, afterCreated: last.CreatedDate);
         Assert.Equal(expectedNext, actualNext.Select(n => n.Id));
         Assert.Empty(actualFirst.Select(n => n.Id).Intersect(actualNext.Select(n => n.Id)));
+        if (role == "Developer" && storage)
+        {
+            var archivedId = expectedFirst[0];
+            var state = db.NotificationUserStates.Where(s => s.UserId == user.EmployeeId && s.NotificationId == archivedId);
+            var race = new ArchiveBeforeFeedPage(() => state.ExecuteUpdateAsync(set => set.SetProperty(s => s.IsArchived, true)));
+            await using var pageConnection = await postgres.OpenAsync();
+            await using var pageDb = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
+                .UseNpgsql(pageConnection).AddInterceptors(race).Options);
+            var pageAreas = new InternalMailAreaAccessService(pageDb, user, Options.Create(new InternalMailGroupStorageOptions { Enabled = true }));
+            var pageService = new NotificationService(pageDb, user, null!, null!, pageAreas, new NotificationFeedConversationInfoResolver(pageDb, pageAreas,
+                new InternalConversationSampleRequestInfoResolver(pageDb), new InternalConversationQuotationInfoResolver(pageDb)));
+            var repaired = await pageService.GetFeedAsync(take: 2);
+            Assert.True(race.Triggered);
+            Assert.Equal(new[] { expectedFirst[1], expectedNext[0] }, repaired.Select(n => n.Id));
+            await state.ExecuteUpdateAsync(set => set.SetProperty(s => s.IsArchived, false));
+
+            var mentionedMessage = db.InternalMessages.Where(m => m.InternalConversationId == ids[0] && !m.IsDeleted);
+            var mentionPayload = JsonSerializer.Serialize(new { mentions = new[] { new { employeeId = user.EmployeeId } } });
+            await mentionedMessage.ExecuteUpdateAsync(set => set.SetProperty(m => m.PayloadJson, mentionPayload));
+            var personal = await service.GetFeedAsync(take: 30, mentionedOnly: true);
+            var quotePersonal = await service.GetFeedAsync(take: 30, mentionedOnly: true, categoryCode: "quotation");
+            Assert.NotEmpty(quotePersonal);
+            Assert.Equal(personal.Where(n => n.CategoryCode == "quotation").Select(n => n.Id), quotePersonal.Select(n => n.Id));
+            Assert.Empty(await service.GetFeedAsync(take: 30, mentionedOnly: true, categoryCode: "system"));
+            await mentionedMessage.ExecuteUpdateAsync(set => set.SetProperty(m => m.PayloadJson, (string?)null));
+        }
         var quoteMessage = await db.InternalMessages.Where(message =>
                 message.InternalConversationId == ids[0] && !message.IsDeleted)
             .Select(message => new InternalMessageDto { MessageId = message.InternalMessageId })

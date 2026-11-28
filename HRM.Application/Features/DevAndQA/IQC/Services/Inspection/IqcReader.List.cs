@@ -1,3 +1,4 @@
+using HRM.Application.Commons.Diagnostics;
 using HRM.Application.Abstractions.Persistence.DevAndQA;
 using System.Linq.Expressions;
 using HRM.Domain.Entities.WarehouseSchema;
@@ -25,15 +26,18 @@ internal sealed partial class IqcReader
         var pageNumber = query.PageNumber <= 0 ? 1 : query.PageNumber;
         var pageSize = query.PageSize <= 0 ? 20 : query.PageSize;
 
+        var step = RequestTiming.StartStep();
         var idsQuery = BuildSummaryIdsQuery(query);
 
         var total = await idsQuery.CountAsync(ct);
 
+        RequestTiming.FinishStep("iqc_count", ref step);
         var pageIds = await idsQuery
             .Skip((pageNumber - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync(ct);
 
+        RequestTiming.FinishStep("iqc_page_keys", ref step);
         if (pageIds.Count == 0)
             return new IqcPagedResult<GetSummaryQCInput>(new List<GetSummaryQCInput>(), total, pageNumber, pageSize);
 
@@ -42,11 +46,13 @@ internal sealed partial class IqcReader
         var items = await itemsQuery
             .OrderByDescending(x => x.VoucherDetailId)
             .ToListAsync(ct);
+        RequestTiming.FinishStep("iqc_warehouse_rows", ref step);
         foreach (var item in items)
         {
             item.QCDescription = IqcRules.ToVietnamese(item.VoucherType);
         }
 
+        RequestTiming.FinishStep("iqc_map", ref step);
         return new IqcPagedResult<GetSummaryQCInput>(items, total, pageNumber, pageSize);
     }
 

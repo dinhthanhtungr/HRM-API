@@ -6,6 +6,9 @@ namespace HRM.Application.Features.PLM.Materials.TdsExtraction;
 
 public static class TdsExtractionRules
 {
+    public static bool IsTechnicalOrSafetySheet(string? type) =>
+        type?.Trim().ToUpperInvariant() is "TDS" or "SDS" or "MSDS";
+
     public static readonly IReadOnlySet<string> AllowedExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         { ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".jfif", ".txt", ".csv" };
 

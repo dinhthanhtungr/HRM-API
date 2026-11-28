@@ -24,4 +24,5 @@ public sealed class ProductionOrderEditorRequest
     public ManufacturingFormulaOrigin? Origin { get; init; }
     public IReadOnlyList<ManufacturingFormulaInputItem>? Items { get; init; }
     public IReadOnlyList<string> ClearFields { get; init; } = [];
+    public IReadOnlyList<ManufacturingDeliveryPromisePatch>? DeliveryPromises { get; init; }
 }

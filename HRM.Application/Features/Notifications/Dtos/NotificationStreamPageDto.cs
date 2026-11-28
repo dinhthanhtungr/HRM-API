@@ -5,4 +5,9 @@ public sealed record NotificationStreamPageDto(
     Guid? FirstUnreadId,
     int UnreadCount,
     bool HasOlder,
-    bool HasNewer);
+    bool HasNewer)
+{
+    public IReadOnlyList<StreamUnreadItemDto>? OpeningUnread { get; init; }
+}
+
+public sealed record StreamUnreadItemDto(Guid Id, string EventGroupCode);

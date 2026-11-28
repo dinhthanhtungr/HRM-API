@@ -682,6 +682,42 @@ public sealed class ManufacturingFormulaProcessingTests
         Assert.Null(f.Selection.ValidFrom);
     }
 
+    [Theory]
+    [InlineData(null, false, "Source instruction")]
+    [InlineData("", false, "Source instruction")]
+    [InlineData("Updated instruction", false, "Updated instruction")]
+    [InlineData(null, true, null)]
+    public async Task QaCreateVa_KeepsSourceInstructionUnlessExplicitlyChangedOrCleared(string? note, bool clear, string? expected)
+    {
+        var f = new Fixture();
+        f.Formula.Note = "Source instruction";
+        f.Base.Order.LabNote = "Plan QA request";
+        f.Base.Order.QcCheck = "QC request";
+        var row = f.Base.Db.ManufacturingFormulaMaterials.Single();
+        var result = await f.LabCreate().Handle(new(f.Base.Order.MfgProductionOrderId, new() {
+            SourceFormulaId = f.Formula.ManufacturingFormulaId, SourceType = FormulaSource.FromVA,
+            Note = note, ClearNote = clear, Items = [new() { SourceItemId = row.ManufacturingFormulaMaterialId,
+                ItemId = row.MaterialId!.Value, ItemType = ItemType.Material, Quantity = 1 }]
+        }), default);
+        Assert.True(result.Success, result.Message);
+        Assert.Equal(expected, Assert.Single(f.Base.Store.Added.OfType<ManufacturingFormula>()).Note);
+        Assert.Equal("Plan QA request", f.Base.Order.LabNote);
+        Assert.Equal("QC request", f.Base.Order.QcCheck);
+        Assert.Equal("Source instruction", f.Formula.Note);
+    }
+
+    [Theory]
+    [InlineData(false, "Source instruction")]
+    [InlineData(true, null)]
+    public async Task QaProcessVa_EmptyNotePreservesUnlessClearFlag(bool clear, string? expected)
+    {
+        var f = new Fixture();
+        f.Formula.Note = "Source instruction";
+        var result = await f.Process().Handle(new(f.Base.Order.MfgProductionOrderId, f.Formula.ManufacturingFormulaId,
+            new() { Note = "", ClearNote = clear }), default);
+        Assert.True(result.Success, result.Message);
+        Assert.Equal(expected, f.Formula.Note);
+    }
     private sealed class Fixture
     {
         public static readonly DateTime Now = ManufacturingFormulaCreationTests.Fixture.Now;

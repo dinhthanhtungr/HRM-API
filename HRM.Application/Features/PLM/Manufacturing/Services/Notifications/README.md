@@ -4,6 +4,8 @@ Nhóm service/rule dùng chung theo nghiệp vụ. Xem [tổ chức feature](../
 
 ## Ngày hứa giao
 
+Lịch giao nhiều đợt dùng `DeliverySchedulePromiseNotifier` riêng, trong transaction lưu MFG/lịch; gửi khối lượng và ngày cũ → mới cho Sale phụ trách. `PromisedDeliveryNotifier` và hành vi ExpectedDate cũ giữ nguyên. Nếu cả hai loại ngày đổi thì đây là hai sự kiện riêng.
+
 `PromisedDeliveryNotifier` dùng chung cho API gửi ngày hứa giao và bốn đường sửa lệnh: cập nhật information/kế hoạch, cập nhật inform/công thức, tạo VA cho lệnh đã có và dùng hàng tồn. Handler sửa chụp ExpectedDate cũ sau khi khóa lệnh, rồi truyền ngày cũ/mới vào publisher sau SaveChanges nhưng trước commit. Các context Manufacturing/Notification cùng trỏ ApplicationDbContext nên notification/inbox/outbox và dữ liệu lệnh nằm trong cùng transaction; lỗi publish rollback toàn bộ.
 
 Chỉ khác phần ngày mới phát topic 55 `sales.merchandise_order.promised_delivery_notified`, kể cả đổi sớm hơn hoặc ngày cũ null. Ngày mới null hoặc cùng phần ngày (dù khác giờ) không phát. Không tạo thông báo cho thao tác tạo/copy lệnh mới. Người nhận/payload/link dùng đúng contract [API ngày hứa giao](../../Commands/NotifyPromisedDelivery/README.md). Luồng sửa không phát thêm cảnh báo ngày legacy topic 18 qua `ExpectedDateWarningAsync`.

@@ -59,11 +59,6 @@ internal sealed class IsoPdfFooterComponent : IComponent
     {
         container.PaddingTop(PdfLayout.FooterTopPadding).Column(column =>
         {
-            if (_quotation is not null)
-            {
-                ComposeCompanyContacts(column);
-            }
-
             column.Item()
                 .PaddingTop(2)
                 .LineHorizontal(PdfLayout.DividerWidth)
@@ -120,66 +115,6 @@ internal sealed class IsoPdfFooterComponent : IComponent
                     });
                     row.RelativeItem().AlignRight().Text(_effectiveDate ?? string.Empty).FontSize(PdfTypography.FooterSize);
                 }
-            });
-        });
-    }
-
-    private void ComposeCompanyContacts(ColumnDescriptor column)
-    {
-        column.Item().PaddingTop(2).Text(_options.CompanyDisplayName)
-            .Bold().FontColor(PdfColors.LinkBlue).FontSize(PdfTypography.SmallSize);
-
-        AddOfficeRow(
-            column,
-            ("Head office", _options.HeadOffice, _options.HeadOfficeContact, _options.HeadOfficeEmail),
-            ("Branch Ha Noi", _options.HaNoiBranch, _options.HaNoiBranchContact, _options.HaNoiBranchEmail));
-        AddOfficeRow(
-            column,
-            ("Factory I", _options.Factory01, _options.Factory01Contact, _options.Factory01Email),
-            ("Branch Da Nang", _options.DaNangBranch, _options.DaNangBranchContact, _options.DaNangBranchEmail));
-        AddOfficeRow(
-            column,
-            ("Factory II", _options.Factory02, _options.Factory02Contact, _options.Factory02Email),
-            null);
-    }
-
-    private static void AddOfficeRow(
-        ColumnDescriptor column,
-        (string Label, string? Address, string Contact, string Email) left,
-        (string Label, string? Address, string Contact, string Email)? right)
-    {
-        column.Item().PaddingTop(2).Row(row =>
-        {
-            row.RelativeItem().Element(container => ComposeOffice(container, left));
-            row.ConstantItem(12);
-            row.RelativeItem().Element(container =>
-            {
-                if (right is not null)
-                {
-                    ComposeOffice(container, right.Value);
-                }
-            });
-        });
-    }
-
-    private static void ComposeOffice(
-        IContainer container,
-        (string Label, string? Address, string Contact, string Email) office)
-    {
-        container.Column(column =>
-        {
-            column.Item().Text(text =>
-            {
-                text.DefaultTextStyle(PdfTypography.Footer);
-                text.Span($"{office.Label}: ").Bold();
-                text.Span(office.Address ?? string.Empty);
-            });
-            column.Item().Text(office.Contact).FontSize(PdfTypography.FooterSize);
-            column.Item().Text(text =>
-            {
-                text.DefaultTextStyle(PdfTypography.Footer);
-                text.Span("Email: ");
-                text.Span(office.Email).FontColor(PdfColors.LinkBlue).Underline();
             });
         });
     }

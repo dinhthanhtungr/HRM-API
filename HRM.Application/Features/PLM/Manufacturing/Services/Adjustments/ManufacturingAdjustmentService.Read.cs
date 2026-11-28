@@ -148,7 +148,7 @@ internal sealed partial class ManufacturingAdjustmentService
             b.IsAdditionalBatch,
             b.AdjustmentType,
             b.BatchQuantity,
-            ManufacturingAdjustmentBatchRules.IsMaterial(i.itemType) ? $"M:{i.MaterialId:N}" : $"P:{i.ProductId:N}",
+            ManufacturingAdjustmentBatchRules.ItemKey(i.itemType, i.MaterialId, i.ProductId),
             i.BaseQuantity,
             i.AdjustedQuantity,
             i.DeltaQuantity,

@@ -1101,7 +1101,7 @@ GET /api/v1/crm/quotations/{quotationId}/pdf?download=true
   Báo giá cũ chưa có bất kỳ term snapshot nào tiếp tục dùng mẫu legacy từ `DeliveryTerms`, `PaymentTerms`,
   `ValidUntil` và các giá trị mặc định trong renderer.
 - Lời chào, chữ ký và thông tin liên hệ của nhân viên Sale hiển thị ngay dưới khối `Các điều khoản khác`.
-  Footer PDF hiển thị thông tin trụ sở, chi nhánh, nhà máy VIETAUS lấy từ cấu hình `Pdf:Quotation`.
+  Khối địa chỉ trụ sở, chi nhánh và nhà máy VIETAUS lấy từ cấu hình `Pdf:Quotation` chỉ hiển thị ở cuối trang cuối cùng, ngay phía trên các phần chân trang lặp lại trên mỗi trang.
   Dòng website/hotline và slogan
   thương hiệu được đặt cuối trang với màu theo mẫu báo giá. Hàng cuối footer lần lượt hiển thị chuẩn ISO,
   ngày hiệu lực biểu mẫu và mã biểu mẫu từ `IsoStandards`, `EffectiveDate`, `FormCode`.
@@ -1971,6 +1971,9 @@ President với token explicit thiếu claim vẫn bị từ chối. Token cũ k
   "message": "Vui lòng kiểm tra và cung cấp giá cho báo giá này."
 }
 ```
+
+Nội dung yêu cầu (`message`) là bắt buộc và dài tối đa 5.000 ký tự sau khi bỏ khoảng trắng ở hai đầu.
+Hội thoại và lịch sử báo giá lưu toàn bộ nội dung. Thông báo hiển thị tối đa 2.000 ký tự, tính cả tên người gửi và tên khách hàng.
 
 Endpoint chỉ áp dụng cho báo giá `Draft` mà người gọi được phép xem. Mỗi lần gọi tạo một action message mới và
 publish notification `QuotationRequested`; endpoint không đổi trạng thái báo giá và không gửi email ra ngoài.

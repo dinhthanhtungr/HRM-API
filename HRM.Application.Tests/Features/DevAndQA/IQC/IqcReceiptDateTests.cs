@@ -13,6 +13,22 @@ namespace HRM.Application.Tests.Features.DevAndQA.IQC;
 public sealed class IqcReceiptDateTests
 {
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SummaryMeasuresOnlyExecutedPhases(bool includeLabTests)
+    {
+        var reader = Fixture(withTests: true);
+        using var timing = new HRM.Application.Commons.Diagnostics.RequestTiming();
+        await reader.GetPagedSummaryAsync(new() { IncludeLabTests = includeLabTests }, default);
+        var phases = timing.Snapshot().ToDictionary();
+        Assert.Contains("iqc_count", phases.Keys);
+        Assert.Contains("iqc_page_keys", phases.Keys);
+        Assert.Contains("iqc_warehouse_rows", phases.Keys);
+        Assert.Contains("iqc_map", phases.Keys);
+        Assert.Equal(includeLabTests, phases.ContainsKey("iqc_lab_rows"));
+    }
+
+    [Theory]
     [InlineData(null, false)]
     [InlineData(true, false)]
     [InlineData(false, false)]

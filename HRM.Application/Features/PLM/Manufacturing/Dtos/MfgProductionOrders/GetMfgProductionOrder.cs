@@ -27,6 +27,7 @@ namespace HRM.Application.Features.PLM.Manufacturing.Dtos.MfgProductionOrders
         public DateTime? ManufacturingDate { get; set; }
         public DateTime? ExpectedDate { get; set; }
         public DateTime RequiredDate { get; set; }
+        public ProductionRequestedDeliveryDto[] RequestedDeliverySchedules { get; set; } = [];
         public decimal TotalQuantityRequest { get; set; }
         public decimal? TotalQuantity { get; set; }
         public int? NumOfBatches { get; set; }
@@ -40,4 +41,7 @@ namespace HRM.Application.Features.PLM.Manufacturing.Dtos.MfgProductionOrders
         public StepOfProduct? StepOfProduct { get; set; }
     //public GetManufacturingFormula selecktManufacturing { get; set; } = new GetManufacturingFormula(); // Công thức được lab cho phép sản xuất
     }
+
+    public sealed record ProductionRequestedDeliveryDto(Guid Id, DateTime RequestedDate, decimal Quantity,
+        Guid MerchandiseOrderDetailId, DateTime? PromisedDate);
 }

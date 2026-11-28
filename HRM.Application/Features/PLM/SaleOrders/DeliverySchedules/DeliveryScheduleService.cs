@@ -17,9 +17,10 @@ using Microsoft.Extensions.Options;
 
 namespace HRM.Application.Features.PLM.SaleOrders.DeliverySchedules;
 
-public sealed class DeliveryScheduleService(IDeliveryScheduleDbContext db, ICurrentUser user,
+public sealed partial class DeliveryScheduleService(IDeliveryScheduleDbContext db, ICurrentUser user,
     ICurrentUserPermissionService permissions, ICustomerVisibilityService visibility,
-    IDateTimeProvider clock, IOptions<DeliveryScheduleOptions> options, DeliveryScheduleFulfillmentService fulfillment)
+    IDateTimeProvider clock, IOptions<DeliveryScheduleOptions> options, DeliveryScheduleFulfillmentService fulfillment,
+    DeliverySchedulePromiseNotifier? promiseNotifications = null)
 {
     public bool StorageReady => options.Value.StorageReady;
     public bool UiEnabled => options.Value.CanShowMultiScheduleUi;
@@ -91,6 +92,14 @@ public sealed class DeliveryScheduleService(IDeliveryScheduleDbContext db, ICurr
             || request.Items.Count is < 1 or > 100 || request.Items.Any(x => x is null))
             return OperationResult.Fail("Thiếu lịch giao hoặc revision.");
         await using var tx = await db.BeginDeliveryScheduleTransactionAsync(ct);
+        var result = await SaveInTransactionAsync(orderId, detailId, request, ct);
+        if (result.Success) await tx.CommitAsync(ct);
+        return result;
+    }
+
+    private async Task<OperationResult> SaveInTransactionAsync(Guid orderId, Guid detailId, SaveDeliverySchedulesRequest request, CancellationToken ct,
+        bool notifySingleSchedule = false)
+    {
         await db.LockDeliveryScheduleAsync(user.CompanyId!.Value, detailId, ct);
         var detail = await FindAsync(orderId, detailId, true, ct);
         if (detail is null) return OperationResult.Fail("Không có quyền sửa dòng đơn hàng.");
@@ -111,6 +120,7 @@ public sealed class DeliveryScheduleService(IDeliveryScheduleDbContext db, ICurr
                 && input.PromisedDate == row.PromisedDate && input.RequestNote?.Trim() == row.RequestNote?.Trim()
                 && input.PromiseNote?.Trim() == row.PromiseNote?.Trim()))) return OperationResult.Ok();
         var rows = await db.MerchandiseOrderDeliverySchedules.Where(x => x.MerchandiseOrderDetailId == detailId && x.IsActive).AsTracking().ToListAsync(ct);
+        var promiseChanges = new List<DeliverySchedulePromiseChange>();
         foreach (var id in request.RemoveIds) rows.Single(x => x.MerchandiseOrderDeliveryScheduleId == id).IsActive = false;
         foreach (var input in request.Items)
         {
@@ -123,6 +133,9 @@ public sealed class DeliveryScheduleService(IDeliveryScheduleDbContext db, ICurr
             row.PromisedDate = input.PromisedDate?.ToDateTime(TimeOnly.MinValue);
             row.RequestNote = input.RequestNote?.Trim(); row.PromiseNote = input.PromiseNote?.Trim();
             row.UpdatedBy = user.EmployeeId!.Value; row.UpdatedDate = clock.Now;
+            var previousPromise = current.Items.FirstOrDefault(x => x.Id == input.Id)?.PromisedDate;
+            if ((notifySingleSchedule || current.Items.Count > 1 || request.Items.Count > 1) && previousPromise != input.PromisedDate)
+                promiseChanges.Add(new(row.MerchandiseOrderDeliveryScheduleId, input.Quantity, input.RequestedDate, previousPromise, input.PromisedDate));
         }
         // Legacy fields remain a summary, never change prices/payment/quantity here.
         detail.DeliveryRequestDate = request.Items.Min(x => x.RequestedDate).ToDateTime(TimeOnly.MinValue);
@@ -139,7 +152,8 @@ public sealed class DeliveryScheduleService(IDeliveryScheduleDbContext db, ICurr
         var statusAtCommit = await db.MerchandiseOrders.AsNoTracking().Where(x => x.CompanyId == user.CompanyId && x.IsActive && x.MerchandiseOrderId == orderId)
             .Select(x => x.Status).FirstOrDefaultAsync(ct);
         if (statusAtCommit is null || Closed(statusAtCommit)) return OperationResult.Fail("Đơn đã đóng trong lúc lưu lịch. Thay đổi lịch đã được hoàn tác.");
-        await tx.CommitAsync(ct);
+        if (promiseNotifications is not null && promiseChanges.Count > 0)
+            await promiseNotifications.PublishAsync(detail, promiseChanges, ct);
         return OperationResult.Ok();
     }
 

@@ -22,7 +22,7 @@ public sealed class SampleWorkDecisionPostgresTests(IsolatedGroupStoragePostgres
         double Kg = 0, SampleTrialStatus? Trial = null, decimal? Delivered = null,
         bool Accepted = false, bool Finalized = false, bool Price = false, bool Quoted = false,
         bool Legacy = false, string Status = "InProgress", bool FormulaActive = true, bool SharedKg = false, bool Quotation = false,
-        bool DeliveryPlan = false, bool CombinedPlan = false);
+        bool DeliveryPlan = false, bool CombinedPlan = false, bool ManagedPrice = false);
 
     [PostgresGroupStorageFact]
     public async Task DecisionsAndRoleBucketsTranslateBeforeCountingAndPaging()
@@ -33,6 +33,8 @@ public sealed class SampleWorkDecisionPostgresTests(IsolatedGroupStoragePostgres
             await CreateTable(connection, db.Model.FindEntityType(type)!);
         Scenario[] cases =
         [
+            new("managed-kg-waits-price", "SendSample", "Lab", Formula: "Approved", Kg: 1, ManagedPrice: true),
+            new("managed-kg-accepted-price", "SendSample", "Lab", Formula: "Approved", Kg: 1, ManagedPrice: true, Accepted: true),
             new("01-chip-prepare", "ApproveFormula", "Lab"),
             new("02-chip-send", "SendSample", "Lab", Formula: "Approved"),
             new("03-chip-feedback", "FollowUpCustomer", "Sale", Trial: SampleTrialStatus.SampleSent, Delivered: 0),
@@ -105,6 +107,15 @@ public sealed class SampleWorkDecisionPostgresTests(IsolatedGroupStoragePostgres
                     [nameof(SampleRequestSampleTrial.CreatedDate)] = new DateTime(2026, 11, 2),
                     [nameof(SampleRequestSampleTrial.IsActive)] = true
                 });
+            if (item.ManagedPrice)
+                await Insert(connection, db.Model.FindEntityType(typeof(SampleRequestWorkflowEvent))!, new()
+                {
+                    [nameof(SampleRequestWorkflowEvent.Id)] = Guid.NewGuid(),
+                    [nameof(SampleRequestWorkflowEvent.CompanyId)] = company,
+                    [nameof(SampleRequestWorkflowEvent.SampleRequestId)] = request,
+                    [nameof(SampleRequestWorkflowEvent.EventType)] = "SampleRequestWorkflowCreated",
+                    [nameof(SampleRequestWorkflowEvent.RecordedAt)] = new DateTime(2026, 11, 1)
+                });
             if (item.DeliveryPlan || item.CombinedPlan)
                 await Insert(connection, db.Model.FindEntityType(typeof(SampleRequestWorkflowEvent))!, new()
                 {
@@ -168,6 +179,7 @@ public sealed class SampleWorkDecisionPostgresTests(IsolatedGroupStoragePostgres
             .Select(x => new { x.Row.SampleRequest.ExternalId, x.Facts }).ToListAsync();
         foreach (var row in deferredFacts)
         {
+            if (row.ExternalId.StartsWith("managed-kg-")) Assert.True(row.Facts.RequiresCustomerPriceTracking);
             var deferred = SampleWorkDecisionRules.Resolve(row.Facts);
             var original = Assert.Single(actual, x => x.ExternalId == row.ExternalId);
             Assert.Equal(original.Code, deferred.Code);
@@ -187,7 +199,10 @@ public sealed class SampleWorkDecisionPostgresTests(IsolatedGroupStoragePostgres
             Assert.Contains("WHERE", queue.ToQueryString());
             var expected = cases.Where(x => audience == SampleRequestWorkAudience.LabAdmin
                 ? x.Role is "Lab" or "LabAdmin" : x.Role == audience.ToString() ||
-                    audience == SampleRequestWorkAudience.Sale && x.Name == "29-chip-sent-kg-next").Select(x => x.Name).Order().ToArray();
+                    audience == SampleRequestWorkAudience.Sale && x.Name == "29-chip-sent-kg-next")
+                .Where(x => audience == SampleRequestWorkAudience.Sale || !deferredFacts.Any(f => f.ExternalId == x.Name &&
+                    SampleWorkDecisionRules.WaitsForPriceBeforeSample(f.Facts, SampleWorkDecisionRules.Resolve(f.Facts).Code)))
+                .Select(x => x.Name).Order().ToArray();
             Assert.Equal(expected.Length, await queue.CountAsync());
             var menuRows = SampleRequestDailyPriorityFactsPage.ReadRows(source, db, db, "VND",
                 new(audience, true, true, true, true, [Guid.Empty]), db.SampleRequests.Where(x => x.CompanyId == company), forMenu: true)
@@ -226,9 +241,34 @@ public sealed class SampleWorkDecisionPostgresTests(IsolatedGroupStoragePostgres
                 Assert.Equal(expectedIds.Length > 0 ? 1 : 0, factsPage.TotalCustomers);
             }
         }
+        // Compare early SQL pruning with the original full-facts stream on the same scoped DB.
+        foreach (var audience in new[] { SampleRequestWorkAudience.Lab, SampleRequestWorkAudience.LabAdmin })
+        foreach (var grouped in new[] { true, false })
+        foreach (var selected in new[] { Array.Empty<string>(), new[] { "SendSample" } })
+        {
+            var access = new SampleRequestDailyPriorityFactsPage.Access(audience, true, false, false, true, [],
+                audience.ToString(), SampleRequestWorkBucket.ActionRequired, PriorityTasks: selected, GroupByCustomer: grouped);
+            var writable = db.SampleRequests.Where(x => x.CompanyId == company);
+            var baseline = SampleRequestDailyPriorityFactsPage.ReadRows(source, db, db, "VND",
+                access with { Bucket = SampleRequestWorkBucket.All }, writable);
+            var optimized = SampleRequestDailyPriorityFactsPage.ReadRows(source, db, db, "VND", access, writable);
+            Assert.True(await optimized.CountAsync() < await baseline.CountAsync());
+            foreach (var pageNo in new[] { 1, 2, 100 })
+            {
+                var before = await SampleRequestDailyPriorityFactsPage.FromRowsAsync(baseline.AsAsyncEnumerable(), source,
+                    access, new(2026, 11, 7), pageNo, 3, CancellationToken.None);
+                var after = await SampleRequestDailyPriorityFactsPage.FromRowsAsync(optimized.AsAsyncEnumerable(), source,
+                    access, new(2026, 11, 7), pageNo, 3, CancellationToken.None);
+                Assert.Equal(before.TotalCustomers, after.TotalCustomers);
+                Assert.Equal(before.CustomerIds, after.CustomerIds);
+                Assert.Equal(before.Payload.States.Select(x => x.RequestId), after.Payload.States.Select(x => x.RequestId));
+                Assert.Equal(before.TaskCounts!.OrderBy(x => x.Key), after.TaskCounts!.OrderBy(x => x.Key));
+            }
+        }
         var labProgress = SampleRequestWorkQueueQuery.Apply(decisions, new GetSampleRequestSampleTrialsQuery
         { WorkAudience = SampleRequestWorkAudience.LabAdmin, WorkBucket = SampleRequestWorkBucket.LabProgress }, db);
-        var expectedLabProgress = cases.Where(x => x.Role == "Lab").Select(x => x.Name).Order().ToArray();
+        var expectedLabProgress = cases.Where(x => x.Role == "Lab" && !deferredFacts.Any(f => f.ExternalId == x.Name &&
+            SampleWorkDecisionRules.WaitsForPriceBeforeSample(f.Facts, SampleWorkDecisionRules.Resolve(f.Facts).Code))).Select(x => x.Name).Order().ToArray();
         Assert.Equal(expectedLabProgress.Length, await labProgress.CountAsync());
         Assert.Equal(expectedLabProgress.Skip(1).Take(3), await labProgress.OrderBy(x => x.SampleRequest.ExternalId)
             .Skip(1).Take(3).Select(x => x.SampleRequest.ExternalId).ToArrayAsync());

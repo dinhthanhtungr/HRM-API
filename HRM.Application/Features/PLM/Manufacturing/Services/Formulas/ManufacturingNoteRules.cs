@@ -2,6 +2,10 @@ namespace HRM.Application.Features.PLM.Manufacturing.Services.Formulas;
 
 internal static class ManufacturingNoteRules
 {
+    internal static string? Inherit(string? requested, string? stored, string? source) =>
+        requested is not null ? requested : !string.IsNullOrWhiteSpace(stored) ? stored : source;
+    internal static string? FormulaNote(string? incoming, bool clear, string? source) =>
+        clear ? null : string.IsNullOrWhiteSpace(incoming) ? source : incoming;
     private const string Start = "[[AUTO_PLPU_NOTE]]";
     private const string End = "[[/AUTO_PLPU_NOTE]]";
     public static string ManualPlpuNote(string? value)
@@ -51,6 +55,13 @@ internal static class ManufacturingNoteRules
         return Join(auto, ManualPlpuNote(manual));
     }
 
-    public static string MergeLab(string? manual, string? formulaNote) => Join(manual?.Trim() ?? string.Empty, string.IsNullOrWhiteSpace(formulaNote) ? string.Empty : $"Lab lưu ý: {formulaNote.Trim()}");
+    public static string MergeLab(string? manual, string? formulaNote)
+    {
+        var existing = manual?.Trim() ?? string.Empty;
+        var note = formulaNote?.Trim() ?? string.Empty;
+        if (note.Length == 0 || existing == note || existing.EndsWith($"Lab lưu ý: {note}", StringComparison.Ordinal))
+            return existing;
+        return Join(existing, $"Lab lưu ý: {note}");
+    }
     private static string Join(string left, string right) => left.Length == 0 ? right : right.Length == 0 ? left : $"{left}{Environment.NewLine}{Environment.NewLine}{right}";
 }

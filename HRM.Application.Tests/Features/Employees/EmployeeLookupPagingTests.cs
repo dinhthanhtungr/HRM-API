@@ -22,11 +22,15 @@ public sealed class EmployeeLookupPagingTests
         store.Seed(nameof(db.Employees), Row(second, company), Row(first, company),
             Row(Guid.NewGuid(), Guid.NewGuid()), Row(Guid.NewGuid(), company, false));
         var handler = new GetEmployeeLookupQueryHandler(db, new User(company));
+        using var timing = new HRM.Application.Commons.Diagnostics.RequestTiming();
         var page = await handler.Handle(new GetEmployeeLookupQuery { PageSize = 1 }, default);
         var next = await handler.Handle(new GetEmployeeLookupQuery { PageSize = 1, PageNumber = 2 }, default);
         Assert.Equal(2, page.TotalCount);
         Assert.Equal(first, Assert.Single(page.Items).EmployeeId);
         Assert.Equal(second, Assert.Single(next.Items).EmployeeId);
+        Assert.Contains(timing.Snapshot(), step => step.Key == "step_GetEmployeeLookupQueryHandler_ToPagedResultAsync");
+        Assert.Contains(timing.Snapshot(), step => step.Key == "step_PaginationExtensions_ToPagedResultAsync_totalCount_CountAsync");
+        Assert.Contains(timing.Snapshot(), step => step.Key == "step_PaginationExtensions_ToPagedResultAsync_items_ToListAsync");
     }
 
     private sealed record User(Guid Company) : ICurrentUser

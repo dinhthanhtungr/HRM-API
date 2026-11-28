@@ -9,6 +9,22 @@ namespace HRM.Application.Tests.Features.PLM.SampleRequests;
 
 public sealed class SampleDailyPriorityFactsPageTests
 {
+    [Theory]
+    [InlineData(false, 0)]
+    [InlineData(true, 1)]
+    public async Task ManagedKgWithoutQuotationWaitsForPriceOutsideLabSendFilter(bool accepted, int expected)
+    {
+        var row = Row(Guid.NewGuid(), new() { Open = true, FormulaStatus = "Approved", RequestedKg = true,
+            RequiresPriceAcceptance = false, RequiresCustomerPriceTracking = true, AcceptedPrice = accepted }, "InProgress", false, null);
+        var page = await SampleRequestDailyPriorityFactsPage.FromRowsAsync(Stream([row]),
+            Array.Empty<SampleRequestSampleTrialReportRow>().AsQueryable(),
+            new(SampleRequestWorkAudience.Lab, true, false, false, false, [],
+                Bucket: SampleRequestWorkBucket.ActionRequired, PriorityTasks: ["SendSample"]),
+            new(2026, 11, 27), 1, 15, default);
+        Assert.Equal(expected, page.Payload.States.Count);
+        Assert.Equal(expected, page.TotalCustomers);
+    }
+
     [Fact]
     public async Task MenuCountsKeepAllLegacyScopeAndPersonalOwnershipSeparate()
     {
@@ -106,7 +122,7 @@ public sealed class SampleDailyPriorityFactsPageTests
     public async Task LabTaskFiltersBeforePagingAndSupportsMultipleSelections(bool grouped)
     {
         var ordinary = Row(Guid.NewGuid(), new() { Open = true, FormulaStatus = "Draft" }, "InProgress", false, null);
-        var preferred = Row(ordinary.CustomerId, new() { Open = true, FormulaStatus = "Approved", RequestedKg = true }, "InProgress", false, null);
+        var preferred = Row(ordinary.CustomerId, new() { Open = true, FormulaStatus = "Approved", RequestedKg = true, AcceptedPrice = true }, "InProgress", false, null);
         var access = new SampleRequestDailyPriorityFactsPage.Access(SampleRequestWorkAudience.Lab,
             true, false, false, false, [], "Lab", SampleRequestWorkBucket.ActionRequired,
             PriorityTasks: ["SendSample"], GroupByCustomer: grouped);
@@ -231,6 +247,7 @@ public sealed class SampleDailyPriorityFactsPageTests
                 Array.Empty<SampleRequestSampleTrialReportRow>().AsQueryable(), access, new(2026, 11, 7), 1, 15, CancellationToken.None);
             var expected = facts.Open && (role == required || required == "Sale" &&
                 (SampleWorkDecisionRules.HasSalePriceWork(facts) || SampleWorkDecisionRules.HasSaleFeedbackWork(facts)));
+            if (required == "Lab" && SampleWorkDecisionRules.WaitsForPriceBeforeSample(facts, code)) expected = false;
             Assert.Equal(expected ? 1 : 0, page.TotalCustomers);
             Assert.Equal(expected ? 2 : 0, page.Payload.States.Count);
         }
@@ -296,7 +313,8 @@ public sealed class SampleDailyPriorityFactsPageTests
             SampleRequest = new SampleRequest { Status = row.Status, InfoType = facts.Quotation ? "quotation" : "chip",
                 SampleQuantity = facts.RequestedKg ? 2 : 0, ExpectedPriceQuoteDate = row.Due, ExpectedDeliveryDate = row.Due },
             WorkDecision = decision, HasSalePriceWork = SampleWorkDecisionRules.HasSalePriceWork(facts),
-            HasSaleFeedbackWork = SampleWorkDecisionRules.HasSaleFeedbackWork(facts)
+            HasSaleFeedbackWork = SampleWorkDecisionRules.HasSaleFeedbackWork(facts),
+            WaitsForPriceBeforeSample = SampleWorkDecisionRules.WaitsForPriceBeforeSample(facts, code)
         };
         foreach (var bucket in new[] { SampleRequestWorkBucket.Rework, SampleRequestWorkBucket.NewRequestRequired,
             SampleRequestWorkBucket.WaitingLab, SampleRequestWorkBucket.WaitingSale, SampleRequestWorkBucket.WaitingPrice,

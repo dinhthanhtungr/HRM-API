@@ -82,7 +82,7 @@ internal sealed class ProcessManufacturingFormulaCommandHandler(
                 && x.ValidFrom != null, ct)) return Fail(error);
             var waitingForSample = order.Status == nameof(ManufacturingProductOrder.WaitingForStandardSample);
             if (waitingForSample && (!user.IsInRole(ApplicationRoles.Lab.LabUser)
-                || !command.Request.IsStandard.HasValue || command.Request.Items is not null || command.Request.Note is not null))
+                || !command.Request.IsStandard.HasValue || command.Request.Items is not null || command.Request.Note is not null || command.Request.ClearNote))
                 return Fail("Lệnh đang chờ Sale xác nhận mẫu chuẩn.");
             // Candidate/current link proves product association; a bare FormulaId is insufficient.
             var associated = await db.ProductionSelectVersions.AsNoTracking().AnyAsync(x => x.CompanyId == company && x.MfgProductionOrderId == command.Id
@@ -174,7 +174,9 @@ internal sealed class ProcessManufacturingFormulaCommandHandler(
             if (!waitingForSample) formula.Status = ManufacturingProductOrderFormula.Checking.ToString();
             formula.UpdatedBy = employee;
             formula.UpdatedDate = now;
-            PatchHelper.SetIfNotNull(request.Note, () => formula.Note, v => formula.Note = v);
+            if (request.ClearNote && !string.IsNullOrWhiteSpace(request.Note))
+                return Fail("Không được đồng thời xóa và nhập ghi chú VA.");
+            formula.Note = ManufacturingNoteRules.FormulaNote(request.Note, request.ClearNote, formula.Note);
             if (request.IsStandard.HasValue)
             {
                 var standards = await db.ProductStandardFormulas.Where(x => x.CompanyId == company && x.ProductId == order.ProductId && x.ValidTo == null)

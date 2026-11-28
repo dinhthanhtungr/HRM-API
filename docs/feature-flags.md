@@ -59,6 +59,7 @@ không thay capability/company scope. Gỡ bằng cách bỏ middleware/đăng k
 | `internal-mail-group-storage` | BE `InternalMail:GroupStorage:Enabled` | false | appsettings.json = true |
 | `sample-conversation-summary` | BE `SampleRequests:ConversationSummary:Enabled` | false | Không có |
 | `material-tds-extraction` | BE `MaterialTdsExtraction:Enabled` | false | appsettings.Development.json = true |
+| `material-tds-shared-export` | BE `MaterialTdsExtraction:SharedSourceExport` | false | Development = true. Cờ vận hành cho `jobs/source/all` khi toàn bộ thư mục nguồn dùng chung và không đặt SourceCompanyId. Khi tắt, áp dụng kiểm tra công ty nguồn. Chỉ gỡ khi ngừng hỗ trợ nguồn dùng chung. [Contract TDS](../HRM.Application/Features/PLM/Materials/TdsExtraction/README.md) |
 
 BE cấu hình ở HRM.Api của môi trường đích; biến môi trường .NET dùng `__` thay `:`, ví dụ `CustomerSampleSharing__Enabled`. FE `NEXT_PUBLIC_*` xác định lúc build: đổi biến cần build/deploy lại. BE có thể cần restart tùy host/options. Không ghi secret vào sổ này.
 
@@ -79,6 +80,12 @@ BE cấu hình ở HRM.Api của môi trường đích; biến môi trường .N
 - Kiểm tra sau bật cấu hình ngày 2026-11-18: 44 test BE (nhóm khách và chọn mẫu Nội bộ), 11 test FE nhóm khách đạt; build API/FE đạt. Chưa kiểm chứng API đăng nhập/DB/giao diện thật ở lượt này. API đang chạy dùng IOptions nên cần restart/redeploy để chắc chắn nhận cờ mới; sửa file cấu hình không chứng minh tiến trình đã bật.
 
 ### Nhiều đợt giao trên một dòng hàng
+
+- FE `SaleOrderRequestedDates` ở danh sách mở rộng và chi tiết dòng dùng cùng
+  feature gate lịch giao hiện có; không có cờ mới. Chỉ từ hai đợt đã lưu trở lên
+  mới thay ô ngày cũ bằng ngày/khối lượng từng đợt. Tắt tính năng, không có lịch
+  hoặc một đợt giữ fallback cũ; không gọi API lịch khi gate tắt. Khi gỡ cờ cần rà
+  thêm hook `useRequestedDeliverySchedules` và hai consumer này.
 
 FE `canRequestDeliverySchedules(roles)` cho phép hook gọi features và form gửi lịch khi có opt-in hoặc role Developer hay SaleUser. Khi cờ local là false, các role khác dùng luồng cũ. Form tạo đơn hiển thị `SaleOrderDeliveryEntry` cho Developer và SaleUser khi BE trả `enabled` và `canEditRequest`. BE kiểm tra hai cờ StorageReady và EnableMultiScheduleUi, quyền chỉnh lịch yêu cầu, phạm vi công ty và quy tắc lưu. Trạng thái phân bổ trong bộ nhớ phải xóa khi đổi phiên kể cả khi cờ false.
 

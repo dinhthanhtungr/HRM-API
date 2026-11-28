@@ -149,13 +149,15 @@ internal static class ManufacturingAdjustmentBatchRules
                 {
                     var material = IsMaterial(input.ItemType);
                     var template = templates[(input.ItemType, input.ItemId, input.LotNo?.Trim() ?? string.Empty)];
-                    var historical = prior.SelectMany(x => x.Items.Where(i => IsMaterial(i.itemType) == material && (material ? i.MaterialId : i.ProductId) == input.ItemId)
+                    var type = string.IsNullOrWhiteSpace(input.LotNo) || string.Equals(input.LotNo.Trim(), "N/A", StringComparison.OrdinalIgnoreCase)
+                        ? input.ItemType : template.itemType;
+                    var historical = prior.SelectMany(x => x.Items.Where(i => i.itemType == type && (material ? i.MaterialId : i.ProductId) == input.ItemId)
                         .Select(i => new { Batch = x, Item = i }))
                         .ToList();
-                    var ratio = formulaRows.Where(x => x.IsActive && IsMaterial(x.itemType) == material
+                    var ratio = formulaRows.Where(x => x.IsActive && x.itemType == type
                         && (material ? x.MaterialId : x.ProductId) == input.ItemId)
                         .Sum(x => x.Quantity);
-                    var originalRow = baseline.SelectMany(x => x.Items.Where(i => IsMaterial(i.itemType) == material && (material ? i.MaterialId : i.ProductId) == input.ItemId)
+                    var originalRow = baseline.SelectMany(x => x.Items.Where(i => i.itemType == type && (material ? i.MaterialId : i.ProductId) == input.ItemId)
                         .Select(i => new { Batch = x, Item = i }))
                         .FirstOrDefault(x => x.Item.BaseQuantity.HasValue);
                     var original = additional ? 0m : originalRow is null ? ratio * defaultGram : MfgAdjustmentQuantityCalculator.ToGram(originalRow.Item.BaseQuantity!.Value, originalRow.Item.Unit);
@@ -185,9 +187,7 @@ internal static class ManufacturingAdjustmentBatchRules
                         MaterialId = template.MaterialId,
                         ProductId = template.ProductId,
                         CategoryId = template.CategoryId,
-                        itemType = string.IsNullOrWhiteSpace(input.LotNo) ||
-                            string.Equals(input.LotNo.Trim(), "N/A", StringComparison.OrdinalIgnoreCase)
-                            ? input.ItemType : template.itemType,
+                        itemType = type,
                         BaseQuantity = isSet ? original : before,
                         AdjustedQuantity = isSet ? input.QuantityGram : before + input.QuantityGram,
                         DeltaQuantity = isSet ? input.QuantityGram - original : input.QuantityGram,
@@ -265,13 +265,15 @@ internal static class ManufacturingAdjustmentBatchRules
         batch.IsAdditionalBatch,
         batch.AdjustmentType,
         batch.BatchQuantity,
-        IsMaterial(x.itemType) ? $"M:{x.MaterialId:N}" : $"P:{x.ProductId:N}",
+        ItemKey(x.itemType, x.MaterialId, x.ProductId),
         x.BaseQuantity,
         x.AdjustedQuantity,
         x.DeltaQuantity,
         x.Unit
     ));
     public static bool IsMaterial(ItemType type) => type is ItemType.Material or ItemType.MaterialFailure;
+    public static string ItemKey(ItemType type, Guid? materialId, Guid? productId) =>
+        $"{(int)type}:{(IsMaterial(type) ? materialId : productId):N}";
     private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     private static OperationResult<List<ManufacturingFormulaAdjustmentBatch>> Fail(string message) => OperationResult<List<ManufacturingFormulaAdjustmentBatch>>.Fail(message);
 }

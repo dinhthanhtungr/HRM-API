@@ -94,6 +94,19 @@ internal sealed class GetProductionOrderQueryHandler(
             return OperationResult<GetMfgProductionOrder>.Fail("Không tìm thấy lệnh sản xuất trong công ty.");
         }
 
+        // Chỉ đọc lịch đã lưu của các dòng thuộc đúng đơn bán đang hiển thị trên MFG.
+        dto.RequestedDeliverySchedules = await links
+            .Where(l => l.MfgProductionOrderId == request.Id
+                && l.Detail.MerchandiseOrderId == dto.MerchandiseOrderId
+                && l.Detail.MerchandiseOrder.IsActive)
+            .SelectMany(l => l.Detail.DeliverySchedules.Where(s => s.IsActive))
+            .Select(s => new { s.MerchandiseOrderDeliveryScheduleId, s.RequestedDate, s.Quantity, s.MerchandiseOrderDetailId, s.PromisedDate })
+            .Distinct()
+            .OrderBy(s => s.RequestedDate).ThenBy(s => s.MerchandiseOrderDeliveryScheduleId)
+            .Select(s => new ProductionRequestedDeliveryDto(s.MerchandiseOrderDeliveryScheduleId, s.RequestedDate, s.Quantity,
+                s.MerchandiseOrderDetailId, s.PromisedDate))
+            .ToArrayAsync(ct);
+
         if (await selections.CountAsync(s => s.MfgProductionOrderId == request.Id, ct) > 1)
         {
             return OperationResult<GetMfgProductionOrder>.Fail("Lệnh có nhiều hơn một VA đang chọn. Cần kiểm tra dữ liệu.");

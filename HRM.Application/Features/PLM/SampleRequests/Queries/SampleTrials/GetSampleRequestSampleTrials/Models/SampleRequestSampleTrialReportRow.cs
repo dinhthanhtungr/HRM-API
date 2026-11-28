@@ -14,6 +14,7 @@ internal sealed class SampleRequestSampleTrialReportRow
     public bool HasFinalizedChip { get; set; }
     public bool HasSalePriceWork { get; set; }
     public bool HasSaleFeedbackWork { get; set; }
+    public bool WaitsForPriceBeforeSample { get; set; }
     public Services.SampleWorkDecision? WorkDecision { get; set; }
     public bool NeedsSchedule { get; set; }
     public int WorkSortRank { get; set; }

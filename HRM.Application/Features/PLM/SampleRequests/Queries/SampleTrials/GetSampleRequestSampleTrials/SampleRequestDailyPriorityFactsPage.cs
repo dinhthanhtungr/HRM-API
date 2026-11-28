@@ -53,7 +53,35 @@ internal static class SampleRequestDailyPriorityFactsPage
         IPLMDbContext db, ICRMReadDbContext crm, string currency, Access access, IQueryable<SampleRequest> writable,
         bool forMenu = false)
     {
+        var labAction = !forMenu && access.RequiredRole is "Lab" or "LabAdmin" &&
+            access.Audience is SampleRequestWorkAudience.Lab or SampleRequestWorkAudience.LabAdmin &&
+            access.Bucket is SampleRequestWorkBucket.ActionRequired or SampleRequestWorkBucket.MyActionRequired;
+        if (labAction)
+        {
+            // Narrow the already-authorized source, before the expensive facts projection.
+            // Menu counts deliberately retain closed and Sale-owned work.
+            filtered = filtered.Where(x => x.SampleRequest.Status != "Completed" &&
+                x.SampleRequest.Status != "Cancelled" && x.SampleRequest.Status != "LabDeclined" &&
+                !db.SampleRequestWorkflowEvents.Where(e => e.CompanyId == x.SampleRequest.CompanyId &&
+                    e.SampleRequestId == x.SampleRequest.SampleRequestId &&
+                    (e.EventType == SampleRequestLabPauseRules.Rejected || e.EventType == SampleRequestLabPauseRules.Resumed ||
+                     e.EventType == SampleFollowUpRules.Started))
+                    .OrderByDescending(e => e.RecordedAt).ThenByDescending(e => e.Id)
+                    .Select(e => e.EventType == SampleRequestLabPauseRules.Rejected).FirstOrDefault());
+        }
         var facts = SampleWorkDecisionQuery.ReadFacts(filtered, db, crm, currency);
+        if (labAction)
+        {
+            // Sufficient conditions only: keep ambiguous/history/rework cases for the canonical
+            // decision below. Do not filter by the selected task here: other task facets need it.
+            facts = facts.Where(x => !(x.Facts.Kg && x.Facts.PendingTrial && !x.Facts.Legacy &&
+                    !x.Facts.InternalDirect && !x.Facts.ChipToSample) &&
+                !(x.Facts.Open && !x.Facts.Legacy && !x.Facts.InternalDirect && x.Facts.RequestedKg &&
+                    (x.Facts.RequiresPriceAcceptance || x.Facts.RequiresCustomerPriceTracking) && !x.Facts.AcceptedPrice &&
+                    !x.Facts.HasTrial && !x.Facts.HasSentKg && x.Facts.FormulaStatus == "Approved" &&
+                    !x.Facts.CompletionDeferred && !x.Facts.LabFinalizationRequested &&
+                    !x.Facts.PriceDecisionRequired && !x.Facts.RevisedFormulaNeedsPrice && !x.Facts.PriceAdjustmentRequired));
+        }
         if (!forMenu) facts = facts.OrderBy(x => x.Row.SampleRequest.Customer.ExternalId).ThenBy(x => x.Row.SampleRequest.CustomerId);
         return facts.Select(x => new ReadRow
             {
@@ -124,6 +152,10 @@ internal static class SampleRequestDailyPriorityFactsPage
             if (customer != groupId) { Finish(); customer = groupId; }
             var decision = SampleWorkDecisionRules.Resolve(row.State.Facts);
             var role = decision.Role;
+            var waitingForPrice = SampleWorkDecisionRules.WaitsForPriceBeforeSample(row.State.Facts, decision.Code);
+            if (waitingForPrice && access.RequiredRole is "Lab" or "LabAdmin") continue;
+            if (waitingForPrice && access.Audience is SampleRequestWorkAudience.Lab or SampleRequestWorkAudience.LabAdmin &&
+                access.Bucket is SampleRequestWorkBucket.ActionRequired or SampleRequestWorkBucket.MyActionRequired) continue;
             if (!MatchesBucket(row, decision, access.Bucket, day)) continue;
             // This is a work-category predicate, not visibility. Company/customer/ownership,
             // team and keyword filters already ran in SQL. Filter BEFORE count and paging.
@@ -180,6 +212,7 @@ internal static class SampleRequestDailyPriorityFactsPage
                 SampleRequestWorkAudience.Lab => row.State.Facts.Open && decision.Role == "Lab",
                 _ => row.State.Facts.Open && (decision.Role == "LabAdmin" || decision.Role == "Lab" && row.State.NeedsSchedule)
             };
+            if (audience != SampleRequestWorkAudience.Sale && SampleWorkDecisionRules.WaitsForPriceBeforeSample(row.State.Facts, decision.Code)) action = false;
             foreach (var bucket in buckets.Keys.ToArray())
             {
                 if (bucket == SampleRequestWorkBucket.All) continue;
@@ -238,8 +271,8 @@ internal static class SampleRequestDailyPriorityFactsPage
             SampleRequestWorkBucket.FeedbackReceived => row.HasFeedback,
             SampleRequestWorkBucket.Rework => row.State.Facts.Open && decision.Code == "ReworkFormula",
             SampleRequestWorkBucket.NewRequestRequired => row.State.Facts.Open && decision.Code == "CreateNewRequest",
-            SampleRequestWorkBucket.WaitingLab or SampleRequestWorkBucket.LabProgress => row.State.Facts.Open && decision.Role == "Lab",
-            SampleRequestWorkBucket.WaitingSale => row.State.Facts.Open && (decision.Role == "Sale" || SampleWorkDecisionRules.HasSalePriceWork(row.State.Facts) || SampleWorkDecisionRules.HasSaleFeedbackWork(row.State.Facts)),
+            SampleRequestWorkBucket.WaitingLab or SampleRequestWorkBucket.LabProgress => row.State.Facts.Open && decision.Role == "Lab" && !SampleWorkDecisionRules.WaitsForPriceBeforeSample(row.State.Facts, decision.Code),
+            SampleRequestWorkBucket.WaitingSale => row.State.Facts.Open && (SampleWorkDecisionRules.WaitsForPriceBeforeSample(row.State.Facts, decision.Code) || decision.Role == "Sale" || SampleWorkDecisionRules.HasSalePriceWork(row.State.Facts) || SampleWorkDecisionRules.HasSaleFeedbackWork(row.State.Facts)),
             SampleRequestWorkBucket.WaitingPrice => row.State.Facts.Open && decision.Role == "President",
             SampleRequestWorkBucket.Overdue => row.State.Facts.Open && decision.Role == "Lab" && row.Due < day,
             _ => true

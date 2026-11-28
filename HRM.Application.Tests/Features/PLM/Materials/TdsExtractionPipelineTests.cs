@@ -75,6 +75,56 @@ public sealed class TdsExtractionPipelineTests
         Assert.Empty(store.Added);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AllSourceBatchesProduceOneWorkbookWithOriginalRowsAndQcNames(bool shared)
+    {
+        var company = Guid.NewGuid();
+        var user = Guid.NewGuid();
+        var settings = Options.Create(new TdsExtractionOptions { Enabled = true, SharedSourceExport = shared,
+            MaxFiles = 1, MaxBatchBytes = 20, MaxFileBytes = 20 });
+        var db = DispatchProxy.Create<IPLMReadDbContext, ProductionOrderTestStore>();
+        ((ProductionOrderTestStore)(object)db).Seed<Material>(nameof(IPLMReadDbContext.Materials));
+        if (!shared)
+            ((ProductionOrderTestStore)(object)db).Seed(nameof(db.Companies),
+                new HRM.Domain.Entities.CompanySchema.Company { CompanyId = company });
+        var scanner = new Scanner { Files = new[] { "a.txt", "b.txt", "c.txt", "d.txt" }
+            .Select(n => new MaterialDocumentSourceFile(n, n, 12, DateTime.UtcNow)).ToArray(),
+            Contents = new() { ["a.txt"] = "TDS", ["b.txt"] = "SDS", ["c.txt"] = "COA", ["d.txt"] = "TDS" } };
+        var queue = new TdsJobQueue(settings);
+        Assert.True(queue.TryEnqueue(company, user, null, allSourceBatches: true, resolvedSourceCompany: company).Accepted);
+        var job = await queue.DequeueAsync(default);
+        var processor = new TdsExtractionProcessor(db, scanner,
+            new TdsDocumentNormalizer(settings, new TdsLegacyOfficeConverter(settings)),
+            new MixedDocumentClient(), new TdsExcelRenderer(), queue, settings);
+        await processor.ProcessAsync(job, default);
+        var status = queue.Get(job.JobId, company, user)!;
+        Assert.Equal(4, status.ProcessedFiles);
+        Assert.Null(status.NextSourceOffset);
+        using var book = new ClosedXML.Excel.XLWorkbook(new MemoryStream(queue.GetExcel(job.JobId, company, user)!));
+        Assert.Equal("excluded", book.Worksheet("Documents").Cell("C4").GetString());
+        Assert.Equal("duplicate", book.Worksheet("Documents").Cell("C5").GetString());
+        var specs = book.Worksheet("Specifications");
+        Assert.Equal(5, specs.LastRowUsed()!.RowNumber());
+        Assert.Equal("≤ 01,20", specs.Cell("D2").GetString());
+        var names = book.Worksheet("Đối chiếu tên");
+        Assert.Equal(4, names.LastRowUsed()!.RowNumber());
+        Assert.Equal("Viscosity", names.Cell("A2").GetString());
+        Assert.Equal("2", names.Cell("B2").GetString());
+        Assert.Equal("viscosity", names.Cell("A3").GetString());
+        Assert.Equal("Độ nhớt", names.Cell("A4").GetString());
+        Assert.True(names.Cell("E2").IsEmpty());
+    }
+
+    private sealed class MixedDocumentClient : ITdsExtractionClient
+    {
+        public Task<TdsDocumentData> ExtractAsync(TdsNormalizedDocument document, CancellationToken cancellationToken)
+            => Task.FromResult(new TdsDocumentData { DocumentType = document.Text, Specifications =
+                [new() { Name = "Viscosity", Value = "≤ 01,20" },
+                 new() { Name = document.Text == "TDS" ? "viscosity" : "Độ nhớt", Value = "0" }] });
+    }
+
     [Fact]
     public void ConflictingCodesCannotAssignMaterialAndNameOnlyIsSuggestion()
     {
@@ -126,6 +176,7 @@ public sealed class TdsExtractionPipelineTests
     {
         public IReadOnlyList<MaterialDocumentSourceFile>? Files { get; init; }
         public List<string> OpenedPaths { get; } = [];
+        public Dictionary<string, string> Contents { get; init; } = [];
         public Task<MaterialDocumentSourceScan> ScanAsync(CancellationToken cancellationToken = default)
             => Files is null ? throw new InvalidOperationException("Upload must not scan source.") :
                 Task.FromResult(new MaterialDocumentSourceScan("Test", true, true, false, null, Files));
@@ -133,7 +184,7 @@ public sealed class TdsExtractionPipelineTests
         {
             if (Files is null) throw new InvalidOperationException("Upload must not open source.");
             OpenedPaths.Add(relativePath);
-            var bytes = Encoding.UTF8.GetBytes("Density 1.2");
+            var bytes = Encoding.UTF8.GetBytes(Contents.GetValueOrDefault(relativePath, "Density 1.2"));
             return Task.FromResult(new MaterialDocumentSourceContent(new MemoryStream(bytes), relativePath, "text/plain", bytes.Length));
         }
     }

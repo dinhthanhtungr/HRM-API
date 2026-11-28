@@ -11,6 +11,7 @@ public sealed record ProductionOrderInformDto(ProductionOrderWorkspaceDto Worksp
     public string? PoNo { get; init; }
     public ProductionOrderSampleInfoDto? SampleInfo { get; init; }
     public string Revision { get; init; } = string.Empty;
+    public bool SupportsDeliveryPromisesSave { get; init; } = true;
     public IReadOnlyList<string> AllowedActions { get; init; } = [];
     public IReadOnlyList<string> EditableFields { get; init; } = [];
     public bool CanEditItems { get; init; }

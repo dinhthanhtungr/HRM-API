@@ -115,7 +115,7 @@ public sealed class ManufacturingStockActionTests
             ManufacturingFormula = va, ValidFrom = new(2026, 10, 1) });
         f.Store.Seed(nameof(f.Db.Formulas), new Formula
         { FormulaId = f.Order.FormulaId.Value, ProductId = f.Order.ProductId, CompanyId = f.Order.CompanyId, IsActive = true,
-            Product = new() { ProductId = f.Order.ProductId, CompanyId = f.Order.CompanyId } });
+            Product = new() { ProductId = f.Order.ProductId, CompanyId = f.Order.CompanyId, IsActive = true, Requirement = "QA từ yêu cầu phối mẫu" } });
         f.Store.Seed(nameof(f.Db.MfgProductionOrders), new MfgProductionOrder
         { MfgProductionOrderId = Guid.NewGuid(), ProductId = f.Order.ProductId, CompanyId = f.Order.CompanyId,
             IsActive = true, FormulaId = Guid.NewGuid(), CreatedDate = new(2026, 10, 9) });
@@ -126,7 +126,7 @@ public sealed class ManufacturingStockActionTests
         Assert.Equal(ManufacturingFormulaOrigin.Standard, options[1].Origin);
         Assert.True(options[1].RequiresFormulaReview);
         Assert.Equal(f.Order.PlpuNote, options[0].PlpuNote);
-        Assert.Equal(f.Order.LabNote, options[0].LabNote);
+        Assert.Equal("QA từ yêu cầu phối mẫu", options[0].LabNote);
         Assert.Equal(f.Order.Requirement, options[0].Requirement);
         Assert.Null(options[1].PlpuNote);
         Assert.Null(options[1].LabNote);
@@ -201,6 +201,37 @@ public sealed class ManufacturingStockActionTests
     private static UseProductionOrderStockRequest Request() => new()
     { TotalQuantity = 120, NumOfBatches = 2, StepOfProduct = Enum.GetValues<StepOfProduct>()[0], ExpectedDate = null };
 
+    [Fact]
+    public async Task StandardNotes_UseLatestScopedActualMfg_NotStandardChangeReason()
+    {
+        var f = new Fixture();
+        f.Order.ProductId = Guid.NewGuid(); f.Order.FormulaId = null;
+        var va = new ManufacturingFormula { ManufacturingFormulaId = Guid.NewGuid(), CompanyId = f.Order.CompanyId,
+            ExternalId = "VA-NOTES", IsActive = true, Note = "Production instruction" };
+        var old = new MfgProductionOrder { MfgProductionOrderId = Guid.NewGuid(), CompanyId = f.Order.CompanyId,
+            ProductId = f.Order.ProductId, IsActive = true, LabNote = "Old QA" };
+        var latest = new MfgProductionOrder { MfgProductionOrderId = Guid.NewGuid(), CompanyId = f.Order.CompanyId,
+            ProductId = f.Order.ProductId, IsActive = true, LabNote = "Latest QA", PlpuNote = "Latest PLPU",
+            Requirement = "Customer", QcCheck = "QC check" };
+        var foreign = new MfgProductionOrder { MfgProductionOrderId = Guid.NewGuid(), CompanyId = Guid.NewGuid(),
+            ProductId = f.Order.ProductId, IsActive = true, LabNote = "FOREIGN" };
+        ProductionSelectVersion Row(MfgProductionOrder m, DateTime? date) => new() {
+            ProductionSelectVersionId = Guid.NewGuid(), CompanyId = f.Order.CompanyId, MfgProductionOrder = m,
+            MfgProductionOrderId = m.MfgProductionOrderId, ManufacturingFormulaId = va.ManufacturingFormulaId,
+            ManufacturingFormula = va, ValidFrom = date };
+        f.Store.Seed(nameof(f.Db.ProductStandardFormulas), new ProductStandardFormula {
+            ProductId = f.Order.ProductId, CompanyId = f.Order.CompanyId, ManufacturingFormulaId = va.ManufacturingFormulaId,
+            ManufacturingFormula = va, Note = "Reason to mark standard" });
+        f.Store.Seed(nameof(f.Db.ProductionSelectVersions), Row(old, new(2026, 1, 1)), Row(latest, new(2026, 2, 1)),
+            Row(foreign, new(2026, 3, 1)), Row(old, null));
+        var source = Assert.Single(await ManufacturingFormulaOptionReader.ReadAsync(f.Db, f.Order, default));
+        Assert.Equal(latest.MfgProductionOrderId, source.SourceProductionOrderId);
+        Assert.Equal("Production instruction", source.Note);
+        Assert.Equal("Latest QA", source.LabNote);
+        Assert.Equal("Latest PLPU", source.PlpuNote);
+        Assert.Equal("QC check", source.QcCheck);
+        Assert.Equal("Customer", source.Requirement);
+    }
     private sealed class Fixture
     {
         public ProductionOrderCreationTests.TestUser User { get; } = new();

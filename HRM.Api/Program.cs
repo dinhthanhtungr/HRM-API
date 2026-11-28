@@ -2,6 +2,10 @@ using HRM.Application;
 using HRM.Domain.Entities.DependencyInjection;
 using HRM.Infrastructure;
 using Microsoft.AspNetCore.HttpOverrides;
+using HRM.Application.Commons.Diagnostics;
+using HRM.Infrastructure.DatabaseContext.ApplicationDbs;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 
 
 //Client->HTTPS->IIS / Nginx / Cloudflare->HTTP nội bộ -> ASP.NET Core
@@ -11,11 +15,25 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddPresentation(builder.Configuration, builder.Environment);
+var developmentTiming = builder.Environment.IsDevelopment();
+if (developmentTiming)
+{
+    builder.Services.AddTransient(typeof(MediatR.IPipelineBehavior<,>), typeof(HRM.Api.Diagnostics.DevelopmentFeatureTimingBehavior<,>));
+    builder.Services.Configure<Microsoft.AspNetCore.Mvc.MvcOptions>(options =>
+        options.Filters.Add(new HRM.Api.Diagnostics.DevelopmentActionTimingFilter()));
+    builder.Services.ConfigureDbContext<ApplicationDbContext>(options => options.LogTo(
+        (id, level) => id == RelationalEventId.CommandExecuted && RequestTiming.Current is not null,
+        data => RequestTiming.Current?.RecordCommand(((CommandExecutedEventData)data).Duration)));
+}
 
 var performanceProbe = HRM.Api.Diagnostics.PerformanceProbe.Prepare(
     builder.Services, builder.Configuration, builder.Environment);
 
 var app = builder.Build();
+
+// Register first so feature-specific OnStarting callbacks publish their metrics first.
+if (developmentTiming)
+    app.Use(HRM.Api.Diagnostics.DevelopmentApiTiming.InvokeAsync);
 
 if (performanceProbe)
     app.Use(HRM.Api.Diagnostics.PerformanceProbe.InvokeAsync);
@@ -59,6 +77,7 @@ app.UseRouting();
 app.UseCors("DefaultCors");
 app.Use(async (context, next) =>
 {
+    if (developmentTiming) RequestTiming.Checkpoint("request_cors");
     HRM.Api.Diagnostics.SampleWorkRequestTimingMiddleware.MarkCheckpoint(context, "cors");
     HRM.Api.Diagnostics.PerformanceProbe.MarkCheckpoint(context, "cors");
     await next(context);
@@ -66,6 +85,7 @@ app.Use(async (context, next) =>
 app.UseAuthentication();
 app.Use(async (context, next) =>
 {
+    if (developmentTiming) RequestTiming.Checkpoint("request_authentication");
     HRM.Api.Diagnostics.SampleWorkRequestTimingMiddleware.MarkCheckpoint(context, "authentication");
     HRM.Api.Diagnostics.PerformanceProbe.MarkCheckpoint(context, "authentication");
     await next(context);
@@ -74,6 +94,7 @@ app.UseMiddleware<HRM.Api.Security.Authorization.ImsSessionAuthorizationMiddlewa
 app.UseMiddleware<HRM.Api.Security.DeveloperSampleWorkMiddleware>();
 app.Use(async (context, next) =>
 {
+    if (developmentTiming) RequestTiming.Checkpoint("request_acting_user");
     HRM.Api.Diagnostics.SampleWorkRequestTimingMiddleware.MarkCheckpoint(context, "acting_user");
     HRM.Api.Diagnostics.PerformanceProbe.MarkCheckpoint(context, "acting_user");
     await next(context);
@@ -81,6 +102,7 @@ app.Use(async (context, next) =>
 app.UseAuthorization();
 app.Use(async (context, next) =>
 {
+    if (developmentTiming) RequestTiming.Checkpoint("request_authorization");
     HRM.Api.Diagnostics.SampleWorkRequestTimingMiddleware.MarkCheckpoint(context, "authorization");
     HRM.Api.Diagnostics.PerformanceProbe.MarkCheckpoint(context, "authorization");
     HRM.Api.Diagnostics.NotificationRequestTimingMiddleware.MarkDispatch(context);

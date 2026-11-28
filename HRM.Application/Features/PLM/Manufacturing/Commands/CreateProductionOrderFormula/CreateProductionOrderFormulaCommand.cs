@@ -7,4 +7,5 @@ namespace HRM.Application.Features.PLM.Manufacturing.Commands.CreateProductionOr
 public sealed record CreateProductionOrderFormulaCommand(Guid Id, CreateProductionOrderFormulaRequest Request) : IRequest<OperationResult<ProductionOrderFormulaCreatedDto>>
 {
     public string? ExpectedRevision { get; init; }
+    public IReadOnlyList<ManufacturingDeliveryPromisePatch>? DeliveryPromises { get; init; }
 }

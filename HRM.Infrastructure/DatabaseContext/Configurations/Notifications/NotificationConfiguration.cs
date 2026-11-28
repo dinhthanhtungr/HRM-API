@@ -22,7 +22,7 @@ namespace HRM.Infrastructure.DatabaseContext.ApplicationDbs.Configurations.Notif
             entity.Property(x => x.Topic).HasConversion<int>().IsRequired().HasColumnName("topic");
             entity.Property(x => x.Severity).HasConversion<int>().IsRequired().HasColumnName("severity");
             entity.Property(x => x.Title).HasMaxLength(256).IsRequired().HasColumnName("title");
-            entity.Property(x => x.Message).HasMaxLength(2000).IsRequired().HasColumnName("message");
+            entity.Property(x => x.Message).HasMaxLength(Notification.MaxMessageLength).IsRequired().HasColumnName("message");
             entity.Property(x => x.Link).HasMaxLength(512).HasColumnName("link");
             entity.Property(x => x.PayloadJson).HasColumnType("jsonb").HasColumnName("payload_json");
             entity.Property(x => x.CreatedDate).HasPrecision(6).HasColumnName("created_date");

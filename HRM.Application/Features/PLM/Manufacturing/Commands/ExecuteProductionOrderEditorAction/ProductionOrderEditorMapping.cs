@@ -36,7 +36,7 @@ internal static class ProductionOrderEditorMapping
             return "Chỉ thao tác Lưu hỗ trợ xóa field, đổi bao bì hoặc sửa VA đang chọn.";
         if (r.Action is not ("Save" or "SaveAndCreateFormula") && r.Items is not null)
             return "Thao tác không hỗ trợ sửa vật tư.";
-        if (r.Action is not ("SaveAndCreateFormula" or "UseStock") && r.SourceFormulaId.HasValue
+        if (r.Action is not ("SaveAndCreateFormula" or "UseStock" or "RequestFormula") && r.SourceFormulaId.HasValue
             || r.Action != "SaveAndCreateFormula" && r.Origin.HasValue
             || r.Action is "RequestFormula" or "Schedule" or "UseStock" && r.ManufacturingDate.HasValue)
             return "Thao tác không hỗ trợ đổi nguồn hoặc ngày sản xuất.";

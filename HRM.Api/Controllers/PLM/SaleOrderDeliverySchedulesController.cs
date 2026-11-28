@@ -29,4 +29,11 @@ public sealed class SaleOrderDeliverySchedulesController(DeliveryScheduleService
         var result = await service.PreviewAsync(orderId, detailId, request, ct);
         return result.Success ? Ok(result) : BadRequest(result);
     }
+
+    [HttpPatch("promises")]
+    public async Task<IActionResult> UpdatePromises(Guid orderId, Guid detailId, UpdateDeliveryPromisesRequest request, CancellationToken ct)
+    {
+        var result = await service.UpdatePromisesAsync(orderId, detailId, request, ct);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
 }

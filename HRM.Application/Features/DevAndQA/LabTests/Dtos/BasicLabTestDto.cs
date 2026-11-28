@@ -13,4 +13,4 @@ public sealed record BasicLabTestDto(Guid Id, string Code, string SampleName, Da
 public sealed record BasicLabTestWriteRequest(string? SampleName = null, DateOnly? TestDate = null, string? Note = null,
     Guid? EvaluationTemplateId = null, IReadOnlyList<LabTestResultInput>? Results = null,
     IReadOnlyList<string>? ClearFields = null, string? BatchNumber = null, decimal? WeightKg = null, Guid? SupplierId = null,
-    Guid? CreatedBy = null, Guid? MaterialId = null);
+    Guid? CreatedBy = null, Guid? MaterialId = null, string? SupplierName = null);

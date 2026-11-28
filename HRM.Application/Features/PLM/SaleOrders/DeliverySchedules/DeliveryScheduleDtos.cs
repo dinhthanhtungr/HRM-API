@@ -22,4 +22,15 @@ public sealed record DeliveryScheduleRowDto(Guid Id, decimal Quantity, decimal A
     DateOnly RequestedDate, DateOnly? PromisedDate, string? RequestNote, string? PromiseNote);
 public sealed record DeliveryScheduleWorkspaceDto(bool Enabled, bool CanEditRequest, bool CanEditPromise,
     string Revision, decimal OrderedQuantity, DateOnly? LegacyRequestedDate, DateOnly? LegacyPromisedDate,
-    IReadOnlyList<DeliveryScheduleRowDto> Items, bool HasUnreconciledDelivery = false);
+    IReadOnlyList<DeliveryScheduleRowDto> Items, bool HasUnreconciledDelivery = false)
+{
+    public DeliveryDateSummaryDto DeliveryDates => DeliveryDateSummaryDto.From(this);
+}
+
+public sealed record DeliveryPromiseDateInput(
+    [property: JsonRequired] Guid ScheduleId,
+    [property: JsonRequired] DateOnly? PromisedDate);
+
+public sealed record UpdateDeliveryPromisesRequest(
+    [property: JsonRequired] string Revision,
+    [property: JsonRequired] IReadOnlyList<DeliveryPromiseDateInput> Items);
